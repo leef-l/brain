@@ -1,0 +1,26 @@
+{
+  "sdk_version": "0.1.0-skeleton",
+  "sdk_language": "go",
+  "kernel_version": "0.1.0-skeleton",
+  "protocol_version": "1.0",
+  "cli_version": "0.1.0-skeleton",
+  "compatibility": {
+    "protocol": false,
+    "kernel": false,
+    "cli": false
+  },
+  "reference_sdk": "github.com/leef-l/brain",
+  "compliance_tests": {
+    "total": 150,
+    "passed": 0,
+    "skipped": 0,
+    "failed": 0,
+    "last_run_at": null,
+    "last_run_commit": null,
+    "note": "v0.1.0 skeleton — interfaces only, no compliance test run yet"
+  },
+  "skeleton_status": {
+    "runnable_commands": ["version", "doctor"],
+    "stub_commands": ["run", "status", "resume", "cancel", "list", "logs", "replay", "tool", "config", "serve", "help"]
+  }
+}
