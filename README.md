@@ -315,6 +315,12 @@ import "github.com/leef-l/brain/loop"
 
 | 项目 | 说明 | 优先级 |
 |------|------|--------|
+| Brain Manifest | Manifest v1 解析与校验器，12 个顶层字段（docs/33） | v3 核心 |
+| Brain Package | 标准目录布局、安装器、checksum 校验、签名（docs/34） | v3 核心 |
+| Runtime 统一抽象 | native / mcp-backed / hybrid / remote 四种模式接口（docs/32） | v3 核心 |
+| Marketplace 索引 | 大脑发现、兼容性筛选、publisher/edition 展示（docs/34） | v3 核心 |
+| Capability 路由 | 能力标签、任务模式匹配、Orchestrator 按 manifest 发现大脑 | v3 核心 |
+| Policy 声明层 | Manifest 声明策略需求 → Kernel 运行期校验装配 | v3 核心 |
 | 跨语言 SDK | Python / TypeScript / Rust SDK（按 28-SDK交付规范） | v3 |
 | RPCRunner | gRPC / 消息队列支持，大脑远程运行 | v3 |
 | SQLite 持久化 | 可选高性能后端，Driver 抽象层已就绪，当前 FileStore 满足单节点需求 | v3 |
@@ -364,7 +370,7 @@ docs/ 目录下包含多篇 RFC 级规格、架构文档与实施计划，常用
 | 32 | [v3 Brain 架构](docs/32-v3-Brain架构.md) | Brain / Manifest / Runtime / Package / Capability 的长期架构冻结 |
 | 33 | [Brain Manifest 规格](docs/33-Brain-Manifest规格.md) | v3 Brain 的稳定 schema、runtime/policy/license/health 声明面 |
 | 34 | [Brain Package 与 Marketplace 规范](docs/34-Brain-Package与Marketplace规范.md) | package 布局、安装、签名、marketplace 索引与分发规则 |
-| -- | [v3 代码重构计划](docs/v3代码重构计划.md) | 残留问题修复计划（基于 v0.5.1 审计，Wave-1/2 已完成） |
+| -- | [代码质量修复计划](docs/代码质量修复计划.md) | v0.5.1 审计问题修复（Wave-1/2/3 全部完成） |
 
 ## 8 项关键设计决策
 
