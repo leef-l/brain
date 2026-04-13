@@ -150,6 +150,35 @@ func WithLogExporter(l observability.LogExporter) Option {
 	return func(k *Kernel) { k.Logs = l }
 }
 
+// WithPersistence installs all non-nil stores from a persistence.Stores
+// bundle in one shot. This is the idiomatic way to wire a Driver's output
+// into a Kernel:
+//
+//	stores, _ := persistence.Open("sqlite", dsn)
+//	k := kernel.NewKernel(kernel.WithPersistence(stores.Stores))
+func WithPersistence(s persistence.Stores) Option {
+	return func(k *Kernel) {
+		if s.PlanStore != nil {
+			k.PlanStore = s.PlanStore
+		}
+		if s.ArtifactStore != nil {
+			k.ArtifactStore = s.ArtifactStore
+		}
+		if s.ArtifactMeta != nil {
+			k.ArtifactMeta = s.ArtifactMeta
+		}
+		if s.RunCheckpointStore != nil {
+			k.RunCheckpoint = s.RunCheckpointStore
+		}
+		if s.UsageLedger != nil {
+			k.UsageLedger = s.UsageLedger
+		}
+		if s.ResumeCoordinator != nil {
+			k.Resume = s.ResumeCoordinator
+		}
+	}
+}
+
 // WithOrchestrator installs the specialist brain orchestrator.
 func WithOrchestrator(o interface{}) Option {
 	return func(k *Kernel) { k.Orchestrator = o }

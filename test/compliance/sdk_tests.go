@@ -58,7 +58,11 @@ func registerSDKTests(r *braintesting.MemComplianceRunner) {
 	r.Register(braintesting.ComplianceTest{
 		ID: "C-SDK-04", Description: "NewMemKernel non-nil", Category: "sdk",
 	}, func(ctx context.Context) error {
-		k := kernel.NewMemKernel(kernel.MemKernelOptions{})
+		k, err := kernel.NewMemKernel(kernel.MemKernelOptions{})
+		if err != nil {
+			return brainerrors.Wrap(err, brainerrors.CodeAssertionFailed,
+				brainerrors.WithMessage("C-SDK-04: NewMemKernel error"))
+		}
 		if k == nil {
 			return brainerrors.New(brainerrors.CodeAssertionFailed,
 				brainerrors.WithMessage("C-SDK-04: NewMemKernel nil"))
@@ -70,7 +74,11 @@ func registerSDKTests(r *braintesting.MemComplianceRunner) {
 	r.Register(braintesting.ComplianceTest{
 		ID: "C-SDK-05", Description: "NewMemKernel wires PlanStore", Category: "sdk",
 	}, func(ctx context.Context) error {
-		k := kernel.NewMemKernel(kernel.MemKernelOptions{})
+		k, err := kernel.NewMemKernel(kernel.MemKernelOptions{})
+		if err != nil {
+			return brainerrors.Wrap(err, brainerrors.CodeAssertionFailed,
+				brainerrors.WithMessage("C-SDK-05: NewMemKernel error"))
+		}
 		if k.PlanStore == nil {
 			return brainerrors.New(brainerrors.CodeAssertionFailed,
 				brainerrors.WithMessage("C-SDK-05: PlanStore nil"))
@@ -82,7 +90,11 @@ func registerSDKTests(r *braintesting.MemComplianceRunner) {
 	r.Register(braintesting.ComplianceTest{
 		ID: "C-SDK-06", Description: "NewMemKernel registers builtin tools", Category: "sdk",
 	}, func(ctx context.Context) error {
-		k := kernel.NewMemKernel(kernel.MemKernelOptions{BrainKind: "test"})
+		k, err := kernel.NewMemKernel(kernel.MemKernelOptions{BrainKind: "test"})
+		if err != nil {
+			return brainerrors.Wrap(err, brainerrors.CodeAssertionFailed,
+				brainerrors.WithMessage("C-SDK-06: NewMemKernel error"))
+		}
 		if k.ToolRegistry == nil {
 			return brainerrors.New(brainerrors.CodeAssertionFailed,
 				brainerrors.WithMessage("C-SDK-06: ToolRegistry nil"))

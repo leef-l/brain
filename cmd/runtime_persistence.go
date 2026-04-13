@@ -20,7 +20,9 @@ func loadPersistedRun(id string) (*cliRuntime, *persistedRunRecord, *persistence
 	}
 	var cp *persistence.Checkpoint
 	if runtime.Kernel != nil && runtime.Kernel.RunCheckpoint != nil {
-		cp, err = runtime.Kernel.RunCheckpoint.Get(bgCtx(), rec.StoreRunID)
+		ctx, cancel := bgCtx()
+		defer cancel()
+		cp, err = runtime.Kernel.RunCheckpoint.Get(ctx, rec.StoreRunID)
 		if err != nil {
 			cp = nil
 		}

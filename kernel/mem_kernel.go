@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/leef-l/brain/observability"
@@ -43,11 +44,10 @@ type MemKernelOptions struct {
 //   - `cmd/brain doctor` for the PlanStore / ArtifactStore smoke probes
 //   - every Kernel-level unit / compliance test in brain/testing/
 //
-// The function panics only on registry misuse (duplicate tool names),
-// which the caller can avoid by keeping ExtraTools name-unique.
+// Returns an error if tool registration fails (e.g. duplicate tool names).
 //
 // See 02-BrainKernel设计.md §12.2 and 28-SDK交付规范.md §9.
-func NewMemKernel(opts MemKernelOptions) *Kernel {
+func NewMemKernel(opts MemKernelOptions) (*Kernel, error) {
 	now := opts.Now
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
@@ -72,14 +72,14 @@ func NewMemKernel(opts MemKernelOptions) *Kernel {
 	// --- tool registry with builtin echo + reject_task ---
 	registry := tool.NewMemRegistry()
 	if err := registry.Register(tool.NewEchoTool(brainKind)); err != nil {
-		panic("kernel.NewMemKernel: register echo: " + err.Error())
+		return nil, fmt.Errorf("kernel.NewMemKernel: register echo: %w", err)
 	}
 	if err := registry.Register(tool.NewRejectTaskTool(brainKind, nil)); err != nil {
-		panic("kernel.NewMemKernel: register reject_task: " + err.Error())
+		return nil, fmt.Errorf("kernel.NewMemKernel: register reject_task: %w", err)
 	}
 	for _, t := range opts.ExtraTools {
 		if err := registry.Register(t); err != nil {
-			panic("kernel.NewMemKernel: register extra tool: " + err.Error())
+			return nil, fmt.Errorf("kernel.NewMemKernel: register extra tool: %w", err)
 		}
 	}
 
@@ -105,5 +105,5 @@ func NewMemKernel(opts MemKernelOptions) *Kernel {
 		WithMetrics(metrics),
 		WithTraceExporter(trace),
 		WithLogExporter(logs),
-	)
+	), nil
 }

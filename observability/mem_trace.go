@@ -14,12 +14,14 @@ type ctxKey struct{}
 // MemSpan represents a single span in the trace tree per 24-可观测性.md §5.
 // Spans are identified by a unique SpanID and linked to their parent via ParentID.
 // A root span has an empty ParentID and a newly-generated TraceID.
+// All mutating methods are protected by mu for concurrent safety.
 type MemSpan struct {
+	mu        sync.Mutex
 	TraceID   string    // Root span ID, 16-byte hex. Propagated to all children.
 	SpanID    string    // This span's ID, 8-byte hex.
 	ParentID  string    // Parent span ID, empty for root spans.
 	Name      string    // Human-readable span name.
-	Attrs     Labels    // Immutable attributes (deep copy at creation).
+	Attrs     Labels    // Attributes (deep copy at creation).
 	StartedAt time.Time // Span start time.
 	EndedAt   time.Time // Span end time (filled by End()).
 	Error     string    // Error message (filled by SetError()).
@@ -93,24 +95,30 @@ func (e *MemTraceExporter) StartSpan(ctx context.Context, name string, attrs Lab
 // the attribute conventions in 24-可观测性.md §B to keep cardinality inside
 // the budget defined in §4.4.
 func (s *MemSpan) SetAttr(key, value string) {
+	s.mu.Lock()
 	s.Attrs[key] = value
+	s.mu.Unlock()
 }
 
 // SetError marks the span as failed and attaches error metadata per
 // 24-可观测性.md §B.4. Passing a nil error is a no-op.
 func (s *MemSpan) SetError(err error) {
 	if err != nil {
+		s.mu.Lock()
 		s.Error = err.Error()
+		s.mu.Unlock()
 	}
 }
 
 // End closes the span and records the end time. Calling End more than once
-// on the same Span is a programming error and may be ignored or panic.
+// on the same Span is a no-op.
 func (s *MemSpan) End() {
+	s.mu.Lock()
 	if !s.ended {
 		s.EndedAt = time.Now()
 		s.ended = true
 	}
+	s.mu.Unlock()
 }
 
 // Spans returns a deep copy of all recorded spans in the trace tree, in
@@ -121,22 +129,7 @@ func (e *MemTraceExporter) Spans() []*MemSpan {
 
 	result := make([]*MemSpan, 0, len(e.spans))
 	for _, s := range e.spans {
-		// Deep copy span with deep-copied attrs
-		spanCopy := &MemSpan{
-			TraceID:   s.TraceID,
-			SpanID:    s.SpanID,
-			ParentID:  s.ParentID,
-			Name:      s.Name,
-			StartedAt: s.StartedAt,
-			EndedAt:   s.EndedAt,
-			Error:     s.Error,
-			ended:     s.ended,
-			Attrs:     make(Labels),
-		}
-		for k, v := range s.Attrs {
-			spanCopy.Attrs[k] = v
-		}
-		result = append(result, spanCopy)
+		result = append(result, s.snapshot())
 	}
 
 	return result
@@ -152,26 +145,32 @@ func (e *MemTraceExporter) FindByTraceID(traceID string) []*MemSpan {
 	var result []*MemSpan
 	for _, s := range e.spans {
 		if s.TraceID == traceID {
-			// Deep copy span with deep-copied attrs
-			spanCopy := &MemSpan{
-				TraceID:   s.TraceID,
-				SpanID:    s.SpanID,
-				ParentID:  s.ParentID,
-				Name:      s.Name,
-				StartedAt: s.StartedAt,
-				EndedAt:   s.EndedAt,
-				Error:     s.Error,
-				ended:     s.ended,
-				Attrs:     make(Labels),
-			}
-			for k, v := range s.Attrs {
-				spanCopy.Attrs[k] = v
-			}
-			result = append(result, spanCopy)
+			result = append(result, s.snapshot())
 		}
 	}
 
 	return result
+}
+
+// snapshot returns a deep copy of the span, safe for concurrent reads.
+func (s *MemSpan) snapshot() *MemSpan {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	attrs := make(Labels, len(s.Attrs))
+	for k, v := range s.Attrs {
+		attrs[k] = v
+	}
+	return &MemSpan{
+		TraceID:   s.TraceID,
+		SpanID:    s.SpanID,
+		ParentID:  s.ParentID,
+		Name:      s.Name,
+		StartedAt: s.StartedAt,
+		EndedAt:   s.EndedAt,
+		Error:     s.Error,
+		ended:     s.ended,
+		Attrs:     attrs,
+	}
 }
 
 // generateID generates a random hex string of the specified number of bytes.

@@ -241,7 +241,9 @@ func runServe(args []string) int {
 	fmt.Fprintf(os.Stderr, "  run_wd:    %s\n", runWorkdirPolicy)
 	fmt.Fprintf(os.Stderr, "  store:     %s\n\n", runtime.FileStore.Path())
 
-	_ = cfgErr
+	if cfgErr != nil {
+		fmt.Fprintf(os.Stderr, "brain serve: warning: config load: %v\n", cfgErr)
+	}
 	mgr := &runManager{store: runtime.RunStore, rootCtx: serveCtx}
 
 	mux := http.NewServeMux()
@@ -454,9 +456,12 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		http.Error(w, `{"error":"restricted mode requires file_policy (config or request body)"}`, http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithCancel(mgr.rootCtx)
+	var ctx context.Context
+	var cancel context.CancelFunc
 	if req.timeoutDuration > 0 {
 		ctx, cancel = context.WithTimeout(mgr.rootCtx, req.timeoutDuration)
+	} else {
+		ctx, cancel = context.WithCancel(mgr.rootCtx)
 	}
 
 	entry := &runEntry{

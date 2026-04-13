@@ -13,7 +13,10 @@ import (
 // Kernel with every component populated — a regression-catching smoke
 // test for the v0.1.0 reference executor.
 func TestNewMemKernel_WiresAllFields(t *testing.T) {
-	k := NewMemKernel(MemKernelOptions{})
+	k, err := NewMemKernel(MemKernelOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name string
 		got  interface{}
@@ -41,7 +44,10 @@ func TestNewMemKernel_WiresAllFields(t *testing.T) {
 // TestNewMemKernel_RegistersBuiltinTools verifies that echo and reject_task
 // are registered under the configured brainKind.
 func TestNewMemKernel_RegistersBuiltinTools(t *testing.T) {
-	k := NewMemKernel(MemKernelOptions{BrainKind: "smoke"})
+	k, err := NewMemKernel(MemKernelOptions{BrainKind: "smoke"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := k.ToolRegistry.Lookup("smoke.echo"); !ok {
 		t.Error("expected smoke.echo to be registered")
 	}
@@ -54,7 +60,10 @@ func TestNewMemKernel_RegistersBuiltinTools(t *testing.T) {
 // `brain doctor` — if this passes, `brain doctor` check #3 passes.
 func TestNewMemKernel_PlanStoreRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	k := NewMemKernel(MemKernelOptions{})
+	k, err := NewMemKernel(MemKernelOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	snap, _ := json.Marshal(map[string]string{"probe": "test"})
 	id, err := k.PlanStore.Create(ctx, &persistence.BrainPlan{
 		BrainID:      "test",
@@ -77,7 +86,10 @@ func TestNewMemKernel_PlanStoreRoundTrip(t *testing.T) {
 // `brain doctor` check #7.
 func TestNewMemKernel_ArtifactCASRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	k := NewMemKernel(MemKernelOptions{})
+	k, err := NewMemKernel(MemKernelOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	payload := []byte("hello CAS")
 	ref, err := k.ArtifactStore.Put(ctx, 0, persistence.Artifact{
 		Kind:    "test",

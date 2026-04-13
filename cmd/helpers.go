@@ -15,10 +15,9 @@ import (
 )
 
 // bgCtx returns a context with a 30-second timeout for CLI operations.
-func bgCtx() context.Context {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	_ = cancel
-	return ctx
+// The caller MUST defer the returned cancel function to avoid goroutine leaks.
+func bgCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 30*time.Second)
 }
 
 // defaultBinResolver returns a BinResolver that searches for sidecar

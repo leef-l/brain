@@ -54,7 +54,9 @@ func runCancel(args []string) int {
 	}
 	if cp != nil {
 		cp.State = newState
-		if err := runtime.Kernel.RunCheckpoint.Save(bgCtx(), cp); err != nil {
+		ctx, cancel := bgCtx()
+		defer cancel()
+		if err := runtime.Kernel.RunCheckpoint.Save(ctx, cp); err != nil {
 			fmt.Fprintf(os.Stderr, "brain cancel: save checkpoint: %v\n", err)
 			return cli.ExitSoftware
 		}

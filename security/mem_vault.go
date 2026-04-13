@@ -22,8 +22,7 @@ import (
 // resolve secrets without serializing on writes. TTLs are optional and
 // enforced lazily on Get (expired entries are evicted in-place).
 //
-// MemVault intentionally omits the rotation / listing API from 23 §4.3 —
-// those land in a later wave alongside the DB-backed Vault implementation.
+// MemVault implements the full Vault interface including Rotate and List.
 type MemVault struct {
 	mu      sync.RWMutex
 	entries map[string]memVaultEntry
@@ -138,6 +137,59 @@ func (v *MemVault) Delete(ctx context.Context, key string) error {
 	v.mu.Unlock()
 	v.audit(ctx, "vault_delete", key, nil)
 	return nil
+}
+
+// Rotate atomically replaces the value for key. If key does not exist,
+// returns CodeRecordNotFound. See 23-安全模型.md §4.3.
+func (v *MemVault) Rotate(ctx context.Context, key, newValue string) error {
+	if err := validateVaultKey(key); err != nil {
+		v.audit(ctx, "vault_rotate_rejected", key, map[string]interface{}{"reason": "invalid_key"})
+		return err
+	}
+
+	v.mu.Lock()
+	ent, ok := v.entries[key]
+	if !ok {
+		v.mu.Unlock()
+		v.audit(ctx, "vault_rotate_not_found", key, nil)
+		return brainerrors.New(brainerrors.CodeRecordNotFound,
+			brainerrors.WithMessage("vault: key not found for rotation"))
+	}
+	// Check TTL expiry under lock.
+	if !ent.ExpiresAt.IsZero() && !v.now().Before(ent.ExpiresAt) {
+		delete(v.entries, key)
+		v.mu.Unlock()
+		v.audit(ctx, "vault_rotate_not_found", key, map[string]interface{}{"reason": "expired"})
+		return brainerrors.New(brainerrors.CodeRecordNotFound,
+			brainerrors.WithMessage("vault: key expired before rotation"))
+	}
+	// Preserve the TTL of the existing entry.
+	v.entries[key] = memVaultEntry{Value: newValue, ExpiresAt: ent.ExpiresAt}
+	v.mu.Unlock()
+
+	v.audit(ctx, "vault_rotate", key, nil)
+	return nil
+}
+
+// List returns all key names matching the given prefix. An empty prefix
+// returns all keys. Values are never returned. See 23-安全模型.md §4.3.
+func (v *MemVault) List(ctx context.Context, prefix string) ([]string, error) {
+	v.mu.RLock()
+	now := v.now()
+	var keys []string
+	for k, ent := range v.entries {
+		// Skip expired entries.
+		if !ent.ExpiresAt.IsZero() && !now.Before(ent.ExpiresAt) {
+			continue
+		}
+		if prefix == "" || strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	v.mu.RUnlock()
+
+	v.audit(ctx, "vault_list", prefix, map[string]interface{}{"count": len(keys)})
+	return keys, nil
 }
 
 // Len returns the current number of entries (post lazy-eviction style: this

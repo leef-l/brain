@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // wsConn is a minimal WebSocket client built on the standard library.
@@ -27,7 +28,7 @@ type wsConn struct {
 	conn   net.Conn
 	br     *bufio.Reader
 	mu     sync.Mutex // protects writes
-	closed bool
+	closed atomic.Bool
 }
 
 // wsDial performs a WebSocket upgrade handshake and returns a wsConn.
@@ -108,12 +109,12 @@ func wsDial(rawURL string) (*wsConn, error) {
 
 // WriteText sends a text frame (opcode 0x1) with masking (client→server).
 func (ws *wsConn) WriteText(data []byte) error {
-	ws.mu.Lock()
-	defer ws.mu.Unlock()
-
-	if ws.closed {
+	if ws.closed.Load() {
 		return errors.New("cdp: connection closed")
 	}
+
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
 
 	// Frame header: FIN=1, opcode=1 (text), MASK=1.
 	frame := make([]byte, 0, 14+len(data))
@@ -155,7 +156,7 @@ func (ws *wsConn) WriteText(data []byte) error {
 // ReadMessage reads a complete WebSocket message (handles continuation frames).
 // Returns the opcode of the first frame and the assembled payload.
 func (ws *wsConn) ReadMessage() (opcode byte, payload []byte, err error) {
-	if ws.closed {
+	if ws.closed.Load() {
 		return 0, nil, errors.New("cdp: connection closed")
 	}
 
@@ -182,7 +183,7 @@ func (ws *wsConn) ReadMessage() (opcode byte, payload []byte, err error) {
 
 		// Handle close frame.
 		if op == 0x08 {
-			ws.closed = true
+			ws.closed.Store(true)
 			return op, nil, errors.New("cdp: received close frame")
 		}
 
@@ -313,13 +314,12 @@ func (ws *wsConn) writePong(data []byte) {
 
 // Close sends a close frame and closes the underlying connection.
 func (ws *wsConn) Close() error {
-	ws.mu.Lock()
-	defer ws.mu.Unlock()
-
-	if ws.closed {
+	if !ws.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	ws.closed = true
+
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
 
 	// Send close frame: FIN=1, opcode=0x8, masked, no payload.
 	frame := []byte{0x88, 0x80}

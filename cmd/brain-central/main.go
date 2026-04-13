@@ -13,6 +13,7 @@ import (
 
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/agent"
+	"github.com/leef-l/brain/license"
 	"github.com/leef-l/brain/protocol"
 	"github.com/leef-l/brain/sidecar"
 	"github.com/leef-l/brain/tool"
@@ -267,6 +268,10 @@ func rawText(raw json.RawMessage) string {
 }
 
 func main() {
+	if _, err := license.CheckSidecar("brain-central", license.VerifyOptions{}); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-central: license: %v\n", err)
+		os.Exit(1)
+	}
 	if err := sidecar.Run(&centralHandler{}); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-central: %v\n", err)
 		os.Exit(1)

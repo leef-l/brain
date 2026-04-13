@@ -37,19 +37,19 @@
 //
 // # Implementation status
 //
-// v0.5.0: All interfaces frozen, Agent Loop engine fully implemented,
-// 13/13 CLI commands working, 4 sidecar binaries (central/code/verifier/fault),
-// AnthropicProvider with cassette testing, MCP adapter with e2e tests,
-// stream.start/chunk/end pipeline, FileStore persistence, 326 tests passing.
+// v0.6.0: Persistence Driver abstraction layer (Register/Open pattern),
+// OTLP trace/metrics/log exporters with batched flush, log sanitization
+// (PatternSanitizer with API key/token/credential redaction), Vault
+// Rotate/List methods, DirectLLMAccess and HybridLLMAccess strategies,
+// SandboxEnforcer with L0-L3 level model, license integration in all 5
+// sidecar binaries, CDP WebSocket race condition fix.
 //
 // # Compatibility
 //
 //   Protocol: v1.0
-//   Kernel:   v0.5.0
-//   CLI:      v0.5.0 (13/13 commands implemented)
-//   SDK:      go/0.5.0
+//   Kernel:   v0.6.0
+//   CLI:      v0.6.0 (13/13 commands implemented)
+//   SDK:      go/0.6.0
 //
 // A compliant SDK must pass 150 compliance tests per 28-SDK交付规范.md §8.
-// The current implementation passes all 150 compliance tests plus 176
-// additional unit and integration tests (326 total).
 package brain

@@ -188,20 +188,24 @@ func RunAgentLoop(ctx context.Context, caller KernelCaller, registry tool.Regist
 				toolResults = append(toolResults, contentBlock{
 					Type:      "tool_result",
 					ToolUseID: toolID,
-					Content:   json.RawMessage(fmt.Sprintf(`[{"type":"text","text":"tool not found: %s"}]`, toolName)),
+					Content:   marshalTextContent("tool not found: " + toolName),
 					IsError:   true,
 				})
 				continue
 			}
 
-			fmt.Fprintf(os.Stderr, "  [%s] executing %s\n", registry.List()[0].Schema().Brain, toolName)
+			brainLabel := toolName
+			if tools := registry.List(); len(tools) > 0 {
+				brainLabel = tools[0].Schema().Brain
+			}
+			fmt.Fprintf(os.Stderr, "  [%s] executing %s\n", brainLabel, toolName)
 
 			result, err := t.Execute(ctx, tc.Input)
 			if err != nil {
 				toolResults = append(toolResults, contentBlock{
 					Type:      "tool_result",
 					ToolUseID: toolID,
-					Content:   json.RawMessage(fmt.Sprintf(`[{"type":"text","text":"tool error: %v"}]`, err)),
+					Content:   marshalTextContent("tool error: " + err.Error()),
 					IsError:   true,
 				})
 				continue
@@ -210,7 +214,7 @@ func RunAgentLoop(ctx context.Context, caller KernelCaller, registry tool.Regist
 			toolResults = append(toolResults, contentBlock{
 				Type:      "tool_result",
 				ToolUseID: toolID,
-				Content:   json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, result.Output)),
+				Content:   marshalToolOutput(result.Output),
 				IsError:   result.IsError,
 			})
 		}
@@ -227,4 +231,21 @@ func RunAgentLoop(ctx context.Context, caller KernelCaller, registry tool.Regist
 		Summary: lastReply,
 		Turns:   maxTurns,
 	}
+}
+
+// marshalTextContent builds a safe JSON content array with a single text block.
+// It uses json.Marshal to escape special characters, preventing JSON injection.
+func marshalTextContent(text string) json.RawMessage {
+	escaped, _ := json.Marshal(text)
+	return json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, escaped))
+}
+
+// marshalToolOutput builds a JSON content array wrapping a tool's raw output.
+// If output is already valid JSON, it is embedded directly; otherwise it is
+// treated as a plain text string and safely escaped.
+func marshalToolOutput(output json.RawMessage) json.RawMessage {
+	if json.Valid(output) {
+		return json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, output))
+	}
+	return marshalTextContent(string(output))
 }

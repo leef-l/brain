@@ -14,7 +14,10 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestNewMemKernelWiresAllFields(t *testing.T) {
-	k := kernel.NewMemKernel(kernel.MemKernelOptions{})
+	k, err := kernel.NewMemKernel(kernel.MemKernelOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if k.PlanStore == nil {
 		t.Error("PlanStore is nil")
 	}
@@ -58,7 +61,10 @@ func TestNewMemKernelWiresAllFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewMemKernelRegistersBuiltinTools(t *testing.T) {
-	k := kernel.NewMemKernel(kernel.MemKernelOptions{BrainKind: "test"})
+	k, err := kernel.NewMemKernel(kernel.MemKernelOptions{BrainKind: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	echo, ok := k.ToolRegistry.Lookup("test.echo")
 	if !ok {
 		t.Fatal("echo tool not registered")
@@ -81,7 +87,10 @@ func TestNewMemKernelRegistersBuiltinTools(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewMemKernelPlanStoreRoundTrip(t *testing.T) {
-	k := kernel.NewMemKernel(kernel.MemKernelOptions{})
+	k, err := kernel.NewMemKernel(kernel.MemKernelOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 
 	plan := &persistence.BrainPlan{
@@ -110,7 +119,10 @@ func TestNewMemKernelPlanStoreRoundTrip(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewMemKernelArtifactCASRoundTrip(t *testing.T) {
-	k := kernel.NewMemKernel(kernel.MemKernelOptions{})
+	k, err := kernel.NewMemKernel(kernel.MemKernelOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 
 	art := persistence.Artifact{

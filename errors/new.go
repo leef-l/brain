@@ -43,12 +43,12 @@ var now = func() time.Time { return time.Now().UTC() }
 //	)
 func New(code string, opts ...Option) *BrainError {
 	be := newShell(code)
+	be.OccurredAt = now()
 	for _, opt := range opts {
 		if opt != nil {
 			opt(be)
 		}
 	}
-	be.OccurredAt = now()
 	be.Fingerprint = Fingerprint(be)
 	DispatchError(be)
 	return be
@@ -86,12 +86,12 @@ func Wrap(err error, code string, opts ...Option) *BrainError {
 	if err != nil {
 		be.Cause = causeFrom(err)
 	}
+	be.OccurredAt = now()
 	for _, opt := range opts {
 		if opt != nil {
 			opt(be)
 		}
 	}
-	be.OccurredAt = now()
 	be.Fingerprint = Fingerprint(be)
 	DispatchError(be)
 	return be

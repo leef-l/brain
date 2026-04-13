@@ -17,9 +17,9 @@ import "context"
 //   - enforce scope-based authorization so only whitelisted brains can
 //     retrieve a given key.
 //
-// The wave-1 skeleton defines only the minimal Get / Put / Delete surface
-// consumed by the rest of the Kernel. The richer rotation / listing API
-// from 23 §4.3 will be layered on top in a later wave.
+// The v2 surface extends the original Get / Put / Delete with Rotate and
+// List so that credential lifecycle and discovery operations are first-class
+// capabilities. See 23 §4.3 for the full API.
 type Vault interface {
 	// Get retrieves the secret bound to key. Implementations MUST emit
 	// an audit event (see 23 §4.3) and MUST NOT log the raw value.
@@ -34,4 +34,14 @@ type Vault interface {
 	// the deletion as an audit event and MUST zero any in-memory copies
 	// still referenced by the caller.
 	Delete(ctx context.Context, key string) error
+
+	// Rotate replaces the value for key with newValue atomically. If the
+	// key does not exist, Rotate MUST return CodeRecordNotFound. Both the
+	// old and new value MUST be audited (fingerprint only). See 23 §4.3.
+	Rotate(ctx context.Context, key, newValue string) error
+
+	// List returns all key names matching the given prefix. An empty prefix
+	// returns all keys. Values are NEVER returned — only key names. The
+	// call MUST be audited. See 23 §4.3.
+	List(ctx context.Context, prefix string) ([]string, error)
 }

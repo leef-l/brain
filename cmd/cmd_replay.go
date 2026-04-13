@@ -44,7 +44,9 @@ func runReplay(args []string) int {
 	// Load plan history.
 	var planCount int
 	if runtime.Kernel.PlanStore != nil {
-		plans, _ := runtime.Kernel.PlanStore.ListByRun(bgCtx(), rec.StoreRunID)
+		ctx, cancel := bgCtx()
+		defer cancel()
+		plans, _ := runtime.Kernel.PlanStore.ListByRun(ctx, rec.StoreRunID)
 		planCount = len(plans)
 	}
 

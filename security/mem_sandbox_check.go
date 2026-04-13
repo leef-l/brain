@@ -2,11 +2,19 @@ package security
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	brainerrors "github.com/leef-l/brain/errors"
 )
+
+// cleanPath normalises a filesystem path before policy matching.
+// It resolves . and .. components so traversal patterns like
+// "/allowed/../etc/shadow" cannot bypass prefix-based checks.
+func cleanPath(path string) string {
+	return filepath.Clean(path)
+}
 
 // SandboxChecker is a thin decision engine on top of a Sandbox's four
 // policy views. Concrete sandbox backends (runc, gVisor, seccomp) are
@@ -34,6 +42,7 @@ func NewSandboxChecker(sb Sandbox) *SandboxChecker {
 // CheckRead validates that path is permitted by the FSPolicy's ReadAllowed
 // list and not blocked by Denied. See 23-安全模型.md §3.2.
 func (c *SandboxChecker) CheckRead(path string) error {
+	path = cleanPath(path)
 	pol := c.sandbox.FS()
 	if matchesAny(pol.Denied, path) {
 		return denyf("fs.read: path %q is on the deny list", path)
@@ -47,6 +56,7 @@ func (c *SandboxChecker) CheckRead(path string) error {
 // CheckWrite validates that path is permitted by the FSPolicy's
 // WriteAllowed list and not blocked by Denied. See 23-安全模型.md §3.2.
 func (c *SandboxChecker) CheckWrite(path string) error {
+	path = cleanPath(path)
 	pol := c.sandbox.FS()
 	if matchesAny(pol.Denied, path) {
 		return denyf("fs.write: path %q is on the deny list", path)

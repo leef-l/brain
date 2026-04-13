@@ -2,28 +2,29 @@
 
 BrainKernel 是所有大脑（CentralBrain + N 个 SpecialistBrain）共享的**基础设施**，不是"又一个大脑"。它只做六件事：运行 Agent Loop、抽象 LLM Provider、持久化 BrainPlan、管理 Artifact、执行 Guardrail、记账与审计。它**不做**任何业务决策，不拆任务，不判断验收是否通过——这些是大脑自己的活。
 
-> 2026-04-13 v2.1 完成：
-> 核心库层与 CLI 层均已全绿（`go build/test/vet` 通过）。
-> Chat REPL 已对标 Claude Code 完全重写为 11 个模块化文件。
-> v2 全部落地：OS 级沙箱（三平台）、brain serve Run API、Diff 预览（chroma 语法高亮）、交互式审批。
-> 二进制 15MB，对比 Claude Code 223MB。
+> 2026-04-13 v0.6.0：
+> Persistence Driver 抽象层（Register/Open 模式，内置 mem/file 驱动）、
+> OTLP 导出器（Trace/Metrics/Log 批量刷写）、日志脱敏（PatternSanitizer）、
+> Vault Rotate/List、DirectLLMAccess + HybridLLMAccess 策略、
+> SandboxEnforcer（L0-L3）、License 集成到 5 个 sidecar、CDP WebSocket 竞态修复。
+> `go build/test/vet -race` 全绿，二进制 15MB。
 
 ## 版本状态
 
 | 维度 | 版本 | 状态 |
 |------|------|------|
 | Protocol | v1.0 | Content-Length framed stdio JSON-RPC 2.0 完整实现 |
-| Kernel | v1.0.0 | 首个稳定正式版；共享 runtime、持久化、策略边界已接通 |
-| CLI | v1.0.0 | `run/chat/serve` 共用权限与持久化骨架，`go build/test/vet` 全绿 |
-| SDK | go/1.0.0 | 仅 1 个外部依赖（chroma 语法高亮），Go 1.25 |
-| 代码规模 | ~160 个 Go 文件 | ~31,000 行代码 |
+| Kernel | v0.6.0 | Driver 抽象层、OTel 导出器、安全模块完备、License 集成 |
+| CLI | v0.6.0 | 13/13 命令实现，`go build/test/vet -race` 全绿 |
+| SDK | go/0.6.0 | 仅 1 个外部依赖（chroma 语法高亮），Go 1.24 |
+| 代码规模 | 255 个 Go 文件 | ~50,000 行代码 |
 
 ### 测试覆盖
 
 | 测试集 | 数量 | 状态 |
 |--------|------|------|
-| 骨架测试 | 85 | test/skeleton/ 全部通过 |
-| 合规测试 | 150 | test/compliance/ 8 类别全覆盖 |
+| 骨架测试 | 133 | test/skeleton/ 全部通过 |
+| 合规测试 | 151 | test/compliance/ 8 类别全覆盖 |
 | Runner 测试 | 10 | loop/ Agent Loop 执行引擎 |
 | 流式管道测试 | 6 | loop/ stream.start/chunk/end 全链路 |
 | AnthropicProvider 测试 | 16 | llm/ cassette 录制回放 + httptest |
@@ -34,7 +35,7 @@ BrainKernel 是所有大脑（CentralBrain + N 个 SpecialistBrain）共享的**
 | Sidecar 框架测试 | 5 | sidecar/ BrainHandler 接口 |
 | 持久化测试 | 11 | persistence/ FileStore 全接口 |
 | 其他单元测试 | ~25 | errors/security/observability/protocol |
-| **总计** | **~368** | **`go test ./...` 全绿** |
+| **总计** | **730** | **`go test -race ./...` 全绿** |
 
 ## 包结构
 
@@ -50,8 +51,8 @@ brain/
 │   └── anthropic_provider.go  Anthropic Claude API Provider (完整实现)
 ├── tool/               ToolRegistry, Tool, ToolSchema               (02 §6)
 ├── security/           Vault, Sandbox, LLMAccess, AuditEvent, Zones (23)
-├── observability/      MetricsRegistry, TraceExporter, LogExporter  (24)
-├── persistence/        PlanStore, ArtifactStore, RunCheckpointStore (26)
+├── observability/      MetricsRegistry, TraceExporter, LogExporter, OTLP, Sanitizer (24)
+├── persistence/        PlanStore, ArtifactStore, RunCheckpointStore, Driver (26)
 ├── testing/            ComplianceRunner, Cassettes, FakeSidecar     (25)
 ├── cli/                exit codes, output formats, VersionInfo      (27)
 ├── kernel/             Kernel (top-level assembly), Runner, Transport(02 §12)
@@ -63,9 +64,10 @@ brain/
 │   ├── brain-browser/  BrowserBrain sidecar 二进制
 │   ├── brain-verifier/ VerifierBrain sidecar 二进制
 │   └── brain-fault/    FaultBrain sidecar 二进制
+├── license/            Sidecar License 验证 — CheckSidecar/IsPaidBrain
 ├── test/
-│   ├── skeleton/       85 个骨架合规测试
-│   └── compliance/     150 个完整合规测试 (8 类别)
+│   ├── skeleton/       133 个骨架合规测试
+│   └── compliance/     151 个完整合规测试 (8 类别)
 └── docs/               规格文档 (10 篇 RFC 级规格)
 ```
 
@@ -109,15 +111,15 @@ node bin/brain.js version --short
 维护者本地 dry-run：
 
 ```bash
-./scripts/release/build-assets.sh 1.0.0 ./dist
-./scripts/release/release-notes.sh 1.0.0
+./scripts/release/build-assets.sh 0.6.0 ./dist
+./scripts/release/release-notes.sh 0.6.0
 ```
 
 正式发布：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 Tag 推上去后，GitHub Actions 会自动：
@@ -299,14 +301,15 @@ import "github.com/leef-l/brain/loop"
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| 阶段 0 — 骨架 | 99 个 Go 文件，全部接口冻结，85 骨架测试通过 | ✅ |
+| 阶段 0 — 骨架 | 接口冻结，133 骨架测试通过 | ✅ |
 | 阶段 1 — 能对话 | Agent Loop 执行引擎 (`loop/runner.go`, `loop/turn_executor.go`)，10 个 Runner 测试 | ✅ |
 | 阶段 2 — 能调工具 | AnthropicProvider 完整实现 (463 行)，LLM → tool_use → tool_result 全链路 | ✅ |
-| 阶段 3 — 能运行完整任务 | `brain run` 升级真实引擎、150 合规测试全通过、MCPAdapter (12 测试) | ✅ |
+| 阶段 3 — 能运行完整任务 | `brain run` 升级真实引擎、151 合规测试全通过、MCPAdapter (12 测试) | ✅ |
 | 阶段 4 — CLI 命令树铺开 | `chat/run/status/list/cancel/resume/logs/replay/tool/config/serve/doctor/version` 均已有入口 | ✅ |
 | 阶段 5 — v2 交付 | FileStore 持久化、5 个 Sidecar 二进制、Cassette 测试、流式管道 | ✅ |
 | 阶段 6 — v2 生产级 | Chat REPL 对标 Claude Code、brain serve Run API、OS 级沙箱三平台 | ✅ |
 | 阶段 7 — v2.1 增强 | Diff 预览 + chroma 语法高亮、交互式审批、ToolObserver 增强 | ✅ |
+| 阶段 8 — v0.6.0 | Persistence Driver 抽象层、OTLP 导出器、日志脱敏、Vault Rotate/List、LLMAccess 双策略、SandboxEnforcer、License sidecar 集成 | ✅ |
 
 ### 未完成
 
@@ -314,7 +317,7 @@ import "github.com/leef-l/brain/loop"
 |------|------|--------|
 | 跨语言 SDK | Python / TypeScript / Rust SDK（按 28-SDK交付规范） | v3 |
 | RPCRunner | gRPC / 消息队列支持，大脑远程运行 | v3 |
-| SQLite 持久化 | 可选高性能后端，当前 FileStore 满足单节点需求 | v3 |
+| SQLite 持久化 | 可选高性能后端，Driver 抽象层已就绪，当前 FileStore 满足单节点需求 | v3 |
 | 真实 API 集成测试 | 需真实 API Key 的端到端集成（CI 用 cassette 录制回放） | v3 |
 
 ## 构建
@@ -361,7 +364,7 @@ docs/ 目录下包含多篇 RFC 级规格、架构文档与实施计划，常用
 | 32 | [v3 Brain 架构](docs/32-v3-Brain架构.md) | Brain / Manifest / Runtime / Package / Capability 的长期架构冻结 |
 | 33 | [Brain Manifest 规格](docs/33-Brain-Manifest规格.md) | v3 Brain 的稳定 schema、runtime/policy/license/health 声明面 |
 | 34 | [Brain Package 与 Marketplace 规范](docs/34-Brain-Package与Marketplace规范.md) | package 布局、安装、签名、marketplace 索引与分发规则 |
-| -- | [骨架实施计划](docs/brain骨架实施计划.md) | v0.1.0 skeleton 实施计划, 进度清单 |
+| -- | [v3 代码重构计划](docs/v3代码重构计划.md) | 残留问题修复计划（基于 v0.5.1 审计，Wave-1/2 已完成） |
 
 ## 8 项关键设计决策
 

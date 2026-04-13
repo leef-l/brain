@@ -15,6 +15,7 @@ import (
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/agent"
 	"github.com/leef-l/brain/executionpolicy"
+	"github.com/leef-l/brain/license"
 	"github.com/leef-l/brain/sidecar"
 	"github.com/leef-l/brain/tool"
 	"github.com/leef-l/brain/toolguard"
@@ -128,6 +129,10 @@ func (h *verifierHandler) handleToolsCall(ctx context.Context, params json.RawMe
 }
 
 func main() {
+	if _, err := license.CheckSidecar("brain-verifier", license.VerifyOptions{}); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-verifier: license: %v\n", err)
+		os.Exit(1)
+	}
 	if err := sidecar.Run(newVerifierHandler()); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-verifier: %v\n", err)
 		os.Exit(1)

@@ -12,7 +12,7 @@ const ARCH_MAP = {
   arm64: 'arm64'
 };
 
-function resolveTarget(platform = process.platform, arch = process.arch, version = '1.0.0') {
+function resolveTarget(platform = process.platform, arch = process.arch, version = '0.6.0') {
   const goos = PLATFORM_MAP[platform];
   if (!goos) {
     throw new Error(`unsupported platform: ${platform}`);

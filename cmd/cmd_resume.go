@@ -73,11 +73,23 @@ func runResume(args []string) int {
 		},
 	)
 
-	mock := llm.NewMockProvider("mock")
-	mock.QueueText(fmt.Sprintf("Resumed from checkpoint (run %s, turn %s)", runID, cp.TurnUUID))
+	// Try to load a real provider from config; fall back to mock if unavailable.
+	cfg, _ := loadConfig()
+	session, provErr := openConfiguredProvider(cfg, cp.BrainID, nil, "", "", "", "")
+	var provider llm.Provider
+	providerModel := "mock-model"
+	if provErr != nil {
+		mock := llm.NewMockProvider("mock")
+		mock.QueueText(fmt.Sprintf("Resumed from checkpoint (run %s, turn %s)", runID, cp.TurnUUID))
+		provider = mock
+		fmt.Fprintf(os.Stderr, "brain resume: no API key configured, using mock provider\n")
+	} else {
+		provider = session.Provider
+		providerModel = session.Model
+	}
 
 	runner := &loop.Runner{
-		Provider:     mock,
+		Provider:     provider,
 		ToolRegistry: runtime.Kernel.ToolRegistry,
 	}
 
@@ -86,12 +98,15 @@ func runResume(args []string) int {
 	}
 	opts := loop.RunOptions{
 		System:    []llm.SystemBlock{{Text: "You are resuming a paused run."}},
-		MaxTokens: 256,
-		Model:     "mock-model",
+		MaxTokens: 4096,
+		Model:     providerModel,
 		Stream:    *follow,
 	}
 
-	result, err := runner.Execute(bgCtx(), run, messages, opts)
+	ctx, cancel := bgCtx()
+	defer cancel()
+
+	result, err := runner.Execute(ctx, run, messages, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain resume: execute: %v\n", err)
 		return cli.ExitSoftware
@@ -99,7 +114,7 @@ func runResume(args []string) int {
 
 	// Update checkpoint state.
 	cp.State = string(result.Run.State)
-	_ = runtime.Kernel.RunCheckpoint.Save(bgCtx(), cp)
+	_ = runtime.Kernel.RunCheckpoint.Save(ctx, cp)
 	_, _ = runtime.RunStore.finish(rec.ID, string(result.Run.State), rec.Result, "")
 
 	replyText := ""

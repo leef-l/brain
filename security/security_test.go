@@ -244,6 +244,142 @@ func TestSandboxChecker_ErrorCode(t *testing.T) {
 	}
 }
 
+// ---------- Vault Rotate / List ----------
+
+func TestMemVault_Rotate(t *testing.T) {
+	v := NewMemVault()
+	ctx := context.Background()
+	_ = v.Put(ctx, "k", "old")
+
+	if err := v.Rotate(ctx, "k", "new"); err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+	got, err := v.Get(ctx, "k")
+	if err != nil {
+		t.Fatalf("Get after Rotate: %v", err)
+	}
+	if got != "new" {
+		t.Errorf("value = %q, want %q", got, "new")
+	}
+}
+
+func TestMemVault_RotateMissing(t *testing.T) {
+	v := NewMemVault()
+	err := v.Rotate(context.Background(), "missing", "new")
+	if err == nil {
+		t.Fatal("expected error for missing key")
+	}
+	var be *brainerrors.BrainError
+	if !errors.As(err, &be) {
+		t.Fatalf("want BrainError, got %T", err)
+	}
+	if be.ErrorCode != brainerrors.CodeRecordNotFound {
+		t.Fatalf("want %s, got %s", brainerrors.CodeRecordNotFound, be.ErrorCode)
+	}
+}
+
+func TestMemVault_RotateExpired(t *testing.T) {
+	now := time.Unix(1000, 0)
+	v := NewMemVault(WithMemVaultClock(func() time.Time { return now }))
+	_ = v.PutWithTTL(context.Background(), "k", "v", 5*time.Second)
+	now = now.Add(10 * time.Second)
+
+	err := v.Rotate(context.Background(), "k", "new")
+	if err == nil {
+		t.Fatal("expected error for expired key")
+	}
+}
+
+func TestMemVault_RotatePreservesTTL(t *testing.T) {
+	now := time.Unix(1000, 0)
+	v := NewMemVault(WithMemVaultClock(func() time.Time { return now }))
+	_ = v.PutWithTTL(context.Background(), "k", "old", 60*time.Second)
+
+	if err := v.Rotate(context.Background(), "k", "new"); err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+
+	// Should still be accessible before TTL.
+	got, err := v.Get(context.Background(), "k")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != "new" {
+		t.Errorf("value = %q, want %q", got, "new")
+	}
+
+	// Should expire at original TTL.
+	now = now.Add(61 * time.Second)
+	_, err = v.Get(context.Background(), "k")
+	if err == nil {
+		t.Fatal("expected expired after original TTL")
+	}
+}
+
+func TestMemVault_List(t *testing.T) {
+	v := NewMemVault()
+	ctx := context.Background()
+	_ = v.Put(ctx, "llm/anthropic/api_key", "sk-1")
+	_ = v.Put(ctx, "llm/openai/api_key", "sk-2")
+	_ = v.Put(ctx, "other/key", "v")
+
+	keys, err := v.List(ctx, "llm/")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("List(llm/) = %d, want 2", len(keys))
+	}
+
+	all, err := v.List(ctx, "")
+	if err != nil {
+		t.Fatalf("List(''): %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("List('') = %d, want 3", len(all))
+	}
+}
+
+func TestMemVault_ListSkipsExpired(t *testing.T) {
+	now := time.Unix(1000, 0)
+	v := NewMemVault(WithMemVaultClock(func() time.Time { return now }))
+	_ = v.PutWithTTL(context.Background(), "fresh", "v", 60*time.Second)
+	_ = v.PutWithTTL(context.Background(), "stale", "v", 5*time.Second)
+	now = now.Add(10 * time.Second)
+
+	keys, err := v.List(context.Background(), "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("List = %d, want 1 (stale should be skipped)", len(keys))
+	}
+	if keys[0] != "fresh" {
+		t.Errorf("key = %q, want %q", keys[0], "fresh")
+	}
+}
+
+func TestMemVault_RotateAudit(t *testing.T) {
+	audit := NewHashChainAuditLogger()
+	v := NewMemVault(WithMemVaultAuditor(audit))
+	ctx := context.Background()
+	_ = v.Put(ctx, "k", "v")
+	_ = v.Rotate(ctx, "k", "new")
+	_, _ = v.List(ctx, "")
+
+	snap := audit.Snapshot()
+	// Put + Rotate + List = 3 events.
+	if len(snap) != 3 {
+		t.Fatalf("want 3 audit events, got %d", len(snap))
+	}
+	if snap[1].Action != "vault_rotate" {
+		t.Errorf("event[1].Action = %q, want vault_rotate", snap[1].Action)
+	}
+	if snap[2].Action != "vault_list" {
+		t.Errorf("event[2].Action = %q, want vault_list", snap[2].Action)
+	}
+}
+
 // ---------- ProxiedLLMAccess ----------
 
 func TestProxiedLLMAccess(t *testing.T) {
@@ -257,6 +393,197 @@ func TestProxiedLLMAccess(t *testing.T) {
 	}
 	if len(creds) != 0 {
 		t.Fatalf("proxied must return empty credentials, got %v", creds)
+	}
+}
+
+// ---------- DirectLLMAccess ----------
+
+func TestDirectLLMAccess_Mode(t *testing.T) {
+	d := NewDirectLLMAccess(nil, nil)
+	if d.Mode() != "direct" {
+		t.Fatalf("want direct, got %q", d.Mode())
+	}
+}
+
+func TestDirectLLMAccess_Credentials(t *testing.T) {
+	v := NewMemVault()
+	ctx := context.Background()
+	_ = v.Put(ctx, "llm/anthropic/api_key", "sk-test-123")
+
+	audit := NewHashChainAuditLogger()
+	d := NewDirectLLMAccess(v, audit)
+
+	creds, err := d.Credentials(ctx, "anthropic")
+	if err != nil {
+		t.Fatalf("Credentials: %v", err)
+	}
+	if creds["api_key"] != "sk-test-123" {
+		t.Errorf("api_key = %q, want sk-test-123", creds["api_key"])
+	}
+
+	// Verify audit event was emitted.
+	snap := audit.Snapshot()
+	found := false
+	for _, ev := range snap {
+		if ev.Action == "llm_credential_issued" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected llm_credential_issued audit event")
+	}
+}
+
+func TestDirectLLMAccess_MissingCredential(t *testing.T) {
+	v := NewMemVault()
+	d := NewDirectLLMAccess(v, nil)
+	_, err := d.Credentials(context.Background(), "openai")
+	if err == nil {
+		t.Fatal("expected error for missing credential")
+	}
+}
+
+func TestDirectLLMAccess_NilVault(t *testing.T) {
+	d := NewDirectLLMAccess(nil, nil)
+	_, err := d.Credentials(context.Background(), "anthropic")
+	if err == nil {
+		t.Fatal("expected error for nil vault")
+	}
+}
+
+// ---------- HybridLLMAccess ----------
+
+func TestHybridLLMAccess_Mode(t *testing.T) {
+	h := NewHybridLLMAccess(nil, nil)
+	if h.Mode() != "hybrid" {
+		t.Fatalf("want hybrid, got %q", h.Mode())
+	}
+}
+
+func TestHybridLLMAccess_WithCredentials(t *testing.T) {
+	v := NewMemVault()
+	ctx := context.Background()
+	_ = v.Put(ctx, "llm/anthropic/api_key", "sk-hybrid-123")
+
+	h := NewHybridLLMAccess(v, nil)
+	creds, err := h.Credentials(ctx, "anthropic")
+	if err != nil {
+		t.Fatalf("Credentials: %v", err)
+	}
+	if creds["api_key"] != "sk-hybrid-123" {
+		t.Errorf("api_key = %q, want sk-hybrid-123", creds["api_key"])
+	}
+}
+
+func TestHybridLLMAccess_FallbackToProxied(t *testing.T) {
+	v := NewMemVault()
+	h := NewHybridLLMAccess(v, nil)
+	creds, err := h.Credentials(context.Background(), "openai")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(creds) != 0 {
+		t.Errorf("expected empty creds (proxied fallback), got %v", creds)
+	}
+}
+
+func TestHybridLLMAccess_ProviderWhitelist(t *testing.T) {
+	v := NewMemVault()
+	ctx := context.Background()
+	_ = v.Put(ctx, "llm/anthropic/api_key", "sk-1")
+	_ = v.Put(ctx, "llm/openai/api_key", "sk-2")
+
+	audit := NewHashChainAuditLogger()
+	h := NewHybridLLMAccess(v, audit, WithAllowedProviders("anthropic"))
+
+	// Anthropic is allowed — should get credentials.
+	creds, err := h.Credentials(ctx, "anthropic")
+	if err != nil {
+		t.Fatalf("Credentials(anthropic): %v", err)
+	}
+	if creds["api_key"] != "sk-1" {
+		t.Errorf("api_key = %q, want sk-1", creds["api_key"])
+	}
+
+	// OpenAI is not in whitelist — should fall back to proxied.
+	creds, err = h.Credentials(ctx, "openai")
+	if err != nil {
+		t.Fatalf("Credentials(openai): %v", err)
+	}
+	if len(creds) != 0 {
+		t.Errorf("expected empty creds for non-allowed provider, got %v", creds)
+	}
+}
+
+func TestHybridLLMAccess_IsProxiedFallback(t *testing.T) {
+	v := NewMemVault()
+	h := NewHybridLLMAccess(v, nil)
+
+	if !h.IsProxiedFallback(context.Background(), "openai") {
+		t.Error("expected proxied fallback for missing credential")
+	}
+
+	_ = v.Put(context.Background(), "llm/openai/api_key", "sk-1")
+	if h.IsProxiedFallback(context.Background(), "openai") {
+		t.Error("expected direct access when credential exists")
+	}
+}
+
+// ---------- SandboxEnforcer ----------
+
+func TestSandboxEnforcer_L0(t *testing.T) {
+	e := NewSandboxEnforcer(newTestSandbox(), SandboxL0)
+	if e.Level() != SandboxL0 {
+		t.Errorf("Level = %v, want L0", e.Level())
+	}
+	if err := e.ValidateLevel(); err != nil {
+		t.Fatalf("ValidateLevel L0: %v", err)
+	}
+	if e.Checker() == nil {
+		t.Error("Checker is nil")
+	}
+	// Policy checks still work through the enforcer.
+	if err := e.Checker().CheckRead("/workspace/src/main.go"); err != nil {
+		t.Fatalf("CheckRead: %v", err)
+	}
+}
+
+func TestSandboxEnforcer_L1(t *testing.T) {
+	e := NewSandboxEnforcer(newTestSandbox(), SandboxL1)
+	if err := e.ValidateLevel(); err != nil {
+		t.Fatalf("ValidateLevel L1: %v", err)
+	}
+}
+
+func TestSandboxEnforcer_L2NotImplemented(t *testing.T) {
+	e := NewSandboxEnforcer(newTestSandbox(), SandboxL2)
+	if err := e.ValidateLevel(); err == nil {
+		t.Fatal("expected error for L2")
+	}
+}
+
+func TestSandboxEnforcer_L3NotImplemented(t *testing.T) {
+	e := NewSandboxEnforcer(newTestSandbox(), SandboxL3)
+	if err := e.ValidateLevel(); err == nil {
+		t.Fatal("expected error for L3")
+	}
+}
+
+func TestSandboxLevel_String(t *testing.T) {
+	cases := []struct {
+		level SandboxLevel
+		want  string
+	}{
+		{SandboxL0, "L0-none"},
+		{SandboxL1, "L1-seccomp"},
+		{SandboxL2, "L2-container"},
+		{SandboxL3, "L3-vm"},
+		{SandboxLevel(99), "unknown(99)"},
+	}
+	for _, tc := range cases {
+		if got := tc.level.String(); got != tc.want {
+			t.Errorf("SandboxLevel(%d).String() = %q, want %q", tc.level, got, tc.want)
+		}
 	}
 }
 

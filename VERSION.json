@@ -1,9 +1,9 @@
 {
-  "sdk_version": "1.0.0",
+  "sdk_version": "0.6.0",
   "sdk_language": "go",
-  "kernel_version": "1.0.0",
+  "kernel_version": "0.6.0",
   "protocol_version": "1.0",
-  "cli_version": "1.0.0",
+  "cli_version": "0.6.0",
   "compatibility": {
     "protocol": true,
     "kernel": true,
@@ -17,7 +17,7 @@
     "failed": 0,
     "last_run_at": "2026-04-13",
     "last_run_commit": null,
-    "note": "v1.0.0 — first stable release: v2/v2.1 features complete, release pipeline and multi-platform binaries ready"
+    "note": "v0.6.0 — persistence Driver abstraction, OTel exporters, security module completion, license sidecar integration"
   },
   "runnable_commands": [
     "version", "doctor", "run", "chat", "status", "resume",

@@ -19,6 +19,7 @@ import (
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/agent"
 	"github.com/leef-l/brain/executionpolicy"
+	"github.com/leef-l/brain/license"
 	"github.com/leef-l/brain/sidecar"
 	"github.com/leef-l/brain/tool"
 	"github.com/leef-l/brain/toolguard"
@@ -137,6 +138,10 @@ func (h *faultHandler) handleToolsCall(ctx context.Context, params json.RawMessa
 }
 
 func main() {
+	if _, err := license.CheckSidecar("brain-fault", license.VerifyOptions{}); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-fault: license: %v\n", err)
+		os.Exit(1)
+	}
 	if err := sidecar.Run(newFaultHandler()); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-fault: %v\n", err)
 		os.Exit(1)

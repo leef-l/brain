@@ -23,6 +23,7 @@ import (
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/agent"
 	"github.com/leef-l/brain/executionpolicy"
+	"github.com/leef-l/brain/license"
 	"github.com/leef-l/brain/sidecar"
 	"github.com/leef-l/brain/tool"
 	"github.com/leef-l/brain/toolguard"
@@ -165,6 +166,10 @@ func (h *browserHandler) handleToolsCall(ctx context.Context, params json.RawMes
 }
 
 func main() {
+	if _, err := license.CheckSidecar("brain-browser", license.VerifyOptions{}); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-browser: license: %v\n", err)
+		os.Exit(1)
+	}
 	if err := sidecar.Run(newBrowserHandler()); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-browser: %v\n", err)
 		os.Exit(1)
