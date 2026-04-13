@@ -11,6 +11,11 @@ bin/brain-code
 bin/brain-fault
 bin/brain-verifier
 brain
+brain-browser
+brain-central
+brain-code
+brain-fault
+brain-verifier
 cmd.exe
 cmd.test.exe
 npm/brain-cli/node_modules/
