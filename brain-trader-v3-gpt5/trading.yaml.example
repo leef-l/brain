@@ -1,0 +1,71 @@
+# brain-trader-v3-gpt5 configuration example
+
+mode: paper
+
+instruments:
+  - BTC-USDT-SWAP
+  - ETH-USDT-SWAP
+  - SOL-USDT-SWAP
+
+data:
+  okx_ws_url: wss://ws.okx.com:8443/ws/v5/public
+  ws_reconnect_delay: [1, 2, 4, 8, 16, 30]
+  rest_poll_interval: 30s
+  history_candles: 500
+
+strategy:
+  initial_weights: [0.30, 0.25, 0.25, 0.20]
+  weight_update_interval: 24h
+  weight_min: 0.10
+  weight_max: 0.40
+  weight_temperature: 2.0
+  signal_threshold: 0.45
+
+vector:
+  dimensions: 192
+  hnsw_m: 16
+  hnsw_ef_construction: 200
+  hnsw_ef_search: 100
+  pattern_retention_1m: 60d
+  pattern_retention_5m: 180d
+
+risk:
+  max_position_pct: 5.0
+  max_leverage: 20
+  max_concurrent: 5
+  max_total_exposure: 30.0
+  max_same_direction: 20.0
+  daily_loss_pause: 3.0
+  daily_loss_close: 5.0
+  circuit_breaker_volatility: 99
+  circuit_breaker_btc_move: 5.0
+
+llm:
+  enabled: true
+  model: haiku
+  trigger_concurrent: 3
+  trigger_position_pct: 5.0
+  trigger_daily_loss: 3.0
+  timeout: 10s
+
+database:
+  host: localhost
+  port: 5432
+  dbname: brain_trader
+  user: trader
+  password: ${PG_PASSWORD}
+  sslmode: disable
+  schema: trader
+  max_conns: 10
+  min_conns: 1
+  conn_max_idle_time: 30m
+  conn_max_lifetime: 2h
+
+executor:
+  backend: paper
+  okx_api_key: ${OKX_API_KEY}
+  okx_secret: ${OKX_SECRET}
+  okx_passphrase: ${OKX_PASSPHRASE}
+  paper_slippage: 0.0003
+  paper_maker_fee: 0.0002
+  paper_taker_fee: 0.0005
