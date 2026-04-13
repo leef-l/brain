@@ -1,0 +1,11 @@
+{
+  "cycle_mode": "ctrl+w",
+  "cancel": "ctrl+c",
+  "quit": "ctrl+d",
+  "clear_screen": "ctrl+l",
+  "line_start": "ctrl+a",
+  "line_end": "ctrl+e",
+  "delete_to_start": "ctrl+u",
+  "delete_to_end": "ctrl+k",
+  "delete_word": "ctrl+b"
+}

@@ -219,6 +219,37 @@ const (
 	CodeToolSanitizeFailed = "tool_sanitize_failed"
 )
 
+// license_* — paid specialist brain license validation failures.
+const (
+	// CodeLicenseNotFound — no license file could be located.
+	// Class: Permanent. Retryable: false.
+	CodeLicenseNotFound = "license_not_found"
+
+	// CodeLicenseInvalidSignature — signature verification failed.
+	// Class: Permanent. Retryable: false.
+	CodeLicenseInvalidSignature = "license_invalid_signature"
+
+	// CodeLicenseExpired — the license expired.
+	// Class: Permanent. Retryable: false.
+	CodeLicenseExpired = "license_expired"
+
+	// CodeLicenseNotYetValid — the current time is before not_before.
+	// Class: Permanent. Retryable: false.
+	CodeLicenseNotYetValid = "license_not_yet_valid"
+
+	// CodeLicenseBrainNotAllowed — the requested paid brain is not allowed.
+	// Class: Permanent. Retryable: false.
+	CodeLicenseBrainNotAllowed = "license_brain_not_allowed"
+
+	// CodeLicenseFeatureNotAllowed — the requested paid feature is disabled.
+	// Class: Permanent. Retryable: false.
+	CodeLicenseFeatureNotAllowed = "license_feature_not_allowed"
+
+	// CodeLicenseSchemaUnsupported — the license schema version is unsupported.
+	// Class: Permanent. Retryable: false.
+	CodeLicenseSchemaUnsupported = "license_schema_unsupported"
+)
+
 // db_* / record_* — persistence failures. Appendix A §A.6.
 const (
 	// CodeRecordNotFound — query returned no rows for a required lookup.

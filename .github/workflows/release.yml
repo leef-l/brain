@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Validate tag matches declared version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          sdk_version="$(jq -r .sdk_version VERSION.json)"
+          cli_version="$(go run ./cmd version --short)"
+          if [[ "${tag}" != "${sdk_version}" ]]; then
+            echo "tag ${tag} does not match VERSION.json sdk_version ${sdk_version}" >&2
+            exit 1
+          fi
+          if [[ "${tag}" != "${cli_version}" ]]; then
+            echo "tag ${tag} does not match brain version ${cli_version}" >&2
+            exit 1
+          fi
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -count=1
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build release assets
+        run: ./scripts/release/build-assets.sh "${GITHUB_REF_NAME#v}" dist
+
+      - name: Generate release notes
+        run: ./scripts/release/release-notes.sh "${GITHUB_REF_NAME#v}" > dist/RELEASE_NOTES.md
+
+      - name: Attest release assets
+        uses: actions/attest@v4.1.0
+        with:
+          subject-path: |
+            dist/brain_*
+            dist/SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          args=(
+            release create "${tag}"
+            --verify-tag
+            --title "${tag}"
+            --notes-file dist/RELEASE_NOTES.md
+            dist/brain_*
+            dist/SHA256SUMS
+          )
+          if [[ "${tag}" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"

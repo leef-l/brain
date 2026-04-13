@@ -1,0 +1,30 @@
+{
+  "name": "@leef-l/brain-cli",
+  "version": "1.0.0",
+  "description": "pnpm/npm wrapper for BrainKernel CLI binaries published on GitHub Releases",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bin": {
+    "brain": "bin/brain.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "scripts/",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "tar": "^7.4.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

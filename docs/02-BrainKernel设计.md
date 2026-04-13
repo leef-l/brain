@@ -2,7 +2,7 @@
 
 > **定位**：BrainKernel 是所有大脑（CentralBrain + N 个 SpecialistBrain）共享的**基础设施**，不是"又一个大脑"。它只做六件事：运行 Agent Loop、抽象 LLM Provider、持久化 BrainPlan、管理 Artifact、执行 Guardrail、记账与审计。它**不做**任何业务决策，不拆任务，不判断验收是否通过——这些是大脑自己的活。
 >
-> 本文档是整个执行器家族的"内核宪法"。只要这份文档定了，剩下 8 份文档都是在这份的接口约束下填内容。
+> 本文档是整个执行器家族的"内核宪法"。只要这份文档定了，剩下的协议、实现与演进文档都应该在这份的接口约束下展开。
 >
 > **下位规格文档索引**（read-by-reference，不重复正文）：
 >
@@ -17,6 +17,11 @@
 > | 26 | [持久化与恢复 v1](./26-持久化与恢复.md) | SQLite WAL BrainPlan、CAS artifact、Run resume、幂等写 | §7 / §8 |
 > | 27 | [CLI 命令契约 v1](./27-CLI命令契约.md) | `brain` 命令树、退出码规范、输出格式（human/json/NDJSON）、stdin 协议、环境变量、工作目录布局、信号处理、向后兼容策略、合规测试 C-CLI-01 ~ C-CLI-20 | §12（面向用户的稳定接口） |
 > | 28 | [SDK 交付规范 v1](./28-SDK交付规范.md) | 三级兼容性声明（Protocol/Kernel/CLI）、三段式版本号、参考实现 tiebreaker、SDK 包结构、必须实现的接口清单、150 条合规测试总览、发布流程、安全披露 SLA、商标保护、合规测试 C-SDK-01 ~ C-SDK-20 | 全文（第三方 SDK 实现者必读） |
+> | 29 | [第三方专精大脑开发指南](./29-第三方专精大脑开发.md) | 第三方 Specialist Brain 的 sidecar 接入、版本策略、发布与测试建议 | §12.5（第三方 brain 接入时参考） |
+> | 30 | [付费专精大脑授权方案](./30-付费专精大脑授权方案.md) | 付费 sidecar 的 license 文件、验签、能力开关与商业化路径 | §12.5（商业专精大脑时参考） |
+> | 32 | [v3 Brain 架构](./32-v3-Brain架构.md) | Brain-first 顶层模型，冻结 Brain / Manifest / Runtime / Package / Capability 的长期边界 | §9 / §12.5（v3 演进时参考） |
+> | 33 | [Brain Manifest 规格 v1](./33-Brain-Manifest规格.md) | v3 Brain 的稳定 schema：kind / capabilities / runtime / policy / compatibility / license / health | §9 / §12.5（brain 装配时参考） |
+> | 34 | [Brain Package 与 Marketplace 规范](./34-Brain-Package与Marketplace规范.md) | v3 Brain 的标准分发单位、安装目录、签名校验与 marketplace 索引模型 | §9 / §12.5（安装与生态分发时参考） |
 >
 > 本宪法的比特级 / 决策级规格 **以 20 ~ 28 为准**，本文如与之冲突按下位文档校正。
 >
@@ -2259,6 +2264,7 @@ func (k *Kernel) runAgent(ctx context.Context, kind BrainKind, req *Request) (*R
 | 10 | `artifact.put` | `{run_id, kind, mime_type, content_base64 or content_ref, caption, step, metadata}` | `{artifact_ref}` | 所有大脑。大文件用 `content_ref`（sidecar 先写到共享 workspace 临时目录） |
 | 11 | `plan.update` | `{plan_id, mutator_op}` | `{updated_plan, conflict?}` | **仅 central_brain**。Kernel 根据调用者的 BrainKind 校验权限，其他大脑调用直接拒绝 |
 | 12 | `subtask.delegate` | `{parent_run_id, target_kind, target_code?, request}` | `{delegated_run_id, result}` | **仅 central_brain**。Kernel 接到此调用后起一个新的 sidecar Run（对应 target_kind），完成后把 Result 返回给 central_brain |
+| 12a | `specialist.call_tool` | `{target_kind, tool_name, arguments, execution?}` | `tools/call` 结果 | 所有大脑。用于**无 AI 的确定性跨脑工具调用**：Kernel 复用或拉起目标 sidecar，并直接转发到目标 sidecar 的 `tools/call`，不跑目标 sidecar 的 Agent Loop。Kernel 必须按 caller / target / tool 做授权 |
 | 13 | `trace.emit` | `{run_id, event_type, data, timestamp}` | `{ok}` | 所有大脑。写入 Trace/Audit Logger（见 §11）。当 `LLMAccess=direct` 时 sidecar **必须**通过此方法上报 token/cost 事件，否则熔断 |
 | 14 | `log.emit` | `{level, message, fields}` | `{ok}` | 所有大脑。结构化日志上报，等价于 stderr 但带 run_id 关联 |
 
@@ -2990,4 +2996,3 @@ brain-sdk-go/                       # github.com/leef-l/brain
 | LLM Provider adapter 的完整实现 | — | 详见 `05-LLM-Provider抽象层.md` |
 | BrainPlan 表 DDL 和状态机 | 主方案 §10.2 + §10.3 | 详见 `06-BrainPlan持久化协议.md` |
 | 大脑委派工具的 JSON Schema 清单 | — | 详见 `07-大脑委派工具协议.md` |
-

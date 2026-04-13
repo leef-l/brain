@@ -1,0 +1,40 @@
+name: BrainKernel CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.25'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Run skeleton tests
+        run: go test github.com/leef-l/brain/test/skeleton -v -count=1
+
+      - name: Run all tests
+        run: go test ./... -count=1
+
+      - name: Build CLI binary
+        run: |
+          CGO_ENABLED=0 go build -ldflags "-s -w" -o brain ./cmd/
+          ./brain version

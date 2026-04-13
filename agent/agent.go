@@ -27,6 +27,9 @@ const (
 
 	// KindVerifier is a specialist brain that runs tests and verifies work.
 	KindVerifier Kind = "verifier"
+
+	// KindFault is a specialist brain that injects faults for chaos testing.
+	KindFault Kind = "fault"
 )
 
 // LLMAccessMode captures the three LLM credential strategies defined in
@@ -92,4 +95,18 @@ type Agent interface {
 	// trace events and release resources. After this returns, the agent is
 	// no longer usable.
 	Shutdown(ctx context.Context) error
+}
+
+// RPCAgent extends Agent with access to the underlying BidirRPC session.
+// The Orchestrator uses this to register reverse-RPC handlers (llm.complete,
+// subtask.delegate) on a running sidecar's RPC session after Start().
+//
+// Both ProcessRunner's processAgent and StdioRunner's pipeAgent implement
+// this interface. Consumer code should type-assert: ag.(RPCAgent).
+type RPCAgent interface {
+	Agent
+
+	// RPC returns the bidirectional JSON-RPC session for this sidecar.
+	// The caller may register additional handlers or make outbound calls.
+	RPC() interface{}
 }

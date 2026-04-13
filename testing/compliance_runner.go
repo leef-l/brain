@@ -293,9 +293,9 @@ func (r *MemComplianceRunner) RunAll(ctx context.Context) (*ComplianceReport, er
 // A panic inside the test function is converted into a "fail" result
 // with a CodePanicked error string — the panic is NOT rethrown because
 // doing so would violate the "every test MUST be attempted" rule.
-func (r *MemComplianceRunner) runOne(ctx context.Context, t *registeredTest) *TestResult {
+func (r *MemComplianceRunner) runOne(ctx context.Context, t *registeredTest) (res *TestResult) {
 	start := time.Now()
-	res := &TestResult{TestID: t.desc.ID}
+	res = &TestResult{TestID: t.desc.ID}
 	defer func() {
 		if rec := recover(); rec != nil {
 			res.Status = "fail"

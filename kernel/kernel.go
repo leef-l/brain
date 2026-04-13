@@ -59,6 +59,14 @@ type Kernel struct {
 
 	// Logs is the log event exporter (24 §6).
 	Logs observability.LogExporter
+
+	// Orchestrator manages specialist brain delegation. When nil, the
+	// system operates in single-brain mode (Central does everything).
+	Orchestrator interface{}
+
+	// LLMProxy handles reverse RPC LLM calls from specialist sidecars.
+	// When nil, no reverse LLM proxying is available.
+	LLMProxy interface{}
 }
 
 // Option configures a Kernel during construction. Options compose functionally
@@ -140,4 +148,14 @@ func WithTraceExporter(t observability.TraceExporter) Option {
 // WithLogExporter installs an observability.LogExporter. See 24 §6.
 func WithLogExporter(l observability.LogExporter) Option {
 	return func(k *Kernel) { k.Logs = l }
+}
+
+// WithOrchestrator installs the specialist brain orchestrator.
+func WithOrchestrator(o interface{}) Option {
+	return func(k *Kernel) { k.Orchestrator = o }
+}
+
+// WithLLMProxy installs the reverse-RPC LLM proxy for sidecars.
+func WithLLMProxy(p interface{}) Option {
+	return func(k *Kernel) { k.LLMProxy = p }
 }

@@ -35,7 +35,7 @@ import (
 type FSArtifactStore struct {
 	mu      sync.Mutex
 	root    string
-	meta    *MemArtifactMetaStore
+	meta    ArtifactMetaStore
 	nowFunc func() time.Time
 }
 
@@ -46,7 +46,7 @@ type FSArtifactStore struct {
 //
 // A nil meta store triggers a panic — §6.3 requires the byte backend and
 // metadata store to co-exist.
-func NewFSArtifactStore(root string, meta *MemArtifactMetaStore, now func() time.Time) *FSArtifactStore {
+func NewFSArtifactStore(root string, meta ArtifactMetaStore, now func() time.Time) *FSArtifactStore {
 	if meta == nil {
 		panic("persistence.NewFSArtifactStore: meta store is required")
 	}

@@ -1,0 +1,23 @@
+{
+  "name": "error_500",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/messages",
+        "body": {}
+      },
+      "response": {
+        "status_code": 500,
+        "headers": {"Content-Type": "application/json"},
+        "body": {
+          "type": "error",
+          "error": {
+            "type": "api_error",
+            "message": "An unexpected error occurred"
+          }
+        }
+      }
+    }
+  ]
+}

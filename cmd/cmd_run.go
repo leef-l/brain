@@ -7,43 +7,58 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/leef-l/brain/cli"
 	brainerrors "github.com/leef-l/brain/errors"
 	"github.com/leef-l/brain/kernel"
 	"github.com/leef-l/brain/llm"
-	"github.com/leef-l/brain/loop"
-	"github.com/leef-l/brain/persistence"
+	"github.com/leef-l/brain/tool"
 )
 
-// runRun implements `brain run` for the v0.1.0 reference executable.
+// runRun implements `brain run` — the primary command for running an
+// agent loop that talks to a real LLM and can read/write files, search
+// code, and execute shell commands.
 //
-// In the real kernel this subcommand forks a sidecar and drives a full
-// multi-Turn loop through whichever provider the user configured. The
-// v0.1.0 executable ships with no sidecar binaries and no live provider,
-// so `brain run` instead exercises the whole in-memory stack end-to-end:
+// Provider selection:
 //
-//  1. build a NewMemKernel (all in-memory stores)
-//  2. create a loop.Run with a small budget
-//  3. queue a mock assistant reply on llm.MockProvider
-//  4. issue one Complete call
-//  5. persist a plan delta so PlanStore / ArtifactStore / AuditLogger all
-//     record the interaction
-//  6. print a JSON summary of the run
+//	--provider mock → uses MockProvider (for testing / CI)
+//	otherwise       → resolves a real provider session from
+//	                  model-config JSON, flags, config, and env
 //
-// The goal is that `brain run --prompt hello` round-trips the full
-// Kernel surface without ever touching the network — which is exactly
-// what doctor check #7 and #8 (PlanStore RW, ArtifactStore CAS) rely on.
+// Provider resolution priority:
 //
-// See 27-CLI命令契约.md §6.
+//  1. structured --model-config-json payload
+//  2. explicit flags (--provider/--api-key/--base-url/--model)
+//  3. ~/.brain/config.json active_provider / providers.<name>
+//  4. ANTHROPIC_API_KEY environment variable
+//
+// File mutation policy:
+//
+//	--file-policy-json constrains read/create/edit/delete operations inside
+//	workdir. Command-like tools still run in the sandboxed workdir, but
+//	their real file diff is validated against the same policy.
+//
+// See 27-CLI命令契约.md §6 and docs/v2生产级实施计划.md Phase C.
 func runRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	prompt := fs.String("prompt", "hello from brain run", "user prompt to send to the mock LLM")
-	reply := fs.String("reply", "hello from mock provider", "pre-canned assistant reply to emit")
+	prompt := fs.String("prompt", "hello from brain run", "user prompt to send to the LLM")
+	reply := fs.String("reply", "hello from mock provider", "pre-canned assistant reply (mock mode only)")
 	brainID := fs.String("brain", "central", "brain identifier")
+	maxTurns := fs.Int("max-turns", 4, "maximum number of turns")
+	stream := fs.Bool("stream", false, "enable streaming mode")
 	jsonOut := fs.Bool("json", true, "emit a JSON run summary to stdout")
+	provider := fs.String("provider", "anthropic", "LLM provider: anthropic or mock")
+	apiKey := fs.String("api-key", "", "API key (overrides env and config)")
+	baseURL := fs.String("base-url", "", "API base URL (default: https://api.anthropic.com)")
+	model := fs.String("model", "", "model name (overrides config)")
+	modelConfigJSON := fs.String("model-config-json", "", "structured model config JSON override")
+	modeFlag := fs.String("mode", "", "permission mode: plan, default, accept-edits, auto, restricted, bypass-permissions")
+	workDir := fs.String("workdir", "", "working directory sandbox (default: current directory)")
+	filePolicyJSON := fs.String("file-policy-json", "", "fine-grained file mutation policy JSON")
+	timeoutFlag := fs.String("timeout", "", "overall run timeout (e.g. 5m, 30m, 0 to disable)")
 	if err := fs.Parse(args); err != nil {
 		return cli.ExitUsage
 	}
@@ -52,110 +67,130 @@ func runRun(args []string) int {
 		return cli.ExitUsage
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	cfg, cfgErr := loadConfig()
+	modelInput, err := parseModelConfigJSON(*modelConfigJSON)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)
+		return cli.ExitUsage
+	}
+	filePolicyInput, err := parseFilePolicyJSON(*filePolicyJSON)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)
+		return cli.ExitUsage
+	}
+	filePolicyInput = resolveFilePolicyInput(cfg, filePolicyInput)
+	mode, err := resolvePermissionMode(*modeFlag, cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)
+		return cli.ExitUsage
+	}
+	timeout, err := resolveRunTimeoutWithConfig(cfg, *timeoutFlag, 5*time.Minute)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)
+		return cli.ExitUsage
+	}
+	ctx, cancel := withOptionalTimeout(context.Background(), timeout)
 	defer cancel()
 
-	k := kernel.NewMemKernel(kernel.MemKernelOptions{BrainKind: *brainID})
-
-	// Build a Run with a tiny budget — one Turn is enough for the smoke.
-	run := loop.NewRun(
-		"run-"+time.Now().UTC().Format("20060102T150405Z"),
-		*brainID,
-		loop.Budget{
-			MaxTurns:     4,
-			MaxCostUSD:   1.0,
-			MaxLLMCalls:  4,
-			MaxToolCalls: 8,
-			MaxDuration:  5 * time.Second,
-		},
-	)
-	if err := run.Start(time.Now().UTC()); err != nil {
-		return failRun(err, "start run")
+	env := newExecutionEnvironment(*workDir, mode, cfg, nil, false)
+	if err := applyFilePolicy(env, filePolicyInput); err != nil {
+		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)
+		return cli.ExitUsage
 	}
-
-	// Provider + minimal ChatRequest.
-	mock := llm.NewMockProvider("mock")
-	mock.QueueText(*reply)
-
-	turn := loop.NewTurn(run.ID, 1, time.Now().UTC())
-	req := &llm.ChatRequest{
-		RunID:     run.ID,
-		TurnIndex: turn.Index,
-		BrainID:   run.BrainID,
-		Model:     "mock-model",
-		System: []llm.SystemBlock{
-			{Text: "You are a helpful brain kernel smoke test.", Cache: true},
-		},
-		Messages: []llm.Message{
-			{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: *prompt}}},
-		},
-		MaxTokens:       256,
-		Stream:          false,
-		RemainingBudget: run.Budget.Remaining(),
+	if mode == modeRestricted && env.filePolicy == nil {
+		fmt.Fprintln(os.Stderr, "brain run: restricted mode requires file_policy (config or --file-policy-json)")
+		return cli.ExitUsage
 	}
+	explicitProviderInput := hasModelConfigOverrides(modelInput) || strings.TrimSpace(*apiKey) != "" || strings.TrimSpace(*baseURL) != "" || strings.TrimSpace(*model) != ""
 
-	resp, err := mock.Complete(ctx, req)
+	runtime, err := newDefaultCLIRuntime(*brainID)
 	if err != nil {
-		_ = run.Fail(time.Now().UTC())
-		return failRun(err, "mock complete")
-	}
-	turn.LLMCalls++
-	turn.End(time.Now().UTC())
-	run.CurrentTurn = turn.Index
-	run.Budget.UsedTurns++
-	run.Budget.UsedLLMCalls++
-	run.Budget.UsedCostUSD += resp.Usage.CostUSD
-	run.Budget.ElapsedTime = time.Since(run.StartedAt)
-
-	if err := run.Complete(time.Now().UTC()); err != nil {
-		return failRun(err, "complete run")
+		fmt.Fprintf(os.Stderr, "brain run: runtime: %v\n", err)
+		return cli.ExitSoftware
 	}
 
-	// --- persist a plan snapshot so PlanStore / ArtifactStore / audit
-	// tier all record the interaction ---
-	var planID int64
-	if k.PlanStore != nil {
-		snapshot, _ := json.Marshal(map[string]interface{}{
-			"run_id":   run.ID,
-			"brain_id": run.BrainID,
-			"prompt":   *prompt,
-			"reply":    *reply,
+	// --- Register real tools with shared permission/sandbox policy ---
+	// --- Orchestrator for specialist delegation (central brain only) ---
+	var orch *kernel.Orchestrator
+	if *brainID == "central" && !wantsMockProvider(*provider, modelInput) {
+		orch = buildOrchestrator(orchestratorConfig{
+			cfg:         cfg,
+			modelConfig: modelInput,
+			provider:    *provider,
+			apiKey:      *apiKey,
+			baseURL:     *baseURL,
+			model:       *model,
 		})
-		plan := &persistence.BrainPlan{
-			BrainID:      run.BrainID,
-			Version:      1,
-			CurrentState: snapshot,
+	}
+	runtime.Kernel.ToolRegistry = buildManagedRegistry(cfg, env, *brainID, func(reg tool.Registry) {
+		registerDelegateToolForEnvironment(reg, orch, env)
+	})
+
+	// --- Provider selection ---
+	providerSession := openMockProvider(*reply)
+	if !wantsMockProvider(*provider, modelInput) {
+		if cfg == nil && !explicitProviderInput {
+			if cfgErr != nil {
+				fmt.Fprintf(os.Stderr, "brain run: %v\n", cfgErr)
+			} else {
+				printConfigSetupGuide()
+			}
+			return cli.ExitFailed
 		}
-		id, perr := k.PlanStore.Create(ctx, plan)
-		if perr != nil {
-			return failRun(perr, "persist plan")
+		var err error
+		providerSession, err = openConfiguredProvider(cfg, *brainID, modelInput, *provider, *apiKey, *baseURL, *model)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "brain run: %v (use --api-key, ANTHROPIC_API_KEY env, or brain config set providers.<name>.api_key <key>)\n", err)
+			printConfigSetupGuide()
+			return cli.ExitFailed
 		}
-		planID = id
 	}
 
-	// --- emit a JSON summary ---
-	summary := map[string]interface{}{
-		"run_id":        run.ID,
-		"brain_id":      run.BrainID,
-		"state":         string(run.State),
-		"turns":         run.Budget.UsedTurns,
-		"llm_calls":     run.Budget.UsedLLMCalls,
-		"elapsed_ms":    run.Budget.ElapsedTime.Milliseconds(),
-		"stop_reason":   resp.StopReason,
-		"reply":         extractText(resp.Content),
-		"mock_provider": mock.Name(),
-		"plan_id":       planID,
+	runRec, err := runtime.RunStore.create(*brainID, *prompt, string(mode), env.workdir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain run: create run record: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	// --- System prompt ---
+	systemPrompt := buildSystemPrompt(mode, env.sandbox)
+	if orch != nil {
+		systemPrompt += buildOrchestratorPrompt(orch, runtime.Kernel.ToolRegistry)
+	}
+
+	outcome, err := executeManagedRun(ctx, managedRunExecution{
+		Runtime:       runtime,
+		Record:        runRec,
+		Registry:      runtime.Kernel.ToolRegistry,
+		Provider:      providerSession.Provider,
+		ProviderName:  providerSession.Name,
+		ProviderModel: providerSession.Model,
+		BrainID:       *brainID,
+		Prompt:        *prompt,
+		MaxTurns:      *maxTurns,
+		MaxDuration:   timeout,
+		Stream:        *stream,
+		SystemPrompt:  systemPrompt,
+	})
+
+	// Shutdown orchestrator if started.
+	if orch != nil {
+		_ = orch.Shutdown(context.Background())
+	}
+
+	if err != nil {
+		return failRun(err, "execute run")
 	}
 
 	if *jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(summary); err != nil {
+		if err := enc.Encode(outcome.Summary); err != nil {
 			fmt.Fprintf(os.Stderr, "brain run: encode summary: %v\n", err)
 			return cli.ExitSoftware
 		}
 	} else {
-		fmt.Printf("run %s %s reply=%q\n", run.ID, run.State, extractText(resp.Content))
+		fmt.Printf("run %s %s reply=%q\n", runRec.ID, outcome.FinalStatus, outcome.ReplyText)
 	}
 	return cli.ExitOK
 }

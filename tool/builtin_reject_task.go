@@ -51,7 +51,8 @@ func (t *RejectTaskTool) Schema() Schema {
   },
   "required": ["reason"]
 }`),
-		Brain: t.brainKind,
+		OutputSchema: rejectTaskOutputSchema,
+		Brain:        t.brainKind,
 	}
 }
 

@@ -10,27 +10,23 @@ type command struct {
 
 	// Run executes the subcommand and returns its exit code.
 	Run func(args []string) int
-
-	// stub marks commands that are registered but not yet implemented in
-	// the v0.1.0 skeleton. These still dispatch (so the user gets a useful
-	// error) but return cli.ExitSoftware (70).
-	stub bool
 }
 
 // commands is the full subcommand table. Order is preserved separately in
 // commandOrder so `brain --help` prints commands in the documented order from
 // 27 §5 rather than random map order.
 var commands = map[string]command{
-	"run":     {Short: "Start a new Run", Run: runRun},
-	"status":  {Short: "Query Run status", Run: runStub("status"), stub: true},
-	"resume":  {Short: "Resume an interrupted Run", Run: runStub("resume"), stub: true},
-	"cancel":  {Short: "Cancel a Run", Run: runStub("cancel"), stub: true},
-	"list":    {Short: "List Runs", Run: runStub("list"), stub: true},
-	"logs":    {Short: "View Run logs", Run: runStub("logs"), stub: true},
-	"replay":  {Short: "Replay a Run for audit", Run: runStub("replay"), stub: true},
-	"tool":    {Short: "Manage the tool registry", Run: runStub("tool"), stub: true},
-	"config":  {Short: "Manage configuration", Run: runStub("config"), stub: true},
-	"serve":   {Short: "Start the Kernel service (cluster mode)", Run: runStub("serve"), stub: true},
+	"chat":    {Short: "Interactive conversation mode (like Claude Code)", Run: runChat},
+	"run":     {Short: "Single-shot Run (one prompt, one result)", Run: runRun},
+	"status":  {Short: "Query Run status", Run: runStatus},
+	"resume":  {Short: "Resume an interrupted Run", Run: runResume},
+	"cancel":  {Short: "Cancel a Run", Run: runCancel},
+	"list":    {Short: "List Runs", Run: runList},
+	"logs":    {Short: "View Run logs", Run: runLogs},
+	"replay":  {Short: "Replay a Run for audit", Run: runReplay},
+	"tool":    {Short: "Manage the tool registry", Run: runTool},
+	"config":  {Short: "Manage configuration", Run: runConfig},
+	"serve":   {Short: "Start the Kernel service (cluster mode)", Run: runServe},
 	"doctor":  {Short: "Diagnose the local brain environment", Run: runDoctor},
 	"version": {Short: "Print version information", Run: runVersion},
 }
@@ -38,6 +34,7 @@ var commands = map[string]command{
 // commandOrder is the fixed display order for `brain --help`, following the
 // table of contents in 27-CLI命令契约.md §5.
 var commandOrder = []string{
+	"chat",
 	"run",
 	"status",
 	"resume",

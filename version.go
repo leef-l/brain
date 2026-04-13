@@ -14,18 +14,17 @@ const (
 	ProtocolVersion = "1.0"
 
 	// KernelVersion is the Kernel behavior contract version (semver).
-	// v0.1.0-skeleton indicates the interface-only skeleton stage;
-	// once an implementation passes compliance tests it becomes v1.0.0.
-	KernelVersion = "0.1.0-skeleton"
+	// v1.0.0: first stable release with v2/v2.1 feature set and release pipeline.
+	KernelVersion = "1.0.0"
 
 	// SDKVersion is this Go SDK's semver.
-	SDKVersion = "0.1.0-skeleton"
+	SDKVersion = "1.0.0"
 
 	// SDKLanguage identifies the SDK implementation language.
 	SDKLanguage = "go"
 
 	// CLIVersion is the user-facing `brain` CLI version (tracks SDKVersion in Go SDK).
-	CLIVersion = "0.1.0-skeleton"
+	CLIVersion = "1.0.0"
 )
 
 // BuildInfo is filled in at link time via -ldflags.

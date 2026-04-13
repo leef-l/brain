@@ -96,6 +96,15 @@ var reservedMetadata = []CodeMetadata{
 
 	// A.10 sanitizer_* — 22-Agent-Loop规格.md §10.2.
 	{CodeToolSanitizeFailed, ClassPermanent, false},
+
+	// A.11 license_* — paid specialist brain licensing.
+	{CodeLicenseNotFound, ClassPermanent, false},
+	{CodeLicenseInvalidSignature, ClassPermanent, false},
+	{CodeLicenseExpired, ClassPermanent, false},
+	{CodeLicenseNotYetValid, ClassPermanent, false},
+	{CodeLicenseBrainNotAllowed, ClassPermanent, false},
+	{CodeLicenseFeatureNotAllowed, ClassPermanent, false},
+	{CodeLicenseSchemaUnsupported, ClassPermanent, false},
 }
 
 // ReservedCodes returns a defensive copy of the v1 appendix A metadata clause.

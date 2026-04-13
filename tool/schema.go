@@ -23,6 +23,12 @@ type Schema struct {
 	// need a JSON Schema library. See 02-BrainKernel设计.md §6.1.
 	InputSchema json.RawMessage `json:"input_schema"`
 
+	// OutputSchema is the optional JSON Schema (draft 2020-12) of the
+	// tool's success payload. It is not sent to the LLM, but is used by
+	// CLI introspection, sidecar tools/list, and future manifest/package
+	// metadata. Empty means "unspecified / dynamic".
+	OutputSchema json.RawMessage `json:"output_schema,omitempty"`
+
 	// Brain is the brain_kind that registered this Tool (e.g. "code",
 	// "browser", "central"). Used by Registry.ListByBrain. See
 	// 02-BrainKernel设计.md §6.1 naming convention.

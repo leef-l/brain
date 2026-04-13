@@ -80,6 +80,24 @@ const (
 	MethodArtifactGet = "artifact.get"
 )
 
+// Subtask delegation — 20-协议规格.md §10.1 (sidecar→host direction,
+// central brain only per 02-BrainKernel设计.md §12.5.4.3).
+const (
+	// MethodSubtaskDelegate is the central-brain→host request that asks
+	// the Kernel to spawn a specialist brain and run a subtask on it.
+	// Only the central brain is authorized to call this method; any other
+	// brain receives a permission error.
+	MethodSubtaskDelegate = "subtask.delegate"
+
+	// MethodSpecialistCallTool is the sidecar→host request that asks the
+	// Kernel to invoke a specific tool on a specialist brain without
+	// running that brain's Agent Loop. The Kernel remains the only cross-
+	// brain router; sidecars do not talk to each other directly. Reverse-RPC
+	// callers are authorized by Kernel policy on caller kind / target kind /
+	// tool name.
+	MethodSpecialistCallTool = "specialist.call_tool"
+)
+
 // Observability methods — 20-协议规格.md §10.1 (sidecar→host
 // notifications).
 const (

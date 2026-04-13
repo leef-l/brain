@@ -1,0 +1,17 @@
+.tmp/
+dist/
+.codex
+cmd/notes.txt
+bin/*.html
+bin/test/
+bin/brain
+bin/brain-browser
+bin/brain-central
+bin/brain-code
+bin/brain-fault
+bin/brain-verifier
+brain
+cmd.exe
+cmd.test.exe
+npm/brain-cli/node_modules/
+npm/brain-cli/runtime/

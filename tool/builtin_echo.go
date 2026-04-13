@@ -40,7 +40,8 @@ func (t *EchoTool) Schema() Schema {
     }
   }
 }`),
-		Brain: t.brainKind,
+		OutputSchema: dynamicJSONOutputSchema,
+		Brain:        t.brainKind,
 	}
 }
 

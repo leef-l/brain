@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-
 )
 
 // TestMemRegistryRegisterAndLookup verifies basic register and lookup operations.
@@ -373,9 +372,9 @@ type testTool struct {
 	schema Schema
 }
 
-func (t *testTool) Name() string      { return t.name }
-func (t *testTool) Schema() Schema    { return t.schema }
-func (t *testTool) Risk() Risk        { return RiskSafe }
+func (t *testTool) Name() string   { return t.name }
+func (t *testTool) Schema() Schema { return t.schema }
+func (t *testTool) Risk() Risk     { return RiskSafe }
 func (t *testTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	return &Result{Output: args, IsError: false}, nil
 }

@@ -1,0 +1,23 @@
+{
+  "name": "error_429",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/messages",
+        "body": {}
+      },
+      "response": {
+        "status_code": 429,
+        "headers": {"Content-Type": "application/json"},
+        "body": {
+          "type": "error",
+          "error": {
+            "type": "rate_limit_error",
+            "message": "Rate limit exceeded. Please retry after 30 seconds."
+          }
+        }
+      }
+    }
+  ]
+}

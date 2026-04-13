@@ -3,6 +3,7 @@
 > **状态**：Frozen · v1.0 · 2026-04-11
 > **上位规格**：[02-BrainKernel设计.md](./02-BrainKernel设计.md)
 > **依赖**：全部下级规格（[20](./20-协议规格.md) / [21](./21-错误模型.md) / [22](./22-Agent-Loop规格.md) / [23](./23-安全模型.md) / [24](./24-可观测性.md) / [25](./25-测试策略.md) / [26](./26-持久化与恢复.md) / [27](./27-CLI命令契约.md)）
+> **v3 扩展阅读**：[32-v3-Brain架构.md](./32-v3-Brain架构.md) / [33-Brain-Manifest规格.md](./33-Brain-Manifest规格.md) / [34-Brain-Package与Marketplace规范.md](./34-Brain-Package与Marketplace规范.md)
 
 ## 目录
 
@@ -53,6 +54,7 @@
 - 发布流程与版本管理
 - 安全披露流程
 - 商标与命名保护
+- 当 SDK 同时分发 Specialist Brain 时，与 `Brain Manifest` / `Brain Package` 的衔接建议
 - C-SDK-01 ~ C-SDK-20 共 20 条合规测试（测"SDK 包本身"而不是 Kernel 行为）
 
 **本规格不定义**：
@@ -74,6 +76,8 @@
 | **Protocol** | stdio 线缆协议（20-协议规格），独立版本号 |
 | **Kernel** | Kernel 库实现（02 + 21~26），独立版本号 |
 | **CLI** | `brain` 命令行工具（27-CLI命令契约），跟随 SDK 版本号 |
+| **Brain Manifest** | v3 Brain 的稳定契约文件，定义 kind / capabilities / runtime / policy / compatibility（见 33） |
+| **Brain Package** | v3 Brain 的分发单位，承载 manifest / runtime / bindings / license / metadata（见 34） |
 | **Tiebreaker** | 规格出现歧义时，以参考实现的实际行为为准的原则 |
 
 ---
@@ -308,6 +312,17 @@ Patch bump（例如 SDK 1.2.3 → 1.2.4）**MUST** 通过 cassette replay 一致
 │   └── cassettes/           # 必选：cassette replay 测试的本地副本
 └── <language-specific>/     # 各语言自己的源码目录（src/ / lib/ / pkg/ 等）
 ```
+
+如果一个 SDK 还同时分发官方或第三方 Specialist Brain，**SHOULD** 额外提供：
+
+```text
+<sdk-root>/
+└── brains/
+    ├── manifests/          # 推荐：示例或内置 brain 的 manifest
+    └── packages/           # 可选：brain package 构建或安装脚本
+```
+
+这些目录不是 CLI/Kernel 合规的硬要求，但与 v3 的 Brain 生态对齐时非常有用。
 
 ### 6.2 README.md 必选章节
 
@@ -562,6 +577,8 @@ cross-lang 测试的自动化工具由 Reference SDK 提供（`brain-go/cmd/cros
 | `docs/examples/` | 常见用法示例 |
 | `docs/performance.md` | 基准测试结果（非合规要求） |
 | `CONTRIBUTING.md` | 贡献指南 |
+| `docs/brains/manifest.md` | 如果 SDK 分发 Specialist Brain，建议记录 Manifest schema 与示例 |
+| `docs/brains/package.md` | 如果 SDK 分发 Specialist Brain，建议记录 Package 布局、安装和升级规则 |
 
 ### 9.3 API 文档自动化
 
@@ -679,6 +696,15 @@ Git tag **MUST** 符合 `v<sdk_version>` 格式：
 | TypeScript | npm + GitHub Packages |
 
 **MUST NOT** 在 PyPI / npm 等渠道占用 `brain` / `brainkernel` / `brain-kernel` 等名字给非 Reference SDK 的实现（除非官方授权，见 §13）。
+
+如果发布的是 `Brain Package` 而不是整个 SDK，分发建议转到：
+
+- [34-Brain-Package与Marketplace规范.md](./34-Brain-Package与Marketplace规范.md)
+
+也就是：
+
+- SDK 继续走语言生态渠道
+- Specialist Brain 建议走 GitHub Releases / Marketplace / 安装器渠道
 
 ---
 

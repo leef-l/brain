@@ -1,0 +1,23 @@
+{
+  "name": "error_401",
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/messages",
+        "body": {}
+      },
+      "response": {
+        "status_code": 401,
+        "headers": {"Content-Type": "application/json"},
+        "body": {
+          "type": "error",
+          "error": {
+            "type": "authentication_error",
+            "message": "invalid x-api-key"
+          }
+        }
+      }
+    }
+  ]
+}
