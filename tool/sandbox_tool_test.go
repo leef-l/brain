@@ -9,6 +9,23 @@ import (
 	"testing"
 )
 
+type captureTool struct {
+	lastArgs json.RawMessage
+}
+
+func (t *captureTool) Name() string { return "test.capture" }
+
+func (t *captureTool) Schema() Schema {
+	return Schema{Name: t.Name()}
+}
+
+func (t *captureTool) Risk() Risk { return RiskSafe }
+
+func (t *captureTool) Execute(_ context.Context, args json.RawMessage) (*Result, error) {
+	t.lastArgs = append(json.RawMessage(nil), args...)
+	return &Result{Output: jsonStr("ok")}, nil
+}
+
 func TestWrapSandbox_NilPassthrough(t *testing.T) {
 	inner := NewEchoTool("test")
 	wrapped := WrapSandbox(inner, nil)
@@ -163,21 +180,27 @@ func TestSandboxTool_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestSandboxTool_EmptyPathAllowed(t *testing.T) {
+func TestSandboxTool_EmptyPathUsesSandboxPrimary(t *testing.T) {
 	dir := t.TempDir()
 	sb := NewSandbox(dir)
-	inner := NewSearchTool("code")
+	inner := &captureTool{}
 	wrapped := WrapSandbox(inner, sb)
 
-	// Empty path should be allowed (tools default it themselves).
 	args, _ := json.Marshal(map[string]interface{}{"pattern": "foo", "path": ""})
 	result, err := wrapped.Execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// The search tool may fail for other reasons, but it should NOT be a sandbox error.
-	if result.IsError && strings.Contains(string(result.Output), "sandbox") {
-		t.Fatalf("empty path should not trigger sandbox: %s", result.Output)
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Output)
+	}
+
+	var got map[string]string
+	if err := json.Unmarshal(inner.lastArgs, &got); err != nil {
+		t.Fatalf("decode forwarded args: %v", err)
+	}
+	if got["path"] != dir {
+		t.Fatalf("forwarded path=%q, want sandbox primary %q", got["path"], dir)
 	}
 }
 

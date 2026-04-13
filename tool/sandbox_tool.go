@@ -65,13 +65,30 @@ func (s *SandboxTool) Execute(ctx context.Context, args json.RawMessage) (*Resul
 		}, nil
 	}
 
+	rewritten := false
 	for _, key := range sandboxPathKeys {
 		raw, ok := fields[key]
 		if !ok {
+			// If the "path" field is absent entirely, inject the sandbox
+			// workdir so that inner tools default to workdir instead of cwd.
+			if key == "path" {
+				quoted, _ := json.Marshal(s.Sandbox.Primary())
+				fields[key] = quoted
+				rewritten = true
+			}
 			continue
 		}
 		var pathVal string
-		if json.Unmarshal(raw, &pathVal) != nil || pathVal == "" {
+		if json.Unmarshal(raw, &pathVal) != nil {
+			continue
+		}
+		if pathVal == "" && key == "path" {
+			quoted, _ := json.Marshal(s.Sandbox.Primary())
+			fields[key] = quoted
+			rewritten = true
+			continue
+		}
+		if pathVal == "" {
 			continue
 		}
 
@@ -82,6 +99,12 @@ func (s *SandboxTool) Execute(ctx context.Context, args json.RawMessage) (*Resul
 				// If we have an approver, ask the user.
 				if s.Approver != nil && s.Approver(ctx, s.Inner.Name(), absPath, dir) {
 					s.Sandbox.Authorize(dir)
+					// Rewrite relative path to absolute so inner tool uses workdir, not cwd.
+					if !filepath.IsAbs(pathVal) {
+						quoted, _ := json.Marshal(absPath)
+						fields[key] = quoted
+						rewritten = true
+					}
 					continue
 				}
 				return &Result{
@@ -100,6 +123,13 @@ func (s *SandboxTool) Execute(ctx context.Context, args json.RawMessage) (*Resul
 				IsError: true,
 			}, nil
 		}
+		// Rewrite relative path to absolute so inner tool resolves against
+		// the sandbox workdir rather than the process cwd.
+		if !filepath.IsAbs(pathVal) {
+			quoted, _ := json.Marshal(absPath)
+			fields[key] = quoted
+			rewritten = true
+		}
 	}
 
 	for _, key := range sandboxMultiPathKeys {
@@ -111,7 +141,8 @@ func (s *SandboxTool) Execute(ctx context.Context, args json.RawMessage) (*Resul
 		if json.Unmarshal(raw, &paths) != nil {
 			continue
 		}
-		for _, pathVal := range paths {
+		changed := false
+		for i, pathVal := range paths {
 			if pathVal == "" {
 				continue
 			}
@@ -121,6 +152,10 @@ func (s *SandboxTool) Execute(ctx context.Context, args json.RawMessage) (*Resul
 					dir := filepath.Dir(sbErr.Path)
 					if s.Approver != nil && s.Approver(ctx, s.Inner.Name(), absPath, dir) {
 						s.Sandbox.Authorize(dir)
+						if !filepath.IsAbs(pathVal) {
+							paths[i] = absPath
+							changed = true
+						}
 						continue
 					}
 					return &Result{
@@ -138,8 +173,23 @@ func (s *SandboxTool) Execute(ctx context.Context, args json.RawMessage) (*Resul
 					IsError: true,
 				}, nil
 			}
+			if !filepath.IsAbs(pathVal) {
+				paths[i] = absPath
+				changed = true
+			}
+		}
+		if changed {
+			quoted, _ := json.Marshal(paths)
+			fields[key] = quoted
+			rewritten = true
 		}
 	}
 
-	return s.Inner.Execute(ctx, args)
+	// If any paths were rewritten, re-marshal the arguments so the inner
+	// tool sees absolute paths based on the sandbox workdir.
+	finalArgs := args
+	if rewritten {
+		finalArgs, _ = json.Marshal(fields)
+	}
+	return s.Inner.Execute(ctx, finalArgs)
 }

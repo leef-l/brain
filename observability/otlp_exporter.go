@@ -78,7 +78,11 @@ func NewOTLPTraceExporter(sender SpanSender, opts ...OTLPTraceOption) *OTLPTrace
 // for later export.
 func (e *OTLPTraceExporter) StartSpan(ctx context.Context, name string, attrs Labels) (context.Context, Span) {
 	newCtx, span := e.inner.StartSpan(ctx, name, attrs)
-	return newCtx, &otlpSpanWrapper{inner: span, exporter: e}
+	var spanID string
+	if ms, ok := span.(*MemSpan); ok {
+		spanID = ms.SpanID
+	}
+	return newCtx, &otlpSpanWrapper{inner: span, exporter: e, spanID: spanID}
 }
 
 // Flush exports all pending spans via the sender. Safe for concurrent use.
@@ -120,6 +124,7 @@ func (e *OTLPTraceExporter) enqueue(sd SpanData) {
 type otlpSpanWrapper struct {
 	inner    Span
 	exporter *OTLPTraceExporter
+	spanID   string // captured at creation to find the correct span on End()
 	mu       sync.Mutex
 	ended    bool
 	errMsg   string
@@ -161,22 +166,29 @@ func (w *otlpSpanWrapper) End() {
 
 	w.inner.End()
 
-	// Build SpanData from the inner span snapshot.
+	// Build SpanData from the inner span snapshot, matching by SpanID
+	// to avoid mis-exporting a different span under concurrent/nested use.
 	spans := w.exporter.inner.Spans()
-	if len(spans) > 0 {
-		last := spans[len(spans)-1]
+	var matched *MemSpan
+	for _, s := range spans {
+		if s.SpanID == w.spanID {
+			matched = s
+			break
+		}
+	}
+	if matched != nil {
 		status := "OK"
 		if errMsg != "" {
 			status = "ERROR"
 		}
 		sd := SpanData{
-			TraceID:    last.TraceID,
-			SpanID:     last.SpanID,
-			ParentID:   last.ParentID,
-			Name:       last.Name,
-			StartTime:  last.StartedAt,
-			EndTime:    last.EndedAt,
-			Attrs:      mergeAttrs(last.Attrs, attrs),
+			TraceID:    matched.TraceID,
+			SpanID:     matched.SpanID,
+			ParentID:   matched.ParentID,
+			Name:       matched.Name,
+			StartTime:  matched.StartedAt,
+			EndTime:    matched.EndedAt,
+			Attrs:      mergeAttrs(matched.Attrs, attrs),
 			StatusCode: status,
 			StatusMsg:  errMsg,
 		}

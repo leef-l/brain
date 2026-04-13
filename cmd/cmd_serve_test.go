@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -101,5 +102,69 @@ func TestExecuteRun_CancelledRunStaysCancelled(t *testing.T) {
 	snap := entry.snapshot()
 	if snap.Status != "cancelled" {
 		t.Fatalf("final status=%q, want cancelled", snap.Status)
+	}
+}
+
+func TestHandleCreateRun_RestrictedRejectDoesNotPersistRun(t *testing.T) {
+	runtime, err := (&fileCLIRuntimeBackend{dataDir: t.TempDir()}).Open("central")
+	if err != nil {
+		t.Fatalf("open runtime: %v", err)
+	}
+
+	mgr := &runManager{store: runtime.RunStore, rootCtx: context.Background()}
+	body := bytes.NewBufferString(`{"prompt":"hello","brain":"central","model_config":{"provider":"mock"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/runs", body)
+	rec := httptest.NewRecorder()
+
+	handleCreateRun(rec, req, mgr, runtime, nil, 1, modeRestricted, t.TempDir(), serveWorkdirPolicyConfined)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", rec.Code)
+	}
+	if runs := runtime.RunStore.list(0, "all"); len(runs) != 0 {
+		t.Fatalf("unexpected persisted runs after rejected request: %d", len(runs))
+	}
+}
+
+func TestHandleCreateRun_ConcurrencyRejectDoesNotPersistRun(t *testing.T) {
+	runtime, err := (&fileCLIRuntimeBackend{dataDir: t.TempDir()}).Open("central")
+	if err != nil {
+		t.Fatalf("open runtime: %v", err)
+	}
+
+	mgr := &runManager{store: runtime.RunStore, rootCtx: context.Background()}
+	block := make(chan struct{})
+	if !mgr.reserveSlot(1) {
+		t.Fatal("failed to reserve initial slot")
+	}
+	mgr.launchReserved(&runEntry{
+		ID:        "existing-run",
+		Status:    "running",
+		Brain:     "central",
+		Prompt:    "hold",
+		CreatedAt: time.Now().UTC(),
+	}, func() {
+		<-block
+	})
+	defer func() {
+		close(block)
+		waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := mgr.wait(waitCtx); err != nil {
+			t.Fatalf("wait running entry: %v", err)
+		}
+	}()
+
+	body := bytes.NewBufferString(`{"prompt":"hello","brain":"central","model_config":{"provider":"mock"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/runs", body)
+	rec := httptest.NewRecorder()
+
+	handleCreateRun(rec, req, mgr, runtime, nil, 1, modeDefault, t.TempDir(), serveWorkdirPolicyConfined)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status=%d, want 429", rec.Code)
+	}
+	if runs := runtime.RunStore.list(0, "all"); len(runs) != 0 {
+		t.Fatalf("unexpected persisted runs after concurrency rejection: %d", len(runs))
 	}
 }

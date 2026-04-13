@@ -36,6 +36,12 @@ type Stores struct {
 	RunCheckpointStore RunCheckpointStore
 	UsageLedger        UsageLedger
 	ResumeCoordinator  ResumeCoordinator
+
+	// CloseFunc is an optional callback that releases resources held by the
+	// driver (DB connections, file handles). If non-nil, persistence.Open
+	// wraps it into the returned ClosableStores. Drivers that hold resources
+	// should set this field in their Open() implementation.
+	CloseFunc func() error
 }
 
 // Driver is the interface that database backends must implement to
@@ -141,11 +147,7 @@ func Open(driverName, dsn string) (*ClosableStores, error) {
 		return nil, fmt.Errorf("persistence: driver %q open: %w", driverName, err)
 	}
 
-	// Check if the driver returned a ClosableStores directly.
-	if cs, ok := interface{}(s).(DriverCloser); ok {
-		return NewClosableStores(*s, cs.Close), nil
-	}
-	return NewClosableStores(*s, nil), nil
+	return NewClosableStores(*s, s.CloseFunc), nil
 }
 
 // MustOpen is like Open but panics on error. Intended for use in init()

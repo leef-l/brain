@@ -199,6 +199,16 @@ func materializeRestrictedWorkspace(tempRoot, realRoot string, policy *execution
 		}
 
 		readable := policy.CheckRead(path) == nil
+		if !readable && !d.IsDir() {
+			// Files that cannot be read MUST NOT be materialized in the
+			// temp workspace — not even as empty placeholders. Otherwise
+			// syncAllowedMutations would write the placeholder (empty)
+			// content back to the real file, destroying its original data.
+			// Directories are kept so that readable children can be placed
+			// under them.
+			return nil
+		}
+
 		editable := policy.CheckWrite(path) == nil
 		deletable := policy.CheckDelete(path) == nil
 		if !readable && !editable && !deletable {
@@ -216,28 +226,21 @@ func materializeRestrictedWorkspace(tempRoot, realRoot string, policy *execution
 		case d.IsDir():
 			return os.MkdirAll(tempPath, 0o755)
 		case d.Type()&os.ModeSymlink != 0:
-			if readable || editable {
+			if readable {
 				return fmt.Errorf("restricted command workspace does not expose symlink path: %s", rel)
 			}
-			return writePlaceholderFile(tempPath, 0o644)
+			return nil
 		case d.Type().IsRegular():
 			info, err := d.Info()
 			if err != nil {
 				return err
 			}
-			if readable {
-				return copyWorkspaceFile(path, tempPath, info.Mode().Perm())
-			}
-			mode := info.Mode().Perm()
-			if mode == 0 {
-				mode = 0o644
-			}
-			return writePlaceholderFile(tempPath, mode)
+			return copyWorkspaceFile(path, tempPath, info.Mode().Perm())
 		default:
-			if readable || editable {
+			if readable {
 				return fmt.Errorf("restricted command workspace does not expose special file: %s", rel)
 			}
-			return writePlaceholderFile(tempPath, 0o644)
+			return nil
 		}
 	})
 }
@@ -290,16 +293,6 @@ func copyWorkspaceFile(src, dst string, mode fs.FileMode) error {
 		mode = 0o644
 	}
 	return os.WriteFile(dst, data, mode)
-}
-
-func writePlaceholderFile(path string, mode fs.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if mode == 0 {
-		mode = 0o644
-	}
-	return os.WriteFile(path, nil, mode)
 }
 
 func syncAllowedMutations(root string, before, after map[string]fileSnapshotEntry) error {

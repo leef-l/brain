@@ -229,6 +229,8 @@ curl -X POST http://127.0.0.1:7701/v1/runs \
 - 命令结束后，只允许把命中的 create/edit/delete 变更同步回真实 `workdir`；越权改动会被丢弃并记审计事件
 - `bypass-permissions` 只绕过交互确认，不绕过 `workdir` / sandbox / file policy
 - `brain serve` 默认用 `confined` 请求级 workdir 策略；显式设置 `--run-workdir-policy open` 或 `serve_workdir_policy=open` 才允许请求跳出服务根目录
+- sandbox 包装下的 `code.search` 若省略 `path` 或传空字符串，会默认搜索当前 `workdir`，而不是进程 `cwd`
+- `brain serve` 只有在请求级校验通过并拿到并发槽位后才会持久化 run；被 4xx/429 拒绝的请求不会残留伪 `running` 记录
 
 当前 CLI runtime 默认文件布局：
 
@@ -370,7 +372,7 @@ docs/ 目录下包含多篇 RFC 级规格、架构文档与实施计划，常用
 | 32 | [v3 Brain 架构](docs/32-v3-Brain架构.md) | Brain / Manifest / Runtime / Package / Capability 的长期架构冻结 |
 | 33 | [Brain Manifest 规格](docs/33-Brain-Manifest规格.md) | v3 Brain 的稳定 schema、runtime/policy/license/health 声明面 |
 | 34 | [Brain Package 与 Marketplace 规范](docs/34-Brain-Package与Marketplace规范.md) | package 布局、安装、签名、marketplace 索引与分发规则 |
-| -- | [代码质量修复计划](docs/代码质量修复计划.md) | v0.5.1 审计问题修复（Wave-1/2/3 全部完成） |
+| -- | [代码质量修复计划](docs/代码质量修复计划.md) | v0.5.1 审计问题修复，含 2026-04-13 补充回归修复 |
 
 ## 8 项关键设计决策
 

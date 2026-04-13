@@ -53,7 +53,7 @@ func runChat(args []string) int {
 	filePolicyInput = resolveFilePolicyInput(cfg, filePolicyInput)
 
 	explicitProviderInput := hasModelConfigOverrides(modelInput) || strings.TrimSpace(*apiKey) != "" || strings.TrimSpace(*baseURL) != "" || strings.TrimSpace(*modelFlag) != ""
-	if cfg == nil && !wantsMockProvider(*providerFlag, modelInput) && !explicitProviderInput {
+	if cfg == nil && !wantsMockProvider(*providerFlag, modelInput) && !explicitProviderInput && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		if cfgErr != nil {
 			fmt.Fprintf(os.Stderr, "brain chat: %v\n", cfgErr)
 		} else {

@@ -129,7 +129,7 @@ func runRun(args []string) int {
 	// --- Provider selection ---
 	providerSession := openMockProvider(*reply)
 	if !wantsMockProvider(*provider, modelInput) {
-		if cfg == nil && !explicitProviderInput {
+		if cfg == nil && !explicitProviderInput && os.Getenv("ANTHROPIC_API_KEY") == "" {
 			if cfgErr != nil {
 				fmt.Fprintf(os.Stderr, "brain run: %v\n", cfgErr)
 			} else {

@@ -86,10 +86,12 @@ func (e *runEntry) finish(status string, result json.RawMessage) {
 
 // runManager manages Runs in memory.
 type runManager struct {
-	runs    sync.Map // id → *runEntry
-	store   *runtimeStore
-	rootCtx context.Context
-	wg      sync.WaitGroup
+	runs     sync.Map // id → *runEntry
+	store    *runtimeStore
+	rootCtx  context.Context
+	wg       sync.WaitGroup
+	launchMu sync.Mutex // guards concurrent slot reservations
+	running  int
 }
 
 func (rm *runManager) get(id string) (*runEntry, bool) {
@@ -139,14 +141,9 @@ func (rm *runManager) list() []*runEntry {
 }
 
 func (rm *runManager) runningCount() int {
-	count := 0
-	rm.runs.Range(func(_, v interface{}) bool {
-		if v.(*runEntry).status() == "running" {
-			count++
-		}
-		return true
-	})
-	return count
+	rm.launchMu.Lock()
+	defer rm.launchMu.Unlock()
+	return rm.running
 }
 
 func (rm *runManager) launch(entry *runEntry, fn func()) {
@@ -156,6 +153,33 @@ func (rm *runManager) launch(entry *runEntry, fn func()) {
 		defer rm.wg.Done()
 		fn()
 	}()
+}
+
+// reserveSlot atomically acquires capacity for a new run.
+// Returns false if the concurrency limit has been reached.
+func (rm *runManager) reserveSlot(maxConcurrent int) bool {
+	rm.launchMu.Lock()
+	defer rm.launchMu.Unlock()
+	if rm.running >= maxConcurrent {
+		return false
+	}
+	rm.running++
+	return true
+}
+
+func (rm *runManager) releaseSlot() {
+	rm.launchMu.Lock()
+	defer rm.launchMu.Unlock()
+	if rm.running > 0 {
+		rm.running--
+	}
+}
+
+func (rm *runManager) launchReserved(entry *runEntry, fn func()) {
+	rm.launch(entry, func() {
+		defer rm.releaseSlot()
+		fn()
+	})
 }
 
 func (rm *runManager) cancelAll(reason string) {
@@ -415,16 +439,10 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		return
 	}
 
-	// Check concurrency limit.
-	if mgr.runningCount() >= maxConcurrent {
-		http.Error(w, `{"error":"max concurrent runs reached"}`, http.StatusTooManyRequests)
-		return
-	}
-
 	// Resolve provider config.
 	cfgFile, cfgErr := loadConfig()
 	explicitProviderInput := hasModelConfigOverrides(req.ModelConfig)
-	if cfgFile == nil && !wantsMockProvider("", req.ModelConfig) && !explicitProviderInput {
+	if cfgFile == nil && !wantsMockProvider("", req.ModelConfig) && !explicitProviderInput && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		msg := "no config available"
 		if cfgErr != nil {
 			msg = cfgErr.Error()
@@ -441,11 +459,8 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		return
 	}
 
-	runRec, err := runtime.RunStore.create(req.Brain, req.Prompt, string(mode), req.Workdir)
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"create run record: %s"}`, err), http.StatusInternalServerError)
-		return
-	}
+	// Validate execution environment BEFORE creating the run record,
+	// so failed validation doesn't leave orphan "running" records.
 	env := newExecutionEnvironment(req.Workdir, mode, cfg, nil, false)
 	req.FilePolicy = resolveFilePolicyInput(cfg, req.FilePolicy)
 	if err := applyFilePolicy(env, req.FilePolicy); err != nil {
@@ -456,6 +471,19 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		http.Error(w, `{"error":"restricted mode requires file_policy (config or request body)"}`, http.StatusBadRequest)
 		return
 	}
+
+	if !mgr.reserveSlot(maxConcurrent) {
+		http.Error(w, `{"error":"max concurrent runs reached"}`, http.StatusTooManyRequests)
+		return
+	}
+
+	runRec, err := runtime.RunStore.create(req.Brain, req.Prompt, string(mode), req.Workdir)
+	if err != nil {
+		mgr.releaseSlot()
+		http.Error(w, fmt.Sprintf(`{"error":"create run record: %s"}`, err), http.StatusInternalServerError)
+		return
+	}
+
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if req.timeoutDuration > 0 {
@@ -473,7 +501,7 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		cancel:    cancel,
 	}
 	_ = runtime.RunStore.appendEvent(runRec.ID, "run.accepted", "run accepted by serve API", nil)
-	mgr.launch(entry, func() {
+	mgr.launchReserved(entry, func() {
 		executeRun(ctx, entry, mgr, runtime, providerSession, req, runRec, cfg, mode)
 	})
 

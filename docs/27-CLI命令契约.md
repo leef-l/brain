@@ -688,12 +688,14 @@ brain serve [--listen <addr>] [--max-concurrent-runs <n>] [--mode <mode>] [--wor
 - `file_policy` 用于约束本次 Run 的读/写/删边界；`allow_read / allow_create / allow_edit / allow_delete / deny` 独立生效
 - `allow_commands=false` 时命令型工具 MUST 直接拒绝；默认仍允许在受限 workdir 的临时隔离工作区里执行，并只同步命中策略的 create/edit/delete 结果
 - `allow_delegate=false` 时 `central.delegate` MUST 不暴露给模型；默认仍允许 delegate，但 delegated sidecar MUST 继承同一份执行边界
+- 在 sandbox 包装下，`code.search` 若省略 `path` 或传空字符串，MUST 默认解析到当前请求的 `workdir`，不能退回进程 `cwd`
 
 ### 15.3 行为
 
 - 启动嵌入式 file-backed CLI runtime，并监听 HTTP 请求
 - 加载当前运行时工具注册表；若 sidecar 可用，则 `central` 路径同时暴露 delegate 能力
 - `POST /v1/runs` 为每次请求建立独立的 provider/session、`workdir`、`timeout`、`file_policy` 执行边界
+- `POST /v1/runs` MUST 在请求级校验和并发槽位预留成功后才创建持久化 run；被校验拒绝或命中并发上限的请求不能留下伪 `running` 记录
 - 收到 SIGINT / SIGTERM 时，先停止接收新请求，再取消 in-flight Run，并等待 drain 结束后退出
 
 ### 15.4 退出码
@@ -927,6 +929,7 @@ v1 冻结以下退出码含义，MUST NOT 在 v1 内改变：
   1. 与 `brain` 主二进制同目录
   2. `PATH`
 - `workdir` 是执行边界，不是运行时数据库目录；`run`/`chat` 默认使用当前目录，`serve` 则先用服务级 `--workdir`，再允许请求级覆盖
+- 对带 `path` 的路径型工具，省略 `path` 的默认值也 MUST 绑定到当前 `workdir`；不能因为工具内部走 `filepath.Abs(".")` 而漂移到宿主进程的 `cwd`
 
 ### 22.3 权限要求
 
