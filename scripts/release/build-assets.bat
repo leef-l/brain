@@ -9,11 +9,15 @@ REM           build-assets.bat 0.6.0 dist
 REM ============================================================
 
 if "%~1"=="" (
-    echo usage: %~nx0 ^<version^> [output-dir] >&2
-    exit /b 64
+    set /p "version=Enter version (e.g. 0.6.0): "
+    if "!version!"=="" (
+        echo ERROR: version is required.
+        pause
+        exit /b 64
+    )
+) else (
+    set "version=%~1"
 )
-
-set "version=%~1"
 REM strip leading 'v' if present
 if "%version:~0,1%"=="v" set "version=%version:~1%"
 
@@ -121,6 +125,9 @@ echo ========================================
 echo.
 
 dir /b "%outdir%"
+
+REM keep window open when double-clicked
+if "%~1"=="" pause
 exit /b %errors%
 
 REM ============================================================
