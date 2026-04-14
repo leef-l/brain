@@ -39,7 +39,7 @@ func New(httpClient *http.Client, st store.Store, cfg Config) *Backfiller {
 		cfg.MaxBars = 100
 	}
 	if cfg.RateLimit <= 0 {
-		cfg.RateLimit = 20
+		cfg.RateLimit = 5
 	}
 	return &Backfiller{
 		httpClient: httpClient,
@@ -61,15 +61,27 @@ func (b *Backfiller) BackfillAll(ctx context.Context, instruments []string) erro
 	return nil
 }
 
-// backfillOne fills a single instrument+timeframe from the last checkpoint
-// (or GoBack ago) up to now.
+// backfillOne fills a single instrument+timeframe from GoBack ago up to now.
+// Uses 'after' param: OKX returns candles with timestamp < after (older data).
+// Start from now and walk backwards to GoBack.
 func (b *Backfiller) backfillOne(ctx context.Context, instID, tf string) error {
-	startTS := b.getStartTS(ctx, instID, tf)
+	progress, _ := b.store.GetProgress(ctx, instID, tf)
 	nowMS := time.Now().UnixMilli()
-	totalCount := 0
 
-	cursor := startTS
-	for cursor < nowMS {
+	var startFrom int64
+	var barCount int
+	if progress != nil && progress.LatestTS > 0 {
+		startFrom = progress.LatestTS
+		barCount = progress.BarCount
+	} else {
+		startFrom = nowMS
+		barCount = 0
+	}
+
+	goBackTS := time.Now().Add(-b.config.GoBack).UnixMilli()
+	cursor := startFrom
+
+	for cursor > goBackTS {
 		candles, err := b.fetchCandles(ctx, instID, tf, cursor, b.config.MaxBars)
 		if err != nil {
 			return err
@@ -81,16 +93,15 @@ func (b *Backfiller) backfillOne(ctx context.Context, instID, tf string) error {
 		if err := b.store.BatchInsert(ctx, candles); err != nil {
 			return fmt.Errorf("batch insert: %w", err)
 		}
+		barCount += len(candles)
 
-		totalCount += len(candles)
-		// Move cursor past the latest candle we received.
-		cursor = candles[len(candles)-1].Timestamp + 1
+		earliest := candles[0].Timestamp
+		cursor = earliest
 
-		if err := b.saveProgress(ctx, instID, tf, cursor, totalCount); err != nil {
+		if err := b.saveProgress(ctx, instID, tf, cursor, barCount); err != nil {
 			return fmt.Errorf("save progress: %w", err)
 		}
 
-		// If we got fewer bars than requested, we've reached the end.
 		if len(candles) < b.config.MaxBars {
 			break
 		}
@@ -128,6 +139,55 @@ func (b *Backfiller) FillGap(ctx context.Context, instID, tf string, from, to in
 type okxResponse struct {
 	Code string     `json:"code"`
 	Data [][]string `json:"data"`
+}
+
+// fetchCandlesBefore calls the OKX history-candles endpoint with "before" param,
+// returning candles earlier than the given timestamp (for backfill direction).
+//
+// OKX API: GET /api/v5/market/history-candles
+//
+//	?instId=BTC-USDT&bar=1m&limit=100&before=<ts>
+//
+// The API returns data in descending order; this function reverses it to ascending.
+func (b *Backfiller) fetchCandlesBefore(ctx context.Context, instID, bar string, before int64, limit int) ([]store.Candle, error) {
+	if err := b.limiter.Wait(ctx); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v5/market/history-candles?instId=%s&bar=%s&limit=%d&before=%d",
+		b.config.RESTURL, instID, bar, limit, before)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new request: %w", err)
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	var okxResp okxResponse
+	if err := json.Unmarshal(body, &okxResp); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w", err)
+	}
+	if okxResp.Code != "0" {
+		return nil, fmt.Errorf("okx api error code=%s body=%s", okxResp.Code, string(body))
+	}
+
+	candles, err := parseOKXCandles(instID, bar, okxResp.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	reverseCandles(candles)
+	return candles, nil
 }
 
 // fetchCandles calls the OKX history-candles endpoint and returns parsed candles

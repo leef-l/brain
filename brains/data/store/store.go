@@ -8,8 +8,8 @@ import "context"
 // but the type lives in the store package to break the import cycle.
 type Candle struct {
 	InstID    string
-	Bar       string  // "1m", "5m", "15m", "1H", "4H"
-	Timestamp int64   // milliseconds since epoch
+	Bar       string // "1m", "5m", "15m", "1H", "4H"
+	Timestamp int64  // milliseconds since epoch
 	Open      float64
 	High      float64
 	Low       float64
@@ -24,7 +24,7 @@ type FeatureVector struct {
 	InstID     string
 	Timeframe  string
 	Timestamp  int64
-	Vector     []byte         // serialised []float64
+	Vector     []byte // serialised []float64
 	Metadata   map[string]any
 }
 

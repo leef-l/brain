@@ -19,11 +19,11 @@ func (b *Backfiller) getStartTS(ctx context.Context, instID, tf string) int64 {
 }
 
 // saveProgress persists the backfill checkpoint so it can be resumed later.
-func (b *Backfiller) saveProgress(ctx context.Context, instID, tf string, latestTS int64, count int) error {
+func (b *Backfiller) saveProgress(ctx context.Context, instID, tf string, latestTS int64, barCount int) error {
 	return b.store.SaveProgress(ctx, store.BackfillProgress{
 		InstID:    instID,
 		Timeframe: tf,
 		LatestTS:  latestTS,
-		BarCount:  count,
+		BarCount:  barCount,
 	})
 }

@@ -115,17 +115,17 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 	})
 
 	return &DataBrain{
-		config:    cfg,
-		logger:    logger,
-		store:     st,
+		config:     cfg,
+		logger:     logger,
+		store:      st,
 		activeList: al,
-		validator: v,
-		router:    router.New(),
-		candles:   candles,
-		orderbook: orderbook,
-		tradeflow: tradeflow,
-		feature:   feat,
-		buffers:   ringbuf.NewBufferManager(1024),
+		validator:  v,
+		router:     router.New(),
+		candles:    candles,
+		orderbook:  orderbook,
+		tradeflow:  tradeflow,
+		feature:    feat,
+		buffers:    ringbuf.NewBufferManager(1024),
 	}
 }
 
@@ -146,14 +146,32 @@ func (b *DataBrain) Start(ctx context.Context) error {
 		b.logger.Info("active instruments refreshed", "count", len(instruments))
 	}
 
-	// 2. 后台历史回填（不阻塞启动）
+	// 2. 从数据库加载历史 K 线（用于特征计算）
+	if b.store != nil {
+		instIDs := b.activeList.List()
+		loaded := 0
+		for _, instID := range instIDs {
+			for _, tf := range []string{"1m", "5m", "15m", "1H", "4H"} {
+				candles, err := b.loadCandlesForFeature(ctx, instID, tf, 500)
+				if err != nil || len(candles) == 0 {
+					continue
+				}
+				w := b.candles.GetWindow(instID, tf)
+				w.LoadHistory(candles)
+				loaded++
+			}
+		}
+		b.logger.Info("loaded historical candles for feature computation", "windows", loaded)
+	}
+
+	// 3. 后台历史回填（不阻塞启动）
 	if b.config.Backfill.Enabled && b.store != nil {
 		bf := backfill.New(&http.Client{Timeout: 30 * time.Second}, b.store, backfill.Config{
 			RESTURL:    "https://www.okx.com",
 			GoBack:     time.Duration(b.config.Backfill.MaxDays) * 24 * time.Hour,
 			Timeframes: []string{"1m", "5m", "15m", "1H", "4H"},
 			MaxBars:    b.config.Backfill.BatchSize,
-			RateLimit:  20,
+			RateLimit:  5,
 		})
 		b.backfiller = bf
 
@@ -305,6 +323,12 @@ func (b *DataBrain) consumeNearRT(ctx context.Context) {
 // dispatchEvent 分发事件到对应处理器。
 func (b *DataBrain) dispatchEvent(event provider.DataEvent) {
 	switch p := event.Payload.(type) {
+	case provider.Candle:
+		tf := extractTimeframe(event.Topic)
+		b.candles.OnCandle(event.Symbol, tf, p)
+		if b.activeList.IsActive(event.Symbol) {
+			b.persistCandle(p, tf)
+		}
 	case []provider.Candle:
 		for _, c := range p {
 			tf := extractTimeframe(event.Topic)
@@ -313,14 +337,17 @@ func (b *DataBrain) dispatchEvent(event provider.DataEvent) {
 				b.persistCandle(c, tf)
 			}
 		}
+	case provider.Trade:
+		b.tradeflow.OnTrade(event.Symbol, p)
 	case []provider.Trade:
 		for _, t := range p {
 			b.tradeflow.OnTrade(event.Symbol, t)
 		}
 	case *provider.OrderBook:
 		b.orderbook.Update(event.Symbol, *p)
+	case provider.FundingRate:
+		_ = p
 	case []provider.FundingRate:
-		// 暂存：未来供 feature engine 使用
 		_ = p
 	}
 }
@@ -378,6 +405,56 @@ func (b *DataBrain) updateFeatures() {
 		b.metrics.RingBufWriteTotal.Add(1)
 	}
 	b.metrics.FeatureComputeMs.Store(time.Since(start).Milliseconds())
+}
+
+// loadCandlesForFeature 从数据库加载最近 N 条 K 线用于特征计算。
+func (b *DataBrain) loadCandlesForFeature(ctx context.Context, instID, tf string, limit int) ([]provider.Candle, error) {
+	if b.store == nil {
+		return nil, nil
+	}
+	latest, err := b.store.LatestTimestamp(ctx, instID, tf)
+	if err != nil || latest == 0 {
+		return nil, nil
+	}
+	from := latest - int64(limit)*barToMs(tf)*60*1000
+	to := latest + 1
+	rows, err := b.store.QueryRange(ctx, instID, tf, from, to)
+	if err != nil {
+		return nil, err
+	}
+	candles := make([]provider.Candle, len(rows))
+	for i, r := range rows {
+		candles[i] = provider.Candle{
+			InstID:    r.InstID,
+			Bar:       r.Bar,
+			Timestamp: r.Timestamp,
+			Open:      r.Open,
+			High:      r.High,
+			Low:       r.Low,
+			Close:     r.Close,
+			Volume:    r.Volume,
+			VolumeCcy: r.VolumeCcy,
+		}
+	}
+	return candles, nil
+}
+
+// barToMs 返回每个 bar 对应的毫秒数。
+func barToMs(bar string) int64 {
+	switch bar {
+	case "1m":
+		return 1
+	case "5m":
+		return 5
+	case "15m":
+		return 15
+	case "1H":
+		return 60
+	case "4H":
+		return 240
+	default:
+		return 1
+	}
 }
 
 // persistCandle 将 K 线写入 PG。

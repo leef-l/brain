@@ -102,17 +102,15 @@ func (s *PGStore) BatchInsert(ctx context.Context, candles []Candle) error {
 	if len(candles) == 0 {
 		return nil
 	}
-	rows := make([][]any, len(candles))
-	for i, c := range candles {
-		rows[i] = []any{c.InstID, c.Bar, c.Timestamp, c.Open, c.High, c.Low, c.Close, c.Volume, c.VolumeCcy}
+	const q = `INSERT INTO candles (inst_id, bar, ts, o, h, l, c, vol, vol_ccy)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (inst_id, bar, ts) DO UPDATE SET o=$4, h=$5, l=$6, c=$7, vol=$8, vol_ccy=$9`
+	b := &pgx.Batch{}
+	for _, c := range candles {
+		b.Queue(q, c.InstID, c.Bar, c.Timestamp, c.Open, c.High, c.Low, c.Close, c.Volume, c.VolumeCcy)
 	}
-	_, err := s.pool.CopyFrom(
-		ctx,
-		pgx.Identifier{"candles"},
-		[]string{"inst_id", "bar", "ts", "o", "h", "l", "c", "vol", "vol_ccy"},
-		pgx.CopyFromRows(rows),
-	)
-	return err
+	br := s.pool.SendBatch(ctx, b)
+	return br.Close()
 }
 
 func (s *PGStore) Upsert(ctx context.Context, c Candle) error {
