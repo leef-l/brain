@@ -22,7 +22,7 @@ type Config struct {
 	GoBack     time.Duration // how far back to fill, e.g. 90 * 24h
 	Timeframes []string      // e.g. ["1m","5m","15m","1H","4H"]
 	MaxBars    int           // OKX returns at most 100 bars per call
-	RateLimit  float64       // requests per second, e.g. 20
+	RateLimit  float64       // requests per second (default: 5, OKX limit)
 }
 
 // Backfiller fetches historical candles from OKX and writes them to the store.
@@ -96,7 +96,7 @@ func (b *Backfiller) backfillOne(ctx context.Context, instID, tf string) error {
 		barCount += len(candles)
 
 		earliest := candles[0].Timestamp
-		cursor = earliest
+		cursor = earliest - 1
 
 		if err := b.saveProgress(ctx, instID, tf, cursor, barCount); err != nil {
 			return fmt.Errorf("save progress: %w", err)
@@ -139,55 +139,6 @@ func (b *Backfiller) FillGap(ctx context.Context, instID, tf string, from, to in
 type okxResponse struct {
 	Code string     `json:"code"`
 	Data [][]string `json:"data"`
-}
-
-// fetchCandlesBefore calls the OKX history-candles endpoint with "before" param,
-// returning candles earlier than the given timestamp (for backfill direction).
-//
-// OKX API: GET /api/v5/market/history-candles
-//
-//	?instId=BTC-USDT&bar=1m&limit=100&before=<ts>
-//
-// The API returns data in descending order; this function reverses it to ascending.
-func (b *Backfiller) fetchCandlesBefore(ctx context.Context, instID, bar string, before int64, limit int) ([]store.Candle, error) {
-	if err := b.limiter.Wait(ctx); err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/api/v5/market/history-candles?instId=%s&bar=%s&limit=%d&before=%d",
-		b.config.RESTURL, instID, bar, limit, before)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("new request: %w", err)
-	}
-
-	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http do: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
-	}
-
-	var okxResp okxResponse
-	if err := json.Unmarshal(body, &okxResp); err != nil {
-		return nil, fmt.Errorf("unmarshal: %w", err)
-	}
-	if okxResp.Code != "0" {
-		return nil, fmt.Errorf("okx api error code=%s body=%s", okxResp.Code, string(body))
-	}
-
-	candles, err := parseOKXCandles(instID, bar, okxResp.Data)
-	if err != nil {
-		return nil, err
-	}
-
-	reverseCandles(candles)
-	return candles, nil
 }
 
 // fetchCandles calls the OKX history-candles endpoint and returns parsed candles

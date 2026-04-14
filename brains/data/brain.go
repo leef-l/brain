@@ -416,7 +416,7 @@ func (b *DataBrain) loadCandlesForFeature(ctx context.Context, instID, tf string
 	if err != nil || latest == 0 {
 		return nil, nil
 	}
-	from := latest - int64(limit)*barToMs(tf)*60*1000
+	from := latest - int64(limit)*barMinutes(tf)*60*1000
 	to := latest + 1
 	rows, err := b.store.QueryRange(ctx, instID, tf, from, to)
 	if err != nil {
@@ -439,8 +439,8 @@ func (b *DataBrain) loadCandlesForFeature(ctx context.Context, instID, tf string
 	return candles, nil
 }
 
-// barToMs 返回每个 bar 对应的毫秒数。
-func barToMs(bar string) int64 {
+// barMinutes 返回每个 bar 对应的分钟数。
+func barMinutes(bar string) int64 {
 	switch bar {
 	case "1m":
 		return 1
