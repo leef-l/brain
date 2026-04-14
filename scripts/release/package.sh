@@ -31,12 +31,12 @@ if [[ "${goos}" == "windows" ]]; then
 fi
 
 declare -a binaries=(
-  "brain=./cmd"
-  "brain-central=./cmd/brain-central"
-  "brain-code=./cmd/brain-code"
-  "brain-verifier=./cmd/brain-verifier"
-  "brain-fault=./cmd/brain-fault"
-  "brain-browser=./cmd/brain-browser"
+  "brain=./cmd/brain"
+  "brain-central=./central/cmd"
+  "brain-code=./brains/code/cmd"
+  "brain-verifier=./brains/verifier/cmd"
+  "brain-fault=./brains/fault/cmd"
+  "brain-browser=./brains/browser/cmd"
 )
 
 for entry in "${binaries[@]}"; do
@@ -46,8 +46,6 @@ for entry in "${binaries[@]}"; do
     go build -trimpath -ldflags "${ldflags}" -o "${stage_dir}/${name}${ext}" "${pkg}"
 done
 
-cp "${root_dir}/bin/config.example.json" "${stage_dir}/"
-cp "${root_dir}/bin/keybindings.example.json" "${stage_dir}/"
 cp "${root_dir}/VERSION.json" "${stage_dir}/"
 cp "${root_dir}/LICENSE" "${stage_dir}/"
 cp "${root_dir}/README.md" "${stage_dir}/"
