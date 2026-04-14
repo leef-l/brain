@@ -1,0 +1,103 @@
+# ============================================================
+#  量化大脑 (Quant Brain) 配置示例
+#  包含三个子系统：执行层 / 策略层 / 风控层
+# ============================================================
+
+# ==================== 执行层 (Execution) ====================
+# 可执行文件：brain-quant-execution (exchange-executor)
+# 用途：OrderIntent → ExecutionResult 的薄 sidecar
+
+# --- 命令行参数 ---
+# -intent <json>         内联 OrderIntent JSON
+# -intent-file <path>    OrderIntent JSON 文件路径
+# -backend <name>        执行后端（默认 "paper"）
+# -mark-price <float>    纸盘参考标记价格（默认 0）
+# -slippage-bps <float>  纸盘滑点（基点，默认 0）
+# -fee-bps <float>       纸盘手续费（基点，默认 5）
+
+# --- 启动示例 ---
+# 纸盘模式（默认）:
+#   brain-quant-execution -intent '{"symbol":"BTC-USDT-SWAP","side":"buy","quantity":"0.1","leverage":10}'
+#
+# 从文件读取:
+#   brain-quant-execution -intent-file ./order.json -mark-price 65000 -slippage-bps 2
+#
+# 从 stdin 读取:
+#   cat order.json | brain-quant-execution -fee-bps 3
+
+# --- OrderIntent JSON 格式 ---
+# {
+#   "id": "order-001",
+#   "symbol": "BTC-USDT-SWAP",
+#   "side": "buy",                    # buy | sell
+#   "pos_side": "long",               # long | short
+#   "order_type": "market",           # market | limit | stop_loss | take_profit | stop_market | stop_limit
+#   "leverage": 10,
+#   "quantity": "0.1",
+#   "price": "65000",                 # limit 订单必填
+#   "stop_loss": "63000",
+#   "take_profit": "70000",
+#   "time_in_force": "GTC",           # 可选
+#   "client_ord_id": "my-order-001",  # 可选
+#   "timestamp": 1718000000000        # Unix 毫秒
+# }
+
+# ==================== 策略层 (Strategy) =====================
+# 策略层目前通过 Go 代码配置，无独立可执行文件
+
+# --- 策略权重 ---
+strategy:
+  weights:
+    trend_follower: 0.30       # 趋势跟踪
+    mean_reversion: 0.25       # 均值回归
+    breakout_momentum: 0.25    # 突破动量
+    order_flow: 0.20           # 订单流
+
+  # --- 聚合器阈值 ---
+  long_threshold: 0.45         # 做多信号最低分数
+  short_threshold: 0.45        # 做空信号最低分数
+  dominance_factor: 1.5        # 主方向必须是反方向的 1.5 倍
+
+  # --- 历史胜率过滤 ---
+  # 做多信号：历史胜率 < 0.35 时拒绝
+  # 做空信号：历史胜率 > 0.65 时拒绝
+
+  # --- LLM 复审触发条件 ---
+  # 持仓数 >= 3
+  # 最大单仓占比 > 5%
+  # 当日亏损 > 3%
+  # 检测到异常信号
+
+# ==================== 风控层 (Risk) =========================
+
+# --- 风控守卫 (Guard) ---
+risk:
+  guard:
+    # 第一层：订单级检查
+    max_single_position_pct: 5       # 单仓最大占权益百分比
+    max_leverage: 20                 # 最大杠杆
+    min_stop_distance_atr: 1         # 止损最小距离（ATR 倍数）
+    max_stop_distance_pct: 10        # 止损最大距离（入场价百分比）
+    max_concurrent_positions: 5      # 最大同时持仓数
+
+    # 第二层：组合级检查
+    max_total_exposure_pct: 30       # 总敞口上限（权益百分比）
+    max_same_direction_pct: 20       # 同向敞口上限（权益百分比）
+    stop_new_trades_loss_pct: 3      # 日亏损达此比例停止开新仓
+    liquidate_all_loss_pct: 5        # 日亏损达此比例全部平仓
+
+    # 第三层：熔断暂停
+    volatility_pause: 1h             # 波动率 > 99 分位时暂停
+    btc_move_pause: 30m              # BTC 15 分钟内 ±5% 时暂停
+    executor_failure_pause: 10m      # 连续 3 次执行失败时暂停
+    memory_alert_threshold_gb: 40    # 内存警报阈值 (GB)
+    liquidation_pause: 15m           # OI 5 分钟内下降 >5% 时暂停
+
+  # --- 仓位计算器 (Position Sizer) ---
+  position_sizer:
+    min_fraction: 0.005              # 最小仓位比例（权益的 0.5%）
+    max_fraction: 0.05               # 最大仓位比例（权益的 5%）
+    scale_fraction: 0.25             # Kelly 缩放因子（1/4 Kelly）
+    # 使用 Kelly 公式：f* = (p × b - q) / b
+    # 其中 p=胜率, q=1-p, b=盈亏比
+    # 实际仓位 = Kelly × scale_fraction, 限制在 [min, max] 范围内

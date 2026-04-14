@@ -1,0 +1,81 @@
+# ============================================================
+#  代码大脑 (Code Brain) 配置示例
+#
+#  Code Brain 是 sidecar 架构，由 Kernel 通过 stdio JSON-RPC 启动，
+#  不接受命令行参数。配置通过以下方式传入：
+#    1. ~/.brain/config.json 中的 tool_profiles / active_tools
+#    2. RPC ExecuteRequest 中的 budget / execution 字段
+#    3. 环境变量
+# ============================================================
+
+# --- 环境变量 ---
+# BRAIN_CONFIG          覆盖默认配置文件路径（默认 ~/.brain/config.json）
+# BRAIN_LICENSE_REQUIRED  设为 "1" 强制要求 license 校验
+
+# --- 工具策略（写入 ~/.brain/config.json）---
+# Code Brain 注册的工具：
+#   code.read_file    — 读取文件内容
+#   code.write_file   — 写入/创建文件
+#   code.delete_file  — 删除文件
+#   code.search       — 搜索文件内容
+#   code.shell_exec   — 执行 shell 命令
+#
+# 示例：禁止 shell 执行
+# {
+#   "tool_profiles": {
+#     "no_shell": {
+#       "include": ["code.*"],
+#       "exclude": ["code.shell_exec"]
+#     }
+#   },
+#   "active_tools": {
+#     "delegate.code": "no_shell"
+#   }
+# }
+
+# --- 执行预算（通过 RPC ExecuteRequest 传入）---
+# budget:
+#   max_turns: 10              # Agent Loop 最大轮次（默认 10）
+
+# --- 文件策略（通过 RPC ExecuteRequest 传入）---
+# execution:
+#   workdir: /path/to/project  # 工作目录（沙箱根）
+#   file_policy:
+#     allow_read:              # 允许读取的文件模式
+#       - "**/*.go"
+#       - "**/*.ts"
+#       - "**/*.md"
+#     allow_create:            # 允许创建的文件模式
+#       - "**/*.go"
+#       - "**/*.ts"
+#     allow_edit:              # 允许编辑的文件模式
+#       - "**/*.go"
+#       - "**/*.ts"
+#     allow_delete: []         # 允许删除的文件模式（默认不允许）
+#     deny:                    # 拒绝列表（最高优先级）
+#       - ".git/**"
+#       - "bin/**"
+#       - "**/.env"
+#       - "**/secrets/**"
+#     allow_commands: true     # 是否允许 shell 命令
+#     allow_delegate: true     # 是否允许委派给其他大脑
+
+# --- 完整 config.json 示例 ---
+# {
+#   "tool_profiles": {
+#     "coding_safe": {
+#       "include": ["code.read_file", "code.write_file", "code.search"],
+#       "exclude": ["code.shell_exec", "code.delete_file"]
+#     }
+#   },
+#   "active_tools": {
+#     "delegate.code": "coding_safe"
+#   },
+#   "file_policy": {
+#     "allow_read": ["**"],
+#     "allow_create": ["src/**", "tests/**"],
+#     "allow_edit": ["src/**", "tests/**"],
+#     "allow_delete": [],
+#     "deny": [".git/**", "bin/**", "**/.env"]
+#   }
+# }

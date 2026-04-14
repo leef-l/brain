@@ -1,0 +1,89 @@
+# ============================================================
+#  故障大脑 (Fault Brain) 配置示例
+#
+#  Fault Brain 是混沌工程专用 sidecar，由 Kernel 通过 stdio JSON-RPC 启动，
+#  不接受命令行参数。配置通过以下方式传入：
+#    1. 环境变量
+#    2. ~/.brain/config.json 中的 tool_profiles / active_tools
+#    3. RPC ExecuteRequest 中的 budget / execution 字段
+# ============================================================
+
+# --- 环境变量 ---
+# BRAIN_CONFIG           覆盖默认配置文件路径（默认 ~/.brain/config.json）
+# BRAIN_LICENSE_REQUIRED 设为 "1" 强制要求 license 校验
+
+# --- 工具策略（写入 ~/.brain/config.json）---
+# Fault Brain 注册的工具（4 个）：
+#   fault.inject_error     — 注入错误（文件损坏/环境变量投毒/磁盘满模拟）
+#   fault.inject_latency   — 注入延迟（启动延迟/网络延迟模拟）
+#   fault.kill_process     — 杀死进程（按 PID 或进程名）
+#   fault.corrupt_response — 篡改命令输出（截断/乱序/替换/噪声/清空）
+#
+# 示例：仅允许安全的故障注入（禁止杀进程）
+# {
+#   "tool_profiles": {
+#     "safe_faults": {
+#       "include": ["fault.*"],
+#       "exclude": ["fault.kill_process"]
+#     }
+#   },
+#   "active_tools": {
+#     "delegate.fault": "safe_faults"
+#   }
+# }
+
+# --- 执行预算（通过 RPC ExecuteRequest 传入）---
+# budget:
+#   max_turns: 8               # Agent Loop 最大轮次（默认 8）
+
+# --- 工具参数参考 ---
+
+# fault.inject_error:
+#   type: file_corrupt         # 错误类型: file_corrupt | env_poison | exit_code | disk_full
+#   target: /path/to/file      # 目标文件或命令
+#   params:
+#     bytes: 10                # file_corrupt: 损坏字节数（默认 10）
+#     output: /path/out        # file_corrupt: 输出路径（默认 {target}.corrupted）
+#     key: ENV_VAR_NAME        # env_poison: 环境变量名
+#     value: bad_value         # env_poison: 投毒值
+#     size_mb: 100             # disk_full: 填充大小 MB（默认 100，上限 1024）
+#     path: /tmp               # disk_full: 填充目录（默认系统临时目录）
+
+# fault.inject_latency:
+#   command: "curl example.com" # 要执行的命令
+#   delay_ms: 1000              # 延迟毫秒（默认 1000）
+#   jitter_ms: 0                # 随机抖动范围 ms（默认 0）
+#   type: startup               # 类型: startup（默认）| network
+
+# fault.kill_process:
+#   pid: 1234                   # 进程 ID（与 name 二选一）
+#   name: "my-service"          # 进程名（用 pgrep -f 查找）
+#   signal: TERM                # 信号: TERM | KILL | STOP | CONT | HUP | USR1 | USR2
+
+# fault.corrupt_response:
+#   command: "cat data.json"    # 要执行的命令
+#   mode: truncate              # 模式: truncate | shuffle | replace | noise | empty
+#   params:
+#     percent: 50               # truncate: 保留百分比（默认 50）
+#     find: "ok"                # replace: 查找字符串
+#     replace: "error"          # replace: 替换字符串
+#     density: 0.05             # noise: 噪声密度 0.0-1.0（默认 0.05）
+
+# --- 安全规则（内置，不可修改）---
+# - 永远不会杀死关键系统进程（init, systemd, sshd）
+# - 文件损坏只创建副本，不修改原文件
+# - 磁盘满模拟上限 1GB
+# - 优先使用 SIGTERM 而非 SIGKILL
+
+# --- 完整 config.json 示例 ---
+# {
+#   "tool_profiles": {
+#     "safe_faults": {
+#       "include": ["fault.inject_error", "fault.inject_latency", "fault.corrupt_response"],
+#       "exclude": ["fault.kill_process"]
+#     }
+#   },
+#   "active_tools": {
+#     "delegate.fault": "safe_faults"
+#   }
+# }
