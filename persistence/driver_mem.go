@@ -21,6 +21,9 @@ func (memDriver) Open(dsn string) (*Stores, error) {
 		ArtifactStore:      artifact,
 		ArtifactMeta:       meta,
 		RunCheckpointStore: checkpoint,
+		SignalTraceStore:   NewMemSignalTraceStore(now),
+		DataStateStore:     NewMemDataStateStore(now),
+		CentralStateStore:  NewMemCentralStateStore(now),
 		UsageLedger:        usage,
 		ResumeCoordinator:  resume,
 	}, nil

@@ -58,6 +58,15 @@ func TestMemDriverOpen(t *testing.T) {
 	if cs.RunCheckpointStore == nil {
 		t.Error("RunCheckpointStore is nil")
 	}
+	if cs.SignalTraceStore == nil {
+		t.Error("SignalTraceStore is nil")
+	}
+	if cs.DataStateStore == nil {
+		t.Error("DataStateStore is nil")
+	}
+	if cs.CentralStateStore == nil {
+		t.Error("CentralStateStore is nil")
+	}
 	if cs.UsageLedger == nil {
 		t.Error("UsageLedger is nil")
 	}
@@ -131,6 +140,15 @@ func TestFileDriverOpen(t *testing.T) {
 	}
 	if cs.RunCheckpointStore == nil {
 		t.Error("RunCheckpointStore is nil")
+	}
+	if cs.SignalTraceStore == nil {
+		t.Error("SignalTraceStore is nil")
+	}
+	if cs.DataStateStore == nil {
+		t.Error("DataStateStore is nil")
+	}
+	if cs.CentralStateStore == nil {
+		t.Error("CentralStateStore is nil")
 	}
 	if cs.UsageLedger == nil {
 		t.Error("UsageLedger is nil")

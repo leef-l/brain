@@ -1,0 +1,36 @@
+runtime:
+  market_loop_interval: 5ms
+  housekeeping_interval: 100ms
+  collect_review_timeout: 30s
+
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  api_key: ${ANTHROPIC_API_KEY}
+  base_url: https://api.anthropic.com
+
+accounts:
+  - id: paper_default
+    label: "Paper Default"
+    enabled: true
+    mode: paper
+    exchange: okx
+    executor:
+      backend: paper
+      paper_slippage: 0.0003
+      paper_maker_fee: 0.0002
+      paper_taker_fee: 0.0005
+    weight_factor: 1.0
+
+database:
+  host: localhost
+  port: 5432
+  dbname: brain_trader
+  user: trader
+  password: ${PG_PASSWORD}
+  sslmode: disable
+  schema: trader
+  max_conns: 10
+  min_conns: 1
+  conn_max_idle_time: 30m
+  conn_max_lifetime: 2h

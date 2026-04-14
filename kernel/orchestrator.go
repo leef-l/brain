@@ -95,6 +95,9 @@ func NewOrchestrator(runner BrainRunner, llmProxy *LLMProxy, binResolver func(ag
 
 	// Probe for each specialist sidecar binary.
 	for _, kind := range []agent.Kind{
+		agent.KindData,
+		agent.KindQuant,
+		agent.KindCentral,
 		agent.KindCode,
 		agent.KindBrowser,
 		agent.KindVerifier,
@@ -123,7 +126,29 @@ func (o *Orchestrator) SetSpecialistToolCallAuthorizer(authorizer SpecialistTool
 
 // CanDelegate reports whether a specialist binary exists for the given kind.
 func (o *Orchestrator) CanDelegate(kind agent.Kind) bool {
-	return o.available[kind]
+	o.mu.Lock()
+	if o.available[kind] {
+		o.mu.Unlock()
+		return true
+	}
+	binResolver := o.binResolver
+	o.mu.Unlock()
+
+	if binResolver == nil {
+		return false
+	}
+	path, err := binResolver(kind)
+	if err != nil {
+		return false
+	}
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+
+	o.mu.Lock()
+	o.available[kind] = true
+	o.mu.Unlock()
+	return true
 }
 
 // AvailableKinds returns the set of specialist kinds that have sidecar
@@ -419,10 +444,17 @@ func (o *Orchestrator) Shutdown(ctx context.Context) error {
 // brains are NOT available. Returns "" if all requested kinds are available.
 // This is used by chat/run to augment Central's system prompt.
 func (o *Orchestrator) DegradationNotice() string {
-	allKinds := []agent.Kind{agent.KindCode, agent.KindBrowser, agent.KindVerifier, agent.KindFault}
+	allKinds := []agent.Kind{
+		agent.KindData,
+		agent.KindQuant,
+		agent.KindCode,
+		agent.KindBrowser,
+		agent.KindVerifier,
+		agent.KindFault,
+	}
 	var missing []string
 	for _, k := range allKinds {
-		if !o.available[k] {
+		if !o.CanDelegate(k) {
 			missing = append(missing, string(k))
 		}
 	}

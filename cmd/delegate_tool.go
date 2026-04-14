@@ -52,7 +52,7 @@ func (t *delegateTool) Schema() tool.Schema {
 			"properties": {
 				"target_kind": {
 					"type": "string",
-					"description": "The specialist brain to delegate to (e.g. code, browser, verifier)"
+					"description": "The specialist brain to delegate to (e.g. data, quant, code, browser, verifier)"
 				},
 				"instruction": {
 					"type": "string",

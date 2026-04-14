@@ -1,0 +1,28 @@
+{
+  "trace_id": "trace-paper-001",
+  "symbol": "BTC-USDT-SWAP",
+  "snapshot_seq": 7,
+  "price": 65432.1,
+  "direction": "long",
+  "confidence": 0.82,
+  "dominant_strategy": "fixture",
+  "global_risk_allowed": true,
+  "global_risk_reason": "within limits",
+  "review_requested": true,
+  "review_approved": true,
+  "review_reason": "fixture approve",
+  "review_size_factor": 1,
+  "rejected_stage": "",
+  "reason": "",
+  "draft_candidates": [
+    {"account_id": "paper", "symbol": "BTC-USDT-SWAP", "side": "buy", "quantity": 1}
+  ],
+  "account_results": [
+    {"account_id": "paper", "status": "executed"}
+  ],
+  "signals_json": {
+    "strategy": "fixture",
+    "source": "test/fixtures/quant/signal_trace.paper.json"
+  }
+}
+

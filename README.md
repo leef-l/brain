@@ -97,12 +97,18 @@ node bin/brain.js version --short
 
 - `brain`
 - `brain-central`
+- `brain-data`
+- `brain-quant`
+- `exchange-executor`
 - `brain-code`
 - `brain-verifier`
 - `brain-fault`
 - `brain-browser`
 - `config.example.json`
+- `quant.example.yaml`
 - `keybindings.example.json`
+- `persistence/migrations/*.sql`
+- `scripts/ops/*.sh`
 - `VERSION.json`
 - `LICENSE`
 - `CHANGELOG.md`

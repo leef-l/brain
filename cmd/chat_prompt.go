@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leef-l/brain/agent"
 	"github.com/leef-l/brain/kernel"
 	"github.com/leef-l/brain/tool"
 )
@@ -85,6 +86,12 @@ func buildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	prompt += "You have access to specialist brains that can handle specific tasks. "
 	prompt += fmt.Sprintf("Available specialists: %s.\n\n", strings.Join(names, ", "))
 	prompt += "Use the `central.delegate` tool to delegate tasks to the appropriate specialist:\n"
+	if containsKind(kinds, agent.KindData) {
+		prompt += "- **data**: For market data ingestion, validation, snapshots, and replay-oriented collection tasks.\n"
+	}
+	if containsKind(kinds, agent.KindQuant) {
+		prompt += "- **quant**: For strategy evaluation, risk checks, dispatch planning, audit trace collection, and trading control tasks.\n"
+	}
 	prompt += "- **code**: For writing, editing, and debugging code. Delegate coding tasks to this brain.\n"
 	prompt += "- **browser**: For web browsing, UI testing, and interacting with web pages. " +
 		"This is a top-tier UI interaction specialist that can fully simulate human browser operations " +
@@ -113,4 +120,13 @@ func registryHasTool(reg tool.Registry, name string) bool {
 	}
 	_, ok := reg.Lookup(name)
 	return ok
+}
+
+func containsKind(kinds []agent.Kind, needle agent.Kind) bool {
+	for _, kind := range kinds {
+		if kind == needle {
+			return true
+		}
+	}
+	return false
 }

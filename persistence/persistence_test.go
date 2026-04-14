@@ -212,7 +212,7 @@ func TestMemPlanStoreOptimisticLockConflict_C_P_09(t *testing.T) {
 	}
 
 	var (
-		successCount int64
+		successCount  int64
 		deadlockCount int64
 		otherErrCount int64
 		wg            sync.WaitGroup
@@ -545,5 +545,40 @@ func TestMemResumeCoordinatorAttemptCap(t *testing.T) {
 	}
 	if can {
 		t.Error("CanResume = true after cap reached, want false")
+	}
+}
+
+func TestMemResumeCoordinatorRejectsTerminalState(t *testing.T) {
+	cpStore := NewMemRunCheckpointStore(nil)
+	coord := NewMemResumeCoordinator(cpStore)
+	ctx := context.Background()
+
+	const runID = 99
+	if err := cpStore.Save(ctx, &Checkpoint{
+		RunID:    runID,
+		TurnUUID: "turn-terminal",
+		State:    "Completed",
+	}); err != nil {
+		t.Fatalf("Save checkpoint: %v", err)
+	}
+
+	_, err := coord.Resume(ctx, runID)
+	if err == nil {
+		t.Fatal("Resume on terminal state should fail")
+	}
+	be, ok := err.(*brainerrors.BrainError)
+	if !ok {
+		t.Fatalf("expected *brainerrors.BrainError, got %T: %v", err, err)
+	}
+	if be.ErrorCode != brainerrors.CodeWorkflowPrecondition {
+		t.Fatalf("ErrorCode = %q, want %q", be.ErrorCode, brainerrors.CodeWorkflowPrecondition)
+	}
+
+	cp, err := cpStore.Get(ctx, runID)
+	if err != nil {
+		t.Fatalf("Get checkpoint: %v", err)
+	}
+	if cp.ResumeAttempts != 0 {
+		t.Fatalf("ResumeAttempts = %d, want 0", cp.ResumeAttempts)
 	}
 }

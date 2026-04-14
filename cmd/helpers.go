@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/agent"
+	"github.com/leef-l/brain/internal/quantcontracts"
 	"github.com/leef-l/brain/kernel"
 	"github.com/leef-l/brain/llm"
 )
@@ -87,9 +88,31 @@ func buildOrchestrator(oc orchestratorConfig) *kernel.Orchestrator {
 
 	runner := &kernel.ProcessRunner{BinResolver: binResolver}
 	orch := kernel.NewOrchestrator(runner, llmProxy, binResolver)
+	orch.SetSpecialistToolCallAuthorizer(quantcontracts.NewSpecialistToolCallAuthorizer())
 
-	if len(orch.AvailableKinds()) == 0 {
+	if !hasKnownDelegationTarget(orch) {
 		return nil
 	}
 	return orch
+}
+
+func hasKnownDelegationTarget(orch *kernel.Orchestrator) bool {
+	if orch == nil {
+		return false
+	}
+
+	for _, kind := range []agent.Kind{
+		agent.KindCentral,
+		agent.KindData,
+		agent.KindQuant,
+		agent.KindCode,
+		agent.KindBrowser,
+		agent.KindVerifier,
+		agent.KindFault,
+	} {
+		if orch.CanDelegate(kind) {
+			return true
+		}
+	}
+	return false
 }

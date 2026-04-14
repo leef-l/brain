@@ -220,6 +220,8 @@ func checkSidecars() checkResult {
 	resolve := defaultBinResolver()
 	required := []agent.Kind{
 		agent.KindCentral,
+		agent.KindData,
+		agent.KindQuant,
 		agent.KindCode,
 		agent.KindBrowser,
 		agent.KindVerifier,

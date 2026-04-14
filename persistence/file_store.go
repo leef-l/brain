@@ -31,6 +31,9 @@ type fileDB struct {
 	Checkpoints  []*Checkpoint     `json:"checkpoints"`
 	Usage        []*UsageRecord    `json:"usage"`
 	ArtifactMeta []*ArtifactMeta   `json:"artifact_meta"`
+	SignalTraces []*SignalTrace    `json:"signal_traces"`
+	DataState    *DataState        `json:"data_state,omitempty"`
+	CentralState *CentralState     `json:"central_state,omitempty"`
 }
 
 // FileStore is a JSON-file-backed storage engine.
@@ -80,6 +83,11 @@ func OpenFileStore(path string, opts ...FileStoreOption) (*FileStore, error) {
 		for _, d := range fs.db.PlanDeltas {
 			if d.ID >= fs.nextID {
 				fs.nextID = d.ID + 1
+			}
+		}
+		for _, trace := range fs.db.SignalTraces {
+			if trace.ID >= fs.nextID {
+				fs.nextID = trace.ID + 1
 			}
 		}
 	} else if err != nil && !os.IsNotExist(err) {

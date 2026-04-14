@@ -63,14 +63,21 @@ func (a *StaticSpecialistToolCallAuthorizer) AuthorizeSpecialistToolCall(_ conte
 	return fmt.Errorf("specialist.call_tool is not allowed from %s to %s:%s", callerKind, targetKind, toolName)
 }
 
-// DefaultSpecialistToolCallAuthorizer returns the built-in conservative policy.
-// Third-party integrations may override it on the Orchestrator.
-func DefaultSpecialistToolCallAuthorizer() SpecialistToolCallAuthorizer {
-	return NewStaticSpecialistToolCallAuthorizer([]SpecialistToolCallRule{
+// DefaultSpecialistToolCallRules returns the built-in conservative allowlist.
+// Callers that need to extend the policy should append their own rules rather
+// than rebuilding the default verifier→browser route by hand.
+func DefaultSpecialistToolCallRules() []SpecialistToolCallRule {
+	return []SpecialistToolCallRule{
 		{
 			Caller:       agent.KindVerifier,
 			Target:       agent.KindBrowser,
 			ToolPrefixes: []string{"browser."},
 		},
-	})
+	}
+}
+
+// DefaultSpecialistToolCallAuthorizer returns the built-in conservative policy.
+// Third-party integrations may override it on the Orchestrator.
+func DefaultSpecialistToolCallAuthorizer() SpecialistToolCallAuthorizer {
+	return NewStaticSpecialistToolCallAuthorizer(DefaultSpecialistToolCallRules())
 }

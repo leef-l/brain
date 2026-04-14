@@ -30,6 +30,9 @@ func (fileDriver) Open(dsn string) (*Stores, error) {
 	}
 	metaStore := fs.MetaStore()
 	artifactStore := NewFSArtifactStore(artifactDir, metaStore, nil)
+	traceStore := fs.SignalTraceStore()
+	dataStateStore := fs.DataStateStore()
+	stateStore := fs.CentralStateStore()
 
 	checkpoint := fs.CheckpointStore()
 	resume := NewMemResumeCoordinator(checkpoint)
@@ -39,6 +42,9 @@ func (fileDriver) Open(dsn string) (*Stores, error) {
 		ArtifactStore:      artifactStore,
 		ArtifactMeta:       metaStore,
 		RunCheckpointStore: checkpoint,
+		SignalTraceStore:   traceStore,
+		DataStateStore:     dataStateStore,
+		CentralStateStore:  stateStore,
 		UsageLedger:        fs.Ledger(),
 		ResumeCoordinator:  resume,
 	}, nil

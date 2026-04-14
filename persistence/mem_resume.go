@@ -70,6 +70,14 @@ func (c *MemResumeCoordinator) Resume(ctx context.Context, runID int64) (*Checkp
 	if err != nil {
 		return nil, err
 	}
+	if isTerminalCheckpointState(cp.State) {
+		return nil, brainerrors.New(brainerrors.CodeWorkflowPrecondition,
+			brainerrors.WithMessage(fmt.Sprintf(
+				"MemResumeCoordinator.Resume: run %d is in terminal state %q",
+				runID, cp.State,
+			)),
+		)
+	}
 	if cp.ResumeAttempts >= MaxResumeAttempts {
 		return nil, brainerrors.New(brainerrors.CodeInvariantViolated,
 			brainerrors.WithMessage(fmt.Sprintf(
@@ -106,9 +114,17 @@ func (c *MemResumeCoordinator) CanResume(ctx context.Context, runID int64) (bool
 	if cp.ResumeAttempts >= MaxResumeAttempts {
 		return false, nil
 	}
-	switch cp.State {
-	case "Completed", "Failed", "Cancelled":
+	if isTerminalCheckpointState(cp.State) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func isTerminalCheckpointState(state string) bool {
+	switch state {
+	case "Completed", "Failed", "Cancelled":
+		return true
+	default:
+		return false
+	}
 }

@@ -19,6 +19,14 @@ const (
 	// subtasks to specialist brains. See 02 §3.
 	KindCentral Kind = "central"
 
+	// KindData is the market-data brain that ingests, validates, and publishes
+	// normalized market snapshots for the quant system.
+	KindData Kind = "data"
+
+	// KindQuant is the trading brain that evaluates strategies, applies risk,
+	// and dispatches execution plans for the quant system.
+	KindQuant Kind = "quant"
+
 	// KindCode is a specialist brain that writes and edits code.
 	KindCode Kind = "code"
 

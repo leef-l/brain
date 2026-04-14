@@ -24,7 +24,8 @@ import (
 
 // Stores is the bundle of all persistence interfaces that a Driver must
 // provide. Kernel construction consumes a Stores value to wire every
-// persistence slot in one shot.
+// persistence slot in one shot, including the Quant signal-trace audit
+// path.
 //
 // A Driver may return nil for ArtifactStore / ArtifactMeta if the backend
 // delegates CAS storage to a separate system (e.g. S3); the caller is
@@ -34,6 +35,9 @@ type Stores struct {
 	ArtifactStore      ArtifactStore
 	ArtifactMeta       ArtifactMetaStore
 	RunCheckpointStore RunCheckpointStore
+	SignalTraceStore   SignalTraceStore
+	DataStateStore     DataStateStore
+	CentralStateStore  CentralStateStore
 	UsageLedger        UsageLedger
 	ResumeCoordinator  ResumeCoordinator
 
