@@ -21,9 +21,6 @@ if "%~1"=="" (
 REM strip leading 'v' if present
 if "%version:~0,1%"=="v" set "version=%version:~1%"
 
-set "outdir=%~2"
-if "%outdir%"=="" set "outdir=dist"
-
 set "script_dir=%~dp0"
 set "root_dir=%script_dir%..\.."
 
@@ -31,6 +28,10 @@ REM resolve to absolute path
 pushd "%root_dir%"
 set "root_dir=%CD%"
 popd
+
+REM output dir always relative to project root
+set "outdir=%~2"
+if "%outdir%"=="" set "outdir=%root_dir%\dist"
 
 REM --- build metadata ---
 for /f "delims=" %%c in ('git -C "%root_dir%" rev-parse --short=12 HEAD 2^>nul') do set "build_commit=%%c"
@@ -76,8 +77,12 @@ for /d %%p in ("%root_dir%\brains\*") do (
 echo.
 echo ========================================
 echo  Building %bin_count% binaries (windows/amd64)
+echo  Output:  %outdir%
 echo ========================================
 echo.
+
+REM --- ensure we build from project root (so ./cmd/brain etc. resolve) ---
+pushd "%root_dir%"
 
 REM --- build each binary ---
 set "errors=0"
@@ -96,6 +101,8 @@ for /l %%i in (0,1,%bin_count%) do (
         )
     )
 )
+
+popd
 
 REM --- copy metadata files ---
 echo.
