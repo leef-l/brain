@@ -30,18 +30,36 @@ if [[ "${goos}" == "windows" ]]; then
   ext=".exe"
 fi
 
+# --- fixed binaries: CLI + central orchestrator ---
 declare -a binaries=(
   "brain=./cmd/brain"
   "brain-central=./central/cmd"
-  "brain-code=./brains/code/cmd"
-  "brain-verifier=./brains/verifier/cmd"
-  "brain-fault=./brains/fault/cmd"
-  "brain-browser=./brains/browser/cmd"
 )
+
+# --- auto-discover specialist brains under brains/ ---
+# Pattern 1: brains/<name>/cmd/main.go  → brain-<name>
+for main in "${root_dir}"/brains/*/cmd/main.go; do
+  [[ -f "${main}" ]] || continue
+  name="$(basename "$(dirname "$(dirname "${main}")")")"
+  binaries+=("brain-${name}=./brains/${name}/cmd")
+done
+
+# Pattern 2: brains/<parent>/<sub>/cmd/main.go  → brain-<parent>-<sub>
+for main in "${root_dir}"/brains/*/*/cmd/main.go; do
+  [[ -f "${main}" ]] || continue
+  sub="$(basename "$(dirname "$(dirname "${main}")")")"
+  parent="$(basename "$(dirname "$(dirname "$(dirname "${main}")")")")"
+  # skip if already matched by pattern 1 (parent has its own cmd/)
+  [[ -f "${root_dir}/brains/${parent}/cmd/main.go" ]] && continue
+  binaries+=("brain-${parent}-${sub}=./brains/${parent}/${sub}/cmd")
+done
+
+printf 'packaging %d binaries\n' "${#binaries[@]}" >&2
 
 for entry in "${binaries[@]}"; do
   name="${entry%%=*}"
   pkg="${entry#*=}"
+  printf '  → %s (%s)\n' "${name}" "${pkg}" >&2
   CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
     go build -trimpath -ldflags "${ldflags}" -o "${stage_dir}/${name}${ext}" "${pkg}"
 done
