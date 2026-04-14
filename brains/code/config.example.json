@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "代码大脑 (Code Brain) 配置示例",
+    "Code Brain 是 sidecar 架构，由 Kernel 通过 stdio JSON-RPC 启动",
+    "本文件内容合并写入 ~/.brain/config.json 即可生效",
+    "",
+    "环境变量：",
+    "  BRAIN_CONFIG           覆盖默认配置文件路径（默认 ~/.brain/config.json）",
+    "  BRAIN_LICENSE_REQUIRED 设为 1 强制要求 license 校验",
+    "",
+    "注册工具：",
+    "  code.read_file   — 读取文件内容",
+    "  code.write_file  — 写入/创建文件",
+    "  code.delete_file — 删除文件",
+    "  code.search      — 搜索文件内容",
+    "  code.shell_exec  — 执行 shell 命令",
+    "",
+    "执行预算（通过 RPC ExecuteRequest 传入）：",
+    "  budget.max_turns: 10（默认）"
+  ],
+
+  "tool_profiles": {
+    "coding_safe": {
+      "include": ["code.read_file", "code.write_file", "code.search"],
+      "exclude": ["code.shell_exec", "code.delete_file"]
+    },
+    "coding_full": {
+      "include": ["code.*"],
+      "exclude": []
+    }
+  },
+
+  "active_tools": {
+    "delegate.code": "coding_safe"
+  },
+
+  "file_policy": {
+    "allow_read": ["**"],
+    "allow_create": ["src/**", "tests/**"],
+    "allow_edit": ["src/**", "tests/**"],
+    "allow_delete": [],
+    "deny": [".git/**", "bin/**", "**/.env", "**/secrets/**"],
+    "allow_commands": true,
+    "allow_delegate": true
+  }
+}

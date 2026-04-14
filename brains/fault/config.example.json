@@ -1,0 +1,77 @@
+{
+  "_comment": [
+    "故障大脑 (Fault Brain) 配置示例",
+    "Fault Brain 是混沌工程专用 sidecar，由 Kernel 通过 stdio JSON-RPC 启动",
+    "本文件内容合并写入 ~/.brain/config.json 即可生效",
+    "",
+    "环境变量：",
+    "  BRAIN_CONFIG           覆盖默认配置文件路径（默认 ~/.brain/config.json）",
+    "  BRAIN_LICENSE_REQUIRED 设为 1 强制要求 license 校验",
+    "",
+    "注册工具（4 个）：",
+    "  fault.inject_error     — 注入错误（file_corrupt / env_poison / exit_code / disk_full）",
+    "  fault.inject_latency   — 注入延迟（startup / network）",
+    "  fault.kill_process     — 杀死进程（按 PID 或进程名）",
+    "  fault.corrupt_response — 篡改命令输出（truncate / shuffle / replace / noise / empty）",
+    "",
+    "执行预算（通过 RPC ExecuteRequest 传入）：",
+    "  budget.max_turns: 8（默认）",
+    "",
+    "安全规则（内置不可修改）：",
+    "  - 永远不会杀死关键系统进程（init, systemd, sshd）",
+    "  - 文件损坏只创建副本，不修改原文件",
+    "  - 磁盘满模拟上限 1GB",
+    "  - 优先使用 SIGTERM 而非 SIGKILL"
+  ],
+
+  "tool_profiles": {
+    "safe_faults": {
+      "include": ["fault.inject_error", "fault.inject_latency", "fault.corrupt_response"],
+      "exclude": ["fault.kill_process"]
+    },
+    "all_faults": {
+      "include": ["fault.*"],
+      "exclude": []
+    }
+  },
+
+  "active_tools": {
+    "delegate.fault": "safe_faults"
+  },
+
+  "_tool_params_reference": {
+    "fault.inject_error": {
+      "type": "file_corrupt | env_poison | exit_code | disk_full",
+      "target": "/path/to/file",
+      "params": {
+        "bytes": 10,
+        "output": "/path/out.corrupted",
+        "key": "ENV_VAR_NAME",
+        "value": "bad_value",
+        "size_mb": 100,
+        "path": "/tmp"
+      }
+    },
+    "fault.inject_latency": {
+      "command": "curl example.com",
+      "delay_ms": 1000,
+      "jitter_ms": 0,
+      "type": "startup | network"
+    },
+    "fault.kill_process": {
+      "pid": 1234,
+      "name": "my-service",
+      "signal": "TERM | KILL | STOP | CONT | HUP | USR1 | USR2"
+    },
+    "fault.corrupt_response": {
+      "command": "cat data.json",
+      "mode": "truncate | shuffle | replace | noise | empty",
+      "params": {
+        "percent": 50,
+        "find": "ok",
+        "replace": "error",
+        "density": 0.05
+      }
+    }
+  }
+}

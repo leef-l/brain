@@ -1,0 +1,49 @@
+{
+  "_comment": [
+    "验证大脑 (Verifier Brain) 配置示例",
+    "Verifier Brain 是只读验证专用 sidecar，独立审核其他大脑的工作成果",
+    "由 Kernel 通过 stdio JSON-RPC 启动，本文件内容合并写入 ~/.brain/config.json 即可生效",
+    "",
+    "环境变量：",
+    "  BRAIN_CONFIG           覆盖默认配置文件路径（默认 ~/.brain/config.json）",
+    "  BRAIN_LICENSE_REQUIRED 设为 1 强制要求 license 校验",
+    "",
+    "注册工具（4 个）：",
+    "  verifier.read_file      — 读取文件内容（只读）",
+    "  verifier.run_tests      — 运行测试套件",
+    "  verifier.check_output   — 校验命令输出",
+    "  verifier.browser_action — 请求浏览器操作（委派给 Browser Brain）",
+    "",
+    "执行预算（通过 RPC ExecuteRequest 传入）：",
+    "  budget.max_turns: 8（默认）",
+    "",
+    "验证结果格式：",
+    "  VERDICT: PASS — 所有测试通过，代码符合预期",
+    "  VERDICT: FAIL — 发现 N 处问题，M 个测试失败"
+  ],
+
+  "tool_profiles": {
+    "verifier_local": {
+      "include": ["verifier.read_file", "verifier.run_tests", "verifier.check_output"],
+      "exclude": ["verifier.browser_action"]
+    },
+    "verifier_full": {
+      "include": ["verifier.*"],
+      "exclude": []
+    }
+  },
+
+  "active_tools": {
+    "delegate.verifier": "verifier_local"
+  },
+
+  "file_policy": {
+    "allow_read": ["**/*.go", "**/*.ts", "**/*.py", "**/*.md"],
+    "allow_create": [],
+    "allow_edit": [],
+    "allow_delete": [],
+    "deny": [".git/**", "**/.env", "**/secrets/**"],
+    "allow_commands": true,
+    "allow_delegate": true
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "浏览器大脑 (Browser Brain) 配置示例",
+    "Browser Brain 是 sidecar 架构，由 Kernel 通过 stdio JSON-RPC 启动",
+    "本文件内容合并写入 ~/.brain/config.json 即可生效",
+    "",
+    "环境变量：",
+    "  BROWSER_PATH           指定浏览器可执行文件路径（默认自动检测）",
+    "  BRAIN_CONFIG           覆盖默认配置文件路径（默认 ~/.brain/config.json）",
+    "  BRAIN_LICENSE_REQUIRED 设为 1 强制要求 license 校验",
+    "",
+    "浏览器自动检测顺序（Linux）：",
+    "  1. google-chrome-stable / google-chrome",
+    "  2. chromium-browser / chromium",
+    "  3. microsoft-edge-stable",
+    "  4. brave-browser-stable",
+    "",
+    "浏览器启动参数（内置不可修改）：",
+    "  --headless=new  --window-size=1920,1080  --no-sandbox  --disable-gpu",
+    "",
+    "注册工具（15 个）：",
+    "  browser.open / navigate / click / double_click / right_click",
+    "  browser.type / press_key / scroll / hover / drag",
+    "  browser.select / upload_file / screenshot / eval / wait",
+    "",
+    "执行预算（通过 RPC ExecuteRequest 传入）：",
+    "  budget.max_turns: 15（默认）"
+  ],
+
+  "tool_profiles": {
+    "browser_safe": {
+      "include": ["browser.*"],
+      "exclude": ["browser.eval"]
+    },
+    "browser_full": {
+      "include": ["browser.*"],
+      "exclude": []
+    }
+  },
+
+  "active_tools": {
+    "delegate.browser": "browser_safe"
+  },
+
+  "file_policy": {
+    "allow_read": ["**/*.html", "**/*.png", "**/*.jpg"],
+    "allow_create": ["screenshots/**"],
+    "allow_edit": [],
+    "allow_delete": [],
+    "deny": [".git/**", "**/.env"]
+  }
+}
