@@ -112,6 +112,17 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 			"symbol", alert.Symbol,
 			"detail", alert.Detail,
 		)
+		if st != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_ = st.InsertAlert(ctx, store.AlertRecord{
+				Level:     alert.Level,
+				AlertType: alert.Type,
+				Symbol:    alert.Symbol,
+				Detail:    alert.Detail,
+				EventTS:   alert.EventTS.UnixMilli(),
+			})
+		}
 	})
 
 	return &DataBrain{
@@ -144,6 +155,7 @@ func (b *DataBrain) Start(ctx context.Context) error {
 		b.logger.Warn("refresh active list failed, using defaults", "err", err)
 	} else {
 		b.logger.Info("active instruments refreshed", "count", len(instruments))
+		b.persistActiveInstruments(ctx, instruments)
 	}
 
 	// 2. 从数据库加载历史 K 线（用于特征计算）
@@ -457,6 +469,26 @@ func barMinutes(bar string) int64 {
 	}
 }
 
+// persistActiveInstruments 将活跃品种快照写入 PG。
+func (b *DataBrain) persistActiveInstruments(ctx context.Context, instruments []active.InstrumentInfo) {
+	if b.store == nil || len(instruments) == 0 {
+		return
+	}
+	nowMS := time.Now().UnixMilli()
+	records := make([]store.ActiveInstrumentRecord, len(instruments))
+	for i, inst := range instruments {
+		records[i] = store.ActiveInstrumentRecord{
+			InstID:      inst.InstID,
+			VolUSDT24h:  inst.VolUsdt24h,
+			Rank:        i + 1,
+			RefreshedAt: nowMS,
+		}
+	}
+	if err := b.store.InsertActiveInstruments(ctx, records); err != nil {
+		b.logger.Error("persist active instruments failed", "err", err)
+	}
+}
+
 // persistCandle 将 K 线写入 PG。
 func (b *DataBrain) persistCandle(c provider.Candle, tf string) {
 	if b.store == nil {
@@ -522,10 +554,12 @@ func (b *DataBrain) refreshLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := b.activeList.Refresh(ctx); err != nil {
+			instruments, err := b.activeList.Refresh(ctx)
+			if err != nil {
 				b.logger.Error("refresh active list failed", "err", err)
 			} else {
 				b.logger.Info("active list refreshed", "count", b.activeList.Count())
+				b.persistActiveInstruments(ctx, instruments)
 			}
 		}
 	}

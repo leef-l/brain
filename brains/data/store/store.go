@@ -62,11 +62,40 @@ type BackfillStore interface {
 	SaveProgress(ctx context.Context, p BackfillProgress) error
 }
 
+// AlertRecord represents a data quality alert to be persisted.
+type AlertRecord struct {
+	Level     string // "warning", "critical"
+	AlertType string // "price_spike", "gap", "stale", "future_ts"
+	Symbol    string
+	Detail    string
+	EventTS   int64 // milliseconds since epoch
+}
+
+// ActiveInstrumentRecord represents an instrument snapshot during a refresh.
+type ActiveInstrumentRecord struct {
+	InstID      string
+	VolUSDT24h  float64
+	Rank        int
+	RefreshedAt int64 // milliseconds since epoch
+}
+
+// AlertStore persists validator alerts.
+type AlertStore interface {
+	InsertAlert(ctx context.Context, a AlertRecord) error
+}
+
+// ActiveInstrumentStore persists active instrument snapshots.
+type ActiveInstrumentStore interface {
+	InsertActiveInstruments(ctx context.Context, records []ActiveInstrumentRecord) error
+}
+
 // Store is the aggregate interface that every concrete backend must implement.
 type Store interface {
 	CandleStore
 	VectorStore
 	BackfillStore
+	AlertStore
+	ActiveInstrumentStore
 	Migrate(ctx context.Context) error // idempotent schema creation
 	Close() error
 }

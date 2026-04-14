@@ -59,6 +59,10 @@ func (m *mockStore) SaveProgress(_ context.Context, p store.BackfillProgress) er
 	m.progress[p.InstID+"|"+p.Timeframe] = &p
 	return nil
 }
+func (m *mockStore) InsertAlert(_ context.Context, _ store.AlertRecord) error { return nil }
+func (m *mockStore) InsertActiveInstruments(_ context.Context, _ []store.ActiveInstrumentRecord) error {
+	return nil
+}
 func (m *mockStore) Migrate(_ context.Context) error { return nil }
 func (m *mockStore) Close() error                     { return nil }
 
@@ -121,17 +125,20 @@ func TestFetchCandles_ParsesJSON(t *testing.T) {
 }
 
 func TestBackfillOne_Pagination(t *testing.T) {
-	// Simulate two pages: first returns MaxBars candles, second returns fewer.
+	// backfillOne walks backwards from now: first call returns 5 bars (== MaxBars),
+	// second call returns 2 bars (< MaxBars) → pagination stops.
 	callCount := int32(0)
-	baseTS := time.Now().Add(-2 * time.Hour).UnixMilli()
+	nowMS := time.Now().UnixMilli()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&callCount, 1)
 		var body []byte
 		if n == 1 {
-			body = makeOKXResponse(baseTS, 5) // first page: 5 bars (== MaxBars)
+			// page 1: 5 bars ending ~30min ago (descending from cursor)
+			body = makeOKXResponse(nowMS-35*60000, 5)
 		} else {
-			body = makeOKXResponse(baseTS+5*60000, 2) // second page: 2 bars (< MaxBars)
+			// page 2: 2 bars further back (< MaxBars → last page)
+			body = makeOKXResponse(nowMS-42*60000, 2)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(body)

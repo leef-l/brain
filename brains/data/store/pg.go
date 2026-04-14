@@ -245,6 +245,37 @@ func (s *PGStore) SaveProgress(ctx context.Context, p BackfillProgress) error {
 }
 
 // ---------------------------------------------------------------------------
+// AlertStore
+// ---------------------------------------------------------------------------
+
+func (s *PGStore) InsertAlert(ctx context.Context, a AlertRecord) error {
+	const q = `
+		INSERT INTO validator_alerts (level, alert_type, symbol, detail, event_ts)
+		VALUES ($1, $2, $3, $4, TO_TIMESTAMP($5::DOUBLE PRECISION / 1000))`
+	_, err := s.pool.Exec(ctx, q, a.Level, a.AlertType, a.Symbol, a.Detail, a.EventTS)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// ActiveInstrumentStore
+// ---------------------------------------------------------------------------
+
+func (s *PGStore) InsertActiveInstruments(ctx context.Context, records []ActiveInstrumentRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	const q = `
+		INSERT INTO active_instruments (inst_id, vol_usdt_24h, rank, refreshed_at)
+		VALUES ($1, $2, $3, TO_TIMESTAMP($4::DOUBLE PRECISION / 1000))`
+	b := &pgx.Batch{}
+	for _, r := range records {
+		b.Queue(q, r.InstID, r.VolUSDT24h, r.Rank, r.RefreshedAt)
+	}
+	br := s.pool.SendBatch(ctx, b)
+	return br.Close()
+}
+
+// ---------------------------------------------------------------------------
 // Close
 // ---------------------------------------------------------------------------
 
