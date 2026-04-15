@@ -108,6 +108,9 @@ func (a *processAgent) Ready(ctx context.Context) error {
 }
 
 // Shutdown sends a shutdown request and waits for the sidecar to exit.
+// If the process doesn't exit within 3 seconds after graceful shutdown,
+// it is forcibly killed. This ensures cleanup on all platforms including
+// Windows where pipe closure alone may not terminate the process.
 func (a *processAgent) Shutdown(ctx context.Context) error {
 	if a.rpc != nil {
 		_ = a.rpc.Notify(ctx, protocol.MethodShutdown, nil)
@@ -124,10 +127,23 @@ func (a *processAgent) Shutdown(ctx context.Context) error {
 	if a.cmd != nil && a.cmd.Process != nil {
 		done := make(chan error, 1)
 		go func() { done <- a.cmd.Wait() }()
+
+		// Grace period: wait up to 3s for the process to exit on its own
+		// after receiving the shutdown notification and pipe closure.
+		grace := 3 * time.Second
+		timer := time.NewTimer(grace)
+		defer timer.Stop()
+
 		select {
 		case <-done:
+			// Process exited cleanly.
+		case <-timer.C:
+			// Grace period expired — force kill.
+			_ = a.cmd.Process.Kill()
+			<-done
 		case <-ctx.Done():
 			_ = a.cmd.Process.Kill()
+			<-done
 		}
 	}
 	if a.cancelFunc != nil {
