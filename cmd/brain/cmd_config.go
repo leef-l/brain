@@ -219,7 +219,20 @@ func initConfig() error {
 			Deny:        []string{".git/**", "bin/**", "**/.env", "**/secrets/**"},
 		},
 	}
-	return saveConfig(cfg)
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+	// Also generate keybindings.json if it doesn't exist.
+	kbPath := keybindingsPath()
+	if _, err := os.Stat(kbPath); os.IsNotExist(err) {
+		kb := defaultKeybindings()
+		data, err := json.MarshalIndent(kb, "", "  ")
+		if err == nil {
+			data = append(data, '\n')
+			_ = os.WriteFile(kbPath, data, 0600)
+		}
+	}
+	return nil
 }
 
 // printConfigSetupGuide prints instructions for first-time configuration.
@@ -778,7 +791,9 @@ func runConfigInit(_ []string) int {
 		fmt.Fprintf(os.Stderr, "brain config init: %v\n", err)
 		return cli.ExitSoftware
 	}
-	fmt.Fprintf(os.Stdout, "已生成默认配置文件: %s\n", path)
+	fmt.Fprintf(os.Stdout, "已生成配置文件:\n")
+	fmt.Fprintf(os.Stdout, "  %s\n", path)
+	fmt.Fprintf(os.Stdout, "  %s\n", keybindingsPath())
 	fmt.Fprintln(os.Stdout, "")
 	fmt.Fprintln(os.Stdout, "下一步，设置你的 API Key：")
 	fmt.Fprintln(os.Stdout, "  brain config set providers.anthropic.api_key <your-key>")
