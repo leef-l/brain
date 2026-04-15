@@ -108,10 +108,10 @@ func (a Aggregator) Aggregate(view MarketView, signals []Signal, review ReviewCo
 
 	result.Confidence = clamp(math.Max(result.LongScore, result.ShortScore), 0, 1)
 	if result.Direction == DirectionLong {
-		result.Confidence = result.LongScore
+		result.Confidence = clamp(result.LongScore, 0, 1)
 	}
 	if result.Direction == DirectionShort {
-		result.Confidence = result.ShortScore
+		result.Confidence = clamp(result.ShortScore, 0, 1)
 	}
 
 	if review.OpenPositions >= 3 {

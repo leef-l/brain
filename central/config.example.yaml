@@ -1,0 +1,95 @@
+# ============================================================
+#  中央大脑 (Central Brain) 配置示例
+#  中央大脑通过环境变量配置，无需配置文件
+# ============================================================
+
+# ==================== 环境变量 ====================
+
+# --- LLM API 配置（必填，启用 LLM 复审功能） ---
+# LLM_API_KEY:   API 密钥
+# LLM_BASE_URL:  API 地址（默认 https://api.deepseek.com/v1，DeepSeek）
+# LLM_MODEL:     模型名称（默认 deepseek-chat）
+#
+# 支持的 LLM 服务：
+#   DeepSeek V3.2（默认，推荐）:
+#     export LLM_API_KEY="sk-xxx"
+#     # LLM_BASE_URL 和 LLM_MODEL 使用默认值即可
+#
+#   Claude（Anthropic）:
+#     export LLM_API_KEY="sk-ant-xxx"
+#     export LLM_BASE_URL="https://api.anthropic.com/v1"
+#     export LLM_MODEL="claude-sonnet-4-20250514"
+#
+#   HunYuan（腾讯混元）:
+#     export LLM_API_KEY="your-hunyuan-key"
+#     export LLM_BASE_URL="https://api.hunyuan.cloud.tencent.com/v1"
+#     export LLM_MODEL="hunyuan-pro"
+#
+#   任何 OpenAI 兼容 API:
+#     export LLM_API_KEY="your-key"
+#     export LLM_BASE_URL="https://your-api.example.com/v1"
+#     export LLM_MODEL="your-model-name"
+
+# ==================== 提供的工具 ====================
+# 中央大脑注册以下工具供 Kernel 调用：
+#
+# central.plan_create    — 创建计划
+# central.plan_update    — 更新计划
+# central.delegate       — 委派子任务给专家大脑
+# central.review_trade   — LLM 交易复审（量化大脑触发）
+# central.daily_review   — 日终分析报告
+# central.data_alert     — 数据质量告警处理
+# central.echo           — 回声测试
+# central.reject_task    — 拒绝任务
+
+# ==================== 启动命令 ====================
+#
+# 最小启动（不启用 LLM，复审请求将自动放行）:
+#   brain-central
+#
+# 启用 LLM 复审（DeepSeek V3.2）:
+#   export LLM_API_KEY="sk-xxx"
+#   brain-central
+#
+# 启用 LLM 复审（自定义 API）:
+#   LLM_API_KEY="sk-xxx" LLM_BASE_URL="https://api.example.com/v1" LLM_MODEL="model-name" brain-central
+
+# ==================== 工具调用说明 ====================
+#
+# --- central.review_trade（交易复审） ---
+# 输入:
+#   signal:      信号信息（direction, confidence）
+#   portfolio:   组合状态（total_equity, daily_pnl_pct, open_positions, largest_pos_pct）
+#   market:      市场环境（symbol, price, vol_percentile, market_regime, funding_rate）
+#   reason:      触发原因
+#
+# 输出:
+#   approved:    是否批准（true/false）
+#   size_factor: 仓位系数（0.0-1.0）
+#   reason:      LLM 判断理由
+#
+# --- central.daily_review（日终分析） ---
+# 输入:
+#   date:           日期
+#   accounts:       账户统计
+#   strategy_stats: 策略表现
+#   total_trades:   总交易数
+#   total_pnl:      总盈亏
+#
+# 输出:
+#   assessment:     整体评价
+#   strategy_notes: 策略建议
+#   risk_notes:     风险提醒
+#   actions:        建议操作列表
+#
+# --- central.data_alert（数据告警） ---
+# 输入:
+#   level:      告警级别（warning | critical）
+#   alert_type: 告警类型（price_spike | gap | stale）
+#   symbol:     品种
+#   detail:     详细信息
+#
+# 输出:
+#   received:    已接收
+#   action:      响应动作（logged | risk_pause）
+#   description: 描述

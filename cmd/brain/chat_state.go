@@ -170,6 +170,7 @@ func (s *chatState) switchMode(m chatMode) {
 	registerToolsForMode(s.registry, m, s.brainID, s.env, s.requestApproval)
 
 	registerDelegateToolForEnvironment(s.registry, s.orchestrator, s.env)
+	registerSpecialistBridgeTools(s.registry, s.orchestrator)
 
 	s.registry = filterRegistryWithConfig(s.registry, s.cfg, toolScopesForChat(s.brainID, m)...)
 	s.opts.Tools = buildToolSchemas(s.registry)

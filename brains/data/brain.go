@@ -40,8 +40,9 @@ type DataBrain struct {
 	tradeflow *processor.TradeFlowTracker
 
 	// 输出
-	feature *feature.Engine
-	buffers *ringbuf.BufferManager
+	feature   *feature.Engine
+	assembler *feature.FeatureAssembler
+	buffers   *ringbuf.BufferManager
 
 	// 状态
 	running atomic.Bool
@@ -73,8 +74,10 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 	orderbook := processor.NewOrderBookTracker()
 	tradeflow := processor.NewTradeFlowTracker(300_000) // 5 分钟窗口
 
-	// Feature Engine
+	// Feature Engine + Assembler
 	feat := feature.NewEngine(candles, orderbook, tradeflow)
+	fallback := feature.NewRuleFallback(candles, orderbook, tradeflow)
+	assembler := feature.NewFeatureAssembler(feat, nil, fallback) // nil MLEngine → NullMLEngine
 
 	// ActiveList
 	alCfg := active.Config{
@@ -136,6 +139,7 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 		orderbook:  orderbook,
 		tradeflow:  tradeflow,
 		feature:    feat,
+		assembler:  assembler,
 		buffers:    ringbuf.NewBufferManager(1024),
 	}
 }
@@ -389,12 +393,17 @@ func (b *DataBrain) updateFeatures() {
 	start := time.Now()
 	instruments := b.activeList.List()
 	for _, instID := range instruments {
-		vec := b.feature.ComputeArray(instID)
+		output := b.assembler.Compute(instID)
 
 		snap := ringbuf.MarketSnapshot{
 			InstID:        instID,
 			Timestamp:     time.Now().UnixMilli(),
-			FeatureVector: vec,
+			FeatureVector: output.Vector,
+			MLSource:      output.MLSource,
+			MLReady:       output.MLReady,
+			MarketRegime:  output.MarketRegimeLabel(),
+			AnomalyLevel:  output.AnomalyLevel(),
+			VolPercentile: output.VolPercentile(),
 		}
 
 		// 填充价格数据
@@ -407,10 +416,12 @@ func (b *DataBrain) updateFeatures() {
 			snap.OrderBookImbalance = ob.Imbalance
 			snap.Spread = ob.Spread
 		}
-		if tf := b.tradeflow.Get(instID); tf != nil {
-			snap.TradeFlowToxicity = tf.Toxicity()
-			snap.BigBuyRatio = tf.BigBuyRatio()
-			snap.TradeDensityRatio = tf.TradeDensityRatio()
+		if flow := b.tradeflow.Get(instID); flow != nil {
+			snap.TradeFlowToxicity = flow.Toxicity()
+			snap.BigBuyRatio = flow.BigBuyRatio()
+			snap.BigSellRatio = flow.BigSellRatio()
+			snap.TradeDensityRatio = flow.TradeDensityRatio()
+			snap.BuySellRatio = flow.BuySellRatio()
 		}
 
 		b.buffers.Write(instID, snap)
@@ -592,4 +603,48 @@ func (b *DataBrain) Health() map[string]any {
 // Buffers 返回 BufferManager（供 Quant Brain 使用）。
 func (b *DataBrain) Buffers() *ringbuf.BufferManager {
 	return b.buffers
+}
+
+// Candles 返回指定品种和时间框架的历史 K 线（最近 500 根）。
+// 供 Quant Brain 获取 candle history 传给策略（如 BreakoutMomentum）。
+func (b *DataBrain) Candles(instID, timeframe string) []provider.Candle {
+	w := b.candles.GetWindow(instID, timeframe)
+	if w == nil {
+		return nil
+	}
+	return append([]provider.Candle(nil), w.HistoryCandles...)
+}
+
+// ActiveInstruments 返回当前活跃品种列表。
+func (b *DataBrain) ActiveInstruments() []string {
+	return b.activeList.List()
+}
+
+// OrderBook 返回指定品种的订单簿状态。
+func (b *DataBrain) OrderBook(instID string) *processor.OrderBookState {
+	return b.orderbook.Get(instID)
+}
+
+// TradeFlow 返回指定品种的逐笔成交窗口。
+func (b *DataBrain) TradeFlow(instID string) *processor.FlowWindow {
+	return b.tradeflow.Get(instID)
+}
+
+// FeatureVector 返回指定品种的完整 192 维特征向量。
+func (b *DataBrain) FeatureVector(instID string) feature.FeatureOutput {
+	return b.assembler.Compute(instID)
+}
+
+// ProviderHealth 返回数据源健康状态。
+func (b *DataBrain) ProviderHealth() *provider.ProviderHealth {
+	if b.provider == nil {
+		return nil
+	}
+	h := b.provider.Health()
+	return &h
+}
+
+// Store 返回底层存储（供 sidecar 查询回填进度等）。
+func (b *DataBrain) Store() store.Store {
+	return b.store
 }

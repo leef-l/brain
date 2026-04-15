@@ -69,6 +69,10 @@ type orchestratorConfig struct {
 // buildOrchestrator creates an Orchestrator with LLM proxy for specialist
 // brain delegation. Returns nil if no specialist binaries are found.
 // This is shared between `brain chat` and `brain run`.
+//
+// When the config contains a "brains" array, only those brains are probed
+// (configuration-driven mode). Otherwise falls back to probing all built-in
+// kinds via binary discovery on PATH.
 func buildOrchestrator(oc orchestratorConfig) *kernel.Orchestrator {
 	binResolver := defaultBinResolver()
 
@@ -86,7 +90,13 @@ func buildOrchestrator(oc orchestratorConfig) *kernel.Orchestrator {
 	}
 
 	runner := &kernel.ProcessRunner{BinResolver: binResolver}
-	orch := kernel.NewOrchestrator(runner, llmProxy, binResolver)
+
+	// Use configuration-driven mode if brains are configured.
+	var orchCfg kernel.OrchestratorConfig
+	if oc.cfg != nil && len(oc.cfg.Brains) > 0 {
+		orchCfg.Brains = oc.cfg.Brains
+	}
+	orch := kernel.NewOrchestratorWithConfig(runner, llmProxy, binResolver, orchCfg)
 
 	if len(orch.AvailableKinds()) == 0 {
 		return nil

@@ -124,6 +124,7 @@ func runRun(args []string) int {
 	}
 	runtime.Kernel.ToolRegistry = buildManagedRegistry(cfg, env, *brainID, func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, orch, env)
+		registerSpecialistBridgeTools(reg, orch)
 	})
 
 	// --- Provider selection ---

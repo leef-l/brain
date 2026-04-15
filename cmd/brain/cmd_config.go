@@ -12,6 +12,7 @@ import (
 
 	"github.com/leef-l/brain/sdk/cli"
 	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/toolpolicy"
 )
 
@@ -44,6 +45,12 @@ type brainConfig struct {
 	// Sandbox configuration for OS-level command isolation.
 	Sandbox    *sandboxCfg      `json:"sandbox,omitempty"`
 	FilePolicy *filePolicyInput `json:"file_policy,omitempty"`
+
+	// Brains registers specialist brains that the Orchestrator can delegate to.
+	// When non-empty, only configured brains are available — the built-in
+	// kind list is bypassed. Each entry specifies kind, optional binary path,
+	// and optional LLM model override.
+	Brains []kernel.BrainRegistration `json:"brains,omitempty"`
 
 	// ToolProfiles contains named include/exclude profiles that can be
 	// activated per runtime scope via ActiveTools.
@@ -193,6 +200,12 @@ func initConfig() error {
 					"verifier": "claude-haiku-4-5-20251001",
 				},
 			},
+		},
+		Brains: []kernel.BrainRegistration{
+			{Kind: "code", Model: "claude-sonnet-4-20250514"},
+			{Kind: "verifier", Model: "claude-haiku-4-5-20251001"},
+			{Kind: "data"},
+			{Kind: "quant"},
 		},
 		Budget: &budgetConfig{
 			MaxTurns:   20,

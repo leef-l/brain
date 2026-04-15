@@ -255,6 +255,7 @@ func runServe(args []string) int {
 	}()
 	runtime.Kernel.ToolRegistry = buildManagedRegistry(cfg, env, "central", func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, startupOrch, env)
+		registerSpecialistBridgeTools(reg, startupOrch)
 	})
 
 	fmt.Fprintf(os.Stderr, "Starting Brain Kernel (cluster mode)\n")
@@ -529,6 +530,7 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 
 	runReg := buildManagedRegistry(cfg, env, req.Brain, func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, orch, env)
+		registerSpecialistBridgeTools(reg, orch)
 	})
 	systemPrompt := buildSystemPrompt(mode, env.sandbox)
 	if orch != nil {

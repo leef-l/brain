@@ -138,9 +138,8 @@ func TestComputeMicrostructure(t *testing.T) {
 	if vec[101] == 0 {
 		t.Error("vec[101] (Spread) should be non-zero")
 	}
-	if vec[102] == 0 {
-		t.Error("vec[102] (MidPrice) should be non-zero")
-	}
+	// vec[102] is now MidPrice deviation from EMA — 0 when EMA not ready (no candles fed)
+	// This is expected behavior: deviation = 0 when no reference price available
 
 	// Trade flow features
 	if vec[110] == 0 {

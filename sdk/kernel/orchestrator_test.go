@@ -3,6 +3,7 @@ package kernel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -510,5 +511,459 @@ func TestOrchestratorDelegate_RetriesAfterSidecarCrash(t *testing.T) {
 	}
 	if runner.stopCount(agent.KindCode) != 1 {
 		t.Fatalf("stopCount=%d, want 1", runner.stopCount(agent.KindCode))
+	}
+}
+
+func TestNewOrchestratorWithConfig_OnlyConfiguredBrains(t *testing.T) {
+	runner := newScriptedRunner()
+
+	// Only register "code" and "quant" — browser/verifier/fault should NOT be available.
+	cfg := OrchestratorConfig{
+		Brains: []BrainRegistration{
+			{Kind: agent.KindCode, Binary: "/does/not/exist"},
+			{Kind: agent.KindQuant, Binary: "/does/not/exist"},
+		},
+	}
+
+	orch := NewOrchestratorWithConfig(runner, nil, nil, cfg)
+
+	// Neither should be available (binaries don't exist on disk).
+	if orch.CanDelegate(agent.KindCode) {
+		t.Fatal("code should NOT be available — binary does not exist")
+	}
+	if orch.CanDelegate(agent.KindQuant) {
+		t.Fatal("quant should NOT be available — binary does not exist")
+	}
+	// Non-configured brains should also be unavailable.
+	if orch.CanDelegate(agent.KindBrowser) {
+		t.Fatal("browser should NOT be available — not in config")
+	}
+
+	// Registrations should be stored.
+	if reg := orch.Registration(agent.KindCode); reg == nil {
+		t.Fatal("expected code registration")
+	}
+	if reg := orch.Registration(agent.KindQuant); reg == nil {
+		t.Fatal("expected quant registration")
+	}
+	if reg := orch.Registration(agent.KindBrowser); reg != nil {
+		t.Fatal("browser should NOT be registered")
+	}
+}
+
+func TestOrchestratorRegister_HotPlug(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	runner := newScriptedRunner()
+	runner.queue(agent.KindQuant, &scriptedSidecar{})
+
+	orch := NewOrchestrator(runner, nil, nil)
+
+	// Initially quant is NOT available.
+	if orch.CanDelegate(agent.KindQuant) {
+		t.Fatal("quant should NOT be available before registration")
+	}
+
+	// Register with binResolver that returns a valid path.
+	orch.binResolver = func(kind agent.Kind) (string, error) {
+		if kind == agent.KindQuant {
+			return "/bin/sh", nil // exists on every unix system
+		}
+		return "", fmt.Errorf("unknown kind %s", kind)
+	}
+
+	found := orch.Register(BrainRegistration{
+		Kind:  agent.KindQuant,
+		Model: "claude-sonnet-4-6",
+	})
+
+	if !found {
+		t.Fatal("Register should have found /bin/sh and marked quant available")
+	}
+	if !orch.CanDelegate(agent.KindQuant) {
+		t.Fatal("quant should be available after registration")
+	}
+
+	// Delegate should work.
+	result, err := orch.Delegate(ctx, &SubtaskRequest{
+		TaskID:      "quant-1",
+		TargetKind:  agent.KindQuant,
+		Instruction: "run backtest",
+	})
+	if err != nil {
+		t.Fatalf("Delegate: %v", err)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("status=%q, want completed (error=%s)", result.Status, result.Error)
+	}
+
+	// Unregister.
+	orch.Unregister(agent.KindQuant)
+	if orch.CanDelegate(agent.KindQuant) {
+		t.Fatal("quant should NOT be available after unregister")
+	}
+}
+
+func TestOrchestratorDegradationNotice_ConfigDriven(t *testing.T) {
+	cfg := OrchestratorConfig{
+		Brains: []BrainRegistration{
+			{Kind: agent.KindCode, Binary: "/bin/sh"},    // exists
+			{Kind: agent.KindQuant, Binary: "/no/exist"},  // does not exist
+		},
+	}
+
+	orch := NewOrchestratorWithConfig(nil, nil, nil, cfg)
+
+	notice := orch.DegradationNotice()
+	if notice == "" {
+		t.Fatal("expected non-empty degradation notice for missing quant binary")
+	}
+	if !strings.Contains(notice, "quant") {
+		t.Fatalf("notice should mention quant: %s", notice)
+	}
+	// Code should be available (binary exists), so it should NOT be in the notice.
+	if strings.Contains(notice, "code") {
+		t.Fatalf("notice should NOT mention code (binary exists): %s", notice)
+	}
+}
+
+func TestLLMProxy_ModelResolutionPriority(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Track what model the provider receives.
+	var receivedModel string
+	provider := llm.NewMockProvider("mock")
+	provider.QueueText("ok")
+
+	proxy := &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider { return provider },
+		ModelForKind: map[agent.Kind]string{
+			agent.KindQuant: "claude-sonnet-4-6",
+		},
+	}
+
+	// Case 1: No model in request → uses ModelForKind
+	reqParams, _ := json.Marshal(llmCompleteRequest{
+		Messages:  []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "hello"}}}},
+		MaxTokens: 64,
+	})
+	_, err := proxy.handleComplete(ctx, agent.KindQuant, reqParams)
+	if err != nil {
+		t.Fatalf("handleComplete: %v", err)
+	}
+	requests := provider.Requests()
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(requests))
+	}
+	receivedModel = requests[0].Model
+	if receivedModel != "claude-sonnet-4-6" {
+		t.Fatalf("expected model=claude-sonnet-4-6 from ModelForKind, got %q", receivedModel)
+	}
+
+	// Case 2: Explicit model in request → overrides ModelForKind
+	provider.QueueText("ok2")
+	reqParams2, _ := json.Marshal(llmCompleteRequest{
+		Messages:  []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "hello"}}}},
+		Model:     "claude-opus-4-6",
+		MaxTokens: 64,
+	})
+	_, err = proxy.handleComplete(ctx, agent.KindQuant, reqParams2)
+	if err != nil {
+		t.Fatalf("handleComplete: %v", err)
+	}
+	requests = provider.Requests()
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(requests))
+	}
+	receivedModel = requests[1].Model
+	if receivedModel != "claude-opus-4-6" {
+		t.Fatalf("expected model=claude-opus-4-6 from explicit request, got %q", receivedModel)
+	}
+
+	// Case 3: No ModelForKind, no request model → empty (provider default)
+	provider.QueueText("ok3")
+	proxy2 := &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider { return provider },
+	}
+	_, err = proxy2.handleComplete(ctx, agent.KindCode, reqParams)
+	if err != nil {
+		t.Fatalf("handleComplete: %v", err)
+	}
+	requests = provider.Requests()
+	receivedModel = requests[len(requests)-1].Model
+	if receivedModel != "" {
+		t.Fatalf("expected empty model (provider default), got %q", receivedModel)
+	}
+}
+
+func TestOrchestratorConfig_SyncsModelsToLLMProxy(t *testing.T) {
+	provider := llm.NewMockProvider("mock")
+	proxy := &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider { return provider },
+	}
+
+	cfg := OrchestratorConfig{
+		Brains: []BrainRegistration{
+			{Kind: agent.KindCode, Binary: "/bin/sh", Model: "claude-sonnet-4-6"},
+			{Kind: agent.KindQuant, Binary: "/bin/sh", Model: "deepseek-v3"},
+			{Kind: agent.KindData, Binary: "/bin/sh"}, // no model → data brain doesn't use LLM
+		},
+	}
+
+	_ = NewOrchestratorWithConfig(nil, proxy, nil, cfg)
+
+	// Verify models were synced.
+	if proxy.ModelForKind == nil {
+		t.Fatal("ModelForKind should have been initialized")
+	}
+	if m := proxy.ModelForKind[agent.KindCode]; m != "claude-sonnet-4-6" {
+		t.Fatalf("code model=%q, want claude-sonnet-4-6", m)
+	}
+	if m := proxy.ModelForKind[agent.KindQuant]; m != "deepseek-v3" {
+		t.Fatalf("quant model=%q, want deepseek-v3", m)
+	}
+	if m := proxy.ModelForKind[agent.KindData]; m != "" {
+		t.Fatalf("data model=%q, want empty (no LLM)", m)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Quant system cross-brain authorization tests (Doc 35 §5.5)
+// ---------------------------------------------------------------------------
+
+func TestDefaultAuthorizer_QuantToDataAllowed(t *testing.T) {
+	auth := DefaultSpecialistToolCallAuthorizer()
+	ctx := context.Background()
+
+	// Quant → Data: allowed tool prefixes
+	for _, tool := range []string{
+		"data.get_candles",
+		"data.get_snapshot",
+		"data.get_feature_vector",
+	} {
+		if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindQuant, agent.KindData, tool); err != nil {
+			t.Errorf("quant→data:%s should be allowed: %v", tool, err)
+		}
+	}
+
+	// Quant → Data: disallowed tools
+	for _, tool := range []string{
+		"data.replay_start",
+		"data.active_instruments",
+		"data.backfill_status",
+	} {
+		if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindQuant, agent.KindData, tool); err == nil {
+			t.Errorf("quant→data:%s should be denied", tool)
+		}
+	}
+}
+
+func TestDefaultAuthorizer_QuantToCentralAllowed(t *testing.T) {
+	auth := DefaultSpecialistToolCallAuthorizer()
+	ctx := context.Background()
+
+	// Quant → Central: allowed
+	if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindQuant, agent.KindCentral, "central.review_trade"); err != nil {
+		t.Errorf("quant→central:review_trade should be allowed: %v", err)
+	}
+
+	// Quant → Central: disallowed
+	if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindQuant, agent.KindCentral, "central.delegate"); err == nil {
+		t.Error("quant→central:delegate should be denied")
+	}
+}
+
+func TestDefaultAuthorizer_DataToCentralAllowed(t *testing.T) {
+	auth := DefaultSpecialistToolCallAuthorizer()
+	ctx := context.Background()
+
+	// Data → Central: allowed
+	if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindData, agent.KindCentral, "central.data_alert"); err != nil {
+		t.Errorf("data→central:data_alert should be allowed: %v", err)
+	}
+
+	// Data → Central: disallowed
+	if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindData, agent.KindCentral, "central.review_trade"); err == nil {
+		t.Error("data→central:review_trade should be denied for data brain")
+	}
+}
+
+func TestDefaultAuthorizer_CrossBrainDenied(t *testing.T) {
+	auth := DefaultSpecialistToolCallAuthorizer()
+	ctx := context.Background()
+
+	// Code → Data: not allowed (no rule)
+	if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindCode, agent.KindData, "data.get_candles"); err == nil {
+		t.Error("code→data should be denied")
+	}
+
+	// Data → Quant: not allowed
+	if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindData, agent.KindQuant, "quant.global_portfolio"); err == nil {
+		t.Error("data→quant should be denied")
+	}
+}
+
+func TestSpecialistCallTool_QuantToData_EndToEnd(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	runner := newScriptedRunner()
+	runner.queue(agent.KindData, &scriptedSidecar{
+		onToolCall: func(_ context.Context, _ protocol.BidirRPC, req protocol.ToolCallRequest) (interface{}, error) {
+			return &protocol.ToolCallResult{
+				Tool:    req.Name,
+				Output:  json.RawMessage(`{"instrument_id":"BTC-USDT-SWAP","count":100}`),
+				Content: []protocol.ToolCallContent{{Type: "text", Text: `{"instrument_id":"BTC-USDT-SWAP","count":100}`}},
+			}, nil
+		},
+	})
+
+	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+		if kind == agent.KindData {
+			return "/bin/brain-data", nil
+		}
+		return "", fmt.Errorf("not found")
+	})
+	orch.available[agent.KindData] = true
+
+	// Use HandleSpecialistCallToolFrom as the quant brain would
+	handler := orch.HandleSpecialistCallToolFrom(agent.KindQuant)
+	resp, err := handler(ctx, json.RawMessage(`{
+		"target_kind": "data",
+		"tool_name": "data.get_candles",
+		"arguments": {"instrument_id": "BTC-USDT-SWAP", "timeframe": "1m"}
+	}`))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	result, ok := resp.(*protocol.ToolCallResult)
+	if !ok {
+		t.Fatalf("response type=%T, want *protocol.ToolCallResult", resp)
+	}
+	if result.Tool != "data.get_candles" {
+		t.Fatalf("result.Tool=%q, want data.get_candles", result.Tool)
+	}
+	if result.IsError {
+		t.Fatalf("result is error: %+v", result)
+	}
+}
+
+func TestSpecialistCallTool_QuantToCentral_ReviewTrade(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	runner := newScriptedRunner()
+	runner.queue(agent.KindCentral, &scriptedSidecar{
+		onToolCall: func(_ context.Context, _ protocol.BidirRPC, req protocol.ToolCallRequest) (interface{}, error) {
+			return &protocol.ToolCallResult{
+				Tool:    req.Name,
+				Output:  json.RawMessage(`{"approved":true,"confidence":0.85}`),
+				Content: []protocol.ToolCallContent{{Type: "text", Text: `{"approved":true}`}},
+			}, nil
+		},
+	})
+
+	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+		if kind == agent.KindCentral {
+			return "/bin/brain-central", nil
+		}
+		return "", fmt.Errorf("not found")
+	})
+	orch.available[agent.KindCentral] = true
+
+	handler := orch.HandleSpecialistCallToolFrom(agent.KindQuant)
+	resp, err := handler(ctx, json.RawMessage(`{
+		"target_kind": "central",
+		"tool_name": "central.review_trade",
+		"arguments": {"symbol": "BTC-USDT-SWAP", "direction": "long", "quantity": 0.1}
+	}`))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	result := resp.(*protocol.ToolCallResult)
+	if result.Tool != "central.review_trade" {
+		t.Fatalf("result.Tool=%q, want central.review_trade", result.Tool)
+	}
+}
+
+func TestSpecialistCallTool_DataToCentral_DataAlert(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	runner := newScriptedRunner()
+	runner.queue(agent.KindCentral, &scriptedSidecar{})
+
+	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+		if kind == agent.KindCentral {
+			return "/bin/brain-central", nil
+		}
+		return "", fmt.Errorf("not found")
+	})
+	orch.available[agent.KindCentral] = true
+
+	handler := orch.HandleSpecialistCallToolFrom(agent.KindData)
+	resp, err := handler(ctx, json.RawMessage(`{
+		"target_kind": "central",
+		"tool_name": "central.data_alert",
+		"arguments": {"level": "warning", "type": "price_spike", "symbol": "BTC-USDT-SWAP"}
+	}`))
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	result := resp.(*protocol.ToolCallResult)
+	if result.Tool != "central.data_alert" {
+		t.Fatalf("result.Tool=%q, want central.data_alert", result.Tool)
+	}
+}
+
+func TestSpecialistCallTool_UnauthorizedRoute_Denied(t *testing.T) {
+	orch := NewOrchestrator(nil, nil, nil)
+
+	// Code brain trying to call data.get_candles — should be denied
+	handler := orch.HandleSpecialistCallToolFrom(agent.KindCode)
+	_, err := handler(context.Background(), json.RawMessage(`{
+		"target_kind": "data",
+		"tool_name": "data.get_candles",
+		"arguments": {}
+	}`))
+	if err == nil {
+		t.Fatal("expected authorization error for code→data")
+	}
+	if !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("error=%v, want 'not allowed'", err)
+	}
+
+	// Quant trying to replay data — should be denied (not in prefix list)
+	handler = orch.HandleSpecialistCallToolFrom(agent.KindQuant)
+	_, err = handler(context.Background(), json.RawMessage(`{
+		"target_kind": "data",
+		"tool_name": "data.replay_start",
+		"arguments": {}
+	}`))
+	if err == nil {
+		t.Fatal("expected authorization error for quant→data.replay_start")
+	}
+}
+
+func TestNewOrchestrator_BackwardCompatible(t *testing.T) {
+	// When no config is provided, all built-in kinds should be probed.
+	orch := NewOrchestrator(nil, nil, func(kind agent.Kind) (string, error) {
+		if kind == agent.KindCode {
+			return "/bin/sh", nil // exists
+		}
+		return "", fmt.Errorf("not found")
+	})
+
+	if !orch.CanDelegate(agent.KindCode) {
+		t.Fatal("code should be available via backward-compatible binResolver")
+	}
+	// Data and quant are now in BuiltinKinds but no binary found.
+	if orch.CanDelegate(agent.KindData) {
+		t.Fatal("data should NOT be available — no binary")
+	}
+	if orch.CanDelegate(agent.KindQuant) {
+		t.Fatal("quant should NOT be available — no binary")
 	}
 }

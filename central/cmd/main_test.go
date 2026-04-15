@@ -22,7 +22,7 @@ func (m mockKernelCaller) CallKernel(ctx context.Context, method string, params 
 func TestCentralHandlerToolSchemasExposeOutputSchemas(t *testing.T) {
 	h := &centralHandler{}
 	schemas := h.ToolSchemas()
-	if got, want := len(schemas), 5; got != want {
+	if got, want := len(schemas), 8; got != want {
 		t.Fatalf("unexpected schema count: got %d want %d", got, want)
 	}
 	tools := h.Tools()

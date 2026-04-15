@@ -30,7 +30,29 @@ const (
 
 	// KindFault is a specialist brain that injects faults for chaos testing.
 	KindFault Kind = "fault"
+
+	// KindData is a specialist brain that collects, stores, and computes
+	// feature vectors from market data. See brains/data/.
+	KindData Kind = "data"
+
+	// KindQuant is a specialist brain that runs trading strategies, risk
+	// management, and execution. See brains/quant/.
+	KindQuant Kind = "quant"
 )
+
+// BuiltinKinds returns the set of built-in specialist brain kinds (excluding
+// central). Third-party brains can register arbitrary Kind strings without
+// appearing in this list.
+func BuiltinKinds() []Kind {
+	return []Kind{
+		KindCode,
+		KindBrowser,
+		KindVerifier,
+		KindFault,
+		KindData,
+		KindQuant,
+	}
+}
 
 // LLMAccessMode captures the three LLM credential strategies defined in
 // 02-BrainKernel设计.md §12.5.7 (decision 7). See 23-安全模型.md §5 for the

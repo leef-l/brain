@@ -54,6 +54,16 @@ for main in "${root_dir}"/brains/*/*/cmd/main.go; do
   binaries+=("brain-${parent}-${sub}=./brains/${parent}/${sub}/cmd")
 done
 
+# Pattern 3: brains/<name>/cmd/sidecar/main.go  → brain-<name>-sidecar
+# These are specialist brain sidecar binaries launched by the Kernel via
+# stdio JSON-RPC. They are separate from the standalone brain binaries
+# matched by Pattern 1.
+for main in "${root_dir}"/brains/*/cmd/sidecar/main.go; do
+  [[ -f "${main}" ]] || continue
+  name="$(basename "$(dirname "$(dirname "$(dirname "${main}")")")")"
+  binaries+=("brain-${name}-sidecar=./brains/${name}/cmd/sidecar")
+done
+
 printf 'packaging %d binaries\n' "${#binaries[@]}" >&2
 
 for entry in "${binaries[@]}"; do

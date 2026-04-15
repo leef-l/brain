@@ -67,6 +67,35 @@ type SubtaskUsage struct {
 	Duration time.Duration `json:"duration"`
 }
 
+// BrainRegistration describes a specialist brain that the Orchestrator can
+// delegate to. When provided via OrchestratorConfig.Brains, the Orchestrator
+// becomes fully configuration-driven — no brain kinds are hard-coded.
+type BrainRegistration struct {
+	// Kind is the brain role identifier (e.g. "code", "quant", "data").
+	Kind agent.Kind `json:"kind"`
+
+	// Binary is an explicit path to the sidecar binary. When non-empty it
+	// takes precedence over the BinResolver. This allows third-party brains
+	// to be registered purely through configuration.
+	Binary string `json:"binary,omitempty"`
+
+	// Model is the LLM model ID to use for this brain via LLMProxy.
+	// An empty string means the brain does not use LLM proxying.
+	Model string `json:"model,omitempty"`
+
+	// AutoStart launches the sidecar immediately on Orchestrator creation
+	// rather than lazily on first delegation.
+	AutoStart bool `json:"auto_start,omitempty"`
+}
+
+// OrchestratorConfig configures the Orchestrator. When Brains is non-empty,
+// only those brains are probed — the built-in kind list is not used. When
+// Brains is empty, the Orchestrator falls back to probing agent.BuiltinKinds()
+// via the BinResolver for backward compatibility.
+type OrchestratorConfig struct {
+	Brains []BrainRegistration `json:"brains,omitempty"`
+}
+
 // Orchestrator manages specialist brain lifecycle and subtask delegation.
 type Orchestrator struct {
 	runner      BrainRunner
@@ -77,39 +106,130 @@ type Orchestrator struct {
 	// available records which sidecar binaries exist on disk.
 	available map[agent.Kind]bool
 
+	// registrations stores BrainRegistration for config-driven brains.
+	registrations map[agent.Kind]*BrainRegistration
+
 	mu     sync.Mutex
 	active map[agent.Kind]agent.Agent // running sidecar pool (reused)
 }
 
 // NewOrchestrator creates an Orchestrator. It probes the filesystem for
 // available sidecar binaries and records which kinds can be delegated.
+//
+// For backward compatibility, when no OrchestratorConfig is provided the
+// Orchestrator probes agent.BuiltinKinds() via binResolver.
 func NewOrchestrator(runner BrainRunner, llmProxy *LLMProxy, binResolver func(agent.Kind) (string, error)) *Orchestrator {
+	return NewOrchestratorWithConfig(runner, llmProxy, binResolver, OrchestratorConfig{})
+}
+
+// NewOrchestratorWithConfig creates a configuration-driven Orchestrator.
+// When cfg.Brains is non-empty, only those brains are registered — the
+// built-in kind list is ignored. This is the recommended constructor for
+// hot-pluggable brain management.
+func NewOrchestratorWithConfig(runner BrainRunner, llmProxy *LLMProxy, binResolver func(agent.Kind) (string, error), cfg OrchestratorConfig) *Orchestrator {
 	o := &Orchestrator{
-		runner:      runner,
-		llmProxy:    llmProxy,
-		binResolver: binResolver,
-		toolCalls:   DefaultSpecialistToolCallAuthorizer(),
-		available:   make(map[agent.Kind]bool),
-		active:      make(map[agent.Kind]agent.Agent),
+		runner:        runner,
+		llmProxy:      llmProxy,
+		binResolver:   binResolver,
+		toolCalls:     DefaultSpecialistToolCallAuthorizer(),
+		available:     make(map[agent.Kind]bool),
+		registrations: make(map[agent.Kind]*BrainRegistration),
+		active:        make(map[agent.Kind]agent.Agent),
 	}
 
-	// Probe for each specialist sidecar binary.
-	for _, kind := range []agent.Kind{
-		agent.KindCode,
-		agent.KindBrowser,
-		agent.KindVerifier,
-		agent.KindFault,
-	} {
-		if binResolver != nil {
-			if path, err := binResolver(kind); err == nil {
-				if _, statErr := os.Stat(path); statErr == nil {
-					o.available[kind] = true
-				}
-			}
+	if len(cfg.Brains) > 0 {
+		// Configuration-driven: only probe configured brains.
+		for i := range cfg.Brains {
+			reg := &cfg.Brains[i]
+			o.registrations[reg.Kind] = reg
+			o.probeRegistration(reg, binResolver)
+		}
+	} else {
+		// Backward-compatible: probe all built-in kinds via binResolver.
+		for _, kind := range agent.BuiltinKinds() {
+			o.probeBinResolver(kind, binResolver)
 		}
 	}
 
+	// Sync Model fields from registrations into LLMProxy.ModelForKind
+	// so that the LLM proxy knows which model each brain should use.
+	o.syncLLMModels()
+
 	return o
+}
+
+// probeRegistration checks if a configured brain's binary exists on disk.
+func (o *Orchestrator) probeRegistration(reg *BrainRegistration, binResolver func(agent.Kind) (string, error)) {
+	// 1. Explicit binary path from config takes precedence.
+	if reg.Binary != "" {
+		if _, err := os.Stat(reg.Binary); err == nil {
+			o.available[reg.Kind] = true
+			return
+		}
+	}
+	// 2. Fall back to binResolver.
+	o.probeBinResolver(reg.Kind, binResolver)
+}
+
+// probeBinResolver probes a single kind through the bin resolver.
+func (o *Orchestrator) probeBinResolver(kind agent.Kind, binResolver func(agent.Kind) (string, error)) {
+	if binResolver == nil {
+		return
+	}
+	path, err := binResolver(kind)
+	if err != nil {
+		return
+	}
+	if _, statErr := os.Stat(path); statErr == nil {
+		o.available[kind] = true
+	}
+}
+
+// syncLLMModels propagates Model fields from all registrations into
+// LLMProxy.ModelForKind. Called after initial setup and after Register.
+func (o *Orchestrator) syncLLMModels() {
+	if o.llmProxy == nil {
+		return
+	}
+	if o.llmProxy.ModelForKind == nil {
+		o.llmProxy.ModelForKind = make(map[agent.Kind]string)
+	}
+	for kind, reg := range o.registrations {
+		if reg.Model != "" {
+			o.llmProxy.ModelForKind[kind] = reg.Model
+		}
+	}
+}
+
+// Register dynamically adds a brain registration at runtime. If a sidecar
+// binary is found (via reg.Binary or binResolver), the kind becomes
+// immediately available for delegation. This enables hot-plugging new
+// brains without restarting the Kernel.
+func (o *Orchestrator) Register(reg BrainRegistration) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.registrations[reg.Kind] = &reg
+	o.probeRegistration(&reg, o.binResolver)
+	o.syncLLMModels()
+	return o.available[reg.Kind]
+}
+
+// Unregister removes a brain kind from the Orchestrator. If a sidecar of
+// that kind is currently running, it is NOT stopped — call Shutdown or
+// removeSidecar first if you want to stop it.
+func (o *Orchestrator) Unregister(kind agent.Kind) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	delete(o.registrations, kind)
+	delete(o.available, kind)
+}
+
+// Registration returns the BrainRegistration for a kind, or nil if not
+// registered via config.
+func (o *Orchestrator) Registration(kind agent.Kind) *BrainRegistration {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.registrations[kind]
 }
 
 // SetSpecialistToolCallAuthorizer overrides the reverse-RPC authorization
@@ -321,7 +441,9 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 	}
 	o.mu.Unlock()
 
-	// Start a new sidecar.
+	// Start a new sidecar. If a registration exists with an explicit binary
+	// path, pass it to the runner so it does not need a separate binResolver
+	// lookup.
 	desc := agent.Descriptor{
 		Kind:      kind,
 		LLMAccess: agent.LLMAccessProxied,
@@ -418,10 +540,23 @@ func (o *Orchestrator) Shutdown(ctx context.Context) error {
 // DegradationNotice returns a human-readable notice describing which specialist
 // brains are NOT available. Returns "" if all requested kinds are available.
 // This is used by chat/run to augment Central's system prompt.
+//
+// When brains are configured via OrchestratorConfig, only configured kinds are
+// checked. Otherwise the built-in kind list is used.
 func (o *Orchestrator) DegradationNotice() string {
-	allKinds := []agent.Kind{agent.KindCode, agent.KindBrowser, agent.KindVerifier, agent.KindFault}
+	o.mu.Lock()
+	var checkKinds []agent.Kind
+	if len(o.registrations) > 0 {
+		for k := range o.registrations {
+			checkKinds = append(checkKinds, k)
+		}
+	} else {
+		checkKinds = agent.BuiltinKinds()
+	}
+	o.mu.Unlock()
+
 	var missing []string
-	for _, k := range allKinds {
+	for _, k := range checkKinds {
 		if !o.available[k] {
 			missing = append(missing, string(k))
 		}

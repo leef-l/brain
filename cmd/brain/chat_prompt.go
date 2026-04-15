@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/tool"
 )
@@ -64,8 +66,20 @@ func buildSystemPrompt(mode chatMode, sb *tool.Sandbox) string {
 	return base
 }
 
+// brainDescriptions maps brain kinds to their natural-language descriptions.
+// Used by buildOrchestratorPrompt to dynamically generate delegation instructions.
+var brainDescriptions = map[agent.Kind]string{
+	"code":     "For writing, editing, and debugging code. Delegate coding tasks to this brain.",
+	"browser":  "For web browsing, UI testing, and interacting with web pages. Can fully simulate human browser operations (click, type, scroll, drag, hover, screenshot, etc.).",
+	"verifier": "For running tests, verifying code changes, and checking output. This brain is read-only and independent — it does not participate in implementation.",
+	"fault":    "For chaos engineering and fault injection testing.",
+	"data":     "For real-time market data: instrument discovery, prices, order books, features (192-dim vectors), data quality. Delegate data queries to this brain.",
+	"quant":    "For quantitative trading: account balances, positions, trade history, daily/monthly P&L, strategy stats, risk status. Delegate trading queries and operations to this brain.",
+}
+
 // buildOrchestratorPrompt appends delegation instructions when specialist
-// brains are available.
+// brains are available. Descriptions are generated dynamically based on
+// which brains are actually discovered — no hardcoded brain list.
 func buildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) string {
 	if orch == nil || !registryHasTool(reg, "central.delegate") {
 		return ""
@@ -76,6 +90,9 @@ func buildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 		return ""
 	}
 
+	// Sort for stable output.
+	sort.Slice(kinds, func(i, j int) bool { return kinds[i] < kinds[j] })
+
 	names := make([]string, len(kinds))
 	for i, k := range kinds {
 		names[i] = string(k)
@@ -85,19 +102,55 @@ func buildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	prompt += "You have access to specialist brains that can handle specific tasks. "
 	prompt += fmt.Sprintf("Available specialists: %s.\n\n", strings.Join(names, ", "))
 	prompt += "Use the `central.delegate` tool to delegate tasks to the appropriate specialist:\n"
-	prompt += "- **code**: For writing, editing, and debugging code. Delegate coding tasks to this brain.\n"
-	prompt += "- **browser**: For web browsing, UI testing, and interacting with web pages. " +
-		"This is a top-tier UI interaction specialist that can fully simulate human browser operations " +
-		"(click, type, scroll, drag, hover, screenshot, etc.).\n"
-	prompt += "- **verifier**: For running tests, verifying code changes, and checking output. " +
-		"This brain is read-only and independent — it does not participate in implementation.\n"
-	prompt += "- **fault**: For chaos engineering and fault injection testing.\n\n"
-	prompt += "When you receive a task:\n"
-	prompt += "1. Break it down into subtasks if needed\n"
-	prompt += "2. Delegate each subtask to the appropriate specialist using `central.delegate`\n"
+
+	for _, kind := range kinds {
+		desc, ok := brainDescriptions[kind]
+		if !ok {
+			desc = fmt.Sprintf("Specialist brain for %s tasks.", kind)
+		}
+		prompt += fmt.Sprintf("- **%s**: %s\n", kind, desc)
+	}
+
+	// Check which specialist tools are directly available as bridge tools.
+	hasQuantTools := registryHasTool(reg, "quant.global_portfolio")
+	hasDataTools := registryHasTool(reg, "data.get_snapshot")
+
+	if hasQuantTools || hasDataTools {
+		prompt += "\n### Direct specialist tools\n\n"
+		prompt += "You can call these specialist tools directly (no delegation needed):\n\n"
+		if hasQuantTools {
+			prompt += "**Quant tools** — for trading data queries:\n"
+			prompt += "- `quant.global_portfolio` — all accounts equity, positions, health\n"
+			prompt += "- `quant.account_status` — single account balance and positions\n"
+			prompt += "- `quant.daily_pnl` — today's P&L per trading unit\n"
+			prompt += "- `quant.trade_history` — historical trades for a unit\n"
+			prompt += "- `quant.trace_query` — signal audit trail\n"
+			prompt += "- `quant.strategy_weights` — strategy configuration\n"
+			prompt += "- `quant.global_risk_status` — risk limits and usage\n"
+			prompt += "- `quant.pause_trading` / `quant.resume_trading` — emergency controls\n"
+			prompt += "- `quant.account_pause` / `quant.account_resume` — per-account controls\n"
+			prompt += "- `quant.account_close_all` / `quant.force_close` — position closure (dangerous)\n"
+			prompt += "- `quant.backtest_start` — run backtest on historical data\n\n"
+		}
+		if hasDataTools {
+			prompt += "**Data tools** — for market data queries:\n"
+			prompt += "- `data.get_snapshot` — real-time price, spread, orderbook imbalance\n"
+			prompt += "- `data.get_candles` — historical K-line data\n"
+			prompt += "- `data.get_feature_vector` — 192-dim feature vector with regime detection\n"
+			prompt += "- `data.provider_health` — data source health and latency\n"
+			prompt += "- `data.validation_stats` — data quality metrics\n"
+			prompt += "- `data.active_instruments` — active trading instruments\n"
+			prompt += "- `data.backfill_status` — historical backfill progress\n"
+			prompt += "- `data.replay_start` / `data.replay_stop` — historical replay (backtest mode)\n\n"
+		}
+	}
+
+	prompt += "\nWhen you receive a task:\n"
+	prompt += "1. For trading/data queries, use the specialist tools directly\n"
+	prompt += "2. For complex multi-step tasks, use `central.delegate` to delegate to specialists\n"
 	prompt += "3. After code changes, delegate verification to the verifier brain\n"
 	prompt += "4. Summarize the results to the user\n\n"
-	prompt += "If a delegation is rejected (specialist unavailable), handle the task yourself.\n"
+	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n"
 
 	// Add degradation notice if any specialists are missing.
 	if notice := orch.DegradationNotice(); notice != "" {

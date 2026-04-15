@@ -65,12 +65,38 @@ func (a *StaticSpecialistToolCallAuthorizer) AuthorizeSpecialistToolCall(_ conte
 
 // DefaultSpecialistToolCallAuthorizer returns the built-in conservative policy.
 // Third-party integrations may override it on the Orchestrator.
+//
+// Built-in rules (Doc 35 §5.5):
+//
+//	verifier → browser.*          (browser automation for verification)
+//	quant    → data.get_*         (market data queries)
+//	quant    → central.review_*   (LLM trade review)
+//	data     → central.data_alert (data quality alerts)
 func DefaultSpecialistToolCallAuthorizer() SpecialistToolCallAuthorizer {
 	return NewStaticSpecialistToolCallAuthorizer([]SpecialistToolCallRule{
+		// Existing: verifier → browser
 		{
 			Caller:       agent.KindVerifier,
 			Target:       agent.KindBrowser,
 			ToolPrefixes: []string{"browser."},
+		},
+		// Quant → Data: market data queries (Doc 35 §5.5)
+		{
+			Caller:       agent.KindQuant,
+			Target:       agent.KindData,
+			ToolPrefixes: []string{"data.get_candles", "data.get_snapshot", "data.get_feature_vector"},
+		},
+		// Quant → Central: LLM trade review (Doc 35 §5.5)
+		{
+			Caller:       agent.KindQuant,
+			Target:       agent.KindCentral,
+			ToolPrefixes: []string{"central.review_trade"},
+		},
+		// Data → Central: data quality alerts (Doc 35 §5.5)
+		{
+			Caller:       agent.KindData,
+			Target:       agent.KindCentral,
+			ToolPrefixes: []string{"central.data_alert"},
 		},
 	})
 }

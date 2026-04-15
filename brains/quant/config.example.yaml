@@ -1,12 +1,80 @@
 # ============================================================
 #  量化大脑 (Quant Brain) 配置示例
-#  包含三个子系统：执行层 / 策略层 / 风控层
+#  文件格式：YAML（代码同时支持 .yaml 和 .json）
+#  启动命令：quant-brain -config config.yaml
 # ============================================================
+
+# ==================== 大脑核心参数 ====================
+brain:
+  cycle_interval: 5s             # 评估周期（每 5 秒扫描一次所有品种）
+  default_timeframe: "1H"        # 默认 K 线周期
+
+# ==================== 账户配置 ====================
+accounts:
+  # --- 纸盘账户（测试用） ---
+  - id: paper-main
+    exchange: paper               # paper | okx
+    initial_equity: 10000         # 初始权益（USDT）
+    tags: [test, paper]
+
+    # 账户路由配置（可选）
+    route:
+      weight_factor: 1.0          # 仓位权重因子（1.0=满仓, 0.5=半仓）
+      # allowed_strategies:       # 限制可用策略（空=全部允许）
+      #   - trend_follower
+      # allowed_symbols:          # 限制可交易品种（空=全部允许）
+      #   - BTC-USDT-SWAP
+
+  # --- OKX 实盘账户（示例） ---
+  # - id: okx-main
+  #   exchange: okx
+  #   api_key: "your-api-key"
+  #   secret_key: "your-secret-key"
+  #   passphrase: "your-passphrase"
+  #   base_url: "https://www.okx.com"   # 或 https://aws.okx.com
+  #   simulated: false                    # true = OKX 模拟盘
+  #   tags: [production]
+  #   route:
+  #     weight_factor: 0.5               # 保守仓位
+  #     allowed_strategies:
+  #       - trend_follower
+  #       - breakout_momentum
+
+  # --- OKX 模拟盘账户 ---
+  # - id: okx-demo
+  #   exchange: okx
+  #   api_key: "demo-api-key"
+  #   secret_key: "demo-secret-key"
+  #   passphrase: "demo-passphrase"
+  #   simulated: true
+  #   tags: [demo]
+  #   route:
+  #     weight_factor: 1.0
+
+# ==================== 交易单元 ====================
+units:
+  - id: unit-btc
+    account_id: paper-main
+    symbols:
+      - BTC-USDT-SWAP
+      - ETH-USDT-SWAP
+    timeframe: "1H"
+    max_leverage: 10
+    enabled: true
+
+  # - id: unit-alt
+  #   account_id: paper-main
+  #   symbols:
+  #     - SOL-USDT-SWAP
+  #     - DOGE-USDT-SWAP
+  #   timeframe: "1H"
+  #   max_leverage: 5
+  #   enabled: true
 
 # ==================== 执行层 (Execution) ====================
 # 可执行文件：brain-quant-execution (exchange-executor)
 # 用途：OrderIntent → ExecutionResult 的薄 sidecar
-
+#
 # --- 命令行参数 ---
 # -intent <json>         内联 OrderIntent JSON
 # -intent-file <path>    OrderIntent JSON 文件路径
@@ -14,90 +82,103 @@
 # -mark-price <float>    纸盘参考标记价格（默认 0）
 # -slippage-bps <float>  纸盘滑点（基点，默认 0）
 # -fee-bps <float>       纸盘手续费（基点，默认 5）
-
+#
 # --- 启动示例 ---
 # 纸盘模式（默认）:
 #   brain-quant-execution -intent '{"symbol":"BTC-USDT-SWAP","side":"buy","quantity":"0.1","leverage":10}'
 #
 # 从文件读取:
 #   brain-quant-execution -intent-file ./order.json -mark-price 65000 -slippage-bps 2
-#
-# 从 stdin 读取:
-#   cat order.json | brain-quant-execution -fee-bps 3
-
-# --- OrderIntent JSON 格式 ---
-# {
-#   "id": "order-001",
-#   "symbol": "BTC-USDT-SWAP",
-#   "side": "buy",                    # buy | sell
-#   "pos_side": "long",               # long | short
-#   "order_type": "market",           # market | limit | stop_loss | take_profit | stop_market | stop_limit
-#   "leverage": 10,
-#   "quantity": "0.1",
-#   "price": "65000",                 # limit 订单必填
-#   "stop_loss": "63000",
-#   "take_profit": "70000",
-#   "time_in_force": "GTC",           # 可选
-#   "client_ord_id": "my-order-001",  # 可选
-#   "timestamp": 1718000000000        # Unix 毫秒
-# }
 
 # ==================== 策略层 (Strategy) =====================
-# 策略层目前通过 Go 代码配置，无独立可执行文件
+# 策略权重和聚合器通过 Go 代码配置，以下仅为参考
 
-# --- 策略权重 ---
-strategy:
-  weights:
-    trend_follower: 0.30       # 趋势跟踪
-    mean_reversion: 0.25       # 均值回归
-    breakout_momentum: 0.25    # 突破动量
-    order_flow: 0.20           # 订单流
-
-  # --- 聚合器阈值 ---
-  long_threshold: 0.45         # 做多信号最低分数
-  short_threshold: 0.45        # 做空信号最低分数
-  dominance_factor: 1.5        # 主方向必须是反方向的 1.5 倍
-
-  # --- 历史胜率过滤 ---
-  # 做多信号：历史胜率 < 0.35 时拒绝
-  # 做空信号：历史胜率 > 0.65 时拒绝
-
-  # --- LLM 复审触发条件 ---
-  # 持仓数 >= 3
-  # 最大单仓占比 > 5%
-  # 当日亏损 > 3%
-  # 检测到异常信号
+# strategy:
+#   weights:
+#     trend_follower: 0.30       # 趋势跟踪
+#     mean_reversion: 0.25       # 均值回归
+#     breakout_momentum: 0.25    # 突破动量
+#     order_flow: 0.20           # 订单流
+#
+#   long_threshold: 0.45         # 做多信号最低分数
+#   short_threshold: 0.45        # 做空信号最低分数
+#   dominance_factor: 1.5        # 主方向必须是反方向的 1.5 倍
 
 # ==================== 风控层 (Risk) =========================
 
-# --- 风控守卫 (Guard) ---
-risk:
-  guard:
-    # 第一层：订单级检查
-    max_single_position_pct: 5       # 单仓最大占权益百分比
-    max_leverage: 20                 # 最大杠杆
-    min_stop_distance_atr: 1         # 止损最小距离（ATR 倍数）
-    max_stop_distance_pct: 10        # 止损最大距离（入场价百分比）
-    max_concurrent_positions: 5      # 最大同时持仓数
+# --- 单账户风控守卫 (Guard) ---
+# risk:
+#   guard:
+#     max_single_position_pct: 5       # 单仓最大占权益百分比
+#     max_leverage: 20                 # 最大杠杆
+#     min_stop_distance_atr: 1         # 止损最小距离（ATR 倍数）
+#     max_stop_distance_pct: 10        # 止损最大距离（入场价百分比）
+#     max_concurrent_positions: 5      # 最大同时持仓数
+#     max_total_exposure_pct: 30       # 总敞口上限（权益百分比）
+#     max_same_direction_pct: 20       # 同向敞口上限
+#     stop_new_trades_loss_pct: 3      # 日亏损停止开新仓
+#     liquidate_all_loss_pct: 5        # 日亏损全平仓
+#
+#   position_sizer:
+#     min_fraction: 0.005              # 最小仓位比例（0.5%）
+#     max_fraction: 0.05               # 最大仓位比例（5%）
+#     scale_fraction: 0.25             # Kelly 缩放因子（1/4 Kelly）
 
-    # 第二层：组合级检查
-    max_total_exposure_pct: 30       # 总敞口上限（权益百分比）
-    max_same_direction_pct: 20       # 同向敞口上限（权益百分比）
-    stop_new_trades_loss_pct: 3      # 日亏损达此比例停止开新仓
-    liquidate_all_loss_pct: 5        # 日亏损达此比例全部平仓
+# --- 跨账户全局风控 (GlobalRiskGuard) ---
+# 通过命令行或 Go 代码配置，以下为默认值参考：
+#
+# global_risk:
+#   max_global_exposure_pct: 50        # 所有账号总敞口/总权益上限
+#   max_global_same_direction: 30      # 同方向总敞口上限
+#   max_global_daily_loss: 5           # 所有账号累计日亏损上限
+#   max_symbol_exposure: 15            # 单品种跨账号总敞口上限
 
-    # 第三层：熔断暂停
-    volatility_pause: 1h             # 波动率 > 99 分位时暂停
-    btc_move_pause: 30m              # BTC 15 分钟内 ±5% 时暂停
-    executor_failure_pause: 10m      # 连续 3 次执行失败时暂停
-    memory_alert_threshold_gb: 40    # 内存警报阈值 (GB)
-    liquidation_pause: 15m           # OI 5 分钟内下降 >5% 时暂停
+# ==================== LLM 复审 (Review) =====================
+# 触发条件满足任一即请求中央大脑 LLM 审查
+#
+# review:
+#   enabled: true                      # 是否开启 LLM 复审
+#   trigger_concurrent: 3              # 持仓数 >= 3 时触发
+#   trigger_position_pct: 5            # 最大单仓占比 > 5% 时触发
+#   trigger_daily_loss: 3              # 当日亏损 > 3% 时触发
+#   timeout: 10s                       # LLM 响应超时（超时则自动放行）
+#   max_tokens: 500                    # LLM 输出 token 上限
+#
+# LLM 复审需要中央大脑运行并设置 LLM_API_KEY 环境变量
+# 支持的 LLM 服务：DeepSeek V3.2、Claude、HunYuan 或任何 OpenAI 兼容 API
 
-  # --- 仓位计算器 (Position Sizer) ---
-  position_sizer:
-    min_fraction: 0.005              # 最小仓位比例（权益的 0.5%）
-    max_fraction: 0.05               # 最大仓位比例（权益的 5%）
-    scale_fraction: 0.25             # Kelly 缩放因子（1/4 Kelly）
-    # 使用 Kelly 公式：f* = (p × b - q) / b
-    # 其中 p=胜率, q=1-p, b=盈亏比
-    # 实际仓位 = Kelly × scale_fraction, 限制在 [min, max] 范围内
+# ==================== 崩溃恢复 (Recovery) ===================
+# 需要 PostgreSQL 持久化存储才能启用
+#
+# recovery:
+#   warmup_ticks: 10                   # 恢复后跳过 N 个评估周期（等策略状态重建）
+#   validate_with_exchange: true       # 恢复时与交易所核对持仓
+
+# ==================== 持久化 (PostgreSQL) ====================
+# 通过命令行参数或环境变量传入：
+#   quant-brain -config config.yaml -pg "postgres://user:pass@localhost:5432/brain"
+#   或
+#   export PG_URL="postgres://user:pass@localhost:5432/brain"
+#
+# 启用后自动提供：
+#   - 交易记录持久化（PGStore）
+#   - 信号追踪链持久化（SignalTrace）
+#   - 崩溃恢复支持（CrashRecovery）
+# 不配置则使用内存存储（重启丢失）
+
+# ==================== 完整启动命令 ====================
+#
+# 纸盘快速启动（无需配置文件）:
+#   quant-brain -paper
+#   quant-brain -paper -equity 50000
+#
+# 配置文件启动:
+#   quant-brain -config config.yaml
+#
+# 带 PostgreSQL 持久化:
+#   quant-brain -config config.yaml -pg "postgres://brain:secret@db:5432/brain"
+#
+# 完整生产模式（含持久化 + 中央大脑 LLM 复审）:
+#   export PG_URL="postgres://brain:secret@db:5432/brain"
+#   export LLM_API_KEY="your-llm-api-key"
+#   quant-brain -config config.yaml -pg "$PG_URL"

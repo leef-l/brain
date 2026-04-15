@@ -18,11 +18,23 @@ import (
 // LLMProxy handles llm.complete and llm.stream reverse RPC requests from
 // sidecar processes. It selects the provider and model based on the brain
 // kind of the calling sidecar.
+//
+// Model resolution priority (highest wins):
+//  1. Explicit model in the sidecar's llm.complete request
+//  2. ModelForKind lookup (populated from BrainRegistration.Model)
+//  3. Provider's default model (set at construction time)
 type LLMProxy struct {
 	// ProviderFactory returns a configured llm.Provider for a given
 	// brain kind. The factory is responsible for selecting the correct
-	// model from the config (e.g., models["code"] → "deepseek-v3").
+	// provider (e.g., Anthropic, OpenAI). When a single provider serves
+	// all brains, the factory can return the same instance for every kind.
 	ProviderFactory func(kind agent.Kind) llm.Provider
+
+	// ModelForKind maps a brain kind to its configured model ID. This is
+	// populated from BrainRegistration.Model by the Orchestrator. When
+	// set, it overrides the provider's default model but is itself
+	// overridden by an explicit model in the sidecar's request.
+	ModelForKind map[agent.Kind]string
 }
 
 // llmCompleteRequest is the payload sent by a sidecar in an llm.complete
@@ -79,12 +91,23 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 		maxTokens = 4096
 	}
 
+	// Model resolution priority:
+	// 1. Explicit model in the request (sidecar override)
+	// 2. ModelForKind from BrainRegistration config
+	// 3. Empty string → provider uses its default model
+	model := req.Model
+	if model == "" && p.ModelForKind != nil {
+		if m, ok := p.ModelForKind[kind]; ok && m != "" {
+			model = m
+		}
+	}
+
 	chatReq := &llm.ChatRequest{
 		BrainID:   string(kind),
 		System:    req.System,
 		Messages:  req.Messages,
 		Tools:     req.Tools,
-		Model:     req.Model,
+		Model:     model,
 		MaxTokens: maxTokens,
 	}
 

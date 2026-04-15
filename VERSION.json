@@ -1,9 +1,9 @@
 {
-  "sdk_version": "0.6.0",
+  "sdk_version": "0.7.0",
   "sdk_language": "go",
-  "kernel_version": "0.6.0",
+  "kernel_version": "0.7.0",
   "protocol_version": "1.0",
-  "cli_version": "0.6.0",
+  "cli_version": "0.7.0",
   "compatibility": {
     "protocol": true,
     "kernel": true,
@@ -15,9 +15,9 @@
     "passed": 150,
     "skipped": 0,
     "failed": 0,
-    "last_run_at": "2026-04-13",
+    "last_run_at": "2026-04-15",
     "last_run_commit": null,
-    "note": "v0.6.0 — persistence Driver abstraction, OTel exporters, security module completion, license sidecar integration"
+    "note": "v0.7.0 — specialist brain sidecar architecture: quant/data bridge tools, cross-brain authorization, dynamic prompt generation, chat/CLI full specialist access"
   },
   "runnable_commands": [
     "version", "doctor", "run", "chat", "status", "resume",

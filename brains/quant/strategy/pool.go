@@ -41,8 +41,8 @@ func (p *Pool) Compute(view MarketView) []Signal {
 		out = append(out, signal)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Direction == out[j].Direction {
-			return out[i].Strategy < out[j].Strategy
+		if out[i].Direction != out[j].Direction {
+			return out[i].Direction < out[j].Direction
 		}
 		return out[i].Strategy < out[j].Strategy
 	})

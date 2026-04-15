@@ -74,6 +74,15 @@ for /d %%p in ("%root_dir%\brains\*") do (
     )
 )
 
+REM Pattern 3: brains\<name>\cmd\sidecar\main.go -> brain-<name>-sidecar
+REM These are specialist brain sidecar binaries launched by the Kernel via
+REM stdio JSON-RPC, separate from standalone brain binaries (Pattern 1).
+for /d %%d in ("%root_dir%\brains\*") do (
+    if exist "%%d\cmd\sidecar\main.go" (
+        call :add_binary "brain-%%~nxd-sidecar" ".\brains\%%~nxd\cmd\sidecar"
+    )
+)
+
 echo.
 echo ========================================
 echo  Building %bin_count% binaries (windows/amd64)

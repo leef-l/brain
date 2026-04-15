@@ -13,7 +13,125 @@ func (BreakoutMomentum) Name() string { return "BreakoutMomentum" }
 
 func (BreakoutMomentum) Timeframes() []string { return []string{"1H", "4H"} }
 
-func (BreakoutMomentum) Compute(view MarketView) Signal {
+func (b BreakoutMomentum) Compute(view MarketView) Signal {
+	if view.HasFeatureView() {
+		return b.computeFromFeatures(view)
+	}
+	return b.computeLegacy(view)
+}
+
+// computeFromFeatures uses FeatureView for momentum/volume signals, but still
+// needs candles for breakout level detection (high/low extremes aren't in the
+// feature vector). Falls back to legacy if candles unavailable.
+func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
+	f := view.Feature()
+	tf := view.Timeframe()
+
+	// Breakout detection still needs candles for high/low extremes
+	candles := view.Candles(tf)
+	if len(candles) < 30 {
+		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "insufficient candles for breakout levels", Timestamp: time.Now().UTC()}
+	}
+
+	priceNow := f.CurrentPrice()
+	lookback := 20
+	baseCandles := candles[:len(candles)-3]
+	if len(baseCandles) < lookback {
+		lookback = len(baseCandles)
+	}
+	if lookback < 5 {
+		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "insufficient breakout history", Timestamp: time.Now().UTC()}
+	}
+	breakHigh := highestHigh(baseCandles, lookback)
+	breakLow := lowestLow(baseCandles, lookback)
+
+	// Volume and momentum from FeatureView (O(1))
+	volRatio := f.VolumeRatio(tf)
+	obvSl := f.OBVSlope(tf)
+	volBreakout := f.VolumeBreakout(tf)
+	atrRatio := f.ATRRatio(tf)
+	momentum10 := f.Momentum(tf, 10)
+
+	volumeExpansion := volBreakout || volRatio > 1.8
+
+	aboveConfirmations := 0
+	belowConfirmations := 0
+	for _, c := range candles[len(candles)-3:] {
+		if c.Close > breakHigh {
+			aboveConfirmations++
+		}
+		if c.Close < breakLow {
+			belowConfirmations++
+		}
+	}
+
+	long := priceNow > breakHigh && volumeExpansion && obvSl > 0 && aboveConfirmations >= 1
+	short := priceNow < breakLow && volumeExpansion && obvSl < 0 && belowConfirmations >= 1
+
+	if !long && !short {
+		return Signal{
+			Strategy:   "BreakoutMomentum",
+			Direction:  DirectionHold,
+			Confidence: 0.12,
+			Reason:     "breakout conditions not confirmed",
+			Timestamp:  time.Now().UTC(),
+		}
+	}
+
+	confidence := 0.45
+	reason := ""
+	direction := DirectionHold
+
+	if long {
+		direction = DirectionLong
+		confidence += 0.30
+		reason = fmt.Sprintf("breakout above %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakHigh, volRatio, obvSl)
+	} else {
+		direction = DirectionShort
+		confidence += 0.30
+		reason = fmt.Sprintf("breakdown below %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakLow, volRatio, obvSl)
+	}
+
+	// Strong momentum confirmation
+	if (direction == DirectionLong && momentum10 > 0.02) || (direction == DirectionShort && momentum10 < -0.02) {
+		confidence *= 1.15
+		reason += fmt.Sprintf("; momentum10=%.4f confirms", momentum10)
+	}
+
+	// Higher TF confirmation
+	htf := "4H"
+	htfMom := f.Momentum(htf, 10)
+	if (direction == DirectionLong && htfMom > 0) || (direction == DirectionShort && htfMom < 0) {
+		confidence *= 1.2
+		reason += "; 4H momentum aligned"
+	}
+
+	confidence = clamp(confidence, 0, 1)
+	atrDist := atrRatio * priceNow
+	if atrDist <= 0 {
+		atrDist = priceNow * 0.01
+	}
+
+	signal := Signal{
+		Strategy:   "BreakoutMomentum",
+		Direction:  direction,
+		Confidence: confidence,
+		Entry:      priceNow,
+		Reason:     reason,
+		Timestamp:  time.Now().UTC(),
+	}
+	if direction == DirectionLong {
+		signal.StopLoss = breakHigh - atrDist*1.5
+		signal.TakeProfit = priceNow + atrDist*3
+	} else {
+		signal.StopLoss = breakLow + atrDist*1.5
+		signal.TakeProfit = priceNow - atrDist*3
+	}
+	return signal
+}
+
+// computeLegacy is the original candle-based computation for backtest mode.
+func (BreakoutMomentum) computeLegacy(view MarketView) Signal {
 	candles := view.Candles(view.Timeframe())
 	if len(candles) < 30 {
 		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "insufficient candles", Timestamp: time.Now().UTC()}

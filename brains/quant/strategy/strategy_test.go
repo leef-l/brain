@@ -30,6 +30,8 @@ func (f fakeView) TradeFlowToxicity() float64  { return f.toxicity }
 func (f fakeView) BigBuyRatio() float64        { return f.buyRatio }
 func (f fakeView) TradeDensityRatio() float64  { return f.density }
 func (f fakeView) SimilarityWinRate() float64  { return f.winRate }
+func (f fakeView) Feature() FeatureView        { return nil }
+func (f fakeView) HasFeatureView() bool        { return false }
 
 func candleSeries(start, step float64, n int, volume float64) []Candle {
 	out := make([]Candle, 0, n)
@@ -150,5 +152,176 @@ func TestAggregatorHistoryVeto(t *testing.T) {
 	}}, ReviewContext{})
 	if result.Direction != DirectionHold {
 		t.Fatalf("direction = %s, want hold", result.Direction)
+	}
+}
+
+// ── RegimeAwareAggregator tests ─────────────────────────────────
+
+type fakeFeatureView struct {
+	vec [192]float64
+}
+
+func (f *fakeFeatureView) EMADeviation(tf string, period int) float64 { return 0 }
+func (f *fakeFeatureView) EMACross(tf string) float64                 { return 0 }
+func (f *fakeFeatureView) RSI(tf string) float64                      { return 0 }
+func (f *fakeFeatureView) MACDHistogram(tf string) float64            { return 0 }
+func (f *fakeFeatureView) BBPosition(tf string) float64               { return 0 }
+func (f *fakeFeatureView) ATRRatio(tf string) float64                 { return 0 }
+func (f *fakeFeatureView) PriceChange(tf string, bars int) float64    { return 0 }
+func (f *fakeFeatureView) Volatility(tf string, bars int) float64     { return 0 }
+func (f *fakeFeatureView) ADX(tf string) float64                      { return 0 }
+func (f *fakeFeatureView) VolumeRatio(tf string) float64              { return 0 }
+func (f *fakeFeatureView) OBVSlope(tf string) float64                 { return 0 }
+func (f *fakeFeatureView) VolumePriceCorr(tf string) float64          { return 0 }
+func (f *fakeFeatureView) VolumeBreakout(tf string) bool              { return false }
+func (f *fakeFeatureView) OrderBookImbalance() float64                { return 0 }
+func (f *fakeFeatureView) Spread() float64                            { return 0 }
+func (f *fakeFeatureView) TradeFlowToxicity() float64                 { return 0 }
+func (f *fakeFeatureView) BigBuyRatio() float64                       { return 0 }
+func (f *fakeFeatureView) BigSellRatio() float64                      { return 0 }
+func (f *fakeFeatureView) TradeDensityRatio() float64                 { return 0 }
+func (f *fakeFeatureView) BuySellRatio() float64                      { return 0 }
+func (f *fakeFeatureView) FundingRate() float64                       { return 0 }
+func (f *fakeFeatureView) Momentum(tf string, bars int) float64       { return 0 }
+func (f *fakeFeatureView) VolatilityRatio(tf string) float64          { return 0 }
+func (f *fakeFeatureView) BTCExcessReturn() float64                   { return 0 }
+func (f *fakeFeatureView) BTCMomentum() float64                       { return 0 }
+func (f *fakeFeatureView) ETHMomentum() float64                       { return 0 }
+func (f *fakeFeatureView) BTCCorrelation() float64                    { return 0 }
+func (f *fakeFeatureView) ETHCorrelation() float64                    { return 0 }
+func (f *fakeFeatureView) MLReady() bool                              { return false }
+func (f *fakeFeatureView) Symbol() string                             { return "TEST" }
+func (f *fakeFeatureView) CurrentPrice() float64                      { return 100 }
+func (f *fakeFeatureView) RawVector() []float64                       { return f.vec[:] }
+
+func (f *fakeFeatureView) MarketRegime() MarketRegimeProb {
+	return MarketRegimeProb{
+		Trend:    f.vec[176],
+		Range:    f.vec[177],
+		Breakout: f.vec[178],
+		Panic:    f.vec[179],
+	}
+}
+
+func (f *fakeFeatureView) VolPrediction() VolPrediction {
+	return VolPrediction{Vol1H: f.vec[180], Vol4H: f.vec[181], VolPercentile: f.vec[182], VolDirection: f.vec[183]}
+}
+
+func (f *fakeFeatureView) AnomalyScore() AnomalyScore {
+	return AnomalyScore{Price: f.vec[184], Volume: f.vec[185], OrderBook: f.vec[186], Combined: f.vec[187]}
+}
+
+// featureAwareView is a fakeView with a FeatureView attached.
+type featureAwareView struct {
+	fakeView
+	fv FeatureView
+}
+
+func (v featureAwareView) Feature() FeatureView  { return v.fv }
+func (v featureAwareView) HasFeatureView() bool   { return v.fv != nil }
+
+func TestRegimeAggregatorTrendBoost(t *testing.T) {
+	var vec [192]float64
+	vec[176] = 0.8 // trend dominant
+	vec[177] = 0.1
+	vec[178] = 0.05
+	vec[179] = 0.05
+
+	view := featureAwareView{
+		fakeView: fakeView{symbol: "BTC-USDT-SWAP"},
+		fv:       &fakeFeatureView{vec: vec},
+	}
+
+	signals := []Signal{
+		{Strategy: "TrendFollower", Direction: DirectionLong, Confidence: 0.9},
+		{Strategy: "MeanReversion", Direction: DirectionLong, Confidence: 0.6},
+	}
+
+	ra := NewRegimeAwareAggregator()
+	result := ra.Aggregate(view, signals, ReviewContext{})
+
+	// In trend regime, TrendFollower weight = 0.40 vs default 0.30
+	// So the long score should be higher than with default weights
+	if result.Direction != DirectionLong {
+		t.Fatalf("direction = %s, want long", result.Direction)
+	}
+	if result.Confidence <= 0 {
+		t.Fatalf("confidence = %.2f, want > 0", result.Confidence)
+	}
+}
+
+func TestRegimeAggregatorPanicDamping(t *testing.T) {
+	var vec [192]float64
+	vec[176] = 0.05
+	vec[177] = 0.05
+	vec[178] = 0.05
+	vec[179] = 0.85 // panic dominant
+
+	view := featureAwareView{
+		fakeView: fakeView{symbol: "BTC-USDT-SWAP"},
+		fv:       &fakeFeatureView{vec: vec},
+	}
+
+	signals := []Signal{
+		{Strategy: "TrendFollower", Direction: DirectionLong, Confidence: 0.95},
+		{Strategy: "BreakoutMomentum", Direction: DirectionLong, Confidence: 0.9},
+		{Strategy: "OrderFlow", Direction: DirectionLong, Confidence: 0.8},
+	}
+
+	ra := NewRegimeAwareAggregator()
+	result := ra.Aggregate(view, signals, ReviewContext{})
+
+	// Panic should flag NeedsReview
+	if !result.NeedsReview {
+		t.Fatal("panic regime should flag NeedsReview")
+	}
+	if result.ReviewReason == "" {
+		t.Fatal("expected ReviewReason to contain panic note")
+	}
+}
+
+func TestRegimeAggregatorFallbackNoFeatureView(t *testing.T) {
+	// Without FeatureView, should fall back to default weights (same as Aggregator)
+	view := fakeView{
+		symbol: "BTC-USDT-SWAP",
+	}
+	signals := []Signal{
+		{Strategy: "TrendFollower", Direction: DirectionLong, Confidence: 0.9},
+		{Strategy: "MeanReversion", Direction: DirectionLong, Confidence: 0.8},
+	}
+
+	ra := NewRegimeAwareAggregator()
+	result := ra.Aggregate(view, signals, ReviewContext{})
+
+	agg := NewAggregator()
+	baseline := agg.Aggregate(view, signals, ReviewContext{})
+
+	if result.Direction != baseline.Direction {
+		t.Fatalf("fallback direction %s != baseline %s", result.Direction, baseline.Direction)
+	}
+	if result.Confidence != baseline.Confidence {
+		t.Fatalf("fallback confidence %.4f != baseline %.4f", result.Confidence, baseline.Confidence)
+	}
+}
+
+func TestRegimeAggregatorAnomalyReview(t *testing.T) {
+	var vec [192]float64
+	vec[176] = 0.5 // trend
+	vec[187] = 0.9 // high combined anomaly
+
+	view := featureAwareView{
+		fakeView: fakeView{symbol: "ETH-USDT-SWAP"},
+		fv:       &fakeFeatureView{vec: vec},
+	}
+
+	signals := []Signal{
+		{Strategy: "TrendFollower", Direction: DirectionLong, Confidence: 0.9},
+	}
+
+	ra := NewRegimeAwareAggregator()
+	result := ra.Aggregate(view, signals, ReviewContext{})
+
+	if !result.NeedsReview {
+		t.Fatal("high anomaly should trigger NeedsReview")
 	}
 }

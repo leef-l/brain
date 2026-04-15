@@ -12,6 +12,8 @@ import (
 	"os"
 
 	brain "github.com/leef-l/brain"
+	"github.com/leef-l/brain/central/llm"
+	cquant "github.com/leef-l/brain/central/quant"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/protocol"
@@ -20,7 +22,8 @@ import (
 )
 
 type centralHandler struct {
-	caller sidecar.KernelCaller
+	caller       sidecar.KernelCaller
+	quantHandler *cquant.Handler
 }
 
 func (h *centralHandler) Kind() agent.Kind { return agent.KindCentral }
@@ -81,6 +84,78 @@ func (h *centralHandler) ToolSchemas() []tool.Schema {
 }`),
 			OutputSchema: json.RawMessage(`true`),
 		},
+		{
+			Name:        "central.review_trade",
+			Description: "Review a trade decision via LLM analysis. Called by quant brain when NeedsReview is triggered.",
+			Brain:       "central",
+			InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "signal": { "type": "object" },
+    "portfolio": { "type": "object" },
+    "market": { "type": "object" },
+    "reason": { "type": "string" }
+  },
+  "required": ["signal", "portfolio", "market"]
+}`),
+			OutputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "approved": { "type": "boolean" },
+    "size_factor": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reason": { "type": "string" }
+  },
+  "required": ["approved", "size_factor", "reason"]
+}`),
+		},
+		{
+			Name:        "central.daily_review",
+			Description: "Run end-of-day analysis: collect trading statistics, generate LLM insights, and suggest strategy adjustments.",
+			Brain:       "central",
+			InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "date": { "type": "string" },
+    "accounts": { "type": "array" },
+    "strategy_stats": { "type": "array" },
+    "total_trades": { "type": "integer" },
+    "total_pnl": { "type": "number" }
+  }
+}`),
+			OutputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "assessment": { "type": "string" },
+    "strategy_notes": { "type": "string" },
+    "risk_notes": { "type": "string" },
+    "actions": { "type": "array" }
+  }
+}`),
+		},
+		{
+			Name:        "central.data_alert",
+			Description: "Receive and process data quality alerts from the data brain.",
+			Brain:       "central",
+			InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "level": { "type": "string", "enum": ["warning", "critical"] },
+    "alert_type": { "type": "string" },
+    "symbol": { "type": "string" },
+    "detail": { "type": "string" },
+    "event_ts": { "type": "integer" }
+  },
+  "required": ["level", "alert_type"]
+}`),
+			OutputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "received": { "type": "boolean" },
+    "action": { "type": "string" },
+    "description": { "type": "string" }
+  }
+}`),
+		},
 		tool.NewEchoTool("central").Schema(),
 		tool.NewRejectTaskTool("central", nil).Schema(),
 	}
@@ -108,6 +183,12 @@ func (h *centralHandler) HandleMethod(ctx context.Context, method string, params
 			return executeLocalTool(ctx, req.Name, tool.NewEchoTool("central"), req.Arguments)
 		case "central.reject_task":
 			return executeLocalTool(ctx, req.Name, tool.NewRejectTaskTool("central", nil), req.Arguments)
+		case "central.review_trade":
+			return h.handleQuantTool(ctx, req.Name, h.quantHandler.HandleReviewTrade, req.Arguments)
+		case "central.daily_review":
+			return h.handleQuantTool(ctx, req.Name, h.quantHandler.HandleDailyReview, req.Arguments)
+		case "central.data_alert":
+			return h.handleQuantTool(ctx, req.Name, h.quantHandler.HandleDataAlert, req.Arguments)
 		case "central.plan_create":
 			return toolCallSuccess(req.Name, map[string]interface{}{
 				"status":  "ok",
@@ -198,6 +279,23 @@ func (h *centralHandler) handleDelegate(ctx context.Context, args json.RawMessag
 	}), nil
 }
 
+// handleQuantTool routes a tool call to one of the quant handler methods.
+func (h *centralHandler) handleQuantTool(
+	ctx context.Context,
+	name string,
+	fn func(context.Context, json.RawMessage) (json.RawMessage, error),
+	args json.RawMessage,
+) (protocol.ToolCallResult, error) {
+	if h.quantHandler == nil {
+		return toolCallFailure(name, "not_configured", "quant handler not configured (LLM_API_KEY not set)"), nil
+	}
+	result, err := fn(ctx, args)
+	if err != nil {
+		return toolCallFailure(name, "handler_error", err.Error()), nil
+	}
+	return toolCallSuccessRaw(name, result), nil
+}
+
 func executeLocalTool(ctx context.Context, name string, builtin tool.Tool, args json.RawMessage) (protocol.ToolCallResult, error) {
 	result, err := builtin.Execute(ctx, args)
 	if err != nil {
@@ -272,7 +370,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "brain-central: license: %v\n", err)
 		os.Exit(1)
 	}
-	if err := sidecar.Run(&centralHandler{}); err != nil {
+
+	handler := &centralHandler{}
+
+	// Initialize LLM client for quant handlers if API key is set.
+	// Supports DeepSeek V3.2, Claude, HunYuan, or any OpenAI-compatible API.
+	// Env vars: LLM_API_KEY, LLM_BASE_URL (default: DeepSeek), LLM_MODEL
+	apiKey := os.Getenv("LLM_API_KEY")
+	if apiKey != "" {
+		cfg := llm.DefaultConfig()
+		cfg.APIKey = apiKey
+		if baseURL := os.Getenv("LLM_BASE_URL"); baseURL != "" {
+			cfg.BaseURL = baseURL
+		}
+		if model := os.Getenv("LLM_MODEL"); model != "" {
+			cfg.Model = model
+		}
+		client := llm.New(cfg)
+		handler.quantHandler = cquant.NewHandler(client, nil)
+		fmt.Fprintf(os.Stderr, "brain-central: LLM enabled (model=%s, base=%s)\n", cfg.Model, cfg.BaseURL)
+	} else {
+		fmt.Fprintln(os.Stderr, "brain-central: LLM disabled (set LLM_API_KEY to enable trade review)")
+	}
+
+	if err := sidecar.Run(handler); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-central: %v\n", err)
 		os.Exit(1)
 	}

@@ -7,10 +7,28 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-15
+
+### Added
+
+- **Specialist brain sidecar architecture** (三脑架构): Data Brain, Quant Brain, and Central Brain communicate via stdio JSON-RPC sidecar protocol with automatic process lifecycle management.
+- **Quant Brain sidecar** with 14 tools: `global_portfolio`, `account_status`, `daily_pnl`, `trade_history`, `trace_query`, `strategy_weights`, `global_risk_status`, `pause_trading`, `resume_trading`, `account_pause`, `account_resume`, `account_close_all`, `force_close`, `backtest_start`.
+- **Data Brain sidecar** with 9 tools: `get_snapshot`, `get_candles`, `get_feature_vector`, `provider_health`, `validation_stats`, `backfill_status`, `active_instruments`, `replay_start`, `replay_stop`.
+- **Bridge tool pattern**: specialist sidecar tools are registered directly in chat/run/serve tool registries, enabling the LLM to call `quant.*` and `data.*` tools without going through `central.delegate`.
+- **Cross-brain authorization policy** (`SpecialistToolCallAuthorizer`): static allowlist governs sidecar-to-sidecar tool calls (quant→data market queries, quant→central trade review, data→central alerts).
+- **Dynamic orchestrator prompt generation**: `buildOrchestratorPrompt` auto-discovers available specialist brains and generates delegation instructions with direct tool listings.
+- **`brains` config field**: `config.json` now supports a `brains` map for declaring specialist brain sidecar binary paths and environment variables.
+- **Release packaging auto-discovery**: `package.sh` and `build-assets.bat` now auto-detect all specialist brain sidecar binaries under `brains/<name>/cmd/sidecar/` in addition to standalone brain binaries.
+
 ### Fixed
 
 - `brain serve` now validates request-level `file_policy` / restricted-mode requirements and reserves concurrency before persisting a run, so rejected `POST /v1/runs` requests no longer leave orphan `"running"` records in `list` / `status`.
 - Sandboxed `code.search` now treats omitted or empty `path` as the sandbox primary workdir, instead of falling back to the process `cwd`.
+- Bridge tool schemas now match sidecar tool schemas exactly (`trace_query`, `trade_history`, `account_status`).
+- Removed nonexistent `data.get_similar_patterns` from cross-brain authorization policy.
+- Fixed nil pointer dereference in `TradingUnit` when `cfg.Account` is nil.
+- Fixed semantic naming error: `dailyLoss` → `dailyPnL` in `globalRiskStatusTool`.
+- Fixed ignored `QueryPositions` error in quant sidecar `execGlobalPortfolio`.
 
 ## [0.6.0] - 2026-04-13
 
@@ -61,7 +79,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Cross-platform build issues on Darwin, FreeBSD, and Windows caused by raw terminal and signal handling differences.
 - Windows sidecar discovery now checks same-directory `.exe` binaries, matching the packaged release layout.
 
-[unreleased]: https://github.com/leef-l/brain/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/leef-l/brain/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/leef-l/brain/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/leef-l/brain/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/leef-l/brain/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/leef-l/brain/releases/tag/v0.5.0
