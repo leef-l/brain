@@ -184,7 +184,9 @@ func handleBrainStart(state *chatState, kind string) {
 		fmt.Printf("  \033[1;31m! Failed: %v\033[0m\n\n", err)
 		return
 	}
-	fmt.Printf("  \033[32m✓ %s sidecar started\033[0m\n\n", kind)
+	home, _ := os.UserHomeDir()
+	fmt.Printf("  \033[32m✓ %s sidecar started\033[0m\n", kind)
+	fmt.Printf("  \033[2mLog: %s/.brain/logs/%s.log\033[0m\n\n", home, kind)
 }
 
 func handleBrainStop(state *chatState, kind string) {

@@ -173,7 +173,10 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
 	}
-	cmd.Stderr = os.Stderr
+
+	// Redirect sidecar stderr to a log file instead of polluting the
+	// interactive chat/run UI. Logs go to ~/.brain/logs/<kind>.log.
+	cmd.Stderr = openSidecarLog(kind)
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -496,6 +499,26 @@ var _ agent.RPCAgent = (*processAgent)(nil)
 var _ agent.RPCAgent = (*pipeAgent)(nil)
 var _ BrainRunner = (*ProcessRunner)(nil)
 var _ BrainRunner = (*StdioRunner)(nil)
+
+// openSidecarLog returns a writer for sidecar stderr output. Logs go to
+// ~/.brain/logs/<kind>.log. Falls back to os.Stderr if the log file cannot
+// be created.
+func openSidecarLog(kind agent.Kind) io.Writer {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return os.Stderr
+	}
+	logDir := fmt.Sprintf("%s/.brain/logs", home)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return os.Stderr
+	}
+	logPath := fmt.Sprintf("%s/%s.log", logDir, kind)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return os.Stderr
+	}
+	return f
+}
 
 // toJSONRaw marshals v into json.RawMessage. Convenience for building
 // RPC params/results in tests.
