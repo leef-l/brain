@@ -1,34 +1,49 @@
 # ============================================================
 #  中央大脑 (Central Brain) 配置示例
-#  中央大脑通过环境变量配置，无需配置文件
+#  文件格式：YAML 或 JSON
+#  使用方式：
+#    export CENTRAL_CONFIG=/path/to/central-config.yaml
+#    brain-central
+#  环境变量 LLM_API_KEY/LLM_BASE_URL/LLM_MODEL 优先级高于配置文件
 # ============================================================
 
-# ==================== 环境变量 ====================
+# ==================== LLM 配置 ====================
+# 用于交易复审和日终分析的大语言模型
+llm:
+  api_key: ""                          # API 密钥（也可通过 LLM_API_KEY 环境变量设置）
+  base_url: "https://api.deepseek.com/v1"  # API 地址
+  model: "deepseek-chat"               # 模型名称
+  max_tokens: 500                      # 最大输出 token 数
+  temperature: 0.3                     # 温度（0~1，越低越保守，推荐 0.3）
+  timeout: "15s"                       # HTTP 请求超时
 
-# --- LLM API 配置（必填，启用 LLM 复审功能） ---
-# LLM_API_KEY:   API 密钥
-# LLM_BASE_URL:  API 地址（默认 https://api.deepseek.com/v1，DeepSeek）
-# LLM_MODEL:     模型名称（默认 deepseek-chat）
-#
-# 支持的 LLM 服务：
-#   DeepSeek V3.2（默认，推荐）:
-#     export LLM_API_KEY="sk-xxx"
-#     # LLM_BASE_URL 和 LLM_MODEL 使用默认值即可
-#
-#   Claude（Anthropic）:
-#     export LLM_API_KEY="sk-ant-xxx"
-#     export LLM_BASE_URL="https://api.anthropic.com/v1"
-#     export LLM_MODEL="claude-sonnet-4-20250514"
-#
-#   HunYuan（腾讯混元）:
-#     export LLM_API_KEY="your-hunyuan-key"
-#     export LLM_BASE_URL="https://api.hunyuan.cloud.tencent.com/v1"
-#     export LLM_MODEL="hunyuan-pro"
-#
-#   任何 OpenAI 兼容 API:
-#     export LLM_API_KEY="your-key"
-#     export LLM_BASE_URL="https://your-api.example.com/v1"
-#     export LLM_MODEL="your-model-name"
+  # 支持的 LLM 服务：
+  #
+  # DeepSeek V3.2（默认，推荐，性价比最高）:
+  #   base_url: "https://api.deepseek.com/v1"
+  #   model: "deepseek-chat"
+  #
+  # Claude（Anthropic）:
+  #   base_url: "https://api.anthropic.com/v1"
+  #   model: "claude-sonnet-4-20250514"
+  #
+  # HunYuan（腾讯混元）:
+  #   base_url: "https://api.hunyuan.cloud.tencent.com/v1"
+  #   model: "hunyuan-pro"
+  #
+  # 任何 OpenAI 兼容 API:
+  #   base_url: "https://your-api.example.com/v1"
+  #   model: "your-model-name"
+
+# ==================== 交易复审配置 ====================
+# LLM 复审触发条件（满足任一即触发）
+review:
+  enabled: true                        # 是否启用 LLM 复审
+  trigger_concurrent: 3                # 持仓数 >= N 时触发复审
+  trigger_position_pct: 5              # 最大单仓占比 > N% 时触发
+  trigger_daily_loss: 3                # 当日亏损 > N% 时触发
+  timeout: "10s"                       # LLM 复审响应超时（超时则自动放行）
+  max_tokens: 500                      # 复审 LLM 输出 token 上限
 
 # ==================== 提供的工具 ====================
 # 中央大脑注册以下工具供 Kernel 调用：
@@ -47,49 +62,8 @@
 # 最小启动（不启用 LLM，复审请求将自动放行）:
 #   brain-central
 #
-# 启用 LLM 复审（DeepSeek V3.2）:
-#   export LLM_API_KEY="sk-xxx"
-#   brain-central
+# 使用配置文件:
+#   CENTRAL_CONFIG=./central-config.yaml brain-central
 #
-# 启用 LLM 复审（自定义 API）:
-#   LLM_API_KEY="sk-xxx" LLM_BASE_URL="https://api.example.com/v1" LLM_MODEL="model-name" brain-central
-
-# ==================== 工具调用说明 ====================
-#
-# --- central.review_trade（交易复审） ---
-# 输入:
-#   signal:      信号信息（direction, confidence）
-#   portfolio:   组合状态（total_equity, daily_pnl_pct, open_positions, largest_pos_pct）
-#   market:      市场环境（symbol, price, vol_percentile, market_regime, funding_rate）
-#   reason:      触发原因
-#
-# 输出:
-#   approved:    是否批准（true/false）
-#   size_factor: 仓位系数（0.0-1.0）
-#   reason:      LLM 判断理由
-#
-# --- central.daily_review（日终分析） ---
-# 输入:
-#   date:           日期
-#   accounts:       账户统计
-#   strategy_stats: 策略表现
-#   total_trades:   总交易数
-#   total_pnl:      总盈亏
-#
-# 输出:
-#   assessment:     整体评价
-#   strategy_notes: 策略建议
-#   risk_notes:     风险提醒
-#   actions:        建议操作列表
-#
-# --- central.data_alert（数据告警） ---
-# 输入:
-#   level:      告警级别（warning | critical）
-#   alert_type: 告警类型（price_spike | gap | stale）
-#   symbol:     品种
-#   detail:     详细信息
-#
-# 输出:
-#   received:    已接收
-#   action:      响应动作（logged | risk_pause）
-#   description: 描述
+# 环境变量覆盖（优先级最高）:
+#   LLM_API_KEY="sk-xxx" CENTRAL_CONFIG=./central-config.yaml brain-central

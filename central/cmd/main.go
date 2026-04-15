@@ -10,8 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	brain "github.com/leef-l/brain"
+	"github.com/leef-l/brain/central"
 	"github.com/leef-l/brain/central/llm"
 	cquant "github.com/leef-l/brain/central/quant"
 	"github.com/leef-l/brain/sdk/agent"
@@ -19,6 +22,7 @@ import (
 	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
+	"gopkg.in/yaml.v3"
 )
 
 type centralHandler struct {
@@ -365,32 +369,64 @@ func rawText(raw json.RawMessage) string {
 	return string(raw)
 }
 
+// loadConfig reads the central brain config from CENTRAL_CONFIG env or defaults.
+// Environment variables (LLM_API_KEY, LLM_BASE_URL, LLM_MODEL) override config file values.
+func loadConfig() central.Config {
+	cfg := central.DefaultConfig()
+
+	configPath := os.Getenv("CENTRAL_CONFIG")
+	if configPath != "" {
+		raw, err := os.ReadFile(configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "brain-central: read config %s: %v, using defaults\n", configPath, err)
+		} else {
+			ext := strings.ToLower(filepath.Ext(configPath))
+			switch ext {
+			case ".json":
+				err = json.Unmarshal(raw, &cfg)
+			default:
+				err = yaml.Unmarshal(raw, &cfg)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "brain-central: parse config %s: %v, using defaults\n", configPath, err)
+				cfg = central.DefaultConfig()
+			} else {
+				fmt.Fprintf(os.Stderr, "brain-central: config loaded from %s\n", configPath)
+			}
+		}
+	}
+
+	// Environment variables override config file values.
+	if apiKey := os.Getenv("LLM_API_KEY"); apiKey != "" {
+		cfg.LLM.APIKey = apiKey
+	}
+	if baseURL := os.Getenv("LLM_BASE_URL"); baseURL != "" {
+		cfg.LLM.BaseURL = baseURL
+	}
+	if model := os.Getenv("LLM_MODEL"); model != "" {
+		cfg.LLM.Model = model
+	}
+
+	return cfg
+}
+
 func main() {
 	if _, err := license.CheckSidecar("brain-central", license.VerifyOptions{}); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-central: license: %v\n", err)
 		os.Exit(1)
 	}
 
+	cfg := loadConfig()
 	handler := &centralHandler{}
 
 	// Initialize LLM client for quant handlers if API key is set.
-	// Supports DeepSeek V3.2, Claude, HunYuan, or any OpenAI-compatible API.
-	// Env vars: LLM_API_KEY, LLM_BASE_URL (default: DeepSeek), LLM_MODEL
-	apiKey := os.Getenv("LLM_API_KEY")
-	if apiKey != "" {
-		cfg := llm.DefaultConfig()
-		cfg.APIKey = apiKey
-		if baseURL := os.Getenv("LLM_BASE_URL"); baseURL != "" {
-			cfg.BaseURL = baseURL
-		}
-		if model := os.Getenv("LLM_MODEL"); model != "" {
-			cfg.Model = model
-		}
-		client := llm.New(cfg)
+	if cfg.LLM.APIKey != "" {
+		llmCfg := cfg.LLM.BuildLLMConfig()
+		client := llm.New(llmCfg)
 		handler.quantHandler = cquant.NewHandler(client, nil)
-		fmt.Fprintf(os.Stderr, "brain-central: LLM enabled (model=%s, base=%s)\n", cfg.Model, cfg.BaseURL)
+		fmt.Fprintf(os.Stderr, "brain-central: LLM enabled (model=%s, base=%s)\n", llmCfg.Model, llmCfg.BaseURL)
 	} else {
-		fmt.Fprintln(os.Stderr, "brain-central: LLM disabled (set LLM_API_KEY to enable trade review)")
+		fmt.Fprintln(os.Stderr, "brain-central: LLM disabled (set LLM_API_KEY or config llm.api_key to enable trade review)")
 	}
 
 	if err := sidecar.Run(handler); err != nil {
