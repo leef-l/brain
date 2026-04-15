@@ -1,8 +1,8 @@
 // Command brain-quant is the QuantBrain sidecar binary.
 //
-// It starts a complete DataBrain + QuantBrain pipeline and exposes
-// account-query tools via the sidecar stdio JSON-RPC protocol.
-// The Kernel launches this as a child process through BrainRegistration.
+// It reads market data from the Data sidecar via Kernel's
+// specialist.call_tool RPC and runs the strategy→aggregate→risk→execute
+// pipeline. No embedded DataBrain — single data source architecture.
 //
 // Configuration is read from the path in QUANT_CONFIG env var,
 // or falls back to paper-trading defaults.
@@ -19,9 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	data "github.com/leef-l/brain/brains/data"
 	"github.com/leef-l/brain/brains/data/ringbuf"
-	"github.com/leef-l/brain/brains/data/store"
 	"github.com/leef-l/brain/brains/quant"
 	"github.com/leef-l/brain/brains/quant/exchange"
 	"github.com/leef-l/brain/brains/quant/tracer"
@@ -93,7 +91,9 @@ func loadConfig(logger *slog.Logger) quant.FullConfig {
 	return cfg
 }
 
-// buildQuantBrain constructs accounts, DataBrain, and QuantBrain from config.
+// buildQuantBrain constructs accounts and QuantBrain from config.
+// Market data comes from the Data sidecar via RemoteBufferManager (wired
+// later in SetKernelCaller); a placeholder empty BufferManager is used here.
 func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*quant.Account, *quant.QuantBrain) {
 	ctx := context.Background()
 
@@ -125,89 +125,11 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		}
 	}
 
-	// Collect explicitly configured symbols from enabled units.
-	// If ANY unit has an empty symbols list, it trades all active instruments,
-	// so the embedded DataBrain must use the full active-list discovery mode.
-	symbolSet := make(map[string]bool)
-	hasOpenUnit := false // true if any unit trades "all active instruments"
-	for _, uc := range cfg.Units {
-		if !uc.Enabled {
-			continue
-		}
-		if len(uc.Symbols) == 0 {
-			hasOpenUnit = true
-		}
-		for _, s := range uc.Symbols {
-			symbolSet[s] = true
-		}
-	}
-	pinned := make([]string, 0, len(symbolSet))
-	for s := range symbolSet {
-		pinned = append(pinned, s)
-	}
-
-	// Build DataBrain config based on whether we need active-list discovery.
-	var dataCfg data.Config
-	if hasOpenUnit {
-		// Volatility discovery mode: from liquid instruments, pick the ones
-		// with the highest 24h amplitude (price swing). Low-volatility coins
-		// produce weak signals and poor risk/reward.
-		dataCfg = data.Config{
-			ActiveList: data.ActiveListConfig{
-				AlwaysInclude:    pinned,
-				MaxInstruments:   20,           // top 20 by volatility
-				MinVolume24h:     10_000_000,   // $10M minimum daily volume (liquidity filter)
-				RankByVolatility: true,          // rank by 24h amplitude, not volume
-				MinAmplitudePct:  2.0,           // skip coins with < 2% daily swing
-			},
-		}
-		logger.Info("data mode: volatility discovery", "pinned", len(pinned), "max", 20, "min_amplitude", "2%")
-	} else if len(pinned) > 0 {
-		// Fixed mode: only trade the explicitly configured symbols.
-		dataCfg = data.Config{
-			ActiveList: data.ActiveListConfig{
-				AlwaysInclude:  pinned,
-				MaxInstruments: len(pinned),
-				MinVolume24h:   0, // no volume filter — trade exactly these
-			},
-		}
-		logger.Info("data mode: fixed symbols", "symbols", pinned)
-	} else {
-		// No units or all disabled — fallback defaults.
-		dataCfg = data.Config{
-			ActiveList: data.ActiveListConfig{
-				AlwaysInclude:  []string{"BTC-USDT-SWAP", "ETH-USDT-SWAP"},
-				MaxInstruments: 2,
-				MinVolume24h:   0,
-			},
-		}
-		logger.Info("data mode: fallback defaults (BTC, ETH)")
-	}
-	// Connect PG store so embedded DataBrain can load historical candles on restart.
-	var dataStore store.Store
-	if pgURL := os.Getenv("PG_URL"); pgURL != "" {
-		if s, err := store.NewPGStore(ctx, pgURL); err != nil {
-			logger.Warn("data brain pg connect failed, running without persistence", "err", err)
-		} else {
-			if err := s.Migrate(ctx); err != nil {
-				logger.Warn("data brain pg migrate failed", "err", err)
-			}
-			dataStore = s
-			logger.Info("data brain: PostgreSQL connected")
-		}
-	}
-	dataBrain := data.New(dataCfg, dataStore, logger.With("brain", "data"))
-
-	var buffers *ringbuf.BufferManager
-	if err := dataBrain.Start(ctx); err != nil {
-		logger.Warn("data brain start failed, using standalone buffers", "err", err)
-		buffers = ringbuf.NewBufferManager(1024)
-	} else {
-		buffers = dataBrain.Buffers()
-	}
+	// Placeholder buffers — replaced by RemoteBufferManager in SetKernelCaller.
+	placeholder := ringbuf.NewBufferManager(1)
 
 	// Build quant brain
-	qb := quant.New(cfg.Brain, buffers, logger.With("brain", "quant"))
+	qb := quant.New(cfg.Brain, placeholder, logger.With("brain", "quant"))
 
 	// Apply global risk config from YAML (zero values → use defaults).
 	if cfg.GlobalRisk.MaxGlobalExposurePct > 0 {

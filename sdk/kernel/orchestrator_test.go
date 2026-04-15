@@ -740,8 +740,10 @@ func TestDefaultAuthorizer_QuantToDataAllowed(t *testing.T) {
 	// Quant → Data: allowed tool prefixes
 	for _, tool := range []string{
 		"data.get_candles",
+		"data.get_all_snapshots",
 		"data.get_snapshot",
 		"data.get_feature_vector",
+		"data.active_instruments",
 	} {
 		if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindQuant, agent.KindData, tool); err != nil {
 			t.Errorf("quant→data:%s should be allowed: %v", tool, err)
@@ -751,7 +753,6 @@ func TestDefaultAuthorizer_QuantToDataAllowed(t *testing.T) {
 	// Quant → Data: disallowed tools
 	for _, tool := range []string{
 		"data.replay_start",
-		"data.active_instruments",
 		"data.backfill_status",
 	} {
 		if err := auth.AuthorizeSpecialistToolCall(ctx, agent.KindQuant, agent.KindData, tool); err == nil {

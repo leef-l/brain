@@ -84,7 +84,7 @@ func DefaultSpecialistToolCallAuthorizer() SpecialistToolCallAuthorizer {
 		{
 			Caller:       agent.KindQuant,
 			Target:       agent.KindData,
-			ToolPrefixes: []string{"data.get_candles", "data.get_snapshot", "data.get_feature_vector"},
+			ToolPrefixes: []string{"data.get_candles", "data.get_snapshot", "data.get_all_snapshots", "data.get_feature_vector", "data.active_instruments"},
 		},
 		// Quant → Central: LLM trade review (Doc 35 §5.5)
 		{

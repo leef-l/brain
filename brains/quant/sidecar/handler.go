@@ -9,6 +9,7 @@ import (
 
 	"github.com/leef-l/brain/brains/quant"
 	"github.com/leef-l/brain/brains/quant/exchange"
+	"github.com/leef-l/brain/brains/quant/remote"
 	"github.com/leef-l/brain/brains/quant/tracer"
 	"github.com/leef-l/brain/brains/quant/tradestore"
 	"github.com/leef-l/brain/sdk/agent"
@@ -82,18 +83,21 @@ func (h *quantHandler) ToolSchemas() []tool.Schema {
 // sidecar.RichBrainHandler
 // ---------------------------------------------------------------------------
 
-// SetKernelCaller injects the reverse-RPC caller and wires up the
-// KernelReviewer so QuantBrain can request LLM trade review from the
-// central brain via specialist.call_tool → central.review_trade.
+// SetKernelCaller injects the reverse-RPC caller, wires up the
+// KernelReviewer for LLM trade review, and starts a RemoteBufferManager
+// that reads market data from the Data sidecar — replacing the placeholder
+// buffers created during buildQuantBrain.
 func (h *quantHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	h.caller = caller
 
+	// Wire LLM reviewer via central brain.
 	reviewer := quant.NewKernelReviewer(
 		func(ctx context.Context, instruction string, payload []byte, timeoutSec int) ([]byte, error) {
 			var result json.RawMessage
 			err := caller.CallKernel(ctx, "specialist.call_tool", map[string]any{
-				"tool":      "central.review_trade",
-				"arguments": json.RawMessage(payload),
+				"target_kind": "central",
+				"tool_name":   "central.review_trade",
+				"arguments":   json.RawMessage(payload),
 			}, &result)
 			if err != nil {
 				return nil, err
@@ -104,7 +108,14 @@ func (h *quantHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 		h.logger,
 	)
 	h.qb.SetReviewer(reviewer)
-	h.logger.Info("kernel caller injected, LLM reviewer wired")
+
+	// Replace placeholder buffers with RemoteBufferManager that reads
+	// from the Data sidecar via specialist.call_tool → data.get_all_snapshots.
+	remoteBuf := remote.New(caller, h.logger.With("source", "remote-data"))
+	h.qb.SetSnapshotSource(remoteBuf)
+	go remoteBuf.Start(context.Background(), 2*time.Second)
+
+	h.logger.Info("kernel caller injected, LLM reviewer wired, remote data source started")
 }
 
 // ---------------------------------------------------------------------------

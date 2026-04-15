@@ -31,6 +31,7 @@ func NewHandler(db *data.DataBrain, logger *slog.Logger) *dataHandler {
 
 	reg := tool.NewMemRegistry()
 	reg.Register(newGetCandlesTool(db))
+	reg.Register(newGetAllSnapshotsTool(db))
 	reg.Register(newGetSnapshotTool(db))
 	reg.Register(newGetFeatureVectorTool(db))
 	reg.Register(newProviderHealthTool(db))

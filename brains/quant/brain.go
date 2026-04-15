@@ -17,6 +17,13 @@ import (
 	"github.com/leef-l/brain/brains/quant/tradestore"
 )
 
+// SnapshotSource provides real-time market snapshots. Implemented by both
+// ringbuf.BufferManager (local) and remote.BufferManager (cross-sidecar IPC).
+type SnapshotSource interface {
+	Instruments() []string
+	Latest(instID string) (ringbuf.MarketSnapshot, bool)
+}
+
 // CandleSource provides historical candle data to strategies that need it
 // (e.g. BreakoutMomentum for high/low extremes). Implemented by DataBrain.
 type CandleSource interface {
@@ -41,7 +48,7 @@ type CandleData struct {
 type QuantBrain struct {
 	config  Config
 	logger  *slog.Logger
-	buffers *ringbuf.BufferManager
+	buffers SnapshotSource
 	candles CandleSource // optional, for passing candle history to strategies
 
 	units       []*TradingUnit
@@ -81,8 +88,9 @@ type Config struct {
 	DefaultTimeframe string `json:"default_timeframe" yaml:"default_timeframe"`
 }
 
-// New creates a QuantBrain. buffers is the data brain's BufferManager.
-func New(cfg Config, buffers *ringbuf.BufferManager, logger *slog.Logger) *QuantBrain {
+// New creates a QuantBrain. buffers provides market snapshots — either a local
+// ringbuf.BufferManager or a remote.BufferManager that reads from Data sidecar.
+func New(cfg Config, buffers SnapshotSource, logger *slog.Logger) *QuantBrain {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -100,6 +108,15 @@ func New(cfg Config, buffers *ringbuf.BufferManager, logger *slog.Logger) *Quant
 		globalGuard: risk.NewGlobalRiskGuard(risk.DefaultGlobalRiskConfig()),
 		traceStore:  tracer.NewMemoryStore(10000), // default in-memory, override via SetTraceStore
 	}
+}
+
+// SetSnapshotSource replaces the snapshot data source at runtime.
+// Used by Quant sidecar to swap in a RemoteBufferManager after
+// KernelCaller becomes available.
+func (qb *QuantBrain) SetSnapshotSource(src SnapshotSource) {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
+	qb.buffers = src
 }
 
 // SetCandleSource sets the candle data provider (typically DataBrain).
@@ -147,13 +164,15 @@ func (qb *QuantBrain) Start(ctx context.Context) error {
 	if qb.running.Load() {
 		return fmt.Errorf("quant brain already running")
 	}
-	if qb.buffers == nil {
-		return fmt.Errorf("no buffer manager provided")
-	}
 
 	qb.mu.RLock()
+	hasBuffers := qb.buffers != nil
 	unitCount := len(qb.units)
 	qb.mu.RUnlock()
+
+	if !hasBuffers {
+		return fmt.Errorf("no buffer manager provided")
+	}
 	if unitCount == 0 {
 		return fmt.Errorf("no trading units registered")
 	}
@@ -234,10 +253,11 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 	start := time.Now()
 	cycle := qb.metrics.CyclesTotal.Add(1)
 
-	symbols := qb.buffers.Instruments()
 	qb.mu.RLock()
+	buffers := qb.buffers
 	units := qb.units
 	qb.mu.RUnlock()
+	symbols := buffers.Instruments()
 
 	// Log diagnostics periodically (every 60 cycles ≈ 5 min at 5s interval).
 	diagnose := cycle%60 == 1
@@ -250,7 +270,7 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 	}
 
 	for _, symbol := range symbols {
-		snap, ok := qb.buffers.Latest(symbol)
+		snap, ok := buffers.Latest(symbol)
 		if !ok || snap.CurrentPrice <= 0 {
 			continue
 		}

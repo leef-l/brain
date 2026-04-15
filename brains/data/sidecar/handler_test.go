@@ -12,7 +12,7 @@ import (
 	"github.com/leef-l/brain/sdk/agent"
 )
 
-const totalTools = 9
+const totalTools = 10
 
 // buildTestDataBrain creates a DataBrain with no store (test mode),
 // and writes a sample snapshot into its ring buffer.
@@ -84,6 +84,7 @@ func TestToolsList(t *testing.T) {
 
 	expected := map[string]bool{
 		"data.get_candles":        false,
+		"data.get_all_snapshots":  false,
 		"data.get_snapshot":       false,
 		"data.get_feature_vector": false,
 		"data.provider_health":    false,

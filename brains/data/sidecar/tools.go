@@ -133,6 +133,90 @@ func (t *getCandlesTool) Execute(ctx context.Context, args json.RawMessage) (*to
 }
 
 // ---------------------------------------------------------------------------
+// data.get_all_snapshots — batch endpoint for Quant sidecar
+// ---------------------------------------------------------------------------
+
+type getAllSnapshotsTool struct{ db *data.DataBrain }
+
+func newGetAllSnapshotsTool(db *data.DataBrain) tool.Tool { return &getAllSnapshotsTool{db: db} }
+
+func (t *getAllSnapshotsTool) Name() string    { return "data.get_all_snapshots" }
+func (t *getAllSnapshotsTool) Risk() tool.Risk { return tool.RiskSafe }
+func (t *getAllSnapshotsTool) Schema() tool.Schema {
+	return tool.Schema{
+		Name:        "data.get_all_snapshots",
+		Description: "批量获取所有品种的完整 MarketSnapshot（含 192 维特征向量），供 Quant sidecar 消费。",
+		Brain:       "data",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	}
+}
+
+func (t *getAllSnapshotsTool) Execute(ctx context.Context, _ json.RawMessage) (*tool.Result, error) {
+	buffers := t.db.Buffers()
+	instruments := buffers.Instruments()
+
+	type snapOut struct {
+		InstID             string       `json:"inst_id"`
+		Timestamp          int64        `json:"ts"`
+		CurrentPrice       float64      `json:"price"`
+		BidPrice           float64      `json:"bid"`
+		AskPrice           float64      `json:"ask"`
+		FundingRate        float64      `json:"funding_rate"`
+		OpenInterest       float64      `json:"open_interest"`
+		Volume24h          float64      `json:"volume_24h"`
+		OrderBookImbalance float64      `json:"ob_imbalance"`
+		Spread             float64      `json:"spread"`
+		TradeFlowToxicity  float64      `json:"tft"`
+		BigBuyRatio        float64      `json:"big_buy_ratio"`
+		BigSellRatio       float64      `json:"big_sell_ratio"`
+		TradeDensityRatio  float64      `json:"trade_density"`
+		BuySellRatio       float64      `json:"buy_sell_ratio"`
+		FeatureVector      [192]float64 `json:"fv"`
+		MLSource           string       `json:"ml_source"`
+		MLReady            bool         `json:"ml_ready"`
+		MarketRegime       string       `json:"regime"`
+		AnomalyLevel       float64      `json:"anomaly"`
+		VolPercentile      float64      `json:"vol_pct"`
+	}
+
+	out := make([]snapOut, 0, len(instruments))
+	for _, id := range instruments {
+		snap, ok := buffers.Latest(id)
+		if !ok || snap.CurrentPrice <= 0 {
+			continue
+		}
+		out = append(out, snapOut{
+			InstID:             snap.InstID,
+			Timestamp:          snap.Timestamp,
+			CurrentPrice:       snap.CurrentPrice,
+			BidPrice:           snap.BidPrice,
+			AskPrice:           snap.AskPrice,
+			FundingRate:        snap.FundingRate,
+			OpenInterest:       snap.OpenInterest,
+			Volume24h:          snap.Volume24h,
+			OrderBookImbalance: snap.OrderBookImbalance,
+			Spread:             snap.Spread,
+			TradeFlowToxicity:  snap.TradeFlowToxicity,
+			BigBuyRatio:        snap.BigBuyRatio,
+			BigSellRatio:       snap.BigSellRatio,
+			TradeDensityRatio:  snap.TradeDensityRatio,
+			BuySellRatio:       snap.BuySellRatio,
+			FeatureVector:      snap.FeatureVector,
+			MLSource:           snap.MLSource,
+			MLReady:            snap.MLReady,
+			MarketRegime:       snap.MarketRegime,
+			AnomalyLevel:       snap.AnomalyLevel,
+			VolPercentile:      snap.VolPercentile,
+		})
+	}
+
+	return marshalResult(map[string]any{
+		"count":     len(out),
+		"snapshots": out,
+	})
+}
+
+// ---------------------------------------------------------------------------
 // data.get_snapshot
 // ---------------------------------------------------------------------------
 
