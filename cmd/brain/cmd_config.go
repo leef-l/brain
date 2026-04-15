@@ -248,81 +248,239 @@ func writeExampleIfMissing(path, content string) {
 	}
 }
 
-const dataConfigExample = `# 数据大脑配置示例 — 复制为 data-brain.yaml 并按需修改
-# Sidecar 模式通过 config.json 的 brains.data.env.DATA_CONFIG 指定路径
+const dataConfigExample = `# ============================================================
+#  数据大脑 (Data Brain) 配置示例
+#  复制本文件为 data-brain.yaml 并按需修改
+#  Sidecar 模式通过 config.json 的 brains.data.env.DATA_CONFIG 指定路径
+# ============================================================
 
-# 活跃合约筛选
+# ==================== 活跃合约筛选 ====================
 active_list:
-  min_volume_24h: 10000000
-  max_instruments: 100
-  always_include:
+  min_volume_24h: 10000000       # 24h 最低成交量（USDT），低于此值的合约不跟踪
+  max_instruments: 100           # 最多同时跟踪的合约数
+  update_interval: 168h          # 活跃列表刷新周期（7天）
+  always_include:                # 无论成交量如何，始终跟踪的合约
     - BTC-USDT-SWAP
     - ETH-USDT-SWAP
     - SOL-USDT-SWAP
 
-# 历史回填
+# ==================== 数据源 ====================
+providers:
+  - name: okx-swap               # 实例名称（自定义）
+    type: okx-swap                # 数据源类型
+    params:
+      ws_url: "wss://ws.okx.com:8443/ws/v5/public"   # WebSocket 地址
+      rest_url: "https://www.okx.com"                  # REST API 地址
+      ping_interval: 25s                               # WebSocket 心跳间隔
+      reconnect_delay:                                 # 断线重连退避（依次尝试）
+        - 1s
+        - 2s
+        - 5s
+        - 10s
+        - 30s
+
+# ==================== 历史回填 ====================
 backfill:
-  enabled: false
-  max_days: 90
-  batch_size: 100
+  enabled: false                 # 启动时是否回填历史数据
+  max_days: 90                   # 回填天数
+  batch_size: 100                # 每次请求的 K 线数量
+  rate_limit: 200ms              # REST 请求最小间隔（避免触发限频）
+  concurrent: 3                  # 并行回填 worker 数
 
-# 数据校验
+# ==================== 数据校验 ====================
 validation:
-  max_price_jump: 0.10
+  max_price_jump: 0.10           # 单根 K 线最大价格跳变比例（0.10 = 10%）
+  max_gap_duration: 5m           # K 线序列最大允许缺口
+  stale_timeout: 60s             # 数据源静默超过此时间标记为 stale
 
-# 内存环形缓冲区
+# ==================== 内存环形缓冲区 ====================
 ring_buffer:
-  candle_depth: 1000
+  candle_depth: 1000             # 每个（合约, 周期）保留的 K 线数
+  trade_depth: 5000              # 每个合约保留的最近成交数
+  order_book_depth: 100          # 每个合约保留的订单簿快照数
 
-# 192 维特征计算
+# ==================== 实时特征计算 ====================
 feature:
-  enabled: true
-  interval: 1s
+  enabled: true                  # 是否开启 192 维特征向量计算
+  windows:                       # 滚动窗口大小（K 线根数）
+    - 5
+    - 10
+    - 20
+    - 60
+  interval: 1s                   # 特征重算周期
 
-# PostgreSQL（可选）:
-#   命令行: brain-data -pg "postgres://user:pass@localhost:5432/brain"
+# ==================== 数据库（可选） ====================
+# PostgreSQL 连接串，以下二选一：
+#   命令行:   brain-data -pg "postgres://user:pass@localhost:5432/brain"
 #   环境变量: export PG_URL="postgres://user:pass@localhost:5432/brain"
+#
+# 不配置则以无持久化模式运行（仅内存，适合调试）
+
+# ==================== 完整启动命令示例 ====================
+# 最小启动（无持久化，自动发现合约）:
+#   brain-data
+#
+# 指定合约 + 回填:
+#   brain-data -instruments BTC-USDT-SWAP,ETH-USDT-SWAP -backfill -backfill-days 30
+#
+# 完整生产模式:
+#   brain-data -pg "postgres://brain:secret@db:5432/brain" -backfill -backfill-days 90
 `
 
-const quantConfigExample = `# 量化大脑配置示例 — 复制为 quant-brain.yaml 并按需修改
-# Sidecar 模式通过 config.json 的 brains.quant.env.QUANT_CONFIG 指定路径
+const quantConfigExample = `# ============================================================
+#  量化大脑 (Quant Brain) 配置示例
+#  复制本文件为 quant-brain.yaml 并按需修改
+#  Sidecar 模式通过 config.json 的 brains.quant.env.QUANT_CONFIG 指定路径
+#  文件格式：YAML（代码同时支持 .yaml 和 .json）
+# ============================================================
 
+# ==================== 大脑核心参数 ====================
 brain:
-  cycle_interval: 5s
-  default_timeframe: "1H"
+  cycle_interval: 5s             # 评估周期（每 5 秒扫描一次所有品种）
+  default_timeframe: "1H"        # 默认 K 线周期
 
+# ==================== 账户配置 ====================
 accounts:
-  # 纸盘账户（测试用）
+  # --- 纸盘账户（测试用） ---
   - id: paper-main
-    exchange: paper
-    initial_equity: 10000
+    exchange: paper               # paper | okx
+    initial_equity: 10000         # 初始权益（USDT）
     tags: [test, paper]
 
-  # OKX 实盘账户（取消注释并填入密钥）
+    # 账户路由配置（可选）
+    route:
+      weight_factor: 1.0          # 仓位权重因子（1.0=满仓, 0.5=半仓）
+      # allowed_strategies:       # 限制可用策略（空=全部允许）
+      #   - trend_follower
+      # allowed_symbols:          # 限制可交易品种（空=全部允许）
+      #   - BTC-USDT-SWAP
+
+  # --- OKX 实盘账户（取消注释并填入密钥） ---
   # - id: okx-main
   #   exchange: okx
   #   api_key: "your-api-key"
   #   secret_key: "your-secret-key"
   #   passphrase: "your-passphrase"
-  #   simulated: false
+  #   base_url: "https://www.okx.com"   # 或 https://aws.okx.com
+  #   simulated: false                    # true = OKX 模拟盘
+  #   tags: [production]
+  #   route:
+  #     weight_factor: 0.5               # 保守仓位
+  #     allowed_strategies:
+  #       - trend_follower
+  #       - breakout_momentum
 
+  # --- OKX 模拟盘账户 ---
+  # - id: okx-demo
+  #   exchange: okx
+  #   api_key: "demo-api-key"
+  #   secret_key: "demo-secret-key"
+  #   passphrase: "demo-passphrase"
+  #   simulated: true
+  #   tags: [demo]
+  #   route:
+  #     weight_factor: 1.0
+
+# ==================== 交易单元 ====================
 units:
   - id: unit-btc
     account_id: paper-main
-    symbols: [BTC-USDT-SWAP]
+    symbols:
+      - BTC-USDT-SWAP
+      - ETH-USDT-SWAP
     timeframe: "1H"
     max_leverage: 10
     enabled: true
 
-  - id: unit-eth
-    account_id: paper-main
-    symbols: [ETH-USDT-SWAP]
-    timeframe: "1H"
-    max_leverage: 5
-    enabled: true
+  # - id: unit-alt
+  #   account_id: paper-main
+  #   symbols:
+  #     - SOL-USDT-SWAP
+  #     - DOGE-USDT-SWAP
+  #   timeframe: "1H"
+  #   max_leverage: 5
+  #   enabled: true
 
-# PostgreSQL（可选，启用交易记录持久化 + 崩溃恢复）:
+# ==================== 策略层 (Strategy) ====================
+# 策略权重和聚合器通过 Go 代码配置，以下仅为参考
+#
+# strategy:
+#   weights:
+#     trend_follower: 0.30       # 趋势跟踪
+#     mean_reversion: 0.25       # 均值回归
+#     breakout_momentum: 0.25    # 突破动量
+#     order_flow: 0.20           # 订单流
+#
+#   long_threshold: 0.45         # 做多信号最低分数
+#   short_threshold: 0.45        # 做空信号最低分数
+#   dominance_factor: 1.5        # 主方向必须是反方向的 1.5 倍
+
+# ==================== 风控层 (Risk) ====================
+# --- 单账户风控守卫 (Guard) ---
+# risk:
+#   guard:
+#     max_single_position_pct: 5       # 单仓最大占权益百分比
+#     max_leverage: 20                 # 最大杠杆
+#     min_stop_distance_atr: 1         # 止损最小距离（ATR 倍数）
+#     max_stop_distance_pct: 10        # 止损最大距离（入场价百分比）
+#     max_concurrent_positions: 5      # 最大同时持仓数
+#     max_total_exposure_pct: 30       # 总敞口上限（权益百分比）
+#     max_same_direction_pct: 20       # 同向敞口上限
+#     stop_new_trades_loss_pct: 3      # 日亏损停止开新仓
+#     liquidate_all_loss_pct: 5        # 日亏损全平仓
+#
+#   position_sizer:
+#     min_fraction: 0.005              # 最小仓位比例（0.5%）
+#     max_fraction: 0.05               # 最大仓位比例（5%）
+#     scale_fraction: 0.25             # Kelly 缩放因子（1/4 Kelly）
+
+# --- 跨账户全局风控 (GlobalRiskGuard) ---
+# global_risk:
+#   max_global_exposure_pct: 50        # 所有账号总敞口/总权益上限
+#   max_global_same_direction: 30      # 同方向总敞口上限
+#   max_global_daily_loss: 5           # 所有账号累计日亏损上限
+#   max_symbol_exposure: 15            # 单品种跨账号总敞口上限
+
+# ==================== LLM 复审 (Review) ====================
+# 触发条件满足任一即请求中央大脑 LLM 审查
+#
+# review:
+#   enabled: true                      # 是否开启 LLM 复审
+#   trigger_concurrent: 3              # 持仓数 >= 3 时触发
+#   trigger_position_pct: 5            # 最大单仓占比 > 5% 时触发
+#   trigger_daily_loss: 3              # 当日亏损 > 3% 时触发
+#   timeout: 10s                       # LLM 响应超时（超时则自动放行）
+#   max_tokens: 500                    # LLM 输出 token 上限
+
+# ==================== 崩溃恢复 (Recovery) ====================
+# 需要 PostgreSQL 持久化存储才能启用
+#
+# recovery:
+#   warmup_ticks: 10                   # 恢复后跳过 N 个评估周期
+#   validate_with_exchange: true       # 恢复时与交易所核对持仓
+
+# ==================== 持久化 (PostgreSQL) ====================
+# 通过命令行参数或环境变量传入：
 #   quant-brain -config quant-brain.yaml -pg "postgres://user:pass@localhost:5432/brain"
+#   或
+#   export PG_URL="postgres://user:pass@localhost:5432/brain"
+#
+# 启用后自动提供：
+#   - 交易记录持久化（PGStore）
+#   - 信号追踪链持久化（SignalTrace）
+#   - 崩溃恢复支持（CrashRecovery）
+# 不配置则使用内存存储（重启丢失）
+
+# ==================== 完整启动命令示例 ====================
+# 纸盘快速启动（无需配置文件）:
+#   quant-brain -paper
+#   quant-brain -paper -equity 50000
+#
+# 配置文件启动:
+#   quant-brain -config quant-brain.yaml
+#
+# 带 PostgreSQL 持久化:
+#   quant-brain -config quant-brain.yaml -pg "postgres://brain:secret@db:5432/brain"
 `
 
 const centralConfigExample = `# 中央大脑配置示例
