@@ -69,9 +69,9 @@ type Message struct {
 // the union of text, tool_use, and tool_result blocks as defined in
 // 22-Agent-Loop规格.md §6.2 and §7.
 type ContentBlock struct {
-	// Type is one of "text", "tool_use", or "tool_result".
+	// Type is one of "text", "thinking", "tool_use", or "tool_result".
 	Type string
-	// Text carries the text payload for type == "text".
+	// Text carries the text payload for type == "text" or "thinking".
 	Text string `json:",omitempty"`
 	// ToolUseID correlates a tool_result with its originating tool_use.
 	ToolUseID string `json:",omitempty"`

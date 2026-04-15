@@ -93,7 +93,17 @@ func checkProviderConnectivity(session providerSession) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	resp, err := session.Provider.Complete(ctx, minimalChatRequest())
+	req := minimalChatRequest()
+	// Reasoner models (e.g. deepseek-reasoner) spend tokens on internal
+	// reasoning before producing visible content. A max_tokens of 1 may
+	// yield an empty content field while the reasoning_content is non-empty.
+	// Use a slightly larger budget so the model can emit at least one
+	// visible token after reasoning.
+	if isReasonerModel(session) {
+		req.MaxTokens = 16
+	}
+
+	resp, err := session.Provider.Complete(ctx, req)
 	if err != nil {
 		return fmt.Sprintf("Provider connectivity check failed: %v", err)
 	}
@@ -101,6 +111,13 @@ func checkProviderConnectivity(session providerSession) string {
 		return "Provider returned empty response — check base_url and model"
 	}
 	return ""
+}
+
+// isReasonerModel returns true if the active provider session uses a model
+// known to perform chain-of-thought reasoning (e.g. deepseek-reasoner).
+func isReasonerModel(session providerSession) bool {
+	m := strings.ToLower(session.Model)
+	return strings.Contains(m, "reasoner") || strings.Contains(m, "-r1")
 }
 
 // minimalChatRequest creates the smallest possible ChatRequest for a health

@@ -325,9 +325,10 @@ type openaiResponse struct {
 }
 
 type openaiChoice struct {
-	Role      string          `json:"role"`
-	Content   *string         `json:"content"`
-	ToolCalls []openaiToolCall `json:"tool_calls,omitempty"`
+	Role             string           `json:"role"`
+	Content          *string          `json:"content"`
+	ReasoningContent *string          `json:"reasoning_content"`
+	ToolCalls        []openaiToolCall `json:"tool_calls,omitempty"`
 }
 
 func (p *OpenAIProvider) toResponse(ar *openaiResponse) *ChatResponse {
@@ -354,6 +355,14 @@ func (p *OpenAIProvider) toResponse(ar *openaiResponse) *ChatResponse {
 			resp.StopReason = "max_tokens"
 		default:
 			resp.StopReason = choice.FinishReason
+		}
+
+		// Reasoning content (DeepSeek-R1 / reasoner models)
+		if choice.Message.ReasoningContent != nil && *choice.Message.ReasoningContent != "" {
+			resp.Content = append(resp.Content, ContentBlock{
+				Type: "thinking",
+				Text: *choice.Message.ReasoningContent,
+			})
 		}
 
 		// Text content
@@ -516,9 +525,10 @@ type openaiStreamChunk struct {
 	Choices []struct {
 		Index int `json:"index"`
 		Delta struct {
-			Role      string           `json:"role,omitempty"`
-			Content   *string          `json:"content,omitempty"`
-			ToolCalls []openaiStreamTC `json:"tool_calls,omitempty"`
+			Role             string           `json:"role,omitempty"`
+			Content          *string          `json:"content,omitempty"`
+			ReasoningContent *string          `json:"reasoning_content,omitempty"`
+			ToolCalls        []openaiStreamTC `json:"tool_calls,omitempty"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -568,6 +578,14 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 				"id":    chunk.ID,
 				"model": chunk.Model,
 			}),
+		}, true
+	}
+
+	// Reasoning content delta (DeepSeek-R1 / reasoner models)
+	if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
+		return StreamEvent{
+			Type: EventContentDelta,
+			Data: marshalRaw(map[string]string{"text": *delta.ReasoningContent}),
 		}, true
 	}
 
