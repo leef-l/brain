@@ -54,14 +54,15 @@ for main in "${root_dir}"/brains/*/*/cmd/main.go; do
   binaries+=("brain-${parent}-${sub}=./brains/${parent}/${sub}/cmd")
 done
 
-# Pattern 3: brains/<name>/cmd/sidecar/main.go  → brain-<name>-sidecar
+# Pattern 3: brains/<name>/cmd/brain-<name>-sidecar/main.go → brain-<name>-sidecar
 # These are specialist brain sidecar binaries launched by the Kernel via
-# stdio JSON-RPC. They are separate from the standalone brain binaries
-# matched by Pattern 1.
-for main in "${root_dir}"/brains/*/cmd/sidecar/main.go; do
+# stdio JSON-RPC. Directory is named brain-<name>-sidecar so that
+# `go install` produces the correct binary name.
+for main in "${root_dir}"/brains/*/cmd/brain-*-sidecar/main.go; do
   [[ -f "${main}" ]] || continue
-  name="$(basename "$(dirname "$(dirname "$(dirname "${main}")")")")"
-  binaries+=("brain-${name}-sidecar=./brains/${name}/cmd/sidecar")
+  bin="$(basename "$(dirname "${main}")")"          # brain-<name>-sidecar
+  name="$(echo "${bin}" | sed 's/^brain-//;s/-sidecar$//')"
+  binaries+=("${bin}=./brains/${name}/cmd/${bin}")
 done
 
 printf 'packaging %d binaries\n' "${#binaries[@]}" >&2
@@ -73,6 +74,21 @@ for entry in "${binaries[@]}"; do
   CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
     go build -trimpath -ldflags "${ldflags}" -o "${stage_dir}/${name}${ext}" "${pkg}"
 done
+
+# --- install to GOPATH/bin (覆盖式) ---
+gobin="${GOBIN:-$(go env GOPATH)/bin}"
+if [[ -n "${gobin}" ]]; then
+  mkdir -p "${gobin}"
+  printf 'installing to %s\n' "${gobin}" >&2
+  for entry in "${binaries[@]}"; do
+    name="${entry%%=*}"
+    src="${stage_dir}/${name}${ext}"
+    if [[ -f "${src}" ]]; then
+      cp -f "${src}" "${gobin}/${name}${ext}"
+      printf '  → %s\n' "${gobin}/${name}${ext}" >&2
+    fi
+  done
+fi
 
 cp "${root_dir}/VERSION.json" "${stage_dir}/"
 cp "${root_dir}/LICENSE" "${stage_dir}/"

@@ -74,12 +74,11 @@ for /d %%p in ("%root_dir%\brains\*") do (
     )
 )
 
-REM Pattern 3: brains\<name>\cmd\sidecar\main.go -> brain-<name>-sidecar
-REM These are specialist brain sidecar binaries launched by the Kernel via
-REM stdio JSON-RPC, separate from standalone brain binaries (Pattern 1).
+REM Pattern 3: brains\<name>\cmd\brain-<name>-sidecar\main.go -> brain-<name>-sidecar
+REM Directory named brain-<name>-sidecar so go install produces the correct binary name.
 for /d %%d in ("%root_dir%\brains\*") do (
-    if exist "%%d\cmd\sidecar\main.go" (
-        call :add_binary "brain-%%~nxd-sidecar" ".\brains\%%~nxd\cmd\sidecar"
+    if exist "%%d\cmd\brain-%%~nxd-sidecar\main.go" (
+        call :add_binary "brain-%%~nxd-sidecar" ".\brains\%%~nxd\cmd\brain-%%~nxd-sidecar"
     )
 )
 
@@ -112,6 +111,20 @@ for /l %%i in (0,1,%bin_count%) do (
 )
 
 popd
+
+REM --- install to GOPATH\bin (覆盖式) ---
+set "gobin="
+for /f "delims=" %%g in ('go env GOPATH 2^>nul') do set "gobin=%%g\bin"
+if not "%GOBIN%"=="" set "gobin=%GOBIN%"
+if not "%gobin%"=="" (
+    if not exist "%gobin%" mkdir "%gobin%"
+    echo.
+    echo Installing to %gobin% ...
+    for %%f in ("%outdir%\*.exe") do (
+        copy /y "%%f" "%gobin%\" >nul
+        echo   → %gobin%\%%~nxf
+    )
+)
 
 REM --- copy metadata files ---
 echo.

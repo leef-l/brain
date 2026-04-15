@@ -57,7 +57,7 @@ brain/
 ├── brains/                 专精大脑实现
 │   ├── data/               数据大脑 — 行情采集、192 维特征向量、Ring Buffer
 │   │   ├── cmd/            standalone 二进制 (brain-data)
-│   │   ├── cmd/sidecar/    sidecar 二进制 (brain-data-sidecar, 9 tools)
+│   │   ├── cmd/brain-data-sidecar/  sidecar 二进制 (brain-data-sidecar, 9 tools)
 │   │   ├── sidecar/        sidecar handler + tools 实现
 │   │   ├── feature/        特征引擎 (assembler + ML fallback)
 │   │   ├── ringbuf/        Ring Buffer + MarketSnapshot
@@ -65,7 +65,7 @@ brain/
 │   │   └── store/          PostgreSQL K 线持久化
 │   ├── quant/              量化大脑 — 策略聚合、风控、交易执行
 │   │   ├── cmd/            standalone 二进制 (quant-brain)
-│   │   ├── cmd/sidecar/    sidecar 二进制 (brain-quant-sidecar, 14 tools)
+│   │   ├── cmd/brain-quant-sidecar/  sidecar 二进制 (brain-quant-sidecar, 14 tools)
 │   │   ├── sidecar/        sidecar handler + tools 实现
 │   │   ├── strategy/       4 策略 + RegimeAwareAggregator
 │   │   ├── risk/           AdaptiveGuard + BayesianSizer + GlobalGuard
@@ -121,7 +121,7 @@ sudo mv bin/brain /usr/local/bin/
 | `brain-quant` | 量化大脑独立运行版 |
 | `brain-quant-sidecar` | 量化大脑 sidecar（14 tools，Kernel stdio） |
 
-打包脚本自动探测 `brains/*/cmd/main.go` 和 `brains/*/cmd/sidecar/main.go`，
+打包脚本自动探测 `brains/*/cmd/main.go` 和 `brains/*/cmd/brain-*-sidecar/main.go`，
 新增专精大脑时无需手动修改打包脚本。
 
 维护者本地 dry-run：
