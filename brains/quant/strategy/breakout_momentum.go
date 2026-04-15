@@ -32,23 +32,7 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "feature vector not ready", Timestamp: time.Now().UTC()}
 	}
 
-	// Breakout detection still needs candles for high/low extremes
-	candles := view.Candles(tf)
-	if len(candles) < 30 {
-		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "insufficient candles for breakout levels", Timestamp: time.Now().UTC()}
-	}
-
 	priceNow := f.CurrentPrice()
-	lookback := 20
-	baseCandles := candles[:len(candles)-3]
-	if len(baseCandles) < lookback {
-		lookback = len(baseCandles)
-	}
-	if lookback < 5 {
-		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "insufficient breakout history", Timestamp: time.Now().UTC()}
-	}
-	breakHigh := highestHigh(baseCandles, lookback)
-	breakLow := lowestLow(baseCandles, lookback)
 
 	// Volume and momentum from FeatureView (O(1))
 	volRatio := f.VolumeRatio(tf)
@@ -59,19 +43,43 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 
 	volumeExpansion := volBreakout || volRatio > 1.8
 
-	aboveConfirmations := 0
-	belowConfirmations := 0
-	for _, c := range candles[len(candles)-3:] {
-		if c.Close > breakHigh {
-			aboveConfirmations++
+	// Breakout detection: prefers candle-based high/low extremes, but
+	// degrades to pure momentum+volume when candles are unavailable.
+	var long, short bool
+	var breakHigh, breakLow float64
+	candles := view.Candles(tf)
+	if len(candles) >= 30 {
+		lookback := 20
+		baseCandles := candles[:len(candles)-3]
+		if len(baseCandles) < lookback {
+			lookback = len(baseCandles)
 		}
-		if c.Close < breakLow {
-			belowConfirmations++
+		if lookback >= 5 {
+			breakHigh = highestHigh(baseCandles, lookback)
+			breakLow = lowestLow(baseCandles, lookback)
+
+			aboveConfirmations := 0
+			belowConfirmations := 0
+			for _, c := range candles[len(candles)-3:] {
+				if c.Close > breakHigh {
+					aboveConfirmations++
+				}
+				if c.Close < breakLow {
+					belowConfirmations++
+				}
+			}
+
+			long = priceNow > breakHigh && volumeExpansion && obvSl > 0 && aboveConfirmations >= 1
+			short = priceNow < breakLow && volumeExpansion && obvSl < 0 && belowConfirmations >= 1
 		}
 	}
 
-	long := priceNow > breakHigh && volumeExpansion && obvSl > 0 && aboveConfirmations >= 1
-	short := priceNow < breakLow && volumeExpansion && obvSl < 0 && belowConfirmations >= 1
+	// Fallback: when candles are insufficient, use pure momentum + volume
+	// expansion as a degraded breakout signal.
+	if !long && !short && volumeExpansion {
+		long = momentum10 > 0.015 && obvSl > 0
+		short = momentum10 < -0.015 && obvSl < 0
+	}
 
 	if !long && !short {
 		return Signal{
@@ -90,11 +98,19 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	if long {
 		direction = DirectionLong
 		confidence += 0.30
-		reason = fmt.Sprintf("breakout above %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakHigh, volRatio, obvSl)
+		if breakHigh > 0 {
+			reason = fmt.Sprintf("breakout above %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakHigh, volRatio, obvSl)
+		} else {
+			reason = fmt.Sprintf("momentum breakout, mom10=%.4f, vol_ratio=%.2f, obv=%.4f", momentum10, volRatio, obvSl)
+		}
 	} else {
 		direction = DirectionShort
 		confidence += 0.30
-		reason = fmt.Sprintf("breakdown below %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakLow, volRatio, obvSl)
+		if breakLow > 0 {
+			reason = fmt.Sprintf("breakdown below %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakLow, volRatio, obvSl)
+		} else {
+			reason = fmt.Sprintf("momentum breakdown, mom10=%.4f, vol_ratio=%.2f, obv=%.4f", momentum10, volRatio, obvSl)
+		}
 	}
 
 	// Strong momentum confirmation
@@ -126,10 +142,18 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 		Timestamp:  time.Now().UTC(),
 	}
 	if direction == DirectionLong {
-		signal.StopLoss = breakHigh - atrDist*1.5
+		sl := breakHigh - atrDist*1.5
+		if breakHigh <= 0 {
+			sl = priceNow - atrDist*1.5
+		}
+		signal.StopLoss = sl
 		signal.TakeProfit = priceNow + atrDist*3
 	} else {
-		signal.StopLoss = breakLow + atrDist*1.5
+		sl := breakLow + atrDist*1.5
+		if breakLow <= 0 {
+			sl = priceNow + atrDist*1.5
+		}
+		signal.StopLoss = sl
 		signal.TakeProfit = priceNow - atrDist*3
 	}
 	return signal

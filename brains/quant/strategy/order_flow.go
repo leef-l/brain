@@ -46,15 +46,15 @@ func (OrderFlow) computeFromFeatures(view MarketView) Signal {
 		atrDist = math.Abs(priceNow) * 0.005
 	}
 
-	long := imbalance > 0.4 &&
-		toxicity > 0.65 &&
-		bigBuy > 0.7 &&
-		density > 2
+	long := imbalance > 0.3 &&
+		toxicity > 0.55 &&
+		bigBuy > 0.5 &&
+		density > 1.5
 
-	short := imbalance < -0.4 &&
-		toxicity > 0.65 &&
-		bigSell > 0.7 &&
-		density > 2
+	short := imbalance < -0.3 &&
+		toxicity > 0.55 &&
+		bigSell > 0.5 &&
+		density > 1.5
 
 	if !long && !short {
 		return Signal{

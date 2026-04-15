@@ -240,7 +240,8 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 	qb.mu.RUnlock()
 
 	// Log diagnostics periodically (every 60 cycles ≈ 5 min at 5s interval).
-	if cycle%60 == 1 {
+	diagnose := cycle%60 == 1
+	if diagnose {
 		qb.logger.Info("cycle heartbeat",
 			"cycle", cycle,
 			"symbols", len(symbols),
@@ -306,6 +307,42 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 							}
 						}
 						view.SetCandles(ctf, stratCandles)
+					}
+				}
+			}
+
+			// Periodic signal diagnostics: log raw strategy output so operators
+			// can tell whether strategies produce signals that get aggregated away
+			// or never fire at all.
+			if diagnose {
+				signals := unit.Pool.Compute(view)
+				for _, sig := range signals {
+					if sig.Direction != strategy.DirectionHold {
+						qb.logger.Info("strategy signal (diag)",
+							"unit", unit.ID,
+							"symbol", symbol,
+							"strategy", sig.Strategy,
+							"direction", sig.Direction,
+							"confidence", fmt.Sprintf("%.4f", sig.Confidence),
+							"reason", sig.Reason)
+					}
+				}
+				if len(signals) > 0 {
+					holdCount := 0
+					for _, s := range signals {
+						if s.Direction == strategy.DirectionHold {
+							holdCount++
+						}
+					}
+					if holdCount == len(signals) {
+						reasons := make([]string, 0, len(signals))
+						for _, s := range signals {
+							reasons = append(reasons, s.Strategy+": "+s.Reason)
+						}
+						qb.logger.Info("all strategies hold (diag)",
+							"unit", unit.ID,
+							"symbol", symbol,
+							"reasons", reasons)
 					}
 				}
 			}
