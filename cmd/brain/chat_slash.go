@@ -131,6 +131,7 @@ func handleSlashCommand(input string, state *chatState) (bool, bool) {
 	case cmd == "/brain help":
 		fmt.Println("  /brain              List specialist brains and status")
 		fmt.Println("  /brain start <kind> Start a specialist brain sidecar")
+		fmt.Println("  /brain start all    Start all available sidecars")
 		fmt.Println("  /brain stop <kind>  Stop a specialist brain sidecar")
 		fmt.Println("  /brain stop all     Stop all running sidecars")
 		fmt.Println()
@@ -175,6 +176,31 @@ func handleBrainStart(state *chatState, kind string) {
 	if state.orchestrator == nil {
 		fmt.Println("  \033[1;31m! No orchestrator available\033[0m")
 		fmt.Println()
+		return
+	}
+	if kind == "all" {
+		brains := state.orchestrator.ListBrains()
+		if len(brains) == 0 {
+			fmt.Println("  No specialist brains available")
+			fmt.Println()
+			return
+		}
+		fmt.Println("  Starting all sidecars...")
+		home, _ := os.UserHomeDir()
+		for _, b := range brains {
+			if b.Running {
+				fmt.Printf("  \033[2m- %s already running\033[0m\n", b.Kind)
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			if err := state.orchestrator.StartBrain(ctx, agent.Kind(b.Kind)); err != nil {
+				fmt.Printf("  \033[1;31m! %s failed: %v\033[0m\n", b.Kind, err)
+			} else {
+				fmt.Printf("  \033[32m✓ %s started\033[0m\n", b.Kind)
+			}
+			cancel()
+		}
+		fmt.Printf("  \033[2mLogs: %s/.brain/logs/\033[0m\n\n", home)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

@@ -21,7 +21,9 @@ func allSlashCommands() []slashCommand {
 		{"/sandbox", "查看/授权目录"},
 		{"/brain", "查看大脑状态"},
 		{"/brain start <kind>", "启动指定大脑"},
+		{"/brain start all", "启动所有大脑"},
 		{"/brain stop <kind>", "停止指定大脑"},
+		{"/brain stop all", "停止所有大脑"},
 		{"/keys", "查看快捷键配置"},
 		{"/exit", "退出 chat"},
 	}

@@ -34,11 +34,11 @@ func (t *brainManageTool) Schema() tool.Schema {
 				"action": {
 					"type": "string",
 					"enum": ["list", "start", "stop"],
-					"description": "操作类型：list=查看所有大脑状态，start=启动指定大脑，stop=停止指定大脑（kind='all' 停止全部）"
+					"description": "操作类型：list=查看所有大脑状态，start=启动指定大脑（kind='all' 启动全部），stop=停止指定大脑（kind='all' 停止全部）"
 				},
 				"kind": {
 					"type": "string",
-					"description": "大脑类型（如 data、quant、code 等），action=list 时可省略，action=stop 传 'all' 停止全部"
+					"description": "大脑类型（如 data、quant、code 等），action=list 时可省略，start/stop 传 'all' 操作全部"
 				}
 			},
 			"required": ["action"]
@@ -123,6 +123,27 @@ func (t *brainManageTool) listBrains() (*tool.Result, error) {
 }
 
 func (t *brainManageTool) startBrain(ctx context.Context, kind string) (*tool.Result, error) {
+	if strings.ToLower(kind) == "all" {
+		brains := t.orchestrator.ListBrains()
+		var started, failed []string
+		for _, b := range brains {
+			if b.Running {
+				continue
+			}
+			if err := t.orchestrator.StartBrain(ctx, b.Kind); err != nil {
+				failed = append(failed, fmt.Sprintf("%s: %v", b.Kind, err))
+			} else {
+				started = append(started, string(b.Kind))
+			}
+		}
+		out, _ := json.Marshal(map[string]interface{}{
+			"status":  "all started",
+			"started": started,
+			"failed":  failed,
+		})
+		return &tool.Result{Output: out}, nil
+	}
+
 	if err := t.orchestrator.StartBrain(ctx, agent.Kind(kind)); err != nil {
 		return &tool.Result{
 			Output:  json.RawMessage(fmt.Sprintf(`"failed to start %s: %v"`, kind, err)),
