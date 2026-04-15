@@ -21,6 +21,7 @@ import (
 
 	data "github.com/leef-l/brain/brains/data"
 	"github.com/leef-l/brain/brains/data/ringbuf"
+	"github.com/leef-l/brain/brains/data/store"
 	"github.com/leef-l/brain/brains/quant"
 	"github.com/leef-l/brain/brains/quant/exchange"
 	"github.com/leef-l/brain/brains/quant/tracer"
@@ -182,7 +183,20 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		}
 		logger.Info("data mode: fallback defaults (BTC, ETH)")
 	}
-	dataBrain := data.New(dataCfg, nil, logger.With("brain", "data"))
+	// Connect PG store so embedded DataBrain can load historical candles on restart.
+	var dataStore store.Store
+	if pgURL := os.Getenv("PG_URL"); pgURL != "" {
+		if s, err := store.NewPGStore(ctx, pgURL); err != nil {
+			logger.Warn("data brain pg connect failed, running without persistence", "err", err)
+		} else {
+			if err := s.Migrate(ctx); err != nil {
+				logger.Warn("data brain pg migrate failed", "err", err)
+			}
+			dataStore = s
+			logger.Info("data brain: PostgreSQL connected")
+		}
+	}
+	dataBrain := data.New(dataCfg, dataStore, logger.With("brain", "data"))
 
 	var buffers *ringbuf.BufferManager
 	if err := dataBrain.Start(ctx); err != nil {
