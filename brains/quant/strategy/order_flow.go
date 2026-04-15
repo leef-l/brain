@@ -46,48 +46,78 @@ func (OrderFlow) computeFromFeatures(view MarketView) Signal {
 		atrDist = math.Abs(priceNow) * 0.005
 	}
 
-	long := imbalance > 0.3 &&
-		toxicity > 0.55 &&
-		bigBuy > 0.5 &&
-		density > 1.5
+	// Scoring approach: each indicator contributes to a directional score.
+	// This replaces the hard AND gate that rarely triggers in swap markets.
+	var buyScore, sellScore float64
 
-	short := imbalance < -0.3 &&
-		toxicity > 0.55 &&
-		bigSell > 0.5 &&
-		density > 1.5
+	// Order book imbalance (strongest single signal)
+	if imbalance > 0.15 {
+		buyScore += imbalance // 0.15~1.0
+	} else if imbalance < -0.15 {
+		sellScore += -imbalance
+	}
+
+	// Trade flow toxicity (directional conviction)
+	if toxicity > 0.45 {
+		if imbalance > 0 {
+			buyScore += (toxicity - 0.45) * 2
+		} else if imbalance < 0 {
+			sellScore += (toxicity - 0.45) * 2
+		}
+	}
+
+	// Big order flow
+	if bigBuy > 0.2 {
+		buyScore += bigBuy * 0.5
+	}
+	if bigSell > 0.2 {
+		sellScore += bigSell * 0.5
+	}
+
+	// Trade density (market activity)
+	if density > 1.0 {
+		densityBonus := math.Min((density-1.0)*0.3, 0.3)
+		buyScore += densityBonus
+		sellScore += densityBonus
+	}
+
+	// Buy/sell ratio
+	if buySell > 1.2 {
+		buyScore += (buySell - 1.0) * 0.3
+	} else if buySell < 0.8 && buySell > 0 {
+		sellScore += (1.0 - buySell) * 0.3
+	}
+
+	threshold := 0.6
+	long := buyScore >= threshold && buyScore > sellScore*1.3
+	short := sellScore >= threshold && sellScore > buyScore*1.3
 
 	if !long && !short {
 		return Signal{
 			Strategy:   "OrderFlow",
 			Direction:  DirectionHold,
 			Confidence: 0.15,
-			Reason:     "order flow imbalance not strong enough",
+			Reason:     fmt.Sprintf("order flow imbalance not strong enough (buy=%.2f sell=%.2f)", buyScore, sellScore),
 			Timestamp:  time.Now().UTC(),
 		}
 	}
 
-	confidence := 0.45
+	confidence := 0.40
 	reason := ""
 	direction := DirectionHold
 
 	if long {
 		direction = DirectionLong
-		confidence += 0.25
-		reason = fmt.Sprintf("buy imbalance %.2f, toxicity %.2f, bigBuy %.2f", imbalance, toxicity, bigBuy)
+		confidence += math.Min(buyScore*0.3, 0.35)
+		reason = fmt.Sprintf("buy flow score=%.2f, imb=%.2f, tox=%.2f, bigBuy=%.2f", buyScore, imbalance, toxicity, bigBuy)
 	} else {
 		direction = DirectionShort
-		confidence += 0.25
-		reason = fmt.Sprintf("sell imbalance %.2f, toxicity %.2f, bigSell %.2f", imbalance, toxicity, bigSell)
-	}
-
-	// Buy/sell ratio confirmation
-	if (direction == DirectionLong && buySell > 1.5) || (direction == DirectionShort && buySell < 0.67) {
-		confidence *= 1.15
-		reason += fmt.Sprintf("; buySellRatio=%.2f confirms", buySell)
+		confidence += math.Min(sellScore*0.3, 0.35)
+		reason = fmt.Sprintf("sell flow score=%.2f, imb=%.2f, tox=%.2f, bigSell=%.2f", sellScore, imbalance, toxicity, bigSell)
 	}
 
 	// Tight spread = more reliable signal
-	if spread < 0.001 {
+	if spread > 0 && spread < 0.001 {
 		confidence *= 1.1
 		reason += "; tight spread"
 	}
@@ -128,15 +158,15 @@ func (OrderFlow) computeLegacy(view MarketView) Signal {
 		atrValue = math.Abs(entry) * 0.005
 	}
 
-	long := view.OrderBookImbalance() > 0.4 &&
-		view.TradeFlowToxicity() > 0.65 &&
-		view.BigBuyRatio() > 0.7 &&
-		view.TradeDensityRatio() > 2
+	long := view.OrderBookImbalance() > 0.25 &&
+		view.TradeFlowToxicity() > 0.50 &&
+		view.BigBuyRatio() > 0.3 &&
+		view.TradeDensityRatio() > 1.2
 
-	short := view.OrderBookImbalance() < -0.4 &&
-		view.TradeFlowToxicity() > 0.65 &&
-		view.BigSellRatio() > 0.7 &&
-		view.TradeDensityRatio() > 2
+	short := view.OrderBookImbalance() < -0.25 &&
+		view.TradeFlowToxicity() > 0.50 &&
+		view.BigSellRatio() > 0.3 &&
+		view.TradeDensityRatio() > 1.2
 
 	if !long && !short {
 		return Signal{

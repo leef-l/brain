@@ -39,14 +39,13 @@ func (TrendFollower) computeFromFeatures(view MarketView) Signal {
 		return Signal{Strategy: "TrendFollower", Direction: DirectionHold, Reason: "feature vector not ready", Timestamp: time.Now().UTC()}
 	}
 
-	// EMA alignment: bullish = all positive & 9 > 21
-	bullish := ema9dev > 0 && ema21dev > 0 && ema55dev > 0 &&
-		ema9dev > ema21dev &&
-		(adxVal > 0.20 || macdHist > 0)
+	// EMA alignment: core requirement is EMA9+EMA21 agreement.
+	// EMA55 alignment and ADX provide additional confidence but are not required.
+	bullish := ema9dev > 0 && ema21dev > 0 && ema9dev > ema21dev &&
+		(adxVal > 0.15 || macdHist > 0)
 
-	bearish := ema9dev < 0 && ema21dev < 0 && ema55dev < 0 &&
-		ema9dev < ema21dev &&
-		(adxVal > 0.20 || macdHist < 0)
+	bearish := ema9dev < 0 && ema21dev < 0 && ema9dev < ema21dev &&
+		(adxVal > 0.15 || macdHist < 0)
 
 	if !bullish && !bearish {
 		return Signal{
@@ -64,12 +63,21 @@ func (TrendFollower) computeFromFeatures(view MarketView) Signal {
 
 	if bullish {
 		direction = DirectionLong
-		confidence += 0.35
+		confidence += 0.30
 		reason = fmt.Sprintf("ema alignment bullish, adx=%.2f, macd=%.4f", adxVal, macdHist)
+		// EMA55 same direction → stronger trend
+		if ema55dev > 0 {
+			confidence += 0.10
+			reason += "; ema55 confirms"
+		}
 	} else {
 		direction = DirectionShort
-		confidence += 0.35
+		confidence += 0.30
 		reason = fmt.Sprintf("ema alignment bearish, adx=%.2f, macd=%.4f", adxVal, macdHist)
+		if ema55dev < 0 {
+			confidence += 0.10
+			reason += "; ema55 confirms"
+		}
 	}
 
 	// Higher TF confirmation

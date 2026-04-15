@@ -41,7 +41,7 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	atrRatio := f.ATRRatio(tf)
 	momentum10 := f.Momentum(tf, 10)
 
-	volumeExpansion := volBreakout || volRatio > 1.8
+	volumeExpansion := volBreakout || volRatio > 1.3
 
 	// Breakout detection: prefers candle-based high/low extremes, but
 	// degrades to pure momentum+volume when candles are unavailable.
@@ -77,8 +77,14 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	// Fallback: when candles are insufficient, use pure momentum + volume
 	// expansion as a degraded breakout signal.
 	if !long && !short && volumeExpansion {
-		long = momentum10 > 0.015 && obvSl > 0
-		short = momentum10 < -0.015 && obvSl < 0
+		long = momentum10 > 0.008 && obvSl > 0
+		short = momentum10 < -0.008 && obvSl < 0
+	}
+
+	// Second fallback: strong momentum alone (no volume required)
+	if !long && !short {
+		long = momentum10 > 0.02 && obvSl > 0
+		short = momentum10 < -0.02 && obvSl < 0
 	}
 
 	if !long && !short {
