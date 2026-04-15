@@ -382,6 +382,10 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 
 	qb.metrics.SignalsGenerated.Add(1)
 
+	// Build global snapshot ONCE — reused for LLM review and global risk check.
+	// Building it multiple times risks inconsistent state between checks.
+	globalSnap := qb.buildGlobalSnapshot(ctx)
+
 	// Build trace for audit trail
 	trace := &tracer.SignalTrace{
 		TraceID:    fmt.Sprintf("%s-%s-%d", unit.ID, td.Symbol, time.Now().UnixMilli()),
@@ -398,17 +402,18 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 		qb.metrics.ReviewsFlagged.Add(1)
 
 		if qb.reviewer != nil {
-			globalSnap := qb.buildGlobalSnapshot(ctx)
 			proceed, sizeFactor := qb.integrateReview(ctx, td, globalSnap)
 			if !proceed {
 				trace.Outcome = "rejected_review"
 				qb.saveTrace(ctx, trace)
 				return
 			}
-			// Apply LLM size factor
+			// Apply LLM size factor and sync back to OrderReq for correct risk check.
 			if sizeFactor > 0 && sizeFactor < 1.0 {
 				td.SizeResult.Quantity *= sizeFactor
 				td.SizeResult.Notional *= sizeFactor
+				td.OrderReq.Quantity = td.SizeResult.Quantity
+				td.OrderReq.Notional = td.SizeResult.Notional
 			}
 		} else {
 			// No reviewer configured, skip the trade
@@ -423,8 +428,7 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 		}
 	}
 
-	// Global risk guard: cross-account limits check
-	globalSnap := qb.buildGlobalSnapshot(ctx)
+	// Global risk guard: cross-account limits check (uses same snapshot as review)
 	globalDecision := qb.globalGuard.Evaluate(td.OrderReq, globalSnap)
 	trace.GlobalRisk = globalDecision
 	if !globalDecision.Allowed {

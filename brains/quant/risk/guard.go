@@ -47,6 +47,11 @@ func DefaultGuard() Guard {
 }
 
 func (g Guard) CheckOrder(req OrderRequest, portfolio PortfolioSnapshot) Decision {
+	// Close/Reduce actions are risk-reducing — skip most opening checks.
+	if req.Action == ActionClose || req.Action == ActionReduce {
+		return allow("layer-1")
+	}
+
 	if req.Leverage > 0 && req.Leverage > g.MaxLeverage {
 		return deny("layer-1", "leverage above limit", false)
 	}
@@ -86,6 +91,10 @@ func (g Guard) CheckOrder(req OrderRequest, portfolio PortfolioSnapshot) Decisio
 func (g Guard) CheckPortfolio(req OrderRequest, portfolio PortfolioSnapshot) Decision {
 	if portfolio.Equity <= 0 {
 		return deny("layer-2", "equity must be positive", false)
+	}
+	// Close/Reduce are risk-reducing — don't block with portfolio limits.
+	if req.Action == ActionClose || req.Action == ActionReduce {
+		return allow("layer-2")
 	}
 	if len(portfolio.Positions) >= g.MaxConcurrentPositions {
 		return deny("layer-2", "too many concurrent positions", false)

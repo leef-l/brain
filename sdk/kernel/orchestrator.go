@@ -327,30 +327,43 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 		}, nil
 	}
 
-	// Apply timeout from budget only when explicitly provided.
-	// Otherwise inherit the caller's context deadline unchanged.
-	cancel := func() {}
+	// Apply timeout from budget. Each attempt gets its own timeout so that
+	// a slow first attempt doesn't starve the retry.
+	budgetTimeout := time.Duration(0)
 	if req.Budget != nil && req.Budget.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, req.Budget.Timeout)
+		budgetTimeout = req.Budget.Timeout
 	}
-	defer cancel()
+
+	attemptCtx := ctx
+	attemptCancel := func() {}
+	if budgetTimeout > 0 {
+		attemptCtx, attemptCancel = context.WithTimeout(ctx, budgetTimeout)
+	}
 
 	// Try with automatic retry on crash.
-	result, err := o.delegateOnce(ctx, req, start)
+	result, err := o.delegateOnce(attemptCtx, req, start)
+	attemptCancel()
 	if err == nil && result.Status != "failed" {
 		return result, nil
 	}
 
-	// First attempt failed — check if it's a sidecar crash (not a timeout or cancellation).
+	// First attempt failed — check if the parent context is done (not retryable).
 	if ctx.Err() != nil {
 		return result, err
 	}
 
-	// Remove crashed sidecar from pool and retry once.
+	// Remove crashed sidecar from pool and retry once with a fresh timeout.
 	fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar failed, retrying: %s\n", req.TargetKind, result.Error)
 	o.removeSidecar(req.TargetKind)
 
-	retryResult, retryErr := o.delegateOnce(ctx, req, start)
+	retryCtx := ctx
+	retryCancel := func() {}
+	if budgetTimeout > 0 {
+		retryCtx, retryCancel = context.WithTimeout(ctx, budgetTimeout)
+	}
+	defer retryCancel()
+
+	retryResult, retryErr := o.delegateOnce(retryCtx, req, start)
 	if retryErr != nil || retryResult.Status == "failed" {
 		// Both attempts failed — mark the kind as degraded.
 		fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar retry failed, marking degraded\n", req.TargetKind)
@@ -483,7 +496,7 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 		// Dead sidecar — remove from pool.
 		fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar dead, removing from pool\n", kind)
 		delete(o.active, kind)
-		// Try to clean up.
+		// Try to clean up in background.
 		go func() {
 			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -491,11 +504,20 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 			o.runner.Stop(shutCtx, kind)
 		}()
 	}
+
+	// Mark this kind as "starting" by inserting nil so that concurrent
+	// callers don't race to start duplicate sidecars.
+	if ag, starting := o.active[kind]; starting && ag == nil {
+		// Another goroutine is already starting this kind — wait outside lock.
+		o.mu.Unlock()
+		// Brief back-off then retry; the other goroutine should finish soon.
+		time.Sleep(100 * time.Millisecond)
+		return o.getOrStartSidecar(ctx, kind)
+	}
+	o.active[kind] = nil // placeholder: "starting"
 	o.mu.Unlock()
 
-	// Start a new sidecar. If a registration exists with an explicit binary
-	// path, pass it to the runner so it does not need a separate binResolver
-	// lookup.
+	// Start a new sidecar outside the lock.
 	desc := agent.Descriptor{
 		Kind:      kind,
 		LLMAccess: agent.LLMAccessProxied,
@@ -503,6 +525,12 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 
 	ag, err := o.runner.Start(ctx, kind, desc)
 	if err != nil {
+		// Remove the placeholder on failure.
+		o.mu.Lock()
+		if o.active[kind] == nil {
+			delete(o.active, kind)
+		}
+		o.mu.Unlock()
 		return nil, err
 	}
 
@@ -513,7 +541,7 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 		}
 	}
 
-	// Cache the sidecar for reuse.
+	// Cache the sidecar for reuse (replaces the nil placeholder).
 	o.mu.Lock()
 	o.active[kind] = ag
 	o.mu.Unlock()

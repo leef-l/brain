@@ -70,6 +70,7 @@ type processAgent struct {
 	rpc        protocol.BidirRPC
 	sidecar    *protocol.SidecarInstance
 	cancelFunc context.CancelFunc
+	logFile    io.Closer // stderr log file, closed on Shutdown
 
 	mu    sync.Mutex
 	ready bool
@@ -149,6 +150,9 @@ func (a *processAgent) Shutdown(ctx context.Context) error {
 	if a.cancelFunc != nil {
 		a.cancelFunc()
 	}
+	if a.logFile != nil {
+		_ = a.logFile.Close()
+	}
 	return nil
 }
 
@@ -194,7 +198,8 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 
 	// Redirect sidecar stderr to a log file instead of polluting the
 	// interactive chat/run UI. Logs go to ~/.brain/logs/<kind>.log.
-	cmd.Stderr = openSidecarLog(kind)
+	logWriter, logCloser := openSidecarLog(kind)
+	cmd.Stderr = logWriter
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -237,6 +242,7 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 		rpc:        rpc,
 		sidecar:    sidecarInst,
 		cancelFunc: cancel,
+		logFile:    logCloser,
 		done:       make(chan struct{}),
 		exited:     make(chan struct{}),
 	}
@@ -532,21 +538,21 @@ var _ BrainRunner = (*StdioRunner)(nil)
 // openSidecarLog returns a writer for sidecar stderr output. Logs go to
 // ~/.brain/logs/<kind>.log. Falls back to os.Stderr if the log file cannot
 // be created.
-func openSidecarLog(kind agent.Kind) io.Writer {
+func openSidecarLog(kind agent.Kind) (io.Writer, io.Closer) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return os.Stderr
+		return os.Stderr, nil
 	}
 	logDir := fmt.Sprintf("%s/.brain/logs", home)
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return os.Stderr
+		return os.Stderr, nil
 	}
 	logPath := fmt.Sprintf("%s/%s.log", logDir, kind)
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return os.Stderr
+		return os.Stderr, nil
 	}
-	return f
+	return f, f
 }
 
 // toJSONRaw marshals v into json.RawMessage. Convenience for building
