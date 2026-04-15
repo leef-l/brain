@@ -1,6 +1,6 @@
 {
   "name": "@leef-l/brain-cli",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "pnpm/npm wrapper for BrainKernel CLI binaries published on GitHub Releases",
   "license": "Apache-2.0",
   "type": "commonjs",
