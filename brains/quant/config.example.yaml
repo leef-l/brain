@@ -140,6 +140,30 @@ strategy:
   short_threshold: 0.45          # 做空信号最低分数
   dominance_factor: 1.5          # 主方向必须是反方向的 1.5 倍
 
+  # --- 各策略可调参数（不配则使用默认值） ---
+
+  # 趋势跟踪
+  trend_follower:
+    adx_threshold: 0.15          # ADX 确认趋势的最低值（0~1，默认 0.15）
+
+  # 均值回归
+  mean_reversion:
+    bb_oversold: 0.15            # 布林带位置低于此值视为超卖（默认 0.15）
+    bb_overbought: 0.85          # 布林带位置高于此值视为超买（默认 0.85）
+    max_volume_ratio: 1.2        # 成交量/均量比上限，超过视为量能异常（默认 1.2）
+
+  # 突破动量
+  breakout_momentum:
+    volume_ratio_threshold: 1.3  # 放量确认阈值（当前量/均量，默认 1.3）
+    momentum_threshold: 0.008    # 10 根 K 线动量阈值（默认 0.008）
+    strong_momentum: 0.02        # 强动量独立触发阈值，无需放量（默认 0.02）
+
+  # 订单流
+  order_flow:
+    imbalance_threshold: 0.15    # 订单簿失衡最低阈值（默认 0.15）
+    toxicity_threshold: 0.45     # 交易流毒性最低阈值（默认 0.45）
+    flow_score_threshold: 0.6    # 综合评分触发阈值（默认 0.6）
+
 # ==================== 风控层 (Risk) =========================
 
 # --- 单账户风控守卫 (Guard) ---

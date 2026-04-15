@@ -37,12 +37,16 @@ type UnitConfig struct {
 	Enabled     bool     `json:"enabled" yaml:"enabled"`
 }
 
-// StrategyConfig holds strategy weights and aggregator thresholds.
+// StrategyConfig holds strategy weights, aggregator thresholds, and per-strategy tunable params.
 type StrategyConfig struct {
-	Weights         map[string]float64 `json:"weights" yaml:"weights"`
-	LongThreshold   float64            `json:"long_threshold" yaml:"long_threshold"`
-	ShortThreshold  float64            `json:"short_threshold" yaml:"short_threshold"`
-	DominanceFactor float64            `json:"dominance_factor" yaml:"dominance_factor"`
+	Weights         map[string]float64              `json:"weights" yaml:"weights"`
+	LongThreshold   float64                         `json:"long_threshold" yaml:"long_threshold"`
+	ShortThreshold  float64                         `json:"short_threshold" yaml:"short_threshold"`
+	DominanceFactor float64                         `json:"dominance_factor" yaml:"dominance_factor"`
+	TrendFollower   strategy.TrendFollowerParams     `json:"trend_follower" yaml:"trend_follower"`
+	MeanReversion   strategy.MeanReversionParams     `json:"mean_reversion" yaml:"mean_reversion"`
+	BreakoutMomentum strategy.BreakoutMomentumParams `json:"breakout_momentum" yaml:"breakout_momentum"`
+	OrderFlow       strategy.OrderFlowParams         `json:"order_flow" yaml:"order_flow"`
 }
 
 // GuardConfig mirrors risk.Guard fields for config-file overrides.
@@ -150,6 +154,17 @@ func (sc StrategyConfig) BuildAggregator(timeframe string) *strategy.RegimeAware
 
 	agg.SetBaseAggregator(base)
 	return agg
+}
+
+// BuildPool creates a strategy Pool with per-strategy params from config.
+// Zero-value params fall back to strategy defaults.
+func (sc StrategyConfig) BuildPool() *strategy.Pool {
+	return strategy.NewPool(
+		strategy.NewTrendFollowerWithParams(sc.TrendFollower),
+		strategy.NewMeanReversionWithParams(sc.MeanReversion),
+		strategy.NewBreakoutMomentumWithParams(sc.BreakoutMomentum),
+		strategy.NewOrderFlowWithParams(sc.OrderFlow),
+	)
 }
 
 // BuildGuard creates an AdaptiveGuard from RiskConfig.

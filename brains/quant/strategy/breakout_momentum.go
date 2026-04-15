@@ -5,9 +5,40 @@ import (
 	"time"
 )
 
-type BreakoutMomentum struct{}
+// BreakoutMomentumParams holds tunable parameters for BreakoutMomentum.
+type BreakoutMomentumParams struct {
+	VolumeRatioThreshold float64 `json:"volume_ratio_threshold" yaml:"volume_ratio_threshold"` // volume expansion threshold (default 1.3)
+	MomentumThreshold    float64 `json:"momentum_threshold" yaml:"momentum_threshold"`         // 10-bar momentum for fallback (default 0.008)
+	StrongMomentum       float64 `json:"strong_momentum" yaml:"strong_momentum"`               // momentum alone trigger (default 0.02)
+}
 
-func NewBreakoutMomentum() Strategy { return BreakoutMomentum{} }
+func DefaultBreakoutMomentumParams() BreakoutMomentumParams {
+	return BreakoutMomentumParams{
+		VolumeRatioThreshold: 1.3,
+		MomentumThreshold:    0.008,
+		StrongMomentum:       0.02,
+	}
+}
+
+type BreakoutMomentum struct {
+	Params BreakoutMomentumParams
+}
+
+func NewBreakoutMomentum() Strategy { return BreakoutMomentum{Params: DefaultBreakoutMomentumParams()} }
+
+func NewBreakoutMomentumWithParams(p BreakoutMomentumParams) Strategy {
+	d := DefaultBreakoutMomentumParams()
+	if p.VolumeRatioThreshold <= 0 {
+		p.VolumeRatioThreshold = d.VolumeRatioThreshold
+	}
+	if p.MomentumThreshold <= 0 {
+		p.MomentumThreshold = d.MomentumThreshold
+	}
+	if p.StrongMomentum <= 0 {
+		p.StrongMomentum = d.StrongMomentum
+	}
+	return BreakoutMomentum{Params: p}
+}
 
 func (BreakoutMomentum) Name() string { return "BreakoutMomentum" }
 
@@ -23,7 +54,7 @@ func (b BreakoutMomentum) Compute(view MarketView) Signal {
 // computeFromFeatures uses FeatureView for momentum/volume signals, but still
 // needs candles for breakout level detection (high/low extremes aren't in the
 // feature vector). Falls back to legacy if candles unavailable.
-func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
+func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	f := view.Feature()
 	tf := view.Timeframe()
 
@@ -41,7 +72,7 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	atrRatio := f.ATRRatio(tf)
 	momentum10 := f.Momentum(tf, 10)
 
-	volumeExpansion := volBreakout || volRatio > 1.3
+	volumeExpansion := volBreakout || volRatio > b.Params.VolumeRatioThreshold
 
 	// Breakout detection: prefers candle-based high/low extremes, but
 	// degrades to pure momentum+volume when candles are unavailable.
@@ -76,15 +107,17 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 
 	// Fallback: when candles are insufficient, use pure momentum + volume
 	// expansion as a degraded breakout signal.
+	momTh := b.Params.MomentumThreshold
 	if !long && !short && volumeExpansion {
-		long = momentum10 > 0.008 && obvSl > 0
-		short = momentum10 < -0.008 && obvSl < 0
+		long = momentum10 > momTh && obvSl > 0
+		short = momentum10 < -momTh && obvSl < 0
 	}
 
 	// Second fallback: strong momentum alone (no volume required)
+	strongMom := b.Params.StrongMomentum
 	if !long && !short {
-		long = momentum10 > 0.02 && obvSl > 0
-		short = momentum10 < -0.02 && obvSl < 0
+		long = momentum10 > strongMom && obvSl > 0
+		short = momentum10 < -strongMom && obvSl < 0
 	}
 
 	if !long && !short {

@@ -201,6 +201,7 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			Symbols:     uc.Symbols,
 			Timeframe:   uc.Timeframe,
 			MaxLeverage: uc.MaxLeverage,
+			Pool:        cfg.Strategy.BuildPool(),
 			TradeStore:  ts,
 			Aggregator:  agg,
 			Guard:       guard,

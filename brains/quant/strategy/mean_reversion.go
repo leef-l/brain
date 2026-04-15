@@ -6,9 +6,40 @@ import (
 	"time"
 )
 
-type MeanReversion struct{}
+// MeanReversionParams holds tunable parameters for MeanReversion.
+type MeanReversionParams struct {
+	BBOversold     float64 `json:"bb_oversold" yaml:"bb_oversold"`         // BB position for oversold (default 0.15)
+	BBOverbought   float64 `json:"bb_overbought" yaml:"bb_overbought"`     // BB position for overbought (default 0.85)
+	MaxVolumeRatio float64 `json:"max_volume_ratio" yaml:"max_volume_ratio"` // max vol ratio (no spike, default 1.2)
+}
 
-func NewMeanReversion() Strategy { return MeanReversion{} }
+func DefaultMeanReversionParams() MeanReversionParams {
+	return MeanReversionParams{
+		BBOversold:     0.15,
+		BBOverbought:   0.85,
+		MaxVolumeRatio: 1.2,
+	}
+}
+
+type MeanReversion struct {
+	Params MeanReversionParams
+}
+
+func NewMeanReversion() Strategy { return MeanReversion{Params: DefaultMeanReversionParams()} }
+
+func NewMeanReversionWithParams(p MeanReversionParams) Strategy {
+	d := DefaultMeanReversionParams()
+	if p.BBOversold <= 0 {
+		p.BBOversold = d.BBOversold
+	}
+	if p.BBOverbought <= 0 {
+		p.BBOverbought = d.BBOverbought
+	}
+	if p.MaxVolumeRatio <= 0 {
+		p.MaxVolumeRatio = d.MaxVolumeRatio
+	}
+	return MeanReversion{Params: p}
+}
 
 func (MeanReversion) Name() string { return "MeanReversion" }
 
@@ -23,7 +54,7 @@ func (m MeanReversion) Compute(view MarketView) Signal {
 
 // computeFromFeatures reads BB position, RSI, ADX, volume from the 192-dim
 // feature vector via FeatureView. O(1) per indicator.
-func (MeanReversion) computeFromFeatures(view MarketView) Signal {
+func (m MeanReversion) computeFromFeatures(view MarketView) Signal {
 	f := view.Feature()
 	tf := view.Timeframe()
 
@@ -41,8 +72,8 @@ func (MeanReversion) computeFromFeatures(view MarketView) Signal {
 	}
 
 	// Mean reversion: price near bands + low ADX (ranging market) + no volume spike
-	long := (bbPos < 0.15 || (bbPos < 0.35 && rsiVal < 0.35)) && volRatio <= 1.2
-	short := (bbPos > 0.85 || (bbPos > 0.65 && rsiVal > 0.65)) && volRatio <= 1.2
+	long := (bbPos < m.Params.BBOversold || (bbPos < 0.35 && rsiVal < 0.35)) && volRatio <= m.Params.MaxVolumeRatio
+	short := (bbPos > m.Params.BBOverbought || (bbPos > 0.65 && rsiVal > 0.65)) && volRatio <= m.Params.MaxVolumeRatio
 
 	if !long && !short {
 		return Signal{

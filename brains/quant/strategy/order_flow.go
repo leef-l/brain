@@ -6,9 +6,40 @@ import (
 	"time"
 )
 
-type OrderFlow struct{}
+// OrderFlowParams holds tunable parameters for OrderFlow.
+type OrderFlowParams struct {
+	ImbalanceThreshold float64 `json:"imbalance_threshold" yaml:"imbalance_threshold"` // min |imbalance| to score (default 0.15)
+	ToxicityThreshold  float64 `json:"toxicity_threshold" yaml:"toxicity_threshold"`   // min toxicity to score (default 0.45)
+	FlowScoreThreshold float64 `json:"flow_score_threshold" yaml:"flow_score_threshold"` // min score to trigger (default 0.6)
+}
 
-func NewOrderFlow() Strategy { return OrderFlow{} }
+func DefaultOrderFlowParams() OrderFlowParams {
+	return OrderFlowParams{
+		ImbalanceThreshold: 0.15,
+		ToxicityThreshold:  0.45,
+		FlowScoreThreshold: 0.6,
+	}
+}
+
+type OrderFlow struct {
+	Params OrderFlowParams
+}
+
+func NewOrderFlow() Strategy { return OrderFlow{Params: DefaultOrderFlowParams()} }
+
+func NewOrderFlowWithParams(p OrderFlowParams) Strategy {
+	d := DefaultOrderFlowParams()
+	if p.ImbalanceThreshold <= 0 {
+		p.ImbalanceThreshold = d.ImbalanceThreshold
+	}
+	if p.ToxicityThreshold <= 0 {
+		p.ToxicityThreshold = d.ToxicityThreshold
+	}
+	if p.FlowScoreThreshold <= 0 {
+		p.FlowScoreThreshold = d.FlowScoreThreshold
+	}
+	return OrderFlow{Params: p}
+}
 
 func (OrderFlow) Name() string { return "OrderFlow" }
 
@@ -23,7 +54,7 @@ func (o OrderFlow) Compute(view MarketView) Signal {
 
 // computeFromFeatures reads microstructure indicators from the 192-dim
 // feature vector via FeatureView. O(1) per indicator.
-func (OrderFlow) computeFromFeatures(view MarketView) Signal {
+func (o OrderFlow) computeFromFeatures(view MarketView) Signal {
 	f := view.Feature()
 
 	imbalance := f.OrderBookImbalance()
@@ -51,18 +82,20 @@ func (OrderFlow) computeFromFeatures(view MarketView) Signal {
 	var buyScore, sellScore float64
 
 	// Order book imbalance (strongest single signal)
-	if imbalance > 0.15 {
-		buyScore += imbalance // 0.15~1.0
-	} else if imbalance < -0.15 {
+	imbTh := o.Params.ImbalanceThreshold
+	if imbalance > imbTh {
+		buyScore += imbalance
+	} else if imbalance < -imbTh {
 		sellScore += -imbalance
 	}
 
 	// Trade flow toxicity (directional conviction)
-	if toxicity > 0.45 {
+	toxTh := o.Params.ToxicityThreshold
+	if toxicity > toxTh {
 		if imbalance > 0 {
-			buyScore += (toxicity - 0.45) * 2
+			buyScore += (toxicity - toxTh) * 2
 		} else if imbalance < 0 {
-			sellScore += (toxicity - 0.45) * 2
+			sellScore += (toxicity - toxTh) * 2
 		}
 	}
 
@@ -88,9 +121,9 @@ func (OrderFlow) computeFromFeatures(view MarketView) Signal {
 		sellScore += (1.0 - buySell) * 0.3
 	}
 
-	threshold := 0.6
-	long := buyScore >= threshold && buyScore > sellScore*1.3
-	short := sellScore >= threshold && sellScore > buyScore*1.3
+	scoreTh := o.Params.FlowScoreThreshold
+	long := buyScore >= scoreTh && buyScore > sellScore*1.3
+	short := sellScore >= scoreTh && sellScore > buyScore*1.3
 
 	if !long && !short {
 		return Signal{

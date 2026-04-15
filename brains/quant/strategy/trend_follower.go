@@ -6,9 +6,27 @@ import (
 	"time"
 )
 
-type TrendFollower struct{}
+// TrendFollowerParams holds tunable parameters for TrendFollower.
+type TrendFollowerParams struct {
+	ADXThreshold float64 `json:"adx_threshold" yaml:"adx_threshold"` // min ADX to confirm trend (default 0.15)
+}
 
-func NewTrendFollower() Strategy { return TrendFollower{} }
+func DefaultTrendFollowerParams() TrendFollowerParams {
+	return TrendFollowerParams{ADXThreshold: 0.15}
+}
+
+type TrendFollower struct {
+	Params TrendFollowerParams
+}
+
+func NewTrendFollower() Strategy { return TrendFollower{Params: DefaultTrendFollowerParams()} }
+
+func NewTrendFollowerWithParams(p TrendFollowerParams) Strategy {
+	if p.ADXThreshold <= 0 {
+		p.ADXThreshold = DefaultTrendFollowerParams().ADXThreshold
+	}
+	return TrendFollower{Params: p}
+}
 
 func (TrendFollower) Name() string { return "TrendFollower" }
 
@@ -23,7 +41,7 @@ func (t TrendFollower) Compute(view MarketView) Signal {
 
 // computeFromFeatures reads pre-computed indicators from the 192-dim
 // feature vector via FeatureView. O(1) per indicator, no recomputation.
-func (TrendFollower) computeFromFeatures(view MarketView) Signal {
+func (t TrendFollower) computeFromFeatures(view MarketView) Signal {
 	f := view.Feature()
 	tf := view.Timeframe()
 
@@ -41,11 +59,12 @@ func (TrendFollower) computeFromFeatures(view MarketView) Signal {
 
 	// EMA alignment: core requirement is EMA9+EMA21 agreement.
 	// EMA55 alignment and ADX provide additional confidence but are not required.
+	adxTh := t.Params.ADXThreshold
 	bullish := ema9dev > 0 && ema21dev > 0 && ema9dev > ema21dev &&
-		(adxVal > 0.15 || macdHist > 0)
+		(adxVal > adxTh || macdHist > 0)
 
 	bearish := ema9dev < 0 && ema21dev < 0 && ema9dev < ema21dev &&
-		(adxVal > 0.15 || macdHist < 0)
+		(adxVal > adxTh || macdHist < 0)
 
 	if !bullish && !bearish {
 		return Signal{

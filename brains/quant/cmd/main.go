@@ -202,6 +202,7 @@ func main() {
 			Symbols:     uc.Symbols,
 			Timeframe:   uc.Timeframe,
 			MaxLeverage: uc.MaxLeverage,
+			Pool:        cfg.Strategy.BuildPool(),
 			TradeStore:  ts,
 			Aggregator:  agg,
 			Guard:       guard,
