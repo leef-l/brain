@@ -124,33 +124,60 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		}
 	}
 
-	// Collect all symbols from enabled units so the embedded DataBrain
-	// subscribes to the right instruments (not just BTC/ETH defaults).
+	// Collect explicitly configured symbols from enabled units.
+	// If ANY unit has an empty symbols list, it trades all active instruments,
+	// so the embedded DataBrain must use the full active-list discovery mode.
 	symbolSet := make(map[string]bool)
+	hasOpenUnit := false // true if any unit trades "all active instruments"
 	for _, uc := range cfg.Units {
 		if !uc.Enabled {
 			continue
+		}
+		if len(uc.Symbols) == 0 {
+			hasOpenUnit = true
 		}
 		for _, s := range uc.Symbols {
 			symbolSet[s] = true
 		}
 	}
-	symbols := make([]string, 0, len(symbolSet))
+	pinned := make([]string, 0, len(symbolSet))
 	for s := range symbolSet {
-		symbols = append(symbols, s)
-	}
-	// Ensure at least BTC and ETH for default units with empty symbol list.
-	if len(symbols) == 0 {
-		symbols = []string{"BTC-USDT-SWAP", "ETH-USDT-SWAP"}
+		pinned = append(pinned, s)
 	}
 
-	// Start embedded data brain for ring buffers.
-	dataCfg := data.Config{
-		ActiveList: data.ActiveListConfig{
-			AlwaysInclude:  symbols,
-			MaxInstruments: len(symbols),
-			MinVolume24h:   0, // don't filter — we want exactly these symbols
-		},
+	// Build DataBrain config based on whether we need active-list discovery.
+	var dataCfg data.Config
+	if hasOpenUnit {
+		// Active-list discovery mode: fetch top instruments by volume from OKX,
+		// plus any explicitly pinned symbols from units that have them.
+		dataCfg = data.Config{
+			ActiveList: data.ActiveListConfig{
+				AlwaysInclude:  pinned,
+				MaxInstruments: 50,          // top 50 by 24h volume
+				MinVolume24h:   10_000_000,  // $10M minimum daily volume
+			},
+		}
+		logger.Info("data mode: active-list discovery", "pinned", len(pinned), "max", 50)
+	} else if len(pinned) > 0 {
+		// Fixed mode: only trade the explicitly configured symbols.
+		dataCfg = data.Config{
+			ActiveList: data.ActiveListConfig{
+				AlwaysInclude:  pinned,
+				MaxInstruments: len(pinned),
+				MinVolume24h:   0, // no volume filter — trade exactly these
+			},
+		}
+		logger.Info("data mode: fixed symbols", "symbols", pinned)
+	} else {
+		// No units or all disabled — fallback defaults.
+		dataCfg = data.Config{
+			ActiveList: data.ActiveListConfig{
+				AlwaysInclude:  []string{"BTC-USDT-SWAP", "ETH-USDT-SWAP"},
+				MaxInstruments: 2,
+				MinVolume24h:   0,
+			},
+		}
+		logger.Info("data mode: fallback defaults (BTC, ETH)")
 	}
 	dataBrain := data.New(dataCfg, nil, logger.With("brain", "data"))
 
@@ -161,7 +188,6 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 	} else {
 		buffers = dataBrain.Buffers()
 	}
-	logger.Info("data brain instruments", "symbols", symbols)
 
 	// Build quant brain
 	qb := quant.New(cfg.Brain, buffers, logger.With("brain", "quant"))

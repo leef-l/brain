@@ -387,10 +387,14 @@ accounts:
 # ==================== 交易单元 ====================
 # 交易单元 = "交易员"，绑定一个账户，负责交易指定品种
 # 一个账户可绑多个 unit，一个 unit 可交易多个品种
+#
+# symbols 行为：
+#   配了 symbols  → 只做列出的品种（固定模式）
+#   不配 symbols  → 自动做 OKX 24h 成交量 Top 50 活跃品种（发现模式）
 units:
   - id: unit-btc                          # 单元唯一标识（自定义）
     account_id: paper-main                # 绑定的账户 ID（对应 accounts 中的 id）
-    symbols:                              # 该单元交易的品种列表
+    symbols:                              # 该单元交易的品种列表（不配=做全部活跃品种）
       - BTC-USDT-SWAP
       - ETH-USDT-SWAP
     # K线周期 — 决定策略评估的时间粒度
