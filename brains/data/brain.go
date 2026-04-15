@@ -224,7 +224,13 @@ func (b *DataBrain) Start(ctx context.Context) error {
 	// 3. 创建 OKX Provider
 	instIDs := b.activeList.List()
 	if len(instIDs) == 0 {
-		instIDs = []string{"BTC-USDT-SWAP", "ETH-USDT-SWAP"}
+		// Refresh failed (e.g. network issue) — seed with defaults so that
+		// the WebSocket subscription AND the activeList agree on the set of
+		// tracked instruments.  Without this, data arrives via WS but
+		// dispatchEvent drops it because activeList.IsActive returns false.
+		instIDs = []string{"BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"}
+		b.activeList.Seed(instIDs)
+		b.logger.Warn("active list empty after refresh, seeded defaults", "instruments", instIDs)
 	}
 	p := provider.NewOKXSwapProvider("okx-swap", provider.OKXSwapConfig{
 		Instruments: instIDs,

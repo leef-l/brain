@@ -185,6 +185,17 @@ func (l *ActiveList) Refresh(ctx context.Context) ([]InstrumentInfo, error) {
 	return result, nil
 }
 
+// Seed populates the active list with the given instrument IDs.
+// This is used as a fallback when Refresh fails (e.g. network issues)
+// to ensure the active set is not empty.
+func (l *ActiveList) Seed(ids []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, id := range ids {
+		l.active[id] = true
+	}
+}
+
 // IsActive returns true if the instrument is in the active list.
 func (l *ActiveList) IsActive(instID string) bool {
 	l.mu.RLock()
