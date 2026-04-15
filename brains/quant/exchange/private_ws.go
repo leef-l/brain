@@ -8,12 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/leef-l/brain/sdk/netutil"
 )
 
 // PrivateWSConfig configures an OKX private WebSocket connection.
@@ -129,7 +129,7 @@ func (c *PrivateWSConn) Stop() {
 func (c *PrivateWSConn) connect(ctx context.Context) error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
-		Proxy:            http.ProxyFromEnvironment,
+		Proxy:            netutil.ProxyFunc(),
 	}
 	header := make(map[string][]string)
 	if c.config.Simulated {

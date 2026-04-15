@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/leef-l/brain/sdk/netutil"
 )
 
 // OKXSwapConfig holds the configuration for OKXSwapProvider.
@@ -167,7 +168,7 @@ func (p *OKXSwapProvider) runLoop(ctx context.Context) {
 func (p *OKXSwapProvider) connect(ctx context.Context) error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
-		Proxy:            http.ProxyFromEnvironment,
+		Proxy:            netutil.ProxyFunc(),
 	}
 	conn, _, err := dialer.DialContext(ctx, p.config.WSURL, nil)
 	if err != nil {
