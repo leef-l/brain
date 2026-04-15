@@ -167,6 +167,7 @@ func (p *OKXSwapProvider) runLoop(ctx context.Context) {
 func (p *OKXSwapProvider) connect(ctx context.Context) error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		Proxy:            http.ProxyFromEnvironment,
 	}
 	conn, _, err := dialer.DialContext(ctx, p.config.WSURL, nil)
 	if err != nil {

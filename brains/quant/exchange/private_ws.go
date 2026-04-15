@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -128,6 +129,7 @@ func (c *PrivateWSConn) Stop() {
 func (c *PrivateWSConn) connect(ctx context.Context) error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
+		Proxy:            http.ProxyFromEnvironment,
 	}
 	header := make(map[string][]string)
 	if c.config.Simulated {
