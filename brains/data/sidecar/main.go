@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	data "github.com/leef-l/brain/brains/data"
 	"github.com/leef-l/brain/brains/data/store"
 	"github.com/leef-l/brain/sdk/sidecar"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Main is the entry point for the data brain sidecar binary.
@@ -37,22 +41,14 @@ func Main() {
 	}
 }
 
-// sidecarConfig mirrors the on-disk YAML/JSON configuration.
-type sidecarConfig struct {
-	PG         string `json:"pg_url"`
-	Instruments []string `json:"instruments"`
-	ActiveList struct {
-		MinVolume24h   float64 `json:"min_volume_24h"`
-		MaxInstruments int     `json:"max_instruments"`
-	} `json:"active_list"`
-	Backfill struct {
-		Enabled bool `json:"enabled"`
-		MaxDays int  `json:"max_days"`
-	} `json:"backfill"`
+// fullSidecarConfig wraps data.Config with an optional pg_url field.
+type fullSidecarConfig struct {
+	data.Config `json:",inline" yaml:",inline"`
+	PG          string `json:"pg_url" yaml:"pg_url"`
 }
 
 func loadConfig(logger *slog.Logger) (data.Config, store.Store) {
-	cfg := data.Config{
+	defaults := data.Config{
 		ActiveList: data.ActiveListConfig{
 			MinVolume24h:   10_000_000,
 			MaxInstruments: 100,
@@ -67,50 +63,50 @@ func loadConfig(logger *slog.Logger) (data.Config, store.Store) {
 		Validation: data.ValidationConfig{
 			MaxPriceJump: 0.10,
 		},
+		RingBuffer: data.RingBufferConfig{
+			CandleDepth:    1000,
+			TradeDepth:     5000,
+			OrderBookDepth: 100,
+		},
+		Feature: data.FeatureConfig{
+			Enabled:  true,
+			Windows:  []int{5, 10, 20, 60},
+			Interval: time.Second,
+		},
 	}
-
-	var st store.Store
 
 	configPath := os.Getenv("DATA_CONFIG")
-	if configPath != "" {
-		raw, err := os.ReadFile(configPath)
-		if err != nil {
-			logger.Warn("failed to read config file, using defaults", "path", configPath, "err", err)
-			return cfg, connectPG(os.Getenv("PG_URL"), logger)
-		}
-
-		var sc sidecarConfig
-		if err := json.Unmarshal(raw, &sc); err != nil {
-			logger.Warn("failed to parse config file, using defaults", "err", err)
-			return cfg, connectPG(os.Getenv("PG_URL"), logger)
-		}
-
-		if len(sc.Instruments) > 0 {
-			cfg.ActiveList.AlwaysInclude = sc.Instruments
-		}
-		if sc.ActiveList.MinVolume24h > 0 {
-			cfg.ActiveList.MinVolume24h = sc.ActiveList.MinVolume24h
-		}
-		if sc.ActiveList.MaxInstruments > 0 {
-			cfg.ActiveList.MaxInstruments = sc.ActiveList.MaxInstruments
-		}
-		if sc.Backfill.Enabled {
-			cfg.Backfill.Enabled = true
-		}
-		if sc.Backfill.MaxDays > 0 {
-			cfg.Backfill.MaxDays = sc.Backfill.MaxDays
-		}
-
-		pgURL := sc.PG
-		if pgURL == "" {
-			pgURL = os.Getenv("PG_URL")
-		}
-		st = connectPG(pgURL, logger)
-	} else {
-		st = connectPG(os.Getenv("PG_URL"), logger)
+	if configPath == "" {
+		logger.Info("DATA_CONFIG not set, using defaults")
+		return defaults, connectPG(os.Getenv("PG_URL"), logger)
 	}
 
-	return cfg, st
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		logger.Warn("failed to read config file, using defaults", "path", configPath, "err", err)
+		return defaults, connectPG(os.Getenv("PG_URL"), logger)
+	}
+
+	sc := fullSidecarConfig{Config: defaults}
+	ext := strings.ToLower(filepath.Ext(configPath))
+	switch ext {
+	case ".json":
+		err = json.Unmarshal(raw, &sc)
+	default:
+		err = yaml.Unmarshal(raw, &sc)
+	}
+	if err != nil {
+		logger.Warn("failed to parse config file, using defaults", "path", configPath, "err", err)
+		return defaults, connectPG(os.Getenv("PG_URL"), logger)
+	}
+
+	logger.Info("config loaded", "path", configPath)
+
+	pgURL := sc.PG
+	if pgURL == "" {
+		pgURL = os.Getenv("PG_URL")
+	}
+	return sc.Config, connectPG(pgURL, logger)
 }
 
 func connectPG(pgURL string, logger *slog.Logger) store.Store {

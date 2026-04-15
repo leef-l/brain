@@ -27,6 +27,11 @@ func (BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	f := view.Feature()
 	tf := view.Timeframe()
 
+	// Guard: feature vector not yet populated.
+	if f.ATRRatio(tf) == 0 && f.VolumeRatio(tf) == 0 {
+		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "feature vector not ready", Timestamp: time.Now().UTC()}
+	}
+
 	// Breakout detection still needs candles for high/low extremes
 	candles := view.Candles(tf)
 	if len(candles) < 30 {

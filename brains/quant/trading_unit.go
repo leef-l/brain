@@ -59,7 +59,9 @@ type TradingUnitConfig struct {
 	Sizer      *risk.BayesianSizer
 	// TradeStore override; nil = use MemoryStore (data lost on restart).
 	// Pass a PGStore for persistent trade history.
-	TradeStore tradestore.Store
+	TradeStore  tradestore.Store
+	// RouteConfig for per-account routing (weight factor, allowed strategies/symbols).
+	RouteConfig RouteConfig
 }
 
 // NewTradingUnit creates a TradingUnit with defaults for unset fields.
@@ -78,10 +80,13 @@ func NewTradingUnit(cfg TradingUnitConfig, logger *slog.Logger) *TradingUnit {
 		agg = strategy.NewRegimeAwareAggregator()
 	}
 
+	// Deep-copy guard so per-unit adjustments don't pollute shared state.
 	guard := cfg.Guard
 	if guard == nil {
 		guard = risk.DefaultAdaptiveGuard()
 	}
+	guardCopy := *guard // value copy of AdaptiveGuard (includes Base by value)
+	guard = &guardCopy
 
 	sizer := cfg.Sizer
 	if sizer == nil {
@@ -102,9 +107,9 @@ func NewTradingUnit(cfg TradingUnitConfig, logger *slog.Logger) *TradingUnit {
 		maxLev = cfg.Account.MaxLeverage()
 	}
 
-	// Adapt guard's MaxLeverage based on account capabilities
+	// Adapt guard's MaxLeverage based on account capabilities.
+	// Safe: we're modifying the per-unit copy, not the shared original.
 	if cfg.Account != nil && !cfg.Account.CanShort() {
-		// For markets that don't support shorting, guard filters Short signals
 		guard.Base.MaxLeverage = 1
 	}
 	if maxLev > 0 && maxLev < guard.Base.MaxLeverage {
@@ -135,6 +140,7 @@ func NewTradingUnit(cfg TradingUnitConfig, logger *slog.Logger) *TradingUnit {
 		Timeframe:   tf,
 		MaxLeverage: maxLev,
 		Enabled:     true,
+		RouteConfig: cfg.RouteConfig,
 	}
 }
 

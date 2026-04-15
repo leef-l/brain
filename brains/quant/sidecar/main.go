@@ -195,6 +195,12 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 	// Build quant brain
 	qb := quant.New(cfg.Brain, buffers, logger.With("brain", "quant"))
 
+	// Apply global risk config from YAML (zero values → use defaults).
+	if cfg.GlobalRisk.MaxGlobalExposurePct > 0 {
+		qb.SetGlobalRiskConfig(cfg.GlobalRisk)
+		logger.Info("global risk config applied from config file")
+	}
+
 	// Optional PG trade store
 	pgURL := os.Getenv("PG_URL")
 	var pgStore *tradestore.PGStore
@@ -244,6 +250,15 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		// Build aggregator with timeframe-adaptive thresholds.
 		agg := cfg.Strategy.BuildAggregator(tf)
 
+		// Resolve route config from account definition.
+		var routeCfg quant.RouteConfig
+		for _, ac := range cfg.Accounts {
+			if ac.ID == uc.AccountID && ac.Route != nil {
+				routeCfg = *ac.Route
+				break
+			}
+		}
+
 		unit := quant.NewTradingUnit(quant.TradingUnitConfig{
 			ID:          uc.ID,
 			Account:     acc,
@@ -254,6 +269,7 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			Aggregator:  agg,
 			Guard:       guard,
 			Sizer:       sizer,
+			RouteConfig: routeCfg,
 		}, logger)
 		qb.AddUnit(unit)
 		logger.Info("unit registered", "id", uc.ID, "timeframe", tf,

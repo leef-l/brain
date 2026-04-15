@@ -34,6 +34,11 @@ func (TrendFollower) computeFromFeatures(view MarketView) Signal {
 	adxVal := f.ADX(tf)
 	atrRatio := f.ATRRatio(tf)
 
+	// Guard: feature vector not yet populated (EMA/ATR still warming up).
+	if atrRatio == 0 && ema9dev == 0 && ema21dev == 0 {
+		return Signal{Strategy: "TrendFollower", Direction: DirectionHold, Reason: "feature vector not ready", Timestamp: time.Now().UTC()}
+	}
+
 	// EMA alignment: bullish = all positive & 9 > 21
 	bullish := ema9dev > 0 && ema21dev > 0 && ema55dev > 0 &&
 		ema9dev > ema21dev &&

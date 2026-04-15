@@ -63,6 +63,14 @@ type Metrics struct {
 	FeatureComputeMs  atomic.Int64 // 最后一次计算耗时（毫秒）
 }
 
+// candleDepth returns the ring buffer candle depth from config with a default.
+func candleDepth(cfg Config) int {
+	if cfg.RingBuffer.CandleDepth > 0 {
+		return cfg.RingBuffer.CandleDepth
+	}
+	return 1024
+}
+
 // New 创建 DataBrain（不启动）。store 允许为 nil（仅测试用途）。
 func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 	if logger == nil {
@@ -100,11 +108,19 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 	}
 	al := active.New(alCfg, &http.Client{Timeout: 30 * time.Second})
 
-	// Validator
+	// Validator — use config values with sensible fallbacks.
+	staleMs := int64(300000)
+	if cfg.Validation.StaleTimeout > 0 {
+		staleMs = cfg.Validation.StaleTimeout.Milliseconds()
+	}
+	gapMs := int64(5000)
+	if cfg.Validation.MaxGapDuration > 0 {
+		gapMs = cfg.Validation.MaxGapDuration.Milliseconds()
+	}
 	vCfg := validator.Config{
 		MaxPriceChangePct:    cfg.Validation.MaxPriceJump * 100, // Config 用比率，Validator 用百分比
-		MaxFutureTSMs:        5000,
-		MaxStaleTSMs:         300000,
+		MaxFutureTSMs:        gapMs,
+		MaxStaleTSMs:         staleMs,
 		GapBackfillThreshold: 3,
 	}
 	if vCfg.MaxPriceChangePct == 0 {
@@ -142,7 +158,7 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 		tradeflow:  tradeflow,
 		feature:    feat,
 		assembler:  assembler,
-		buffers:    ringbuf.NewBufferManager(1024),
+		buffers:    ringbuf.NewBufferManager(candleDepth(cfg)),
 	}
 }
 
@@ -372,7 +388,11 @@ func (b *DataBrain) dispatchEvent(event provider.DataEvent) {
 
 // featureLoop 每秒计算特征向量并写入 Ring Buffer。
 func (b *DataBrain) featureLoop(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Second)
+	interval := b.config.Feature.Interval
+	if interval <= 0 {
+		interval = 1 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	persistTicker := time.NewTicker(1 * time.Minute)

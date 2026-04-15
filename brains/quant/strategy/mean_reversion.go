@@ -33,6 +33,13 @@ func (MeanReversion) computeFromFeatures(view MarketView) Signal {
 	volRatio := f.VolumeRatio(tf) // current vol / SMA vol
 	atrRatio := f.ATRRatio(tf)
 
+	// Guard: if core indicators are all zero the feature vector is not yet
+	// populated (indicators still warming up). Returning a signal here would
+	// be spurious — e.g. bbPos==0 would look like extreme oversold.
+	if atrRatio == 0 && bbPos == 0 && rsiVal == 0 {
+		return Signal{Strategy: "MeanReversion", Direction: DirectionHold, Reason: "feature vector not ready", Timestamp: time.Now().UTC()}
+	}
+
 	// Mean reversion: price near bands + low ADX (ranging market) + no volume spike
 	long := (bbPos < 0.15 || (bbPos < 0.35 && rsiVal < 0.35)) && volRatio <= 1.2
 	short := (bbPos > 0.85 || (bbPos > 0.65 && rsiVal > 0.65)) && volRatio <= 1.2

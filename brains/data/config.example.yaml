@@ -12,6 +12,8 @@ active_list:
     - BTC-USDT-SWAP
     - ETH-USDT-SWAP
     - SOL-USDT-SWAP
+  rank_by_volatility: false      # true = 按 24h 振幅排名（而非成交量），适合量化场景
+  min_amplitude_pct: 0           # 最低 24h 振幅百分比，如 2.0 = 过滤振幅 < 2% 的品种
 
 # --- 数据源 ---
 providers:

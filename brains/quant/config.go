@@ -73,11 +73,12 @@ type RiskConfig struct {
 
 // FullConfig is the complete quant brain configuration.
 type FullConfig struct {
-	Brain    Config          `json:"brain" yaml:"brain"`
-	Accounts []AccountConfig `json:"accounts" yaml:"accounts"`
-	Units    []UnitConfig    `json:"units" yaml:"units"`
-	Strategy StrategyConfig  `json:"strategy" yaml:"strategy"`
-	Risk     RiskConfig      `json:"risk" yaml:"risk"`
+	Brain      Config            `json:"brain" yaml:"brain"`
+	Accounts   []AccountConfig   `json:"accounts" yaml:"accounts"`
+	Units      []UnitConfig      `json:"units" yaml:"units"`
+	Strategy   StrategyConfig    `json:"strategy" yaml:"strategy"`
+	Risk       RiskConfig        `json:"risk" yaml:"risk"`
+	GlobalRisk risk.GlobalRiskConfig `json:"global_risk" yaml:"global_risk"`
 }
 
 // DefaultFullConfig returns a minimal working configuration with a paper account.
@@ -116,7 +117,13 @@ func (sc StrategyConfig) BuildAggregator(timeframe string) *strategy.RegimeAware
 	base := agg.BaseAggregator()
 
 	if len(sc.Weights) > 0 {
-		base.Weights = sc.Weights
+		// Deep copy: each unit gets its own map so regime-aware aggregator
+		// can swap weights per-regime without cross-unit pollution.
+		wCopy := make(map[string]float64, len(sc.Weights))
+		for k, v := range sc.Weights {
+			wCopy[k] = v
+		}
+		base.Weights = wCopy
 	}
 	if sc.LongThreshold > 0 {
 		base.LongThreshold = sc.LongThreshold

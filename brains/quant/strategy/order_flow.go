@@ -34,6 +34,11 @@ func (OrderFlow) computeFromFeatures(view MarketView) Signal {
 	buySell := f.BuySellRatio()
 	spread := f.Spread()
 
+	// Guard: microstructure data not yet populated.
+	if spread == 0 && imbalance == 0 && toxicity == 0 && density == 0 {
+		return Signal{Strategy: "OrderFlow", Direction: DirectionHold, Reason: "microstructure data not ready", Timestamp: time.Now().UTC()}
+	}
+
 	priceNow := f.CurrentPrice()
 	atrRatio := f.ATRRatio("1m") // use shortest TF for order flow
 	atrDist := atrRatio * priceNow

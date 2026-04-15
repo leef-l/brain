@@ -59,7 +59,6 @@ accounts:
   #     #   - BTC-USDT-SWAP
 
 # ==================== 交易单元 ====================
-# ==================== 交易单元 ====================
 # 交易单元 = "交易员"，绑定一个账户，负责交易指定品种
 # 一个账户可绑多个 unit，一个 unit 可交易多个品种
 #
@@ -163,13 +162,12 @@ risk:
     scale_fraction: 0.25               # Kelly 缩放因子（1/4 Kelly）
 
 # --- 跨账户全局风控 (GlobalRiskGuard) ---
-# 通过命令行或 Go 代码配置，以下为默认值参考：
-#
-# global_risk:
-#   max_global_exposure_pct: 50        # 所有账号总敞口/总权益上限
-#   max_global_same_direction: 30      # 同方向总敞口上限
-#   max_global_daily_loss: 5           # 所有账号累计日亏损上限
-#   max_symbol_exposure: 15            # 单品种跨账号总敞口上限
+# 不配置则使用默认值
+global_risk:
+  max_global_exposure_pct: 50          # 所有账号总敞口/总权益上限
+  max_global_same_direction: 30        # 同方向总敞口上限
+  max_global_daily_loss: 5             # 所有账号累计日亏损上限
+  max_symbol_exposure: 15              # 单品种跨账号总敞口上限
 
 # ==================== LLM 复审 (Review) =====================
 # 触发条件满足任一即请求中央大脑 LLM 审查

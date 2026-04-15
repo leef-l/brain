@@ -144,6 +144,11 @@ func main() {
 	// Build quant brain
 	qb := quant.New(cfg.Brain, buffers, logger.With("brain", "quant"))
 
+	// Apply global risk config from YAML (zero values → use defaults).
+	if cfg.GlobalRisk.MaxGlobalExposurePct > 0 {
+		qb.SetGlobalRiskConfig(cfg.GlobalRisk)
+	}
+
 	// Wire up PG-backed trace store if available
 	if pgStore != nil {
 		pgTraceStore := tracer.NewPGTraceStore(pgStore.Pool())
@@ -154,6 +159,10 @@ func main() {
 		qb.SetTraceStore(pgTraceStore)
 		logger.Info("trace store: PostgreSQL")
 	}
+
+	// Build shared risk components from config.
+	guard := cfg.Risk.BuildGuard()
+	sizer := cfg.Risk.BuildSizer()
 
 	for _, uc := range cfg.Units {
 		acc, ok := accounts[uc.AccountID]
@@ -172,6 +181,21 @@ func main() {
 			ts = pgStore
 		}
 
+		tf := uc.Timeframe
+		if tf == "" {
+			tf = cfg.Brain.DefaultTimeframe
+		}
+		agg := cfg.Strategy.BuildAggregator(tf)
+
+		// Resolve route config from account.
+		var routeCfg quant.RouteConfig
+		for _, ac := range cfg.Accounts {
+			if ac.ID == uc.AccountID && ac.Route != nil {
+				routeCfg = *ac.Route
+				break
+			}
+		}
+
 		unit := quant.NewTradingUnit(quant.TradingUnitConfig{
 			ID:          uc.ID,
 			Account:     acc,
@@ -179,6 +203,10 @@ func main() {
 			Timeframe:   uc.Timeframe,
 			MaxLeverage: uc.MaxLeverage,
 			TradeStore:  ts,
+			Aggregator:  agg,
+			Guard:       guard,
+			Sizer:       sizer,
+			RouteConfig: routeCfg,
 		}, logger)
 		qb.AddUnit(unit)
 	}
