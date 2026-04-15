@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
+
+	"github.com/leef-l/brain/sdk/agent"
 )
 
 // handleSlashCommand processes a /command and returns (handled, shouldQuit).
@@ -25,6 +30,9 @@ func handleSlashCommand(input string, state *chatState) (bool, bool) {
 		fmt.Println("  /tools             List available tools")
 		fmt.Println("  /sandbox           Show sandbox (allowed directories)")
 		fmt.Println("  /sandbox <dir>     Authorize an additional directory")
+		fmt.Println("  /brain             List specialist brains and status")
+		fmt.Println("  /brain start <kind> Start a specialist brain sidecar")
+		fmt.Println("  /brain stop <kind>  Stop a running sidecar (or 'all')")
 		fmt.Println("  /keys              Show keybindings config path")
 		fmt.Println("  /exit              Exit chat")
 		fmt.Println()
@@ -106,9 +114,101 @@ func handleSlashCommand(input string, state *chatState) (bool, bool) {
 		fmt.Println()
 		return true, false
 
+	case cmd == "/brain", cmd == "/brain list", cmd == "/brain ls":
+		handleBrainList(state)
+		return true, false
+
+	case strings.HasPrefix(cmd, "/brain start "):
+		kind := strings.TrimSpace(cmd[len("/brain start "):])
+		handleBrainStart(state, kind)
+		return true, false
+
+	case strings.HasPrefix(cmd, "/brain stop "):
+		kind := strings.TrimSpace(cmd[len("/brain stop "):])
+		handleBrainStop(state, kind)
+		return true, false
+
+	case cmd == "/brain help":
+		fmt.Println("  /brain              List specialist brains and status")
+		fmt.Println("  /brain start <kind> Start a specialist brain sidecar")
+		fmt.Println("  /brain stop <kind>  Stop a specialist brain sidecar")
+		fmt.Println("  /brain stop all     Stop all running sidecars")
+		fmt.Println()
+		return true, false
+
 	case cmd == "/exit" || cmd == "/quit" || cmd == "/q":
 		return true, true
 	}
 
 	return false, false
+}
+
+func handleBrainList(state *chatState) {
+	if state.orchestrator == nil {
+		fmt.Println("  No orchestrator (solo mode, no specialist brains)")
+		fmt.Println()
+		return
+	}
+	brains := state.orchestrator.ListBrains()
+	if len(brains) == 0 {
+		fmt.Println("  No specialist brains available")
+		fmt.Println()
+		return
+	}
+	sort.Slice(brains, func(i, j int) bool { return brains[i].Kind < brains[j].Kind })
+	fmt.Println("  Specialist brains:")
+	for _, b := range brains {
+		status := "\033[2m●\033[0m stopped"
+		if b.Running {
+			status = "\033[32m●\033[0m running"
+		}
+		fmt.Printf("    %-12s %s", b.Kind, status)
+		if b.Binary != "" {
+			fmt.Printf("  \033[2m(%s)\033[0m", b.Binary)
+		}
+		fmt.Println()
+	}
+	fmt.Println()
+}
+
+func handleBrainStart(state *chatState, kind string) {
+	if state.orchestrator == nil {
+		fmt.Println("  \033[1;31m! No orchestrator available\033[0m")
+		fmt.Println()
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	fmt.Printf("  Starting %s sidecar...\n", kind)
+	if err := state.orchestrator.StartBrain(ctx, agent.Kind(kind)); err != nil {
+		fmt.Printf("  \033[1;31m! Failed: %v\033[0m\n\n", err)
+		return
+	}
+	fmt.Printf("  \033[32m✓ %s sidecar started\033[0m\n\n", kind)
+}
+
+func handleBrainStop(state *chatState, kind string) {
+	if state.orchestrator == nil {
+		fmt.Println("  \033[1;31m! No orchestrator available\033[0m")
+		fmt.Println()
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if kind == "all" {
+		fmt.Println("  Stopping all sidecars...")
+		if err := state.orchestrator.Shutdown(ctx); err != nil {
+			fmt.Printf("  \033[1;31m! Error: %v\033[0m\n\n", err)
+			return
+		}
+		fmt.Println("  \033[32m✓ All sidecars stopped\033[0m")
+		fmt.Println()
+		return
+	}
+	fmt.Printf("  Stopping %s sidecar...\n", kind)
+	if err := state.orchestrator.StopBrain(ctx, agent.Kind(kind)); err != nil {
+		fmt.Printf("  \033[1;31m! Failed: %v\033[0m\n\n", err)
+		return
+	}
+	fmt.Printf("  \033[32m✓ %s sidecar stopped\033[0m\n\n", kind)
 }

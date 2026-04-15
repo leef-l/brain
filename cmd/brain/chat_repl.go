@@ -85,9 +85,6 @@ func runChat(args []string) int {
 			baseURL:     *baseURL,
 			model:       *modelFlag,
 		})
-		if orch != nil {
-			fmt.Printf("  \033[2mDelegates:\033[0m %v\n", orch.AvailableKinds())
-		}
 	}
 
 	env := newExecutionEnvironment(*workDir, mode, cfg, nil, true)
@@ -135,7 +132,17 @@ func runChat(args []string) int {
 	fmt.Printf("  \033[2mMode:\033[0m     %s\n", mode.styledLabel())
 	fmt.Printf("  \033[2mWorkdir:\033[0m  %s\n", env.workdir)
 	fmt.Printf("  \033[2mKeys:\033[0m     Esc cancel, Ctrl+D quit, Ctrl+W mode, /help\n")
+	if orch != nil {
+		fmt.Printf("  \033[2mDelegates:\033[0m %v\n", orch.AvailableKinds())
+	}
 	fmt.Println()
+
+	// Startup diagnostics: verify provider connectivity.
+	if !wantsMockProvider(*providerFlag, modelInput) {
+		if diag := runStartupDiagnostics(providerSession, cfg); diag != "" {
+			fmt.Println(diag)
+		}
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)

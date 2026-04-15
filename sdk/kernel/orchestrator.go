@@ -201,6 +201,58 @@ func (o *Orchestrator) syncLLMModels() {
 	}
 }
 
+// StartBrain explicitly starts a sidecar for the given kind. Returns an
+// error if the kind is not available or the sidecar fails to start.
+func (o *Orchestrator) StartBrain(ctx context.Context, kind agent.Kind) error {
+	if !o.available[kind] {
+		return fmt.Errorf("brain %q not available (no sidecar binary found)", kind)
+	}
+	_, err := o.getOrStartSidecar(ctx, kind)
+	return err
+}
+
+// StopBrain stops a running sidecar for the given kind. No-op if not running.
+func (o *Orchestrator) StopBrain(ctx context.Context, kind agent.Kind) error {
+	o.mu.Lock()
+	ag, ok := o.active[kind]
+	if ok {
+		delete(o.active, kind)
+	}
+	o.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	ag.Shutdown(ctx)
+	return o.runner.Stop(ctx, kind)
+}
+
+// BrainStatus describes the state of a specialist brain.
+type BrainStatus struct {
+	Kind    agent.Kind `json:"kind"`
+	Running bool       `json:"running"`
+	Binary  string     `json:"binary,omitempty"`
+}
+
+// ListBrains returns the status of all available specialist brains.
+func (o *Orchestrator) ListBrains() []BrainStatus {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	var list []BrainStatus
+	for kind := range o.available {
+		status := BrainStatus{
+			Kind:    kind,
+			Running: o.isAlive(o.active[kind]),
+		}
+		if o.binResolver != nil {
+			if path, err := o.binResolver(kind); err == nil {
+				status.Binary = path
+			}
+		}
+		list = append(list, status)
+	}
+	return list
+}
+
 // Register dynamically adds a brain registration at runtime. If a sidecar
 // binary is found (via reg.Binary or binResolver), the kind becomes
 // immediately available for delegation. This enables hot-plugging new
