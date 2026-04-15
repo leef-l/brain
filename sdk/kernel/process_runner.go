@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 
 	brain "github.com/leef-l/brain"
@@ -75,6 +74,10 @@ type processAgent struct {
 	mu    sync.Mutex
 	ready bool
 	done  chan struct{}
+
+	// exited is closed when the process exits (via the background Wait goroutine).
+	// ProcessExited checks this to detect crashed sidecars cross-platform.
+	exited chan struct{}
 }
 
 // Kind returns the brain role.
@@ -125,25 +128,22 @@ func (a *processAgent) Shutdown(ctx context.Context) error {
 		_ = a.sidecar.TransitionTo(protocol.StateClosed)
 	}
 	if a.cmd != nil && a.cmd.Process != nil {
-		done := make(chan error, 1)
-		go func() { done <- a.cmd.Wait() }()
-
-		// Grace period: wait up to 3s for the process to exit on its own
-		// after receiving the shutdown notification and pipe closure.
+		// Wait for the process to exit. The background goroutine started
+		// in Start() calls cmd.Wait() and closes a.exited on completion.
 		grace := 3 * time.Second
 		timer := time.NewTimer(grace)
 		defer timer.Stop()
 
 		select {
-		case <-done:
+		case <-a.exited:
 			// Process exited cleanly.
 		case <-timer.C:
 			// Grace period expired — force kill.
 			_ = a.cmd.Process.Kill()
-			<-done
+			<-a.exited
 		case <-ctx.Done():
 			_ = a.cmd.Process.Kill()
-			<-done
+			<-a.exited
 		}
 	}
 	if a.cancelFunc != nil {
@@ -238,7 +238,16 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 		sidecar:    sidecarInst,
 		cancelFunc: cancel,
 		done:       make(chan struct{}),
+		exited:     make(chan struct{}),
 	}
+
+	// Background goroutine: reap the process and close the exited channel
+	// so ProcessExited() works cross-platform (including Windows where
+	// Signal(0) is unsupported).
+	go func() {
+		_ = cmd.Wait()
+		close(pa.exited)
+	}()
 
 	// Run the initialize handshake with timeout.
 	initCtx, initCancel := context.WithTimeout(ctx, initTimeout)
@@ -491,18 +500,18 @@ func PerformInitialize(ctx context.Context, rpc protocol.BidirRPC, protoVer, ker
 
 // ProcessExited reports whether the underlying process has exited.
 // Used by the Orchestrator's health check to detect crashed sidecars.
+// This works cross-platform (including Windows) by checking the exited
+// channel which is closed by the background Wait goroutine.
 func (a *processAgent) ProcessExited() bool {
 	if a.cmd == nil || a.cmd.Process == nil {
 		return true
 	}
-	// cmd.ProcessState is non-nil after Wait() returns.
-	if a.cmd.ProcessState != nil {
+	select {
+	case <-a.exited:
 		return true
+	default:
+		return false
 	}
-	// Try a non-blocking check: send signal 0 to test if process is alive.
-	// On Unix, this returns nil if the process exists and we have permission.
-	err := a.cmd.Process.Signal(syscall.Signal(0))
-	return err != nil
 }
 
 // RPC returns the underlying BidirRPC session. Implements agent.RPCAgent.
