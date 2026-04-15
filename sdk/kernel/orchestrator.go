@@ -222,7 +222,9 @@ func (o *Orchestrator) StopBrain(ctx context.Context, kind agent.Kind) error {
 	if !ok {
 		return nil
 	}
-	ag.Shutdown(ctx)
+	if ag != nil {
+		ag.Shutdown(ctx)
+	}
 	return o.runner.Stop(ctx, kind)
 }
 
@@ -488,7 +490,8 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 	o.mu.Lock()
 
 	// Reuse existing sidecar if available AND alive.
-	if ag, ok := o.active[kind]; ok {
+	// Skip nil placeholders — those are handled by the "starting" check below.
+	if ag, ok := o.active[kind]; ok && ag != nil {
 		if o.isAlive(ag) {
 			o.mu.Unlock()
 			return ag, nil
@@ -508,11 +511,26 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 	// Mark this kind as "starting" by inserting nil so that concurrent
 	// callers don't race to start duplicate sidecars.
 	if ag, starting := o.active[kind]; starting && ag == nil {
-		// Another goroutine is already starting this kind — wait outside lock.
+		// Another goroutine is already starting this kind — wait outside lock
+		// with a bounded retry loop instead of recursion (avoids stack overflow).
 		o.mu.Unlock()
-		// Brief back-off then retry; the other goroutine should finish soon.
-		time.Sleep(100 * time.Millisecond)
-		return o.getOrStartSidecar(ctx, kind)
+
+		resolved, resolvedAg, resolvedErr := o.waitForSidecar(ctx, kind)
+		if resolvedErr != nil {
+			return nil, resolvedErr
+		}
+		if resolved {
+			return resolvedAg, nil
+		}
+
+		// Starter failed and removed placeholder — we'll try starting ourselves.
+		o.mu.Lock()
+		// Re-check: maybe another waiter already started it.
+		if ag, ok := o.active[kind]; ok && ag != nil {
+			o.mu.Unlock()
+			return ag, nil
+		}
+		// Fall through to start it ourselves.
 	}
 	o.active[kind] = nil // placeholder: "starting"
 	o.mu.Unlock()
@@ -565,6 +583,34 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 	rpc.Handle(protocol.MethodSpecialistCallTool, o.HandleSpecialistCallToolFrom(callerKind))
 }
 
+// waitForSidecar waits for another goroutine to finish starting a sidecar.
+// Returns (resolved, agent, err):
+//   - resolved=true, agent!=nil: sidecar started successfully by another goroutine
+//   - resolved=false: starter failed and removed placeholder, caller should try starting
+//   - err!=nil: context cancelled or timeout
+func (o *Orchestrator) waitForSidecar(ctx context.Context, kind agent.Kind) (bool, agent.Agent, error) {
+	for attempts := 0; attempts < 50; attempts++ { // 50 × 100ms = 5s max
+		time.Sleep(100 * time.Millisecond)
+		if ctx.Err() != nil {
+			return false, nil, ctx.Err()
+		}
+		o.mu.Lock()
+		ag, ok := o.active[kind]
+		o.mu.Unlock()
+		if !ok {
+			// Starter failed and removed placeholder.
+			return false, nil, nil
+		}
+		if ag != nil {
+			// Starter succeeded.
+			return true, ag, nil
+		}
+		// Still nil placeholder — keep waiting.
+	}
+	// Timed out waiting.
+	return false, nil, fmt.Errorf("timeout waiting for %s sidecar to start", kind)
+}
+
 // removeSidecar removes a sidecar from the active pool and attempts cleanup.
 func (o *Orchestrator) removeSidecar(kind agent.Kind) {
 	o.mu.Lock()
@@ -574,7 +620,7 @@ func (o *Orchestrator) removeSidecar(kind agent.Kind) {
 	}
 	o.mu.Unlock()
 
-	if ok {
+	if ok && ag != nil {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		ag.Shutdown(shutCtx)

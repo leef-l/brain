@@ -140,6 +140,11 @@ func (r *AccountRouter) dispatchToUnit(
 	}
 
 	sig := bestSignalFromAgg(signal)
+	if sig.Entry <= 0 {
+		dr.Reason = "no valid signal with entry price"
+		return dr
+	}
+
 	sizeReq := risk.BayesianSizeRequest{
 		AccountEquity: balance.Equity,
 		Signal:        sig,
@@ -158,6 +163,11 @@ func (r *AccountRouter) dispatchToUnit(
 	if unit.RouteConfig.WeightFactor > 0 && unit.RouteConfig.WeightFactor != 1.0 {
 		sized.Quantity *= unit.RouteConfig.WeightFactor
 		sized.Notional *= unit.RouteConfig.WeightFactor
+	}
+
+	if sized.Quantity <= 0 || sized.Notional <= 0 {
+		dr.Reason = "position size zero after weight factor"
+		return dr
 	}
 
 	// Build risk order request
@@ -216,7 +226,7 @@ func (r *AccountRouter) dispatchToUnit(
 		dr.Quantity = sized.Quantity
 
 		// Persist trade record
-		unit.TradeStore.Save(ctx, tradestore.TradeRecord{
+		if err := unit.TradeStore.Save(ctx, tradestore.TradeRecord{
 			ID:         result.OrderID,
 			UnitID:     unit.ID,
 			Symbol:     view.Symbol(),
@@ -224,7 +234,12 @@ func (r *AccountRouter) dispatchToUnit(
 			EntryPrice: sig.Entry,
 			Quantity:   sized.Quantity,
 			EntryTime:  result.Timestamp,
-		})
+		}); err != nil {
+			r.logger.Error("trade store save failed",
+				"unit", unit.ID,
+				"orderID", result.OrderID,
+				"err", err)
+		}
 
 		r.logger.Info("routed order filled",
 			"unit", unit.ID,

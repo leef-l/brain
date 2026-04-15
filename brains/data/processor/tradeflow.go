@@ -12,10 +12,12 @@ type tradeEntry struct {
 	Size  float64
 	Side  string // "buy" / "sell"
 	TS    int64
+	IsBig bool // 入场时是否被判定为大单
 }
 
 // FlowWindow 逐笔成交滑动窗口分析器。
 type FlowWindow struct {
+	mu         sync.RWMutex
 	trades     []tradeEntry
 	windowMs   int64   // 窗口大小（毫秒）
 	buyVolume  float64
@@ -40,16 +42,8 @@ func NewFlowWindow(windowMs int64) *FlowWindow {
 
 // OnTrade 处理新成交。
 func (w *FlowWindow) OnTrade(t provider.Trade) {
-	entry := tradeEntry{
-		Price: t.Price,
-		Size:  t.Size,
-		Side:  t.Side,
-		TS:    t.Timestamp,
-	}
-
-	// 添加到 trades
-	w.trades = append(w.trades, entry)
-	w.tradeCount++
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	// 累加买卖量
 	if t.Side == "buy" {
@@ -64,13 +58,25 @@ func (w *FlowWindow) OnTrade(t provider.Trade) {
 	w.avgSize = w.totalSize / float64(w.totalCount)
 
 	// 判断大单: size > avgSize * 3
-	if t.Size > w.avgSize*3 {
+	// 必须在 append 之前确定 IsBig，因为 append 是值拷贝。
+	isBig := w.avgSize > 0 && t.Size > w.avgSize*3
+	if isBig {
 		if t.Side == "buy" {
 			w.bigBuyVol += t.Size
 		} else {
 			w.bigSellVol += t.Size
 		}
 	}
+
+	entry := tradeEntry{
+		Price: t.Price,
+		Size:  t.Size,
+		Side:  t.Side,
+		TS:    t.Timestamp,
+		IsBig: isBig,
+	}
+	w.trades = append(w.trades, entry)
+	w.tradeCount++
 
 	// 清理过期数据
 	now := t.Timestamp
@@ -88,8 +94,14 @@ func (w *FlowWindow) cleanup(now int64) {
 		// 减去过期的 volume
 		if e.Side == "buy" {
 			w.buyVolume -= e.Size
+			if e.IsBig {
+				w.bigBuyVol -= e.Size
+			}
 		} else {
 			w.sellVolume -= e.Size
+			if e.IsBig {
+				w.bigSellVol -= e.Size
+			}
 		}
 		w.tradeCount--
 		i++
@@ -97,12 +109,27 @@ func (w *FlowWindow) cleanup(now int64) {
 	if i > 0 {
 		w.trades = w.trades[i:]
 	}
+	// Clamp to avoid floating-point drift below zero.
+	if w.buyVolume < 0 {
+		w.buyVolume = 0
+	}
+	if w.sellVolume < 0 {
+		w.sellVolume = 0
+	}
+	if w.bigBuyVol < 0 {
+		w.bigBuyVol = 0
+	}
+	if w.bigSellVol < 0 {
+		w.bigSellVol = 0
+	}
 }
 
 // Toxicity 返回成交毒性指标。
 // |buyVolume - sellVolume| / (buyVolume + sellVolume)
 // 0 = 均衡, 1 = 完全单边
 func (w *FlowWindow) Toxicity() float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	total := w.buyVolume + w.sellVolume
 	if total <= 0 {
 		return 0
@@ -116,6 +143,8 @@ func (w *FlowWindow) Toxicity() float64 {
 
 // BigBuyRatio 返回大单买入占比。
 func (w *FlowWindow) BigBuyRatio() float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	total := w.buyVolume + w.sellVolume
 	if total <= 0 {
 		return 0
@@ -125,6 +154,8 @@ func (w *FlowWindow) BigBuyRatio() float64 {
 
 // BigSellRatio 返回大单卖出占比。
 func (w *FlowWindow) BigSellRatio() float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	total := w.buyVolume + w.sellVolume
 	if total <= 0 {
 		return 0
@@ -134,6 +165,8 @@ func (w *FlowWindow) BigSellRatio() float64 {
 
 // TradeDensityRatio 返回每秒成交笔数。
 func (w *FlowWindow) TradeDensityRatio() float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	windowSec := float64(w.windowMs) / 1000.0
 	if windowSec <= 0 {
 		return 0
@@ -143,6 +176,8 @@ func (w *FlowWindow) TradeDensityRatio() float64 {
 
 // BuySellRatio 返回买入量占比，0.5 = 均衡。
 func (w *FlowWindow) BuySellRatio() float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	total := w.buyVolume + w.sellVolume
 	if total <= 0 {
 		return 0

@@ -94,17 +94,26 @@ func (qb *QuantBrain) RecoverState(ctx context.Context, cfg RecoveryConfig) erro
 
 // recoverUnit recovers a single TradingUnit's state.
 func recoverUnit(ctx context.Context, unit *TradingUnit, cfg RecoveryConfig, logger *slog.Logger) (restored int, mismatches int, err error) {
-	// Step 1: Load historical trades from persistent store into Oracle.
-	// If the store is PGStore, it has data; MemoryStore starts empty.
+	// Step 1: Load historical trades from persistent store and replay them
+	// through the Oracle so win-rate/avg-win/avg-loss statistics are populated.
+	// PGStore.Query already reads from PG, so Oracle.StatsForSizer will work.
+	// However, on startup the Oracle only sees trades in the Store. If the
+	// Store is PGStore, data is already there. If wrapping a MemoryStore with
+	// PG backup, we need to load records into the Store.
 	if pgStore, ok := unit.TradeStore.(*tradestore.PGStore); ok {
 		records, loadErr := pgStore.LoadAll(ctx)
 		if loadErr != nil {
 			return 0, 0, fmt.Errorf("load trades: %w", loadErr)
 		}
 		restored = len(records)
+		// Oracle reads from the Store via Query, so PGStore already has data.
+		// Force an initial stats computation to validate data is accessible.
+		stats := unit.TradeStore.Stats(tradestore.Filter{UnitID: unit.ID})
 		logger.Info("restored trade history",
 			"unit", unit.ID,
-			"records", restored)
+			"records", restored,
+			"total_pnl", stats.TotalPnL,
+			"win_rate", stats.WinRate)
 	}
 
 	// Step 2: Validate with exchange positions (exchange is source of truth).

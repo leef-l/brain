@@ -104,16 +104,22 @@ func New(cfg Config, buffers *ringbuf.BufferManager, logger *slog.Logger) *Quant
 
 // SetCandleSource sets the candle data provider (typically DataBrain).
 func (qb *QuantBrain) SetCandleSource(cs CandleSource) {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
 	qb.candles = cs
 }
 
 // SetTraceStore overrides the default in-memory trace store (e.g. with PGTraceStore).
 func (qb *QuantBrain) SetTraceStore(ts tracer.Store) {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
 	qb.traceStore = ts
 }
 
 // SetGlobalRiskConfig overrides the default global risk configuration.
 func (qb *QuantBrain) SetGlobalRiskConfig(cfg risk.GlobalRiskConfig) {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
 	qb.globalGuard = risk.NewGlobalRiskGuard(cfg)
 }
 
@@ -256,15 +262,20 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 			// Feed price tick to exchanges that support it (e.g. PaperExchange)
 			// to trigger stop-loss / take-profit on existing orders.
 			if feeder, ok := unit.Account.Exchange.(exchange.TickFeeder); ok {
-				if results, err := feeder.ProcessPriceTick(ctx, symbol, snap.CurrentPrice); err == nil {
-					for _, r := range results {
-						if r.Status == "filled" {
-							qb.logger.Info("order triggered",
-								"unit", unit.ID,
-								"symbol", symbol,
-								"orderID", r.OrderID,
-								"price", r.FillPrice)
-						}
+				results, err := feeder.ProcessPriceTick(ctx, symbol, snap.CurrentPrice)
+				if err != nil {
+					qb.logger.Warn("ProcessPriceTick failed",
+						"unit", unit.ID,
+						"symbol", symbol,
+						"err", err)
+				}
+				for _, r := range results {
+					if r.Status == "filled" {
+						qb.logger.Info("order triggered",
+							"unit", unit.ID,
+							"symbol", symbol,
+							"orderID", r.OrderID,
+							"price", r.FillPrice)
 					}
 				}
 			}
@@ -277,9 +288,12 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 			view := adapter.NewSnapshotView(snap, tf)
 
 			// Attach candle history if available (needed by BreakoutMomentum etc.)
-			if qb.candles != nil {
+			qb.mu.RLock()
+			candleSrc := qb.candles
+			qb.mu.RUnlock()
+			if candleSrc != nil {
 				for _, ctf := range []string{"1m", "5m", "15m", "1H", "4H"} {
-					if rawCandles := qb.candles.Candles(symbol, ctf); len(rawCandles) > 0 {
+					if rawCandles := candleSrc.Candles(symbol, ctf); len(rawCandles) > 0 {
 						stratCandles := make([]strategy.Candle, len(rawCandles))
 						for j, c := range rawCandles {
 							stratCandles[j] = strategy.Candle{
@@ -309,7 +323,8 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 }
 
 // buildGlobalSnapshot aggregates positions and equity across all units.
-func (qb *QuantBrain) buildGlobalSnapshot(ctx context.Context) risk.GlobalSnapshot {
+// Returns an error if no account could be queried (snapshot would be meaningless).
+func (qb *QuantBrain) buildGlobalSnapshot(ctx context.Context) (risk.GlobalSnapshot, error) {
 	qb.mu.RLock()
 	units := qb.units
 	qb.mu.RUnlock()
@@ -317,6 +332,7 @@ func (qb *QuantBrain) buildGlobalSnapshot(ctx context.Context) risk.GlobalSnapsh
 	var snap risk.GlobalSnapshot
 	snap.DailyPnL = make(map[string]float64)
 
+	successCount := 0
 	for _, u := range units {
 		positions, err := u.Account.Exchange.QueryPositions(ctx)
 		if err != nil {
@@ -330,6 +346,7 @@ func (qb *QuantBrain) buildGlobalSnapshot(ctx context.Context) risk.GlobalSnapsh
 				"unit", u.ID, "account", u.Account.ID, "err", err)
 			continue
 		}
+		successCount++
 		snap.TotalEquity += balance.Equity
 		for _, p := range positions {
 			// Use MarkPrice for accurate current value; fall back to AvgPrice.
@@ -348,7 +365,10 @@ func (qb *QuantBrain) buildGlobalSnapshot(ctx context.Context) risk.GlobalSnapsh
 		stats := u.TradeStore.Stats(tradestore.Filter{UnitID: u.ID})
 		snap.DailyPnL[u.ID] = stats.TotalPnL
 	}
-	return snap
+	if successCount == 0 && len(units) > 0 {
+		return snap, fmt.Errorf("all %d account queries failed", len(units))
+	}
+	return snap, nil
 }
 
 func dirFromSide(side string) strategy.Direction {
@@ -384,7 +404,14 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 
 	// Build global snapshot ONCE — reused for LLM review and global risk check.
 	// Building it multiple times risks inconsistent state between checks.
-	globalSnap := qb.buildGlobalSnapshot(ctx)
+	globalSnap, snapErr := qb.buildGlobalSnapshot(ctx)
+	if snapErr != nil {
+		qb.logger.Error("global snapshot unavailable, skipping trade evaluation",
+			"unit", unit.ID,
+			"symbol", view.Symbol(),
+			"err", snapErr)
+		return
+	}
 
 	// Build trace for audit trail
 	trace := &tracer.SignalTrace{
@@ -401,8 +428,12 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 	if td.NeedsReview {
 		qb.metrics.ReviewsFlagged.Add(1)
 
-		if qb.reviewer != nil {
-			proceed, sizeFactor := qb.integrateReview(ctx, td, globalSnap)
+		qb.mu.RLock()
+		reviewer := qb.reviewer
+		qb.mu.RUnlock()
+
+		if reviewer != nil {
+			proceed, sizeFactor := qb.integrateReview(ctx, reviewer, td, globalSnap)
 			if !proceed {
 				trace.Outcome = "rejected_review"
 				qb.saveTrace(ctx, trace)
@@ -429,7 +460,10 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 	}
 
 	// Global risk guard: cross-account limits check (uses same snapshot as review)
-	globalDecision := qb.globalGuard.Evaluate(td.OrderReq, globalSnap)
+	qb.mu.RLock()
+	globalGuard := qb.globalGuard
+	qb.mu.RUnlock()
+	globalDecision := globalGuard.Evaluate(td.OrderReq, globalSnap)
 	trace.GlobalRisk = globalDecision
 	if !globalDecision.Allowed {
 		qb.metrics.TradesRejected.Add(1)
@@ -476,15 +510,24 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 
 		// Persist trade entry record for Oracle statistics.
 		sig := bestSignalFromAgg(td.Signal)
-		unit.TradeStore.Save(ctx, tradestore.TradeRecord{
+		entryPrice := sig.Entry
+		if entryPrice <= 0 {
+			entryPrice = td.OrderReq.EntryPrice // fallback to order request price
+		}
+		if err := unit.TradeStore.Save(ctx, tradestore.TradeRecord{
 			ID:         result.OrderID,
 			UnitID:     unit.ID,
 			Symbol:     td.Symbol,
 			Direction:  td.Signal.Direction,
-			EntryPrice: sig.Entry,
+			EntryPrice: entryPrice,
 			Quantity:   td.SizeResult.Quantity,
 			EntryTime:  result.Timestamp,
-		})
+		}); err != nil {
+			qb.logger.Error("trade store save failed",
+				"unit", unit.ID,
+				"orderID", result.OrderID,
+				"err", err)
+		}
 	} else {
 		acctResult.Status = "skipped"
 	}
@@ -496,10 +539,13 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 
 // saveTrace persists a signal trace to the trace store.
 func (qb *QuantBrain) saveTrace(ctx context.Context, trace *tracer.SignalTrace) {
-	if qb.traceStore == nil {
+	qb.mu.RLock()
+	ts := qb.traceStore
+	qb.mu.RUnlock()
+	if ts == nil {
 		return
 	}
-	if err := qb.traceStore.Save(ctx, trace); err != nil {
+	if err := ts.Save(ctx, trace); err != nil {
 		qb.logger.Error("save trace failed", "trace", trace.TraceID, "err", err)
 	}
 }
@@ -516,6 +562,8 @@ func bestSignalFromAgg(agg strategy.AggregatedSignal) strategy.Signal {
 
 // TraceStore returns the underlying trace store for external queries.
 func (qb *QuantBrain) TraceStore() tracer.Store {
+	qb.mu.RLock()
+	defer qb.mu.RUnlock()
 	return qb.traceStore
 }
 

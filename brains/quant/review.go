@@ -212,13 +212,17 @@ func BuildPrompt(req ReviewRequest) string {
 
 // SetReviewer sets the LLM reviewer on the QuantBrain.
 func (qb *QuantBrain) SetReviewer(r Reviewer) {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
 	qb.reviewer = r
 }
 
 // integrateReview runs the LLM review for a trade decision and applies the result.
+// The reviewer parameter must be the snapshot taken under mu — do not read qb.reviewer
+// directly, as it may have changed since the caller checked.
 // Returns (proceed bool, sizeFactor float64).
-func (qb *QuantBrain) integrateReview(ctx context.Context, td *TradeDecision, snap risk.GlobalSnapshot) (bool, float64) {
-	if qb.reviewer == nil {
+func (qb *QuantBrain) integrateReview(ctx context.Context, reviewer Reviewer, td *TradeDecision, snap risk.GlobalSnapshot) (bool, float64) {
+	if reviewer == nil {
 		return true, 1.0
 	}
 
@@ -235,7 +239,7 @@ func (qb *QuantBrain) integrateReview(ctx context.Context, td *TradeDecision, sn
 		Reason: td.ReviewReason,
 	}
 
-	decision, err := qb.reviewer.Review(ctx, req)
+	decision, err := reviewer.Review(ctx, req)
 	if err != nil {
 		qb.logger.Warn("llm review error, rejecting trade for safety",
 			"err", err)
