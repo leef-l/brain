@@ -15,10 +15,12 @@ type Config struct {
 
 // ActiveListConfig controls which instruments are actively tracked.
 type ActiveListConfig struct {
-	MinVolume24h   float64       // minimum 24h volume to include
-	MaxInstruments int           // cap on number of instruments
-	UpdateInterval time.Duration // how often to refresh the active list
-	AlwaysInclude  []string      // instruments to always track regardless of volume
+	MinVolume24h     float64       // minimum 24h volume to include
+	MaxInstruments   int           // cap on number of instruments
+	UpdateInterval   time.Duration // how often to refresh the active list
+	AlwaysInclude    []string      // instruments to always track regardless of volume
+	RankByVolatility bool          // true = rank by price amplitude instead of volume
+	MinAmplitudePct  float64       // minimum 24h amplitude % to include (e.g. 2.0)
 }
 
 // ProviderConfig describes one data provider instance.

@@ -19,6 +19,8 @@ type Config struct {
 	MaxInstruments int           // max instruments to track, default 100
 	UpdateInterval time.Duration // how often to refresh, default 7 days
 	AlwaysInclude  []string      // instruments always included regardless of volume
+	RankByVolatility bool        // true = rank by 24h amplitude instead of volume
+	MinAmplitudePct  float64     // minimum 24h amplitude %, e.g. 3.0 = filter < 3% swing
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -32,10 +34,11 @@ func DefaultConfig() Config {
 	}
 }
 
-// InstrumentInfo holds an instrument identifier with its 24h USDT volume.
+// InstrumentInfo holds an instrument identifier with its 24h USDT volume and price change.
 type InstrumentInfo struct {
-	InstID     string
-	VolUsdt24h float64
+	InstID       string
+	VolUsdt24h   float64
+	Change24hPct float64 // absolute 24h price change percentage
 }
 
 // ActiveList tracks the set of actively traded instruments.
@@ -68,6 +71,9 @@ type okxTickerResp struct {
 type okxTicker struct {
 	InstID     string `json:"instId"`
 	Last       string `json:"last"`
+	Open24h    string `json:"open24h"`
+	High24h    string `json:"high24h"`
+	Low24h     string `json:"low24h"`
 	VolCcy24h  string `json:"volCcy24h"`
 }
 
@@ -94,7 +100,7 @@ func (l *ActiveList) Refresh(ctx context.Context) ([]InstrumentInfo, error) {
 		return nil, fmt.Errorf("OKX API error code: %s", tickerResp.Code)
 	}
 
-	// Calculate USDT volume for each instrument.
+	// Calculate USDT volume and 24h amplitude for each instrument.
 	var instruments []InstrumentInfo
 	for _, tk := range tickerResp.Data {
 		volCcy, err1 := strconv.ParseFloat(tk.VolCcy24h, 64)
@@ -103,51 +109,72 @@ func (l *ActiveList) Refresh(ctx context.Context) ([]InstrumentInfo, error) {
 			continue
 		}
 		volUsdt := volCcy * last
+
+		// 24h amplitude = (high - low) / low * 100
+		var amplitude float64
+		high, errH := strconv.ParseFloat(tk.High24h, 64)
+		low, errL := strconv.ParseFloat(tk.Low24h, 64)
+		if errH == nil && errL == nil && low > 0 {
+			amplitude = (high - low) / low * 100
+		}
+
 		instruments = append(instruments, InstrumentInfo{
-			InstID:     tk.InstID,
-			VolUsdt24h: volUsdt,
+			InstID:       tk.InstID,
+			VolUsdt24h:   volUsdt,
+			Change24hPct: amplitude,
 		})
 	}
 
-	// Sort descending by volume.
-	sort.Slice(instruments, func(i, j int) bool {
-		return instruments[i].VolUsdt24h > instruments[j].VolUsdt24h
-	})
+	// First pass: filter by minimum volume (need enough liquidity to trade).
+	var qualified []InstrumentInfo
+	for _, inst := range instruments {
+		if inst.VolUsdt24h < l.config.MinVolume24h {
+			continue
+		}
+		if l.config.MinAmplitudePct > 0 && inst.Change24hPct < l.config.MinAmplitudePct {
+			continue
+		}
+		qualified = append(qualified, inst)
+	}
 
-	// Build the active set: top N with minimum volume.
+	// Sort: by amplitude descending (volatility mode) or by volume descending.
+	if l.config.RankByVolatility {
+		sort.Slice(qualified, func(i, j int) bool {
+			return qualified[i].Change24hPct > qualified[j].Change24hPct
+		})
+	} else {
+		sort.Slice(qualified, func(i, j int) bool {
+			return qualified[i].VolUsdt24h > qualified[j].VolUsdt24h
+		})
+	}
+
+	// Take top N.
 	active := make(map[string]bool)
 	var result []InstrumentInfo
-
-	for _, inst := range instruments {
+	for _, inst := range qualified {
 		if len(result) >= l.config.MaxInstruments {
-			break
-		}
-		if inst.VolUsdt24h < l.config.MinVolume24h {
 			break
 		}
 		active[inst.InstID] = true
 		result = append(result, inst)
 	}
 
-	// Always include specified instruments.
-	alwaysSet := make(map[string]bool)
+	// Always include specified instruments (pinned).
 	for _, id := range l.config.AlwaysInclude {
-		alwaysSet[id] = true
-	}
-	// Add always-include instruments that aren't already in the result.
-	for _, id := range l.config.AlwaysInclude {
-		if !active[id] {
-			active[id] = true
-			// Find its volume info if available.
-			vol := 0.0
-			for _, inst := range instruments {
-				if inst.InstID == id {
-					vol = inst.VolUsdt24h
-					break
-				}
-			}
-			result = append(result, InstrumentInfo{InstID: id, VolUsdt24h: vol})
+		if active[id] {
+			continue
 		}
+		active[id] = true
+		// Find its info from the full list.
+		info := InstrumentInfo{InstID: id}
+		for _, inst := range instruments {
+			if inst.InstID == id {
+				info.VolUsdt24h = inst.VolUsdt24h
+				info.Change24hPct = inst.Change24hPct
+				break
+			}
+		}
+		result = append(result, info)
 	}
 
 	l.mu.Lock()

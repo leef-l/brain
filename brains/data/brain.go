@@ -81,11 +81,13 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 
 	// ActiveList
 	alCfg := active.Config{
-		RESTURL:        "https://www.okx.com",
-		MinVolume24h:   cfg.ActiveList.MinVolume24h,
-		MaxInstruments: cfg.ActiveList.MaxInstruments,
-		UpdateInterval: cfg.ActiveList.UpdateInterval,
-		AlwaysInclude:  cfg.ActiveList.AlwaysInclude,
+		RESTURL:          "https://www.okx.com",
+		MinVolume24h:     cfg.ActiveList.MinVolume24h,
+		MaxInstruments:   cfg.ActiveList.MaxInstruments,
+		UpdateInterval:   cfg.ActiveList.UpdateInterval,
+		AlwaysInclude:    cfg.ActiveList.AlwaysInclude,
+		RankByVolatility: cfg.ActiveList.RankByVolatility,
+		MinAmplitudePct:  cfg.ActiveList.MinAmplitudePct,
 	}
 	if alCfg.MaxInstruments == 0 {
 		alCfg.MaxInstruments = 100

@@ -148,16 +148,19 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 	// Build DataBrain config based on whether we need active-list discovery.
 	var dataCfg data.Config
 	if hasOpenUnit {
-		// Active-list discovery mode: fetch top instruments by volume from OKX,
-		// plus any explicitly pinned symbols from units that have them.
+		// Volatility discovery mode: from liquid instruments, pick the ones
+		// with the highest 24h amplitude (price swing). Low-volatility coins
+		// produce weak signals and poor risk/reward.
 		dataCfg = data.Config{
 			ActiveList: data.ActiveListConfig{
-				AlwaysInclude:  pinned,
-				MaxInstruments: 50,          // top 50 by 24h volume
-				MinVolume24h:   10_000_000,  // $10M minimum daily volume
+				AlwaysInclude:    pinned,
+				MaxInstruments:   20,           // top 20 by volatility
+				MinVolume24h:     10_000_000,   // $10M minimum daily volume (liquidity filter)
+				RankByVolatility: true,          // rank by 24h amplitude, not volume
+				MinAmplitudePct:  2.0,           // skip coins with < 2% daily swing
 			},
 		}
-		logger.Info("data mode: active-list discovery", "pinned", len(pinned), "max", 50)
+		logger.Info("data mode: volatility discovery", "pinned", len(pinned), "max", 20, "min_amplitude", "2%")
 	} else if len(pinned) > 0 {
 		// Fixed mode: only trade the explicitly configured symbols.
 		dataCfg = data.Config{

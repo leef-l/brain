@@ -65,8 +65,9 @@ accounts:
 #
 # symbols 行为：
 #   配了 symbols  → 只做列出的品种（固定模式）
-#   不配 symbols  → 自动做 OKX 24h 成交量 Top 50 活跃品种（发现模式）
-#   混合也行：unit-A 指定 BTC/ETH，unit-B 不配 → unit-B 做全部活跃品种
+#   不配 symbols  → 自动发现模式：从 OKX 按 24h 振幅排名，取波动最大的 Top 20
+#                    筛选条件：24h 成交量 > $10M（保证流动性）+ 振幅 > 2%（过滤横盘币）
+#   混合也行：unit-A 指定 BTC/ETH，unit-B 不配 → unit-B 做波动大的活跃品种
 units:
   - id: unit-btc                          # 单元唯一标识（自定义）
     account_id: paper-main                # 绑定的账户 ID（对应 accounts 中的 id）
