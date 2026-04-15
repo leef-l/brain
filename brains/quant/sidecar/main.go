@@ -216,6 +216,10 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		}
 	}
 
+	// Build shared risk components from config (applied to all units).
+	guard := cfg.Risk.BuildGuard()
+	sizer := cfg.Risk.BuildSizer()
+
 	// Register trading units
 	for _, uc := range cfg.Units {
 		acc, ok := accounts[uc.AccountID]
@@ -232,6 +236,14 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			ts = pgStore
 		}
 
+		tf := uc.Timeframe
+		if tf == "" {
+			tf = cfg.Brain.DefaultTimeframe
+		}
+
+		// Build aggregator with timeframe-adaptive thresholds.
+		agg := cfg.Strategy.BuildAggregator(tf)
+
 		unit := quant.NewTradingUnit(quant.TradingUnitConfig{
 			ID:          uc.ID,
 			Account:     acc,
@@ -239,8 +251,14 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			Timeframe:   uc.Timeframe,
 			MaxLeverage: uc.MaxLeverage,
 			TradeStore:  ts,
+			Aggregator:  agg,
+			Guard:       guard,
+			Sizer:       sizer,
 		}, logger)
 		qb.AddUnit(unit)
+		logger.Info("unit registered", "id", uc.ID, "timeframe", tf,
+			"long_threshold", agg.BaseAggregator().LongThreshold,
+			"short_threshold", agg.BaseAggregator().ShortThreshold)
 	}
 
 	return accounts, qb

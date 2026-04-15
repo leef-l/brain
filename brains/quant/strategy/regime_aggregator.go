@@ -61,6 +61,16 @@ func NewRegimeAwareAggregator() *RegimeAwareAggregator {
 	}
 }
 
+// BaseAggregator returns a copy of the underlying Aggregator for inspection/modification.
+func (ra *RegimeAwareAggregator) BaseAggregator() Aggregator {
+	return ra.base
+}
+
+// SetBaseAggregator replaces the underlying Aggregator (for config overrides).
+func (ra *RegimeAwareAggregator) SetBaseAggregator(a Aggregator) {
+	ra.base = a
+}
+
 // SetOracle sets the historical oracle on the underlying aggregator.
 func (ra *RegimeAwareAggregator) SetOracle(oracle HistoricalOracle) {
 	ra.base.Oracle = oracle

@@ -121,38 +121,46 @@ units:
 #   brain-quant-execution -intent-file ./order.json -mark-price 65000 -slippage-bps 2
 
 # ==================== 策略层 (Strategy) =====================
-# 策略权重和聚合器通过 Go 代码配置，以下仅为参考
-
-# strategy:
-#   weights:
-#     trend_follower: 0.30       # 趋势跟踪
-#     mean_reversion: 0.25       # 均值回归
-#     breakout_momentum: 0.25    # 突破动量
-#     order_flow: 0.20           # 订单流
+# 策略权重和聚合器配置。这些值会从配置文件读取，不再是硬编码。
 #
-#   long_threshold: 0.45         # 做多信号最低分数
-#   short_threshold: 0.45        # 做空信号最低分数
-#   dominance_factor: 1.5        # 主方向必须是反方向的 1.5 倍
+# 阈值自适应机制（自动，无需配置）：
+#   1m/5m  → 阈值 × 0.65，dominance × 0.80（短周期信号弱，降低门槛）
+#   15m    → 阈值 × 0.80
+#   1H+    → 使用配置原值
+#
+# weights 的 key 必须与策略名完全匹配（区分大小写）：
+#   TrendFollower / MeanReversion / BreakoutMomentum / OrderFlow
+strategy:
+  weights:
+    TrendFollower: 0.30          # 趋势跟踪
+    MeanReversion: 0.25          # 均值回归
+    BreakoutMomentum: 0.25       # 突破动量
+    OrderFlow: 0.20              # 订单流
+
+  long_threshold: 0.45           # 做多信号最低分数
+  short_threshold: 0.45          # 做空信号最低分数
+  dominance_factor: 1.5          # 主方向必须是反方向的 1.5 倍
 
 # ==================== 风控层 (Risk) =========================
 
 # --- 单账户风控守卫 (Guard) ---
-# risk:
-#   guard:
-#     max_single_position_pct: 5       # 单仓最大占权益百分比
-#     max_leverage: 20                 # 最大杠杆
-#     min_stop_distance_atr: 1         # 止损最小距离（ATR 倍数）
-#     max_stop_distance_pct: 10        # 止损最大距离（入场价百分比）
-#     max_concurrent_positions: 5      # 最大同时持仓数
-#     max_total_exposure_pct: 30       # 总敞口上限（权益百分比）
-#     max_same_direction_pct: 20       # 同向敞口上限
-#     stop_new_trades_loss_pct: 3      # 日亏损停止开新仓
-#     liquidate_all_loss_pct: 5        # 日亏损全平仓
-#
-#   position_sizer:
-#     min_fraction: 0.005              # 最小仓位比例（0.5%）
-#     max_fraction: 0.05               # 最大仓位比例（5%）
-#     scale_fraction: 0.25             # Kelly 缩放因子（1/4 Kelly）
+# 所有字段不配置则使用默认值（括号内即默认值）
+risk:
+  guard:
+    max_single_position_pct: 5         # 单仓最大占权益百分比
+    max_leverage: 20                   # 最大杠杆
+    min_stop_distance_atr: 1           # 止损最小距离（ATR 倍数）
+    max_stop_distance_pct: 10          # 止损最大距离（入场价百分比）
+    max_concurrent_positions: 5        # 最大同时持仓数
+    max_total_exposure_pct: 30         # 总敞口上限（权益百分比）
+    max_same_direction_pct: 20         # 同向敞口上限
+    stop_new_trades_loss_pct: 3        # 日亏损停止开新仓
+    liquidate_all_loss_pct: 5          # 日亏损全平仓
+
+  position_sizer:
+    min_fraction: 0.005                # 最小仓位比例（0.5%）
+    max_fraction: 0.05                 # 最大仓位比例（5%）
+    scale_fraction: 0.25               # Kelly 缩放因子（1/4 Kelly）
 
 # --- 跨账户全局风控 (GlobalRiskGuard) ---
 # 通过命令行或 Go 代码配置，以下为默认值参考：
