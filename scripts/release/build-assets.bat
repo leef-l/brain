@@ -40,7 +40,7 @@ if not defined build_commit set "build_commit=unknown"
 for /f "delims=" %%t in ('powershell -nologo -command "Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ' -AsUTC" 2^>nul') do set "build_time=%%t"
 if not defined build_time set "build_time=unknown"
 
-set "ldflags=-s -w -X github.com/leef-l/brain.BuildCommit=%build_commit% -X github.com/leef-l/brain.BuildTime=%build_time%"
+set "ldflags=-s -w -X github.com/leef-l/brain.CLIVersion=%version% -X github.com/leef-l/brain.SDKVersion=%version% -X github.com/leef-l/brain.KernelVersion=%version% -X github.com/leef-l/brain.BuildCommit=%build_commit% -X github.com/leef-l/brain.BuildTime=%build_time%"
 
 REM --- output directory ---
 if not exist "%outdir%" mkdir "%outdir%"

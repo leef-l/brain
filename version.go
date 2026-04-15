@@ -13,16 +13,22 @@ const (
 	// ProtocolVersion is the stdio wire protocol version (major.minor, no patch).
 	ProtocolVersion = "1.0"
 
+	// SDKLanguage identifies the SDK implementation language.
+	SDKLanguage = "go"
+)
+
+// Release versions — overridden at build time via -ldflags:
+//
+//	go build -ldflags "-X github.com/leef-l/brain.CLIVersion=1.0.0 ..."
+//
+// Default values are the development baseline; release builds inject the
+// actual version from the build script's <version> argument.
+var (
 	// KernelVersion is the Kernel behavior contract version (semver).
-	// v0.7.0: specialist brain sidecar architecture — quant/data bridge tools,
-	// cross-brain authorization, dynamic sidecar discovery, chat/CLI full access.
 	KernelVersion = "0.7.0"
 
 	// SDKVersion is this Go SDK's semver.
 	SDKVersion = "0.7.0"
-
-	// SDKLanguage identifies the SDK implementation language.
-	SDKLanguage = "go"
 
 	// CLIVersion is the user-facing `brain` CLI version (tracks SDKVersion in Go SDK).
 	CLIVersion = "0.7.0"

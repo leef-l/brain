@@ -23,7 +23,7 @@ outdir="$(cd "${outdir}" && pwd)"
 
 build_commit="${BUILD_COMMIT:-$(git -C "${root_dir}" rev-parse --short=12 HEAD)}"
 build_time="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
-ldflags="-s -w -X github.com/leef-l/brain.BuildCommit=${build_commit} -X github.com/leef-l/brain.BuildTime=${build_time}"
+ldflags="-s -w -X github.com/leef-l/brain.CLIVersion=${version} -X github.com/leef-l/brain.SDKVersion=${version} -X github.com/leef-l/brain.KernelVersion=${version} -X github.com/leef-l/brain.BuildCommit=${build_commit} -X github.com/leef-l/brain.BuildTime=${build_time}"
 
 ext=""
 if [[ "${goos}" == "windows" ]]; then
