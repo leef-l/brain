@@ -124,8 +124,34 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		}
 	}
 
-	// Start data brain for ring buffers
-	dataCfg := data.Config{}
+	// Collect all symbols from enabled units so the embedded DataBrain
+	// subscribes to the right instruments (not just BTC/ETH defaults).
+	symbolSet := make(map[string]bool)
+	for _, uc := range cfg.Units {
+		if !uc.Enabled {
+			continue
+		}
+		for _, s := range uc.Symbols {
+			symbolSet[s] = true
+		}
+	}
+	symbols := make([]string, 0, len(symbolSet))
+	for s := range symbolSet {
+		symbols = append(symbols, s)
+	}
+	// Ensure at least BTC and ETH for default units with empty symbol list.
+	if len(symbols) == 0 {
+		symbols = []string{"BTC-USDT-SWAP", "ETH-USDT-SWAP"}
+	}
+
+	// Start embedded data brain for ring buffers.
+	dataCfg := data.Config{
+		ActiveList: data.ActiveListConfig{
+			AlwaysInclude:  symbols,
+			MaxInstruments: len(symbols),
+			MinVolume24h:   0, // don't filter — we want exactly these symbols
+		},
+	}
 	dataBrain := data.New(dataCfg, nil, logger.With("brain", "data"))
 
 	var buffers *ringbuf.BufferManager
@@ -135,6 +161,7 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 	} else {
 		buffers = dataBrain.Buffers()
 	}
+	logger.Info("data brain instruments", "symbols", symbols)
 
 	// Build quant brain
 	qb := quant.New(cfg.Brain, buffers, logger.With("brain", "quant"))

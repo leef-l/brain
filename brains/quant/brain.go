@@ -214,12 +214,21 @@ func (qb *QuantBrain) evaluationLoop(ctx context.Context) {
 // runCycle evaluates all symbols across all trading units.
 func (qb *QuantBrain) runCycle(ctx context.Context) {
 	start := time.Now()
-	qb.metrics.CyclesTotal.Add(1)
+	cycle := qb.metrics.CyclesTotal.Add(1)
 
 	symbols := qb.buffers.Instruments()
 	qb.mu.RLock()
 	units := qb.units
 	qb.mu.RUnlock()
+
+	// Log diagnostics periodically (every 60 cycles ≈ 5 min at 5s interval).
+	if cycle%60 == 1 {
+		qb.logger.Info("cycle heartbeat",
+			"cycle", cycle,
+			"symbols", len(symbols),
+			"units", len(units),
+			"warmup", qb.recovery.isWarmingUp())
+	}
 
 	for _, symbol := range symbols {
 		snap, ok := qb.buffers.Latest(symbol)
