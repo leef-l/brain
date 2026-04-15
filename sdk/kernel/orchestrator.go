@@ -558,6 +558,9 @@ func (o *Orchestrator) removeSidecar(kind agent.Kind) {
 // For processAgent, it checks the underlying process state.
 // For other agents, it does a lightweight RPC ping.
 func (o *Orchestrator) isAlive(ag agent.Agent) bool {
+	if ag == nil {
+		return false
+	}
 	// Check process-based agents by inspecting the cmd.
 	type processChecker interface {
 		ProcessExited() bool

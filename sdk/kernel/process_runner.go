@@ -183,8 +183,10 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 		kernelVer = brain.KernelVersion
 	}
 
-	// Create the process.
-	cmd := exec.CommandContext(ctx, binPath)
+	// Create the process. Use a background context so the sidecar lifetime
+	// is NOT tied to the caller's request context (which may have a short
+	// timeout). The handshake still uses the caller ctx via initCtx below.
+	cmd := exec.Command(binPath)
 	cmd.Env = r.Env
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
@@ -216,7 +218,9 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	rpcWriter := protocol.NewFrameWriter(stdinPipe)
 	rpc := protocol.NewBidirRPC(protocol.RoleKernel, rpcReader, rpcWriter)
 
-	agentCtx, cancel := context.WithCancel(ctx)
+	// Use a background-derived context for the RPC session so it survives
+	// after the caller's ctx (which may be a short-lived start request) ends.
+	agentCtx, cancel := context.WithCancel(context.Background())
 	if err := rpc.Start(agentCtx); err != nil {
 		cancel()
 		cmd.Process.Kill()
