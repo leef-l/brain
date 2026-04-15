@@ -188,10 +188,12 @@ func (p *AnthropicProvider) buildAPIRequest(req *ChatRequest, stream bool) *anth
 		})
 	}
 
-	// Tools
+	// Tools — some API proxies (e.g. OneAPI/New API) reject dots in tool
+	// names. We replace "." with "__" on the wire and reverse the mapping
+	// when parsing tool_use responses.
 	for _, t := range req.Tools {
 		ar.Tools = append(ar.Tools, anthropicToolDef{
-			Name:        t.Name,
+			Name:        sanitizeToolName(t.Name),
 			Description: t.Description,
 			InputSchema: t.InputSchema,
 		})
@@ -228,7 +230,7 @@ func (p *AnthropicProvider) buildContentBlocks(blocks []ContentBlock) []map[stri
 			block := map[string]interface{}{
 				"type": "tool_use",
 				"id":   b.ToolUseID,
-				"name": b.ToolName,
+				"name": sanitizeToolName(b.ToolName),
 			}
 			if b.Input != nil {
 				block["input"] = json.RawMessage(b.Input)
@@ -304,7 +306,7 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse) *ChatResponse {
 				cb.Text = rb.Text
 			case "tool_use":
 				cb.ToolUseID = rb.ID
-				cb.ToolName = rb.Name
+				cb.ToolName = restoreToolName(rb.Name)
 				cb.Input = rb.Input
 			}
 			resp.Content = append(resp.Content, cb)
@@ -481,7 +483,7 @@ func (r *sseReader) mapSSEEvent(eventType string, data json.RawMessage) (StreamE
 		case "tool_use":
 			block := &streamToolUse{
 				toolUseID: start.ContentBlock.ID,
-				toolName:  start.ContentBlock.Name,
+				toolName:  restoreToolName(start.ContentBlock.Name),
 			}
 			input := strings.TrimSpace(string(start.ContentBlock.Input))
 			if input != "" && input != "null" {
@@ -591,4 +593,15 @@ func (r *sseReader) Close() error {
 	}
 	r.closed = true
 	return r.body.Close()
+}
+
+// sanitizeToolName replaces dots with double underscores for API proxies
+// (e.g. OneAPI/New API) that reject dots in tool names.
+func sanitizeToolName(name string) string {
+	return strings.ReplaceAll(name, ".", "__")
+}
+
+// restoreToolName reverses sanitizeToolName.
+func restoreToolName(name string) string {
+	return strings.ReplaceAll(name, "__", ".")
 }

@@ -50,7 +50,7 @@ func runRun(args []string) int {
 	maxTurns := fs.Int("max-turns", 4, "maximum number of turns")
 	stream := fs.Bool("stream", false, "enable streaming mode")
 	jsonOut := fs.Bool("json", true, "emit a JSON run summary to stdout")
-	provider := fs.String("provider", "anthropic", "LLM provider: anthropic or mock")
+	provider := fs.String("provider", "", "LLM provider/profile name, or mock (default: config active_provider)")
 	apiKey := fs.String("api-key", "", "API key (overrides env and config)")
 	baseURL := fs.String("base-url", "", "API base URL (default: https://api.anthropic.com)")
 	model := fs.String("model", "", "model name (overrides config)")
