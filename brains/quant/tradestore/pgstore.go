@@ -68,7 +68,7 @@ func (s *PGStore) Migrate(ctx context.Context) error {
 }
 
 // Save persists a trade record (upsert — allows updating exit fields).
-func (s *PGStore) Save(record TradeRecord) error {
+func (s *PGStore) Save(ctx context.Context, record TradeRecord) error {
 	const q = `
 		INSERT INTO trade_records
 			(id, unit_id, symbol, direction, entry_price, exit_price,
@@ -82,7 +82,9 @@ func (s *PGStore) Save(record TradeRecord) error {
 			reason     = EXCLUDED.reason`
 
 	exitTime := nilTime(record.ExitTime)
-	ctx, cancel := context.WithTimeout(context.Background(), pgQueryTimeout)
+	// Apply a ceiling timeout so a slow PG doesn't block the caller forever,
+	// while still respecting the caller's earlier deadline if tighter.
+	ctx, cancel := context.WithTimeout(ctx, pgQueryTimeout)
 	defer cancel()
 	_, err := s.pool.Exec(ctx, q,
 		record.ID,

@@ -3,6 +3,7 @@
 package tradestore
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -39,10 +40,11 @@ type Stats struct {
 
 // Store is the trade record persistence interface.
 // MemoryStore is the default in-memory implementation.
-// A PostgreSQL implementation can be added later.
+// PGStore is the PostgreSQL-backed implementation.
 type Store interface {
-	// Save persists a trade record.
-	Save(record TradeRecord) error
+	// Save persists a trade record. The context allows the caller to
+	// cancel or set a deadline on the write operation.
+	Save(ctx context.Context, record TradeRecord) error
 
 	// Query returns trade records matching the filter.
 	Query(filter Filter) []TradeRecord
@@ -71,7 +73,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{}
 }
 
-func (s *MemoryStore) Save(record TradeRecord) error {
+func (s *MemoryStore) Save(_ context.Context, record TradeRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.records = append(s.records, record)

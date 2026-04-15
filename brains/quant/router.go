@@ -216,7 +216,7 @@ func (r *AccountRouter) dispatchToUnit(
 		dr.Quantity = sized.Quantity
 
 		// Persist trade record
-		unit.TradeStore.Save(tradestore.TradeRecord{
+		unit.TradeStore.Save(ctx, tradestore.TradeRecord{
 			ID:         result.OrderID,
 			UnitID:     unit.ID,
 			Symbol:     view.Symbol(),

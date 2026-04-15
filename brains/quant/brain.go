@@ -476,7 +476,7 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 
 		// Persist trade entry record for Oracle statistics.
 		sig := bestSignalFromAgg(td.Signal)
-		unit.TradeStore.Save(tradestore.TradeRecord{
+		unit.TradeStore.Save(ctx, tradestore.TradeRecord{
 			ID:         result.OrderID,
 			UnitID:     unit.ID,
 			Symbol:     td.Symbol,

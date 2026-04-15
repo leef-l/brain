@@ -1,6 +1,7 @@
 package tradestore
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,17 +13,17 @@ func TestMemoryStore(t *testing.T) {
 
 	// Save some trades
 	now := time.Now()
-	store.Save(TradeRecord{
+	store.Save(context.Background(), TradeRecord{
 		ID: "1", UnitID: "unit-a", Symbol: "BTC-USDT-SWAP",
 		Direction: strategy.DirectionLong, PnL: 100, PnLPct: 0.05,
 		EntryTime: now.Add(-time.Hour), ExitTime: now,
 	})
-	store.Save(TradeRecord{
+	store.Save(context.Background(), TradeRecord{
 		ID: "2", UnitID: "unit-a", Symbol: "BTC-USDT-SWAP",
 		Direction: strategy.DirectionLong, PnL: -50, PnLPct: -0.025,
 		EntryTime: now.Add(-2 * time.Hour), ExitTime: now.Add(-time.Hour),
 	})
-	store.Save(TradeRecord{
+	store.Save(context.Background(), TradeRecord{
 		ID: "3", UnitID: "unit-a", Symbol: "ETH-USDT-SWAP",
 		Direction: strategy.DirectionShort, PnL: 200, PnLPct: 0.10,
 		EntryTime: now.Add(-3 * time.Hour), ExitTime: now,
@@ -82,7 +83,7 @@ func TestOracle(t *testing.T) {
 		if i < 3 {
 			pnl = -50
 		}
-		store.Save(TradeRecord{
+		store.Save(context.Background(), TradeRecord{
 			Symbol:    "BTC-USDT-SWAP",
 			Direction: strategy.DirectionLong,
 			PnL:       pnl,

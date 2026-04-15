@@ -43,6 +43,7 @@ func pgTestStore(t *testing.T) *PGStore {
 
 func TestPGStore_SaveAndQuery(t *testing.T) {
 	s := pgTestStore(t)
+	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Microsecond) // PG has microsecond precision
 
@@ -72,7 +73,7 @@ func TestPGStore_SaveAndQuery(t *testing.T) {
 	}
 
 	for _, r := range records {
-		if err := s.Save(r); err != nil {
+		if err := s.Save(ctx, r); err != nil {
 			t.Fatalf("Save(%s): %v", r.ID, err)
 		}
 	}
@@ -107,11 +108,12 @@ func TestPGStore_SaveAndQuery(t *testing.T) {
 
 func TestPGStore_Upsert(t *testing.T) {
 	s := pgTestStore(t)
+	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Microsecond)
 
 	// Save entry (no exit yet)
-	if err := s.Save(TradeRecord{
+	if err := s.Save(ctx, TradeRecord{
 		ID: "pg-test-upsert", UnitID: "test-unit-b", Symbol: "BTC-USDT-SWAP",
 		Direction: strategy.DirectionLong, EntryPrice: 50000,
 		Quantity: 0.1, EntryTime: now,
@@ -129,7 +131,7 @@ func TestPGStore_Upsert(t *testing.T) {
 	}
 
 	// Update with exit info (upsert)
-	if err := s.Save(TradeRecord{
+	if err := s.Save(ctx, TradeRecord{
 		ID: "pg-test-upsert", UnitID: "test-unit-b", Symbol: "BTC-USDT-SWAP",
 		Direction: strategy.DirectionLong, EntryPrice: 50000, ExitPrice: 51000,
 		Quantity: 0.1, PnL: 100, PnLPct: 0.02,
@@ -154,17 +156,17 @@ func TestPGStore_Upsert(t *testing.T) {
 
 func TestPGStore_LoadAll(t *testing.T) {
 	s := pgTestStore(t)
+	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Microsecond)
 	for i := 0; i < 5; i++ {
-		_ = s.Save(TradeRecord{
+		_ = s.Save(ctx, TradeRecord{
 			ID: fmt.Sprintf("pg-test-loadall-%d", i), UnitID: "test-unit-c",
 			Symbol: "BTC-USDT-SWAP", Direction: strategy.DirectionLong,
 			PnL: float64(i * 10), EntryTime: now.Add(time.Duration(-i) * time.Hour),
 		})
 	}
 
-	ctx := context.Background()
 	all, err := s.LoadAll(ctx)
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
