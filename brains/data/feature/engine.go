@@ -65,7 +65,12 @@ func (e *Engine) ComputeArray(instID string) [VectorDim]float64 {
 func (e *Engine) computePrice(vec []float64, instID string) {
 	for i, tf := range timeframes {
 		w := e.candles.GetWindow(instID, tf)
-		if w == nil || w.Current.Close == 0 {
+		if w == nil {
+			continue
+		}
+		w.RLock()
+		if w.Current.Close == 0 {
+			w.RUnlock()
 			continue
 		}
 		base := i * 12
@@ -110,6 +115,7 @@ func (e *Engine) computePrice(vec []float64, instID string) {
 		if w.ADX14.Ready() {
 			vec[base+11] = w.ADX14.Value() / 100.0
 		}
+		w.RUnlock()
 	}
 }
 
@@ -118,7 +124,12 @@ func (e *Engine) computePrice(vec []float64, instID string) {
 func (e *Engine) computeVolume(vec []float64, instID string) {
 	for i, tf := range timeframes {
 		w := e.candles.GetWindow(instID, tf)
-		if w == nil || len(w.HistoryCandles) == 0 {
+		if w == nil {
+			continue
+		}
+		w.RLock()
+		if len(w.HistoryCandles) == 0 {
+			w.RUnlock()
 			continue
 		}
 		base := 60 + i*8
@@ -176,6 +187,7 @@ func (e *Engine) computeVolume(vec []float64, instID string) {
 		}
 
 		// +7: reserved
+		w.RUnlock()
 	}
 }
 
@@ -188,8 +200,12 @@ func (e *Engine) computeMicrostructure(vec []float64, instID string) {
 
 		// MidPrice deviation from EMA (not raw MidPrice)
 		// Use 1m EMA21 as reference price
-		if w := e.candles.GetWindow(instID, "1m"); w != nil && w.EMA21.Ready() && w.EMA21.Value() > 0 {
-			vec[102] = (ob.MidPrice - w.EMA21.Value()) / w.EMA21.Value()
+		if w := e.candles.GetWindow(instID, "1m"); w != nil {
+			w.RLock()
+			if w.EMA21.Ready() && w.EMA21.Value() > 0 {
+				vec[102] = (ob.MidPrice - w.EMA21.Value()) / w.EMA21.Value()
+			}
+			w.RUnlock()
 		}
 
 		// Bid depth concentration: top1_bid / total_bid
@@ -422,6 +438,11 @@ func computeVWAP(candles []provider.Candle, n int) float64 {
 // rollingCorrelation computes Pearson correlation of price change rates
 // between two CandleWindows over the last n bars.
 func rollingCorrelation(a, b *processor.CandleWindow, n int) float64 {
+	a.RLock()
+	defer a.RUnlock()
+	b.RLock()
+	defer b.RUnlock()
+
 	aLen := a.History.Len()
 	bLen := b.History.Len()
 	if aLen < n+1 || bLen < n+1 || n < 2 {

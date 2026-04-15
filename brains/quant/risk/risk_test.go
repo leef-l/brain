@@ -188,6 +188,7 @@ func (v fakeMarketView) FundingRate() float64                   { return 0 }
 func (v fakeMarketView) OrderBookImbalance() float64            { return 0 }
 func (v fakeMarketView) TradeFlowToxicity() float64             { return 0 }
 func (v fakeMarketView) BigBuyRatio() float64                   { return 0 }
+func (v fakeMarketView) BigSellRatio() float64                  { return 0 }
 func (v fakeMarketView) TradeDensityRatio() float64             { return 0 }
 func (v fakeMarketView) SimilarityWinRate() float64             { return 0 }
 func (v fakeMarketView) Feature() strategy.FeatureView          { return v.fv }

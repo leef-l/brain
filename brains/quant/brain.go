@@ -206,9 +206,21 @@ func (qb *QuantBrain) evaluationLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			qb.runCycle(ctx)
+			qb.safeRunCycle(ctx)
 		}
 	}
+}
+
+// safeRunCycle wraps runCycle with panic recovery so a single cycle panic
+// does not kill the entire evaluation loop.
+func (qb *QuantBrain) safeRunCycle(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			qb.logger.Error("cycle panic recovered",
+				"panic", fmt.Sprintf("%v", r))
+		}
+	}()
+	qb.runCycle(ctx)
 }
 
 // runCycle evaluates all symbols across all trading units.
@@ -308,19 +320,28 @@ func (qb *QuantBrain) buildGlobalSnapshot(ctx context.Context) risk.GlobalSnapsh
 	for _, u := range units {
 		positions, err := u.Account.Exchange.QueryPositions(ctx)
 		if err != nil {
+			qb.logger.Warn("global snapshot: position query failed, skipping account",
+				"unit", u.ID, "account", u.Account.ID, "err", err)
 			continue
 		}
 		balance, err := u.Account.Exchange.QueryBalance(ctx)
 		if err != nil {
+			qb.logger.Warn("global snapshot: balance query failed, skipping account",
+				"unit", u.ID, "account", u.Account.ID, "err", err)
 			continue
 		}
 		snap.TotalEquity += balance.Equity
 		for _, p := range positions {
+			// Use MarkPrice for accurate current value; fall back to AvgPrice.
+			markPrice := p.MarkPrice
+			if markPrice <= 0 {
+				markPrice = p.AvgPrice
+			}
 			snap.Positions = append(snap.Positions, risk.Position{
 				Symbol:    p.Symbol,
 				Direction: dirFromSide(p.Side),
 				Quantity:  p.Quantity,
-				Notional:  p.Quantity * p.AvgPrice,
+				Notional:  p.Quantity * markPrice,
 			})
 		}
 		// Daily PnL tracked per unit from trade store stats
@@ -431,10 +452,10 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 
 	if err != nil {
 		qb.metrics.TradesRejected.Add(1)
-		acctResult.Status = "rejected"
+		acctResult.Status = "execution_error"
 		acctResult.RiskResult = risk.Decision{Allowed: false, Reason: err.Error()}
 		trace.AccountResults = append(trace.AccountResults, acctResult)
-		trace.Outcome = "rejected_risk"
+		trace.Outcome = "execution_error"
 		qb.saveTrace(ctx, trace)
 		qb.logger.Error("execute failed",
 			"unit", unit.ID,

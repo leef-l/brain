@@ -207,9 +207,11 @@ type okxOrderResp struct {
 }
 
 func (e *OKXExchange) PlaceOrder(ctx context.Context, params PlaceOrderParams) (OrderResult, error) {
-	// Set leverage first
+	// Set leverage first — failure here means the order might execute at wrong leverage.
 	if params.Leverage > 0 {
-		_ = e.setLeverage(ctx, params.Symbol, params.PosSide, params.Leverage)
+		if err := e.setLeverage(ctx, params.Symbol, params.PosSide, params.Leverage); err != nil {
+			return OrderResult{Error: err.Error()}, fmt.Errorf("set leverage to %d: %w", params.Leverage, err)
+		}
 	}
 
 	ordType := "market"

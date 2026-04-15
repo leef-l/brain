@@ -28,6 +28,7 @@ func (f fakeView) FundingRate() float64        { return f.funding }
 func (f fakeView) OrderBookImbalance() float64 { return f.imbalance }
 func (f fakeView) TradeFlowToxicity() float64  { return f.toxicity }
 func (f fakeView) BigBuyRatio() float64        { return f.buyRatio }
+func (f fakeView) BigSellRatio() float64       { return 0 }
 func (f fakeView) TradeDensityRatio() float64  { return f.density }
 func (f fakeView) SimilarityWinRate() float64  { return f.winRate }
 func (f fakeView) Feature() FeatureView        { return nil }

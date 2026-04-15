@@ -65,6 +65,7 @@ func (v *SnapshotView) FundingRate() float64         { return v.snap.FundingRate
 func (v *SnapshotView) OrderBookImbalance() float64  { return v.snap.OrderBookImbalance }
 func (v *SnapshotView) TradeFlowToxicity() float64   { return v.snap.TradeFlowToxicity }
 func (v *SnapshotView) BigBuyRatio() float64         { return v.snap.BigBuyRatio }
+func (v *SnapshotView) BigSellRatio() float64        { return v.snap.BigSellRatio }
 func (v *SnapshotView) TradeDensityRatio() float64   { return v.snap.TradeDensityRatio }
 func (v *SnapshotView) SimilarityWinRate() float64   { return v.winRate }
 func (v *SnapshotView) Feature() strategy.FeatureView { return v.fv }

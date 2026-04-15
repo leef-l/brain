@@ -149,6 +149,20 @@ func (u *TradingUnit) ShouldTrade(symbol string) bool {
 	if !u.Enabled {
 		return false
 	}
+	// Check route-level symbol filter (from account config).
+	if len(u.RouteConfig.AllowedSymbols) > 0 {
+		found := false
+		for _, s := range u.RouteConfig.AllowedSymbols {
+			if s == symbol {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	// Check unit-level symbol list.
 	if len(u.Symbols) == 0 {
 		return true // trade all
 	}
@@ -225,6 +239,11 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 
 	// Build risk check request
 	sig := bestSignal(agg)
+	if sig.Entry <= 0 {
+		u.Logger.Warn("no valid signal with entry price, skipping",
+			"symbol", view.Symbol(), "direction", agg.Direction)
+		return nil, nil
+	}
 	orderReq := risk.OrderRequest{
 		Symbol:        view.Symbol(),
 		Action:        risk.ActionOpen,
@@ -317,7 +336,12 @@ func (u *TradingUnit) buildReviewContext(ctx context.Context) (strategy.ReviewCo
 	riskPositions := make([]risk.Position, len(positions))
 	largestPct := 0.0
 	for i, p := range positions {
-		notional := p.Quantity * p.AvgPrice
+		// Use MarkPrice for accurate current value; fall back to AvgPrice if unavailable.
+		markPrice := p.MarkPrice
+		if markPrice <= 0 {
+			markPrice = p.AvgPrice
+		}
+		notional := p.Quantity * markPrice
 		pct := 0.0
 		if balance.Equity > 0 {
 			pct = notional / balance.Equity * 100

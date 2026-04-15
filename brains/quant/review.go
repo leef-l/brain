@@ -139,14 +139,14 @@ func (r *KernelReviewer) Review(ctx context.Context, req ReviewRequest) (ReviewD
 
 	resp, err := r.Caller(timeoutCtx, "review_trade", payload, r.Config.MaxTokens)
 	if err != nil {
-		r.Logger.Warn("llm review timeout/error, auto-approving",
+		r.Logger.Warn("llm review timeout/error, rejecting trade for safety",
 			"err", err)
 		return fallbackDecision("llm_timeout_fallback"), nil
 	}
 
 	var decision ReviewDecision
 	if err := json.Unmarshal(resp, &decision); err != nil {
-		r.Logger.Warn("llm review parse error, auto-approving",
+		r.Logger.Warn("llm review parse error, rejecting trade for safety",
 			"err", err, "raw", string(resp))
 		return fallbackDecision("llm_parse_error"), nil
 	}

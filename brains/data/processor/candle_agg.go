@@ -11,6 +11,7 @@ const defaultHistoryCap = 500
 
 // CandleWindow -- 每品种每时间框架一个窗口
 type CandleWindow struct {
+	mu        sync.RWMutex
 	InstID    string
 	Timeframe string
 	Current   provider.Candle
@@ -49,6 +50,9 @@ func NewCandleWindow(instID, timeframe string) *CandleWindow {
 
 // OnCandle 处理新 K 线到达。
 func (w *CandleWindow) OnCandle(c provider.Candle) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	// 1. 如果 Current 不为空且 c.Timestamp != Current.Timestamp -> rotate
 	if w.hasCandle && c.Timestamp != w.Current.Timestamp {
 		w.History.Push(w.Current.Close)
@@ -74,6 +78,7 @@ func (w *CandleWindow) OnCandle(c provider.Candle) {
 }
 
 // LoadHistory 从历史 K 线序列初始化（启动时从 PG 加载）。
+// Note: calls OnCandle which acquires the lock internally.
 func (w *CandleWindow) LoadHistory(candles []provider.Candle) {
 	for _, c := range candles {
 		w.OnCandle(c)
@@ -83,6 +88,8 @@ func (w *CandleWindow) LoadHistory(candles []provider.Candle) {
 // PriceChangeRate 计算当前价格相对 n 根前价格的变化率。
 // 如果 History 不够 n 根，返回 0。
 func (w *CandleWindow) PriceChangeRate(n int) float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	hLen := w.History.Len()
 	if hLen < n || n <= 0 {
 		return 0
@@ -96,6 +103,8 @@ func (w *CandleWindow) PriceChangeRate(n int) float64 {
 
 // Volatility 计算最近 n 根 Close 的标准差 / 均值（变异系数）。
 func (w *CandleWindow) Volatility(n int) float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	hLen := w.History.Len()
 	if hLen < n || n <= 0 {
 		return 0
@@ -120,8 +129,15 @@ func (w *CandleWindow) Volatility(n int) float64 {
 
 // BBPosition 返回当前价格在布林带中的相对位置。
 func (w *CandleWindow) BBPosition() float64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.BB20.Position(w.Current.Close)
 }
+
+// RLock acquires a read lock on the window, allowing safe concurrent reads
+// of indicator values. Callers MUST call RUnlock when done.
+func (w *CandleWindow) RLock()   { w.mu.RLock() }
+func (w *CandleWindow) RUnlock() { w.mu.RUnlock() }
 
 // CandleAggregator -- 管理所有品种所有时间框架的窗口
 type CandleAggregator struct {

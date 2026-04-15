@@ -274,6 +274,9 @@ func min(a, b int) int {
 }
 
 func clamp(value, minValue, maxValue float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
 	if value < minValue {
 		return minValue
 	}

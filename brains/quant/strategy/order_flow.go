@@ -135,7 +135,7 @@ func (OrderFlow) computeLegacy(view MarketView) Signal {
 
 	short := view.OrderBookImbalance() < -0.4 &&
 		view.TradeFlowToxicity() > 0.65 &&
-		view.BigBuyRatio() < 0.3 &&
+		view.BigSellRatio() > 0.7 &&
 		view.TradeDensityRatio() > 2
 
 	if !long && !short {

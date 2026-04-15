@@ -42,6 +42,7 @@ type MarketView interface {
 	OrderBookImbalance() float64
 	TradeFlowToxicity() float64
 	BigBuyRatio() float64
+	BigSellRatio() float64
 	TradeDensityRatio() float64
 	SimilarityWinRate() float64
 
@@ -163,6 +164,7 @@ type Snapshot struct {
 	OrderBookImbalanceValue float64
 	TradeFlowToxicityValue  float64
 	BigBuyRatioValue        float64
+	BigSellRatioValue       float64
 	TradeDensityRatioValue  float64
 	SimilarityWinRateValue  float64
 }
@@ -193,6 +195,7 @@ func (s Snapshot) FundingRate() float64        { return s.FundingRateValue }
 func (s Snapshot) OrderBookImbalance() float64 { return s.OrderBookImbalanceValue }
 func (s Snapshot) TradeFlowToxicity() float64  { return s.TradeFlowToxicityValue }
 func (s Snapshot) BigBuyRatio() float64        { return s.BigBuyRatioValue }
+func (s Snapshot) BigSellRatio() float64       { return s.BigSellRatioValue }
 func (s Snapshot) TradeDensityRatio() float64  { return s.TradeDensityRatioValue }
 func (s Snapshot) SimilarityWinRate() float64  { return s.SimilarityWinRateValue }
 
