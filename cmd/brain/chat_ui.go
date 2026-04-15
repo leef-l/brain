@@ -166,12 +166,16 @@ func printPrompt(m chatMode) int {
 	return 0
 }
 
-func buildPromptHeaderLines(activity *chatActivity, queueLines []string, running bool) []string {
+func buildPromptHeaderLines(activity *chatActivity, queueLines []string, running bool, completionLines ...[]string) []string {
 	lines := make([]string, 0, 8)
 	if running {
 		lines = append(lines, activity.renderLines()...)
 	}
 	lines = append(lines, queueLines...)
+	// Append slash command completion hints when provided.
+	if len(completionLines) > 0 && len(completionLines[0]) > 0 {
+		lines = append(lines, completionLines[0]...)
+	}
 	return lines
 }
 

@@ -231,7 +231,6 @@ func runChat(args []string) int {
 			return cli.ExitOK
 
 		case data := <-stdinCh:
-			hadDraft := hasDraftInput(session)
 			line, action, done, err := session.consume(data)
 			if err != nil {
 				detachPromptFrame(session)
@@ -239,9 +238,12 @@ func runChat(args []string) int {
 				return cli.ExitFailed
 			}
 			if !done {
-				if hadDraft != hasDraftInput(session) {
-					rerenderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, promptHeaderLines(), running)
-				}
+				// Always rerender when input changes — slash completion
+				// hints need to update as the user types.
+				currentInput := strings.TrimSpace(session.editor().string())
+				completions := slashCompletionLines(currentInput)
+				headerLines := buildPromptHeaderLines(activity, state.queueDisplayLines(), running, completions)
+				rerenderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, headerLines, running)
 				continue
 			}
 

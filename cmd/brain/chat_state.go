@@ -172,6 +172,11 @@ func (s *chatState) switchMode(m chatMode) {
 	registerDelegateToolForEnvironment(s.registry, s.orchestrator, s.env)
 	registerSpecialistBridgeTools(s.registry, s.orchestrator)
 
+	// Brain management tool — lets the LLM list/start/stop specialist brains.
+	if s.orchestrator != nil {
+		s.registry.Register(newBrainManageTool(s.orchestrator))
+	}
+
 	s.registry = filterRegistryWithConfig(s.registry, s.cfg, toolScopesForChat(s.brainID, m)...)
 	s.opts.Tools = buildToolSchemas(s.registry)
 
