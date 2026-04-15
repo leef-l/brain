@@ -238,6 +238,12 @@ func (p *OpenAIProvider) buildAssistantMessage(m Message) openaiMessage {
 		switch b.Type {
 		case "text":
 			textParts = append(textParts, b.Text)
+		case "thinking":
+			// OpenAI protocol has no "thinking" role — merge into text so
+			// the reasoning trace is preserved in conversation history.
+			if b.Text != "" {
+				textParts = append(textParts, b.Text)
+			}
 		case "tool_use":
 			args := "{}"
 			if b.Input != nil {
@@ -256,6 +262,11 @@ func (p *OpenAIProvider) buildAssistantMessage(m Message) openaiMessage {
 
 	if len(textParts) > 0 {
 		msg.Content = strings.Join(textParts, "\n")
+	}
+	// OpenAI requires content field for assistant messages — some compatible
+	// APIs reject the request if content is missing entirely.
+	if msg.Content == nil {
+		msg.Content = ""
 	}
 	if len(toolCalls) > 0 {
 		msg.ToolCalls = toolCalls
@@ -301,7 +312,51 @@ func (p *OpenAIProvider) convertMessages(messages []Message) []openaiMessage {
 		}
 	}
 
-	return out
+	return sanitizeToolCallSequence(out)
+}
+
+// sanitizeToolCallSequence ensures every assistant message with tool_calls is
+// immediately followed by exactly one role=tool message per tool_call_id.
+// If tool result messages are missing (e.g. due to a prior error or cancel),
+// placeholder results are injected so the OpenAI API doesn't reject the
+// request with HTTP 400.
+func sanitizeToolCallSequence(msgs []openaiMessage) []openaiMessage {
+	var result []openaiMessage
+
+	for i := 0; i < len(msgs); i++ {
+		msg := msgs[i]
+		result = append(result, msg)
+
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			continue
+		}
+
+		// Collect the set of tool_call IDs that need results.
+		needed := make(map[string]bool, len(msg.ToolCalls))
+		for _, tc := range msg.ToolCalls {
+			needed[tc.ID] = true
+		}
+
+		// Consume following role=tool messages that match.
+		for i+1 < len(msgs) && msgs[i+1].Role == "tool" {
+			i++
+			result = append(result, msgs[i])
+			delete(needed, msgs[i].ToolCallID)
+		}
+
+		// Inject placeholder results for any missing tool_call IDs.
+		for _, tc := range msg.ToolCalls {
+			if needed[tc.ID] {
+				result = append(result, openaiMessage{
+					Role:       "tool",
+					Content:    `"tool call was not executed"`,
+					ToolCallID: tc.ID,
+				})
+			}
+		}
+	}
+
+	return result
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +482,7 @@ type openaiSSEReader struct {
 	mu      sync.Mutex
 	closed  bool
 	toolUse map[int]*openaiStreamToolUse
+	pending []StreamEvent // queued events to emit on subsequent Next() calls
 }
 
 type openaiStreamToolUse struct {
@@ -451,6 +507,13 @@ func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 		return StreamEvent{}, io.EOF
 	}
 
+	// Drain any queued events from a previous multi-tool-call flush.
+	if len(r.pending) > 0 {
+		ev := r.pending[0]
+		r.pending = r.pending[1:]
+		return ev, nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -463,20 +526,8 @@ func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 				return StreamEvent{}, fmt.Errorf("openai: stream scan: %w", err)
 			}
 			// Flush any pending tool calls
-			for idx, tc := range r.toolUse {
-				delete(r.toolUse, idx)
-				args := strings.TrimSpace(tc.arguments.String())
-				if args == "" {
-					args = "{}"
-				}
-				return StreamEvent{
-					Type: EventToolCallDelta,
-					Data: marshalRaw(map[string]interface{}{
-						"tool_use_id": tc.toolCallID,
-						"tool_name":   tc.toolName,
-						"input":       json.RawMessage(args),
-					}),
-				}, nil // will be followed by EOF on next call
+			if ev, ok := r.flushToolCalls(); ok {
+				return ev, nil // will be followed by EOF on next call
 			}
 			return StreamEvent{}, io.EOF
 		}
@@ -488,20 +539,8 @@ func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 		raw := strings.TrimPrefix(line, "data: ")
 		if raw == "[DONE]" {
 			// Flush pending tool calls before ending
-			for idx, tc := range r.toolUse {
-				delete(r.toolUse, idx)
-				args := strings.TrimSpace(tc.arguments.String())
-				if args == "" {
-					args = "{}"
-				}
-				return StreamEvent{
-					Type: EventToolCallDelta,
-					Data: marshalRaw(map[string]interface{}{
-						"tool_use_id": tc.toolCallID,
-						"tool_name":   tc.toolName,
-						"input":       json.RawMessage(args),
-					}),
-				}, nil
+			if ev, ok := r.flushToolCalls(); ok {
+				return ev, nil
 			}
 			return StreamEvent{Type: EventMessageEnd}, nil
 		}
@@ -620,21 +659,28 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 			stopReason = "end_turn"
 		case "tool_calls":
 			stopReason = "tool_use"
-			// Flush all tool calls
+			// Flush all tool calls — enqueue them so they are emitted one
+			// per Next() call (the previous code returned inside the loop,
+			// dropping all but the first tool call).
 			for idx, tc := range r.toolUse {
 				delete(r.toolUse, idx)
 				args := strings.TrimSpace(tc.arguments.String())
 				if args == "" {
 					args = "{}"
 				}
-				return StreamEvent{
+				r.pending = append(r.pending, StreamEvent{
 					Type: EventToolCallDelta,
 					Data: marshalRaw(map[string]interface{}{
 						"tool_use_id": tc.toolCallID,
 						"tool_name":   tc.toolName,
 						"input":       json.RawMessage(args),
 					}),
-				}, true
+				})
+			}
+			if len(r.pending) > 0 {
+				ev := r.pending[0]
+				r.pending = r.pending[1:]
+				return ev, true
 			}
 		case "length":
 			stopReason = "max_tokens"
@@ -650,6 +696,32 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 		}, true
 	}
 
+	return StreamEvent{}, false
+}
+
+// flushToolCalls enqueues all accumulated tool calls into r.pending and
+// returns the first one. Subsequent calls to Next() will drain the rest.
+func (r *openaiSSEReader) flushToolCalls() (StreamEvent, bool) {
+	for idx, tc := range r.toolUse {
+		delete(r.toolUse, idx)
+		args := strings.TrimSpace(tc.arguments.String())
+		if args == "" {
+			args = "{}"
+		}
+		r.pending = append(r.pending, StreamEvent{
+			Type: EventToolCallDelta,
+			Data: marshalRaw(map[string]interface{}{
+				"tool_use_id": tc.toolCallID,
+				"tool_name":   tc.toolName,
+				"input":       json.RawMessage(args),
+			}),
+		})
+	}
+	if len(r.pending) > 0 {
+		ev := r.pending[0]
+		r.pending = r.pending[1:]
+		return ev, true
+	}
 	return StreamEvent{}, false
 }
 

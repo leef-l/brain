@@ -335,10 +335,12 @@ func handleChatRunResult(state *chatState, provider llm.Provider, brainID string
 	// Check for LLM errors buried in TurnResults (Runner.Execute returns nil
 	// error even when the LLM call fails — the error is inside the last Turn).
 	if rr.result != nil && rr.result.Run.State == loop.StateFailed {
-		if errMsg := lastTurnError(rr.result); errMsg != "" {
-			fmt.Fprintf(os.Stderr, "\033[1;31m! Error: %s\033[0m\n\n", errMsg)
-			return
+		errMsg := lastTurnError(rr.result)
+		if errMsg == "" {
+			errMsg = "unexpected error: run failed"
 		}
+		fmt.Fprintf(os.Stderr, "\033[1;31m! Error: %s\033[0m\n\n", errMsg)
+		return
 	}
 
 	state.messages = rr.result.FinalMessages
