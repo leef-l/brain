@@ -232,8 +232,119 @@ func initConfig() error {
 			_ = os.WriteFile(kbPath, data, 0600)
 		}
 	}
+
+	// Generate specialist brain example configs.
+	dir := filepath.Dir(configPath())
+	writeExampleIfMissing(filepath.Join(dir, "data-brain.example.yaml"), dataConfigExample)
+	writeExampleIfMissing(filepath.Join(dir, "quant-brain.example.yaml"), quantConfigExample)
+	writeExampleIfMissing(filepath.Join(dir, "central-brain.example.yaml"), centralConfigExample)
+
 	return nil
 }
+
+func writeExampleIfMissing(path, content string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		_ = os.WriteFile(path, []byte(content), 0600)
+	}
+}
+
+const dataConfigExample = `# 数据大脑配置示例 — 复制为 data-brain.yaml 并按需修改
+# Sidecar 模式通过 config.json 的 brains.data.env.DATA_CONFIG 指定路径
+
+# 活跃合约筛选
+active_list:
+  min_volume_24h: 10000000
+  max_instruments: 100
+  always_include:
+    - BTC-USDT-SWAP
+    - ETH-USDT-SWAP
+    - SOL-USDT-SWAP
+
+# 历史回填
+backfill:
+  enabled: false
+  max_days: 90
+  batch_size: 100
+
+# 数据校验
+validation:
+  max_price_jump: 0.10
+
+# 内存环形缓冲区
+ring_buffer:
+  candle_depth: 1000
+
+# 192 维特征计算
+feature:
+  enabled: true
+  interval: 1s
+
+# PostgreSQL（可选）:
+#   命令行: brain-data -pg "postgres://user:pass@localhost:5432/brain"
+#   环境变量: export PG_URL="postgres://user:pass@localhost:5432/brain"
+`
+
+const quantConfigExample = `# 量化大脑配置示例 — 复制为 quant-brain.yaml 并按需修改
+# Sidecar 模式通过 config.json 的 brains.quant.env.QUANT_CONFIG 指定路径
+
+brain:
+  cycle_interval: 5s
+  default_timeframe: "1H"
+
+accounts:
+  # 纸盘账户（测试用）
+  - id: paper-main
+    exchange: paper
+    initial_equity: 10000
+    tags: [test, paper]
+
+  # OKX 实盘账户（取消注释并填入密钥）
+  # - id: okx-main
+  #   exchange: okx
+  #   api_key: "your-api-key"
+  #   secret_key: "your-secret-key"
+  #   passphrase: "your-passphrase"
+  #   simulated: false
+
+units:
+  - id: unit-btc
+    account_id: paper-main
+    symbols: [BTC-USDT-SWAP]
+    timeframe: "1H"
+    max_leverage: 10
+    enabled: true
+
+  - id: unit-eth
+    account_id: paper-main
+    symbols: [ETH-USDT-SWAP]
+    timeframe: "1H"
+    max_leverage: 5
+    enabled: true
+
+# PostgreSQL（可选，启用交易记录持久化 + 崩溃恢复）:
+#   quant-brain -config quant-brain.yaml -pg "postgres://user:pass@localhost:5432/brain"
+`
+
+const centralConfigExample = `# 中央大脑配置示例
+# 中央大脑通过环境变量配置，启动命令: brain-central
+
+# === LLM API 配置（启用 LLM 复审功能） ===
+#
+# DeepSeek V3.2（默认，推荐）:
+#   export LLM_API_KEY="sk-xxx"
+#
+# Claude（Anthropic）:
+#   export LLM_API_KEY="sk-ant-xxx"
+#   export LLM_BASE_URL="https://api.anthropic.com/v1"
+#   export LLM_MODEL="claude-sonnet-4-20250514"
+#
+# 腾讯混元:
+#   export LLM_API_KEY="your-key"
+#   export LLM_BASE_URL="https://api.hunyuan.cloud.tencent.com/v1"
+#   export LLM_MODEL="hunyuan-pro"
+#
+# 不启动中央大脑时，量化大脑的 LLM 复审请求会自动放行。
+`
 
 // printConfigSetupGuide prints instructions for first-time configuration.
 func printConfigSetupGuide() {
@@ -791,12 +902,21 @@ func runConfigInit(_ []string) int {
 		fmt.Fprintf(os.Stderr, "brain config init: %v\n", err)
 		return cli.ExitSoftware
 	}
+	dir := filepath.Dir(path)
 	fmt.Fprintf(os.Stdout, "已生成配置文件:\n")
 	fmt.Fprintf(os.Stdout, "  %s\n", path)
 	fmt.Fprintf(os.Stdout, "  %s\n", keybindingsPath())
+	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "data-brain.example.yaml"))
+	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "quant-brain.example.yaml"))
+	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "central-brain.example.yaml"))
 	fmt.Fprintln(os.Stdout, "")
 	fmt.Fprintln(os.Stdout, "下一步，设置你的 API Key：")
 	fmt.Fprintln(os.Stdout, "  brain config set providers.anthropic.api_key <your-key>")
+	fmt.Fprintln(os.Stdout, "")
+	fmt.Fprintln(os.Stdout, "配置专精大脑（可选）：")
+	fmt.Fprintln(os.Stdout, "  cp ~/.brain/quant-brain.example.yaml ~/.brain/quant-brain.yaml")
+	fmt.Fprintln(os.Stdout, "  cp ~/.brain/data-brain.example.yaml  ~/.brain/data-brain.yaml")
+	fmt.Fprintln(os.Stdout, "  # 编辑 yaml 后，在 config.json 的 brains 字段中指定路径")
 	fmt.Fprintln(os.Stdout, "")
 	fmt.Fprintln(os.Stdout, "或直接编辑配置文件修改 provider 和模型。")
 	return cli.ExitOK
