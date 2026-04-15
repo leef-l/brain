@@ -488,10 +488,91 @@ units:
 #   quant-brain -config quant-brain.yaml -pg "postgres://brain:secret@db:5432/brain"
 `
 
-const centralConfigExample = `# 中央大脑配置示例
-# 中央大脑通过环境变量配置，启动命令: brain-central
+const centralConfigExample = `# ============================================================
+#  Brain 主配置文件 (config.json) 字段说明
+#  路径: ~/.brain/config.json（Linux/Mac）或 %USERPROFILE%\.brain\config.json（Windows）
+#  生成: brain config init
+# ============================================================
 
-# === LLM API 配置（启用 LLM 复审功能） ===
+# ==================== 基础配置 ====================
+#
+# mode             运行模式："solo"（单机）
+# default_brain    默认大脑："central"（中央大脑，即 chat/run 本身）
+# log_level        日志级别："debug" | "info" | "warn" | "error"
+# timeout          每轮对话超时："30m"（30分钟），"0" 禁用超时
+
+# ==================== 权限模式 ====================
+#
+# chat_mode        chat/run 命令使用的权限模式（优先级高于 permission_mode）
+# permission_mode  serve 命令使用的权限模式（chat_mode 未设置时也作为 chat 的兜底）
+#
+# 可选值：
+#   plan              — 只能读文件和搜索，不能修改（规划模式）
+#   default           — 每次工具调用都要用户确认
+#   accept-edits      — 文件读写自动放行，shell 命令需确认（推荐）
+#   auto              — 所有操作自动放行（高风险）
+#   restricted        — 严格受限，需配合 file_policy 使用
+#   bypass-permissions — 跳过所有权限检查（仅开发调试用）
+#
+# serve_workdir_policy    serve 模式的工作目录策略："confined"（限制在工作目录内）
+
+# ==================== LLM 提供商配置 ====================
+#
+# active_provider   当前激活的提供商名称（对应 providers 中的 key）
+#
+# providers:
+#   <名称>:
+#     base_url       API 基础地址（代码会追加 /v1/messages）
+#     api_key        API 密钥
+#     model          默认模型名称
+#     models:        按大脑类型指定不同模型（可选）
+#       central      中央大脑使用的模型
+#       code         代码大脑使用的模型
+#       verifier     验证大脑使用的模型
+#       data         数据大脑使用的模型
+#       quant        量化大脑使用的模型
+#
+# --- 常见配置 ---
+#
+# Anthropic（官方）:
+#   base_url: "https://api.anthropic.com"
+#   model: "claude-sonnet-4-20250514"
+#
+# 腾讯 Coding Plan（Anthropic 协议）:
+#   base_url: "https://api.lkeap.cloud.tencent.com/coding/anthropic"
+#   model: "glm-5"  或  "claude-sonnet-4-20250514"
+#
+# 注意：base_url 不要以 /v1 或 /v3 结尾，代码会自动追加 /v1/messages
+
+# ==================== 专精大脑注册 ====================
+#
+# brains:          配置哪些专精大脑可用（空数组 [] = 自动探测所有内置大脑）
+#   - kind         大脑类型："code" | "verifier" | "data" | "quant" | "browser" | "fault"
+#     binary       可选，sidecar 二进制路径（不填则从 PATH 自动查找）
+#     model        可选，该大脑使用的 LLM 模型（通过 LLM Proxy 代理）
+#     auto_start   可选，是否在启动时自动启动（默认 false，按需懒启动）
+
+# ==================== 执行预算 ====================
+#
+# default_budget:
+#   max_turns      每次对话最大轮次：20（默认）
+#   max_cost_usd   每次对话最大花费：5.0 美元（默认）
+
+# ==================== 文件权限策略 ====================
+#
+# file_policy:     控制 LLM 工具可以访问哪些文件
+#   allow_read     允许读取的路径 glob 列表，如 ["**"]（所有文件）
+#   allow_create   允许创建的路径 glob 列表
+#   allow_edit     允许编辑的路径 glob 列表
+#   allow_delete   允许删除的路径 glob 列表（建议为空）
+#   deny           拒绝列表（优先级最高），如 [".git/**", "**/.env"]
+#
+# 提示：restricted 模式必须配置 file_policy 才能使用
+
+# ==================== 中央大脑 LLM 复审服务 ====================
+#
+# brain-central 是独立的 LLM 复审服务，量化大脑请求交易审批时调用。
+# 通过环境变量配置：
 #
 # DeepSeek V3.2（默认，推荐）:
 #   export LLM_API_KEY="sk-xxx"
@@ -506,7 +587,7 @@ const centralConfigExample = `# 中央大脑配置示例
 #   export LLM_BASE_URL="https://api.hunyuan.cloud.tencent.com/v1"
 #   export LLM_MODEL="hunyuan-pro"
 #
-# 不启动中央大脑时，量化大脑的 LLM 复审请求会自动放行。
+# 不启动 brain-central 时，量化大脑的 LLM 复审请求会自动放行。
 `
 
 // printConfigSetupGuide prints instructions for first-time configuration.
