@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -164,20 +165,51 @@ func (p *OKXSwapProvider) runLoop(ctx context.Context) {
 	}
 }
 
-// connect dials the OKX WebSocket.
+// connect dials the OKX WebSocket with automatic proxy fallback.
+// Strategy: try with proxy first (if detected), fall back to direct on failure.
 func (p *OKXSwapProvider) connect(ctx context.Context) error {
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-		Proxy:            netutil.ProxyFunc(),
+	proxyFn := netutil.ProxyFunc()
+
+	// Check if a proxy is actually configured.
+	testReq, _ := http.NewRequest("GET", p.config.WSURL, nil)
+	proxyURL, _ := proxyFn(testReq)
+	hasProxy := proxyURL != nil
+
+	if hasProxy {
+		// Try proxy first.
+		conn, err := p.dial(ctx, proxyFn)
+		if err == nil {
+			log.Printf("[%s] connected via proxy %s", p.name, proxyURL.Host)
+			p.mu.Lock()
+			p.conn = conn
+			p.mu.Unlock()
+			return nil
+		}
+		log.Printf("[%s] proxy connect failed (%v), falling back to direct", p.name, err)
 	}
-	conn, _, err := dialer.DialContext(ctx, p.config.WSURL, nil)
+
+	// Direct connection (no proxy).
+	conn, err := p.dial(ctx, nil)
 	if err != nil {
+		if hasProxy {
+			return fmt.Errorf("both proxy and direct failed: %w", err)
+		}
 		return err
 	}
+	log.Printf("[%s] connected directly", p.name)
 	p.mu.Lock()
 	p.conn = conn
 	p.mu.Unlock()
 	return nil
+}
+
+func (p *OKXSwapProvider) dial(ctx context.Context, proxyFn func(*http.Request) (*url.URL, error)) (*websocket.Conn, error) {
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		Proxy:            proxyFn,
+	}
+	conn, _, err := dialer.DialContext(ctx, p.config.WSURL, nil)
+	return conn, err
 }
 
 // closeConn safely closes the current connection.

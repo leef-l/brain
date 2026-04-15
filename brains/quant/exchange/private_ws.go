@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -125,18 +127,14 @@ func (c *PrivateWSConn) Stop() {
 	c.mu.Unlock()
 }
 
-// connect dials the WS, authenticates, and subscribes.
+// connect dials the WS with automatic proxy fallback, authenticates, and subscribes.
 func (c *PrivateWSConn) connect(ctx context.Context) error {
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-		Proxy:            netutil.ProxyFunc(),
-	}
 	header := make(map[string][]string)
 	if c.config.Simulated {
 		header["x-simulated-trading"] = []string{"1"}
 	}
 
-	conn, _, err := dialer.DialContext(ctx, c.config.WSEndpoint, header)
+	conn, err := c.dialWithFallback(ctx, header)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
@@ -447,4 +445,40 @@ func (m *PrivateWSManager) Conn(accountID string) *PrivateWSConn {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.conns[accountID]
+}
+
+// dialWithFallback tries proxy first (if detected), falls back to direct.
+func (c *PrivateWSConn) dialWithFallback(ctx context.Context, header map[string][]string) (*websocket.Conn, error) {
+	proxyFn := netutil.ProxyFunc()
+
+	testReq, _ := http.NewRequest("GET", c.config.WSEndpoint, nil)
+	proxyURL, _ := proxyFn(testReq)
+	hasProxy := proxyURL != nil
+
+	if hasProxy {
+		conn, err := c.dialWS(ctx, proxyFn, header)
+		if err == nil {
+			c.logger.Info("connected via proxy", "proxy", proxyURL.Host)
+			return conn, nil
+		}
+		c.logger.Warn("proxy connect failed, falling back to direct", "err", err)
+	}
+
+	conn, err := c.dialWS(ctx, nil, header)
+	if err != nil {
+		if hasProxy {
+			return nil, fmt.Errorf("both proxy and direct failed: %w", err)
+		}
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (c *PrivateWSConn) dialWS(ctx context.Context, proxyFn func(*http.Request) (*url.URL, error), header map[string][]string) (*websocket.Conn, error) {
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		Proxy:            proxyFn,
+	}
+	conn, _, err := dialer.DialContext(ctx, c.config.WSEndpoint, header)
+	return conn, err
 }
