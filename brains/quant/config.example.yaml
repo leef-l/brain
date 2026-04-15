@@ -7,7 +7,7 @@
 # ==================== 大脑核心参数 ====================
 brain:
   cycle_interval: 5s             # 评估周期（每 5 秒扫描一次所有品种）
-  default_timeframe: "1H"        # 默认 K 线周期
+  default_timeframe: "1H"        # 默认 K 线周期（unit 未指定时使用，可选: 1m/5m/15m/1H/4H/1D）
 
 # ==================== 账户配置 ====================
 accounts:
@@ -67,7 +67,21 @@ units:
     symbols:                              # 该单元交易的品种列表
       - BTC-USDT-SWAP
       - ETH-USDT-SWAP
-    timeframe: "1H"                       # K线周期：1m/5m/15m/1H/4H/1D
+    # K线周期 — 决定策略评估的时间粒度
+    # 可选值：
+    #   1m   — 1 分钟线（高频，信号多但噪音大）
+    #   5m   — 5 分钟线（短线交易）
+    #   15m  — 15 分钟线（适合均值回归策略）
+    #   1H   — 1 小时线（推荐，信号质量和频率的平衡点）
+    #   4H   — 4 小时线（中线趋势，适合趋势跟踪和突破策略）
+    #   1D   — 日线（长线，信号最少但最稳定）
+    #
+    # 各策略适用的 timeframe：
+    #   trend_follower     — 1H, 4H（趋势在大周期更清晰）
+    #   mean_reversion     — 15m, 1H（均值回归在小周期效果好）
+    #   breakout_momentum  — 1H, 4H（突破需要足够的价格结构）
+    #   order_flow         — tick 级（自动使用实时逐笔数据，不受此字段影响）
+    timeframe: "1H"
     max_leverage: 10                      # 最大杠杆倍数
     enabled: true                         # true=启用, false=禁用（不参与交易）
 
@@ -76,7 +90,7 @@ units:
   #   symbols:
   #     - SOL-USDT-SWAP
   #     - DOGE-USDT-SWAP
-  #   timeframe: "1H"
+  #   timeframe: "15m"                    # 山寨币用 15 分钟线，捕捉短线波动
   #   max_leverage: 5
   #   enabled: true
 
