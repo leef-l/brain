@@ -168,7 +168,9 @@ func runChat(args []string) int {
 	session.history = loadHistory()
 	session.historyIndex = len(session.history)
 	promptHeaderLines := func() []string {
-		return buildPromptHeaderLines(activity, state.queueDisplayLines(), running)
+		currentInput := strings.TrimSpace(session.editor().string())
+		completions := slashCompletionLines(currentInput)
+		return buildPromptHeaderLines(activity, state.queueDisplayLines(), running, completions)
 	}
 	renderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, promptHeaderLines(), running)
 
@@ -238,12 +240,9 @@ func runChat(args []string) int {
 				return cli.ExitFailed
 			}
 			if !done {
-				// Always rerender when input changes — slash completion
-				// hints need to update as the user types.
-				currentInput := strings.TrimSpace(session.editor().string())
-				completions := slashCompletionLines(currentInput)
-				headerLines := buildPromptHeaderLines(activity, state.queueDisplayLines(), running, completions)
-				rerenderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, headerLines, running)
+				// Rerender on every keystroke so slash command completion
+				// hints stay visible as the user types.
+				rerenderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, promptHeaderLines(), running)
 				continue
 			}
 
