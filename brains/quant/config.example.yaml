@@ -40,29 +40,38 @@ accounts:
   #       - trend_follower
   #       - breakout_momentum
 
-  # --- OKX 模拟盘账户 ---
-  # - id: okx-demo
-  #   exchange: okx
-  #   api_key: "demo-api-key"
-  #   secret_key: "demo-secret-key"
-  #   passphrase: "demo-passphrase"
-  #   simulated: true
-  #   tags: [demo]
+  # --- OKX 模拟盘账户（建议先用模拟盘测试） ---
+  # 模拟盘使用真实行情但虚拟资金，OKX 赠送初始资金，亏完可重新申请
+  # API Key 获取：OKX 官网 → 头像 → API → 切换"模拟盘"标签 → 创建
+  # - id: okx-demo                       # 账户唯一标识（自定义，units 引用此 ID）
+  #   exchange: okx                       # 交易所类型：okx
+  #   api_key: "demo-api-key"             # OKX 自动生成的 API Key
+  #   secret_key: "demo-secret-key"       # OKX 自动生成的 Secret Key（只显示一次）
+  #   passphrase: "demo-passphrase"       # 创建 API 时你自己设置的口令密码
+  #   base_url: "https://www.okx.com"     # API 地址（一般不用改）
+  #   simulated: true                     # true=模拟盘（关键开关！false=实盘）
+  #   tags: [demo]                        # 标签，用于分组筛选（自定义）
   #   route:
-  #     weight_factor: 1.0
+  #     weight_factor: 1.0                # 仓位权重（1.0=满仓, 0.5=半仓）
+  #     # allowed_strategies:             # 限制可用策略（不填=全部策略可用）
+  #     #   - trend_follower
+  #     # allowed_symbols:                # 限制可交易品种（不填=全部品种可交易）
+  #     #   - BTC-USDT-SWAP
 
 # ==================== 交易单元 ====================
+# 交易单元 = "交易员"，绑定一个账户，负责交易指定品种
+# 一个账户可绑多个 unit，一个 unit 可交易多个品种
 units:
-  - id: unit-btc
-    account_id: paper-main
-    symbols:
+  - id: unit-btc                          # 单元唯一标识（自定义）
+    account_id: paper-main                # 绑定的账户 ID（对应 accounts 中的 id）
+    symbols:                              # 该单元交易的品种列表
       - BTC-USDT-SWAP
       - ETH-USDT-SWAP
-    timeframe: "1H"
-    max_leverage: 10
-    enabled: true
+    timeframe: "1H"                       # K线周期：1m/5m/15m/1H/4H/1D
+    max_leverage: 10                      # 最大杠杆倍数
+    enabled: true                         # true=启用, false=禁用（不参与交易）
 
-  # - id: unit-alt
+  # - id: unit-alt                        # 可创建多个 unit 分别管理不同品种
   #   account_id: paper-main
   #   symbols:
   #     - SOL-USDT-SWAP
