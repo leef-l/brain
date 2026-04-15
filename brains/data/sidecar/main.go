@@ -56,7 +56,7 @@ func loadConfig(logger *slog.Logger) (data.Config, store.Store) {
 			AlwaysInclude:  []string{"BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"},
 		},
 		Backfill: data.BackfillConfig{
-			Enabled:   false,
+			Enabled:   true,
 			MaxDays:   90,
 			BatchSize: 100,
 		},

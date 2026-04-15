@@ -287,7 +287,7 @@ providers:
 
 # --- 历史回填 ---
 backfill:
-  enabled: false                 # 启动时是否回填历史数据
+  enabled: true                  # 启动时是否回填历史数据（有 PG 时自动执行）
   max_days: 90                   # 回填天数
   batch_size: 100                # 每次请求的 K 线数量
   rate_limit: 200ms              # REST 请求最小间隔（避免触发限频）
