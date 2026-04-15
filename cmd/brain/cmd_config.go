@@ -234,13 +234,17 @@ func initConfig() error {
 	}
 
 	// Generate specialist brain example configs.
-	dir := filepath.Dir(configPath())
+	writeExamples(filepath.Dir(configPath()))
+
+	return nil
+}
+
+// writeExamples generates all example config files in the given directory.
+func writeExamples(dir string) {
 	writeExample(filepath.Join(dir, "data-brain.example.yaml"), dataConfigExample)
 	writeExample(filepath.Join(dir, "quant-brain.example.yaml"), quantConfigExample)
 	writeExample(filepath.Join(dir, "central-brain.example.yaml"), centralConfigExample)
 	writeExample(filepath.Join(dir, "config-reference.example.yaml"), configReferenceExample)
-
-	return nil
 }
 
 func writeExample(path, content string) {
@@ -1275,32 +1279,48 @@ func runConfig(args []string) int {
 
 func runConfigInit(_ []string) int {
 	path := configPath()
-	if _, err := os.Stat(path); err == nil {
-		fmt.Fprintf(os.Stderr, "配置文件已存在: %s\n", path)
-		fmt.Fprintln(os.Stderr, "如需重置，请先删除该文件。")
-		return cli.ExitFailed
-	}
-	if err := initConfig(); err != nil {
-		fmt.Fprintf(os.Stderr, "brain config init: %v\n", err)
-		return cli.ExitSoftware
-	}
 	dir := filepath.Dir(path)
-	fmt.Fprintf(os.Stdout, "已生成配置文件:\n")
-	fmt.Fprintf(os.Stdout, "  %s\n", path)
-	fmt.Fprintf(os.Stdout, "  %s\n", keybindingsPath())
+	// Ensure config directory exists for example files.
+	_ = os.MkdirAll(dir, 0700)
+
+	configExists := false
+	if _, err := os.Stat(path); err == nil {
+		configExists = true
+	}
+
+	if !configExists {
+		if err := initConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "brain config init: %v\n", err)
+			return cli.ExitSoftware
+		}
+	}
+
+	// Always regenerate example files (they contain no user data).
+	writeExamples(dir)
+
+	if configExists {
+		fmt.Fprintf(os.Stdout, "配置文件已存在: %s（未修改）\n", path)
+		fmt.Fprintf(os.Stdout, "已更新示例文件:\n")
+	} else {
+		fmt.Fprintf(os.Stdout, "已生成配置文件:\n")
+		fmt.Fprintf(os.Stdout, "  %s\n", path)
+		fmt.Fprintf(os.Stdout, "  %s\n", keybindingsPath())
+	}
 	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "data-brain.example.yaml"))
 	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "quant-brain.example.yaml"))
 	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "central-brain.example.yaml"))
+	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "config-reference.example.yaml"))
 	fmt.Fprintln(os.Stdout, "")
-	fmt.Fprintln(os.Stdout, "下一步，设置你的 API Key：")
-	fmt.Fprintln(os.Stdout, "  brain config set providers.anthropic.api_key <your-key>")
-	fmt.Fprintln(os.Stdout, "")
+
+	if !configExists {
+		fmt.Fprintln(os.Stdout, "下一步，设置你的 API Key：")
+		fmt.Fprintln(os.Stdout, "  brain config set providers.anthropic.api_key <your-key>")
+		fmt.Fprintln(os.Stdout, "")
+	}
 	fmt.Fprintln(os.Stdout, "配置专精大脑（可选）：")
 	fmt.Fprintln(os.Stdout, "  cp ~/.brain/quant-brain.example.yaml ~/.brain/quant-brain.yaml")
 	fmt.Fprintln(os.Stdout, "  cp ~/.brain/data-brain.example.yaml  ~/.brain/data-brain.yaml")
 	fmt.Fprintln(os.Stdout, "  # 编辑 yaml 后，在 config.json 的 brains 字段中指定路径")
-	fmt.Fprintln(os.Stdout, "")
-	fmt.Fprintln(os.Stdout, "或直接编辑配置文件修改 provider 和模型。")
 	return cli.ExitOK
 }
 
