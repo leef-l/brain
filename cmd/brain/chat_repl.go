@@ -207,14 +207,7 @@ func runChat(args []string) int {
 				printDiffPreviewBlock(ev.previewLines)
 			}
 			if running && activity.apply(ev) {
-				// Stream content deltas directly to terminal for live output.
-				if ev.kind == progressContent {
-					detachPromptFrame(session)
-					activity.flushStreamDelta()
-					renderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, promptHeaderLines(), running)
-				} else {
-					rerenderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, promptHeaderLines(), running)
-				}
+				rerenderPromptFrame(session, state.mode, providerSession.Name, providerSession.Model, env.workdir, promptHeaderLines(), running)
 			}
 			continue
 

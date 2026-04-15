@@ -348,11 +348,7 @@ func handleChatRunResult(state *chatState, provider llm.Provider, brainID string
 		replyText = buildToolCallSummary(rr.result.FinalMessages)
 	}
 
-	if activity.streamed {
-		// Content was already printed live via streaming — just finish
-		// with a trailing newline. No need to re-print.
-		activity.finishStream()
-	} else if replyText != "" {
+	if replyText != "" {
 		printAssistantMessage(replyText)
 	}
 

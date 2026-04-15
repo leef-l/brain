@@ -88,6 +88,20 @@ func terminalColumns() int {
 	return int(ws.col)
 }
 
+func terminalRows() int {
+	fd := int(os.Stdout.Fd())
+	ws := terminalWinsize{}
+	if _, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(syscall.TIOCGWINSZ),
+		uintptr(unsafe.Pointer(&ws)),
+	); errno != 0 || ws.row == 0 {
+		return 24
+	}
+	return int(ws.row)
+}
+
 func fdSet(set *syscall.FdSet, fd int) {
 	wordBits := int(unsafe.Sizeof(uintptr(0)) * 8)
 	words := unsafe.Slice((*uintptr)(unsafe.Pointer(set)), int(unsafe.Sizeof(*set))/int(unsafe.Sizeof(uintptr(0))))

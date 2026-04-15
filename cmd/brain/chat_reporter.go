@@ -47,13 +47,6 @@ type chatActivity struct {
 	currentTool string
 	content     strings.Builder
 	events      []string
-
-	// Streaming output state: tracks whether text has been directly printed
-	// to the terminal as it arrives, so handleChatRunResult can skip the
-	// final bulk printAssistantMessage.
-	streamed       bool // true once any content delta was printed live
-	streamedPrefix bool // true once the ">" prefix was printed
-	streamedLen    int  // number of content bytes already printed
 }
 
 func (a *chatActivity) start() {
@@ -62,9 +55,6 @@ func (a *chatActivity) start() {
 	a.currentTool = ""
 	a.content.Reset()
 	a.events = nil
-	a.streamed = false
-	a.streamedPrefix = false
-	a.streamedLen = 0
 }
 
 func (a *chatActivity) stop() {
@@ -73,9 +63,6 @@ func (a *chatActivity) stop() {
 	a.currentTool = ""
 	a.content.Reset()
 	a.events = nil
-	a.streamed = false
-	a.streamedPrefix = false
-	a.streamedLen = 0
 }
 
 func (a *chatActivity) running() bool {
@@ -122,39 +109,6 @@ func (a *chatActivity) apply(ev chatProgressEvent) bool {
 	return true
 }
 
-// flushStreamDelta prints any new content that arrived since the last flush
-// directly to the terminal. Returns true if anything was printed.
-func (a *chatActivity) flushStreamDelta() bool {
-	full := a.content.String()
-	if len(full) <= a.streamedLen {
-		return false
-	}
-	delta := full[a.streamedLen:]
-	if !a.streamedPrefix {
-		// Print the assistant prefix on the first chunk.
-		fmt.Print("\033[1;36m>\033[0m ")
-		a.streamedPrefix = true
-	}
-	// Replace newlines with newline + indent to match printTranscriptBlock format.
-	delta = strings.ReplaceAll(delta, "\n", "\n  ")
-	fmt.Print(delta)
-	a.streamedLen = len(full)
-	a.streamed = true
-	return true
-}
-
-// finishStream prints a trailing newline after streamed content if needed.
-func (a *chatActivity) finishStream() {
-	if a.streamed {
-		// Ensure we end with a newline.
-		full := a.content.String()
-		if len(full) > 0 && full[len(full)-1] != '\n' {
-			fmt.Println()
-		}
-		fmt.Println()
-	}
-}
-
 func (a *chatActivity) appendEvent(line string) {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -171,15 +125,20 @@ func (a *chatActivity) renderLines() []string {
 		return nil
 	}
 
-	var lines []string
-	// When streaming is active, content is already printed live to the
-	// terminal — no need to duplicate it in the status frame.
-	if !a.streamed {
-		lines = append(lines, previewContentLines(a.content.String(), 3)...)
+	// Use most of the terminal height for content preview so the user
+	// can follow the LLM response as it streams in. Reserve 4 lines
+	// for status, prompt, footer, and one event line.
+	maxContent := terminalRows() - 4
+	if maxContent < 3 {
+		maxContent = 3
 	}
+	maxTotal := maxContent + 2 // content + up to 2 event lines + status
+
+	var lines []string
+	lines = append(lines, previewContentLines(a.content.String(), maxContent)...)
 	lines = append(lines, tailStrings(a.events, 2)...)
-	if len(lines) > 5 {
-		lines = lines[len(lines)-5:]
+	if len(lines) > maxTotal {
+		lines = lines[len(lines)-maxTotal:]
 	}
 
 	status := fmt.Sprintf("Working (%s", formatElapsed(time.Since(a.startedAt)))

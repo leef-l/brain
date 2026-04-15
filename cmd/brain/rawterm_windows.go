@@ -146,6 +146,18 @@ func terminalColumns() int {
 	return width
 }
 
+func terminalRows() int {
+	info, err := getConsoleScreenBufferInfo(syscall.Handle(os.Stdout.Fd()))
+	if err != nil {
+		return 24
+	}
+	height := int(info.Window.Bottom-info.Window.Top) + 1
+	if height <= 0 {
+		return 24
+	}
+	return height
+}
+
 func captureWindowsConsoleState() (*windowsConsoleState, error) {
 	state := &windowsConsoleState{
 		inputHandle:  syscall.Handle(os.Stdin.Fd()),
