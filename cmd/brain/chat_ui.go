@@ -211,30 +211,62 @@ func summarizeToolAction(toolName string, input json.RawMessage) string {
 	case strings.HasSuffix(toolName, ".write_file"):
 		path := unquoteJSON(args["path"])
 		if path != "" {
-			return fmt.Sprintf("Wrote %s", path)
+			return fmt.Sprintf("写入 %s", path)
 		}
-		return "Wrote file"
+		return "写入文件"
 	case strings.HasSuffix(toolName, ".read_file"):
 		path := unquoteJSON(args["path"])
 		if path != "" {
-			return fmt.Sprintf("Read %s", path)
+			return fmt.Sprintf("读取 %s", path)
 		}
-		return "Read file"
+		return "读取文件"
 	case strings.HasSuffix(toolName, ".shell_exec"):
 		cmd := unquoteJSON(args["command"])
 		if cmd != "" {
-			return fmt.Sprintf("Ran: %s", compactPreview(cmd, 60))
+			return fmt.Sprintf("执行: %s", compactPreview(cmd, 60))
 		}
-		return "Ran command"
+		return "执行命令"
 	case strings.HasSuffix(toolName, ".search"):
 		query := unquoteJSON(args["query"])
 		if query != "" {
-			return fmt.Sprintf("Searched: %s", query)
+			return fmt.Sprintf("搜索: %s", query)
 		}
-		return "Searched"
+		return "搜索"
 	default:
-		return fmt.Sprintf("Called %s", toolName)
+		if label, ok := toolLabelZh[toolName]; ok {
+			return label
+		}
+		return fmt.Sprintf("调用 %s", toolName)
 	}
+}
+
+// toolLabelZh provides Chinese labels for known tools.
+var toolLabelZh = map[string]string{
+	// data brain
+	"data.get_candles":        "查询 K 线数据",
+	"data.get_snapshot":       "查询市场快照",
+	"data.get_feature_vector": "获取特征向量",
+	"data.provider_health":    "检查数据源健康",
+	"data.validation_stats":   "查询数据质量统计",
+	"data.backfill_status":    "查询回填进度",
+	"data.active_instruments": "查询活跃品种",
+	"data.replay_start":       "启动历史回放",
+	"data.replay_stop":        "停止历史回放",
+	// quant brain
+	"quant.global_portfolio":  "查询全局投资组合",
+	"quant.global_risk_status": "查询全局风控状态",
+	"quant.strategy_weights":  "查询策略权重",
+	"quant.daily_pnl":         "查询当日损益",
+	"quant.account_status":    "查询账户状态",
+	"quant.pause_trading":     "暂停交易",
+	"quant.resume_trading":    "恢复交易",
+	"quant.account_pause":     "暂停账户交易",
+	"quant.account_resume":    "恢复账户交易",
+	"quant.account_close_all": "全部平仓",
+	"quant.force_close":       "强制平仓",
+	"quant.trace_query":       "查询信号追踪",
+	"quant.trade_history":     "查询交易历史",
+	"quant.backtest_start":    "启动回测",
 }
 
 func unquoteJSON(raw json.RawMessage) string {

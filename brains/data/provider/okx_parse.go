@@ -203,7 +203,7 @@ func ParseFundingPayload(data json.RawMessage) ([]FundingRate, error) {
 			InstID:      r.InstID,
 			Rate:        rate,
 			NextFunding: ft,
-			Timestamp:   ft,
+			Timestamp:   time.Now().UnixMilli(),
 		})
 	}
 	return out, nil

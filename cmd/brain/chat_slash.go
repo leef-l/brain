@@ -71,13 +71,21 @@ func handleSlashCommand(input string, state *chatState) (bool, bool) {
 		return true, false
 
 	case cmd == "/tools":
-		fmt.Println("  Available tools:")
+		fmt.Println("  可用工具:")
 		for _, ts := range state.opts.Tools {
 			riskTag := ""
 			if t, ok := state.registry.Lookup(ts.Name); ok {
-				riskTag = fmt.Sprintf(" [%s]", t.Risk())
+				riskTag = riskLabel(t.Risk())
 			}
-			fmt.Printf("    %-30s%s\n", ts.Name, riskTag)
+			desc := ts.Description
+			if len(desc) > 50 {
+				desc = desc[:47] + "..."
+			}
+			if desc != "" {
+				fmt.Printf("    %-34s %s  %s\n", ts.Name, riskTag, desc)
+			} else {
+				fmt.Printf("    %-34s %s\n", ts.Name, riskTag)
+			}
 		}
 		fmt.Println()
 		return true, false
@@ -239,4 +247,22 @@ func handleBrainStop(state *chatState, kind string) {
 		return
 	}
 	fmt.Printf("  \033[32m✓ %s sidecar stopped\033[0m\n\n", kind)
+}
+
+// riskLabel returns a colored Chinese label for a tool risk level.
+func riskLabel[T ~string](r T) string {
+	switch string(r) {
+	case "safe":
+		return "\033[32m[安全]\033[0m"
+	case "low":
+		return "\033[32m[低危]\033[0m"
+	case "med":
+		return "\033[33m[中危]\033[0m"
+	case "high":
+		return "\033[1;31m[高危]\033[0m"
+	case "critical":
+		return "\033[1;35m[危险]\033[0m"
+	default:
+		return fmt.Sprintf("[%s]", string(r))
+	}
 }

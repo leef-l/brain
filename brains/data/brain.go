@@ -113,15 +113,22 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 	if cfg.Validation.StaleTimeout > 0 {
 		staleMs = cfg.Validation.StaleTimeout.Milliseconds()
 	}
-	gapMs := int64(5000)
+	gapThreshold := 3
 	if cfg.Validation.MaxGapDuration > 0 {
-		gapMs = cfg.Validation.MaxGapDuration.Milliseconds()
+		// Convert gap duration to number of candle periods (assume 1m default).
+		gapThreshold = int(cfg.Validation.MaxGapDuration / time.Minute)
+		if gapThreshold < 1 {
+			gapThreshold = 3
+		}
 	}
+	// Allow future timestamps up to 120s — covers 1m candle period-end timestamps
+	// and minor clock skew, but rejects truly invalid far-future data (e.g. 8h ahead).
+	futureMs := int64(120_000)
 	vCfg := validator.Config{
 		MaxPriceChangePct:    cfg.Validation.MaxPriceJump * 100, // Config 用比率，Validator 用百分比
-		MaxFutureTSMs:        gapMs,
+		MaxFutureTSMs:        futureMs,
 		MaxStaleTSMs:         staleMs,
-		GapBackfillThreshold: 3,
+		GapBackfillThreshold: gapThreshold,
 	}
 	if vCfg.MaxPriceChangePct == 0 {
 		vCfg.MaxPriceChangePct = 10.0

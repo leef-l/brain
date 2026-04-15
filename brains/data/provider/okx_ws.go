@@ -19,6 +19,7 @@ import (
 // OKXSwapConfig holds the configuration for OKXSwapProvider.
 type OKXSwapConfig struct {
 	WSURL          string          // wss://ws.okx.com:8443/ws/v5/public
+	BusinessWSURL  string          // wss://ws.okx.com:8443/ws/v5/business (for candle channels)
 	RESTURL        string          // https://www.okx.com
 	Instruments    []string        // empty = fetch all SWAP instruments
 	ReconnectDelay []time.Duration // e.g. [1s, 2s, 4s, 8s, 16s, 30s]
@@ -35,17 +36,21 @@ var defaultReconnectDelay = []time.Duration{
 	30 * time.Second,
 }
 
-// OKXSwapProvider connects to OKX public WebSocket and streams market data.
+// OKXSwapProvider connects to OKX WebSocket and streams market data.
+// It maintains two connections:
+//   - public  (wss://.../ws/v5/public)   → trades, books5, funding-rate
+//   - business (wss://.../ws/v5/business) → candle channels
+//
+// Both share the same reconnect, ping, and readLoop logic.
 type OKXSwapProvider struct {
 	name        string
 	config      OKXSwapConfig
 	instruments []string
-	conn        *websocket.Conn
 	sink        DataSink
 	health      atomic.Value // stores *ProviderHealth
 	done        chan struct{}
-	mu          sync.Mutex
-	httpClient  *http.Client // injectable for testing
+	mu          sync.Mutex // protects sink
+	httpClient  *http.Client
 }
 
 // NewOKXSwapProvider creates a new provider. Call Start to begin streaming.
@@ -58,6 +63,9 @@ func NewOKXSwapProvider(name string, config OKXSwapConfig) *OKXSwapProvider {
 	}
 	if config.WSURL == "" {
 		config.WSURL = "wss://ws.okx.com:8443/ws/v5/public"
+	}
+	if config.BusinessWSURL == "" {
+		config.BusinessWSURL = "wss://ws.okx.com:8443/ws/v5/business"
 	}
 	if config.RESTURL == "" {
 		config.RESTURL = "https://www.okx.com"
@@ -90,8 +98,14 @@ func (p *OKXSwapProvider) Subscribe(sink DataSink) error {
 	return nil
 }
 
-// Start implements DataProvider. It fetches instruments, connects, subscribes,
-// and enters the read loop. It blocks until ctx is cancelled or Stop is called.
+// publicChannels are subscribed on wss://.../ws/v5/public.
+var publicChannels = []string{"books5", "trades", "funding-rate"}
+
+// businessChannels are subscribed on wss://.../ws/v5/business.
+var businessChannels = []string{"candle1m", "candle5m", "candle15m", "candle1H", "candle4H"}
+
+// Start implements DataProvider. It fetches instruments, then starts two
+// WebSocket goroutines (public + business) that share the same DataSink.
 func (p *OKXSwapProvider) Start(ctx context.Context) error {
 	if len(p.config.Instruments) > 0 {
 		p.instruments = p.config.Instruments
@@ -106,7 +120,8 @@ func (p *OKXSwapProvider) Start(ctx context.Context) error {
 		return fmt.Errorf("no instruments to subscribe")
 	}
 
-	go p.runLoop(ctx)
+	go p.wsLoop(ctx, "public", p.config.WSURL, publicChannels)
+	go p.wsLoop(ctx, "business", p.config.BusinessWSURL, businessChannels)
 	return nil
 }
 
@@ -114,22 +129,16 @@ func (p *OKXSwapProvider) Start(ctx context.Context) error {
 func (p *OKXSwapProvider) Stop(_ context.Context) error {
 	select {
 	case <-p.done:
-		// already stopped
 	default:
 		close(p.done)
 	}
-	p.mu.Lock()
-	if p.conn != nil {
-		_ = p.conn.Close()
-		p.conn = nil
-	}
-	p.mu.Unlock()
 	p.health.Store(&ProviderHealth{Status: "stopped"})
 	return nil
 }
 
-// runLoop is the main goroutine: connect → subscribe → readLoop → reconnect.
-func (p *OKXSwapProvider) runLoop(ctx context.Context) {
+// wsLoop is a reconnecting loop for one WebSocket endpoint.
+// tag is "public" or "business" for log clarity.
+func (p *OKXSwapProvider) wsLoop(ctx context.Context, tag, wsURL string, channels []string) {
 	attempt := 0
 	for {
 		select {
@@ -140,95 +149,60 @@ func (p *OKXSwapProvider) runLoop(ctx context.Context) {
 		default:
 		}
 
-		if err := p.connect(ctx); err != nil {
-			log.Printf("[%s] connect error: %v", p.name, err)
+		conn, err := p.dialURL(ctx, wsURL)
+		if err != nil {
+			log.Printf("[%s/%s] connect error: %v", p.name, tag, err)
 			p.backoff(ctx, attempt)
 			attempt++
 			continue
 		}
-		if err := p.subscribe(); err != nil {
-			log.Printf("[%s] subscribe error: %v", p.name, err)
-			p.closeConn()
+
+		if err := p.subscribeOn(conn, channels); err != nil {
+			log.Printf("[%s/%s] subscribe error: %v", p.name, tag, err)
+			_ = conn.Close()
 			p.backoff(ctx, attempt)
 			attempt++
 			continue
 		}
 
 		attempt = 0
+		log.Printf("[%s/%s] connected", p.name, tag)
 		p.health.Store(&ProviderHealth{Status: "connected", LastEvent: time.Now()})
 
-		// readLoop blocks until connection drops.
-		p.readLoop(ctx)
-		p.closeConn()
+		p.readLoop(ctx, conn)
+		_ = conn.Close()
 
-		log.Printf("[%s] disconnected, will reconnect", p.name)
+		log.Printf("[%s/%s] disconnected, will reconnect", p.name, tag)
 	}
 }
 
-// connect dials the OKX WebSocket with automatic proxy fallback.
-// Strategy: try with proxy first (if detected), fall back to direct on failure.
-func (p *OKXSwapProvider) connect(ctx context.Context) error {
+// dialURL dials a WebSocket URL with automatic proxy fallback.
+func (p *OKXSwapProvider) dialURL(ctx context.Context, wsURL string) (*websocket.Conn, error) {
 	proxyFn := netutil.ProxyFunc()
-
-	// Check if a proxy is actually configured.
-	testReq, _ := http.NewRequest("GET", p.config.WSURL, nil)
+	testReq, _ := http.NewRequest("GET", wsURL, nil)
 	proxyURL, _ := proxyFn(testReq)
-	hasProxy := proxyURL != nil
 
-	if hasProxy {
-		// Try proxy first.
-		conn, err := p.dial(ctx, proxyFn)
+	dial := func(proxy func(*http.Request) (*url.URL, error)) (*websocket.Conn, error) {
+		dialer := websocket.Dialer{
+			HandshakeTimeout: 10 * time.Second,
+			Proxy:            proxy,
+		}
+		conn, _, err := dialer.DialContext(ctx, wsURL, nil)
+		return conn, err
+	}
+
+	if proxyURL != nil {
+		conn, err := dial(proxyFn)
 		if err == nil {
-			log.Printf("[%s] connected via proxy %s", p.name, proxyURL.Host)
-			p.mu.Lock()
-			p.conn = conn
-			p.mu.Unlock()
-			return nil
+			return conn, nil
 		}
-		log.Printf("[%s] proxy connect failed (%v), falling back to direct", p.name, err)
+		log.Printf("[%s] proxy failed (%v), falling back to direct", p.name, err)
 	}
-
-	// Direct connection (no proxy).
-	conn, err := p.dial(ctx, nil)
-	if err != nil {
-		if hasProxy {
-			return fmt.Errorf("both proxy and direct failed: %w", err)
-		}
-		return err
-	}
-	log.Printf("[%s] connected directly", p.name)
-	p.mu.Lock()
-	p.conn = conn
-	p.mu.Unlock()
-	return nil
+	return dial(nil)
 }
 
-func (p *OKXSwapProvider) dial(ctx context.Context, proxyFn func(*http.Request) (*url.URL, error)) (*websocket.Conn, error) {
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-		Proxy:            proxyFn,
-	}
-	conn, _, err := dialer.DialContext(ctx, p.config.WSURL, nil)
-	return conn, err
-}
-
-// closeConn safely closes the current connection.
-func (p *OKXSwapProvider) closeConn() {
-	p.mu.Lock()
-	if p.conn != nil {
-		_ = p.conn.Close()
-		p.conn = nil
-	}
-	p.mu.Unlock()
-}
-
-// subscribe sends subscription messages for all channels and instruments.
-// OKX requires batches of args; we send up to 100 instruments per message.
-func (p *OKXSwapProvider) subscribe() error {
-	channels := []string{
-		"candle1m", "candle5m", "candle15m", "candle1H", "candle4H",
-		"books5", "trades", "funding-rate",
-	}
+// subscribeOn sends subscription messages on a specific connection.
+func (p *OKXSwapProvider) subscribeOn(conn *websocket.Conn, channels []string) error {
 	for _, ch := range channels {
 		for start := 0; start < len(p.instruments); start += 100 {
 			end := start + 100
@@ -244,10 +218,7 @@ func (p *OKXSwapProvider) subscribe() error {
 			if err != nil {
 				return fmt.Errorf("marshal subscribe: %w", err)
 			}
-			p.mu.Lock()
-			err = p.conn.WriteMessage(websocket.TextMessage, data)
-			p.mu.Unlock()
-			if err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 				return fmt.Errorf("write subscribe: %w", err)
 			}
 		}
@@ -267,12 +238,12 @@ func buildSubscribeArgs(channel string, instruments []string) []map[string]strin
 	return args
 }
 
-// readLoop reads messages from the WebSocket until an error or context cancel.
-func (p *OKXSwapProvider) readLoop(ctx context.Context) {
+// readLoop reads messages from a WebSocket connection until error or cancel.
+func (p *OKXSwapProvider) readLoop(ctx context.Context, conn *websocket.Conn) {
 	pingTicker := time.NewTicker(p.config.PingInterval)
 	defer pingTicker.Stop()
 
-	// Start ping goroutine.
+	// Ping goroutine for this connection.
 	go func() {
 		for {
 			select {
@@ -281,11 +252,7 @@ func (p *OKXSwapProvider) readLoop(ctx context.Context) {
 			case <-p.done:
 				return
 			case <-pingTicker.C:
-				p.mu.Lock()
-				if p.conn != nil {
-					_ = p.conn.WriteMessage(websocket.TextMessage, []byte("ping"))
-				}
-				p.mu.Unlock()
+				_ = conn.WriteMessage(websocket.TextMessage, []byte("ping"))
 			}
 		}
 	}()
@@ -297,13 +264,6 @@ func (p *OKXSwapProvider) readLoop(ctx context.Context) {
 		case <-p.done:
 			return
 		default:
-		}
-
-		p.mu.Lock()
-		conn := p.conn
-		p.mu.Unlock()
-		if conn == nil {
-			return
 		}
 
 		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -319,7 +279,6 @@ func (p *OKXSwapProvider) readLoop(ctx context.Context) {
 			return
 		}
 
-		// OKX sends "pong" as plain text.
 		if string(raw) == "pong" {
 			continue
 		}
