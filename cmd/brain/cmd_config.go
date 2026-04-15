@@ -73,10 +73,11 @@ type sandboxCfg struct {
 
 // providerConfig holds the configuration for a single LLM provider endpoint.
 type providerConfig struct {
-	BaseURL string            `json:"base_url"`
-	APIKey  string            `json:"api_key"`
-	Model   string            `json:"model,omitempty"`
-	Models  map[string]string `json:"models,omitempty"` // brain kind → model
+	BaseURL  string            `json:"base_url"`
+	APIKey   string            `json:"api_key"`
+	Model    string            `json:"model,omitempty"`
+	Models   map[string]string `json:"models,omitempty"`   // brain kind → model
+	Protocol string            `json:"protocol,omitempty"` // "anthropic" (default) or "openai"
 }
 
 type budgetConfig struct {
@@ -86,10 +87,11 @@ type budgetConfig struct {
 
 // resolvedProvider holds the resolved provider settings after merging all sources.
 type resolvedProvider struct {
-	Name    string
-	BaseURL string
-	APIKey  string
-	Model   string
+	Name     string
+	BaseURL  string
+	APIKey   string
+	Model    string
+	Protocol string // "anthropic" or "openai"
 }
 
 // resolveProviderConfig resolves provider settings with the following priority:

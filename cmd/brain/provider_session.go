@@ -23,8 +23,16 @@ func openConfiguredProvider(cfg *brainConfig, brainKind string, input *modelConf
 		return providerSession{}, fmt.Errorf("no API key configured")
 	}
 
+	var provider llm.Provider
+	switch strings.ToLower(resolved.Protocol) {
+	case "openai":
+		provider = llm.NewOpenAIProvider(resolved.BaseURL, resolved.APIKey, resolved.Model)
+	default:
+		provider = llm.NewAnthropicProvider(resolved.BaseURL, resolved.APIKey, resolved.Model)
+	}
+
 	return providerSession{
-		Provider: llm.NewAnthropicProvider(resolved.BaseURL, resolved.APIKey, resolved.Model),
+		Provider: provider,
 		Name:     resolved.Name,
 		Model:    resolved.Model,
 	}, nil
@@ -70,6 +78,9 @@ func resolveProviderConfigWithInput(cfg *brainConfig, brainKind string, input *m
 				}
 				if p.Model != "" {
 					r.Model = p.Model
+				}
+				if p.Protocol != "" {
+					r.Protocol = p.Protocol
 				}
 				if brainKind != "" && p.Models != nil {
 					if model, ok := p.Models[brainKind]; ok && strings.TrimSpace(model) != "" {
