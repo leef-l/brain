@@ -61,26 +61,70 @@ func (b *Backfiller) BackfillAll(ctx context.Context, instruments []string) erro
 	return nil
 }
 
-// backfillOne fills a single instrument+timeframe from GoBack ago up to now.
-// Uses 'after' param: OKX returns candles with timestamp < after (older data).
-// Start from now and walk backwards to GoBack.
+// backfillOne fills a single instrument+timeframe, ensuring contiguous coverage
+// from (now - GoBack) up to now.
+//
+// Two-phase approach:
+//  1. Forward-fill: from now backwards to the previous newest edge, filling
+//     the gap between the last run and the current time.
+//  2. Backward-fill: from the previous oldest edge backwards to GoBack,
+//     continuing to extend historical depth.
+//
+// This ensures that restarting the process (even days later) always fills
+// the gap up to the present, not just extending into the past.
 func (b *Backfiller) backfillOne(ctx context.Context, instID, tf string) error {
 	progress, _ := b.store.GetProgress(ctx, instID, tf)
 	nowMS := time.Now().UnixMilli()
+	goBackTS := time.Now().Add(-b.config.GoBack).UnixMilli()
 
-	var startFrom int64
+	var oldestEdge, newestEdge int64
 	var barCount int
+
 	if progress != nil && progress.LatestTS > 0 {
-		startFrom = progress.LatestTS
+		oldestEdge = progress.LatestTS
+		newestEdge = progress.NewestTS
 		barCount = progress.BarCount
+		// Legacy: NewestTS==0 means old-format progress without newest tracking.
+		if newestEdge == 0 {
+			newestEdge = oldestEdge
+		}
 	} else {
-		startFrom = nowMS
+		// First run — both edges start at now.
+		oldestEdge = nowMS
+		newestEdge = nowMS
 		barCount = 0
 	}
 
-	goBackTS := time.Now().Add(-b.config.GoBack).UnixMilli()
-	cursor := startFrom
+	// Phase 1: forward-fill — fill from now back to newestEdge.
+	// This covers the time gap since the last backfill run.
+	if nowMS > newestEdge+1 {
+		cursor := nowMS
+		for cursor > newestEdge {
+			candles, err := b.fetchCandles(ctx, instID, tf, cursor, b.config.MaxBars)
+			if err != nil {
+				return err
+			}
+			if len(candles) == 0 {
+				break
+			}
+			if err := b.store.BatchInsert(ctx, candles); err != nil {
+				return fmt.Errorf("forward-fill batch insert: %w", err)
+			}
+			barCount += len(candles)
+			cursor = candles[0].Timestamp - 1
 
+			if err := b.saveProgress(ctx, instID, tf, oldestEdge, nowMS, barCount); err != nil {
+				return fmt.Errorf("save progress: %w", err)
+			}
+			if len(candles) < b.config.MaxBars {
+				break
+			}
+		}
+		newestEdge = nowMS
+	}
+
+	// Phase 2: backward-fill — extend historical depth from oldestEdge to goBackTS.
+	cursor := oldestEdge
 	for cursor > goBackTS {
 		candles, err := b.fetchCandles(ctx, instID, tf, cursor, b.config.MaxBars)
 		if err != nil {
@@ -89,23 +133,22 @@ func (b *Backfiller) backfillOne(ctx context.Context, instID, tf string) error {
 		if len(candles) == 0 {
 			break
 		}
-
 		if err := b.store.BatchInsert(ctx, candles); err != nil {
-			return fmt.Errorf("batch insert: %w", err)
+			return fmt.Errorf("backward-fill batch insert: %w", err)
 		}
 		barCount += len(candles)
 
 		earliest := candles[0].Timestamp
 		cursor = earliest - 1
 
-		if err := b.saveProgress(ctx, instID, tf, cursor, barCount); err != nil {
+		if err := b.saveProgress(ctx, instID, tf, cursor, newestEdge, barCount); err != nil {
 			return fmt.Errorf("save progress: %w", err)
 		}
-
 		if len(candles) < b.config.MaxBars {
 			break
 		}
 	}
+
 	return nil
 }
 

@@ -32,7 +32,8 @@ type FeatureVector struct {
 type BackfillProgress struct {
 	InstID    string
 	Timeframe string
-	LatestTS  int64
+	LatestTS  int64 // oldest edge: how far back we've filled
+	NewestTS  int64 // newest edge: the "now" when backfill first started
 	BarCount  int
 }
 

@@ -62,10 +62,13 @@ CREATE TABLE IF NOT EXISTS backfill_progress (
     inst_id    VARCHAR(32) NOT NULL,
     timeframe  VARCHAR(8)  NOT NULL,
     latest_ts  BIGINT      NOT NULL,
+    newest_ts  BIGINT      NOT NULL DEFAULT 0,
     bar_count  INT         NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (inst_id, timeframe)
 );
+-- Migration: add newest_ts column for existing tables.
+ALTER TABLE backfill_progress ADD COLUMN IF NOT EXISTS newest_ts BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS active_instruments (
     id           BIGSERIAL PRIMARY KEY,
@@ -218,12 +221,12 @@ func (s *PGStore) DeleteVectorsBefore(ctx context.Context, collection string, be
 
 func (s *PGStore) GetProgress(ctx context.Context, instID, timeframe string) (*BackfillProgress, error) {
 	const q = `
-		SELECT inst_id, timeframe, latest_ts, bar_count
+		SELECT inst_id, timeframe, latest_ts, newest_ts, bar_count
 		FROM backfill_progress
 		WHERE inst_id=$1 AND timeframe=$2`
 	var p BackfillProgress
 	err := s.pool.QueryRow(ctx, q, instID, timeframe).Scan(
-		&p.InstID, &p.Timeframe, &p.LatestTS, &p.BarCount,
+		&p.InstID, &p.Timeframe, &p.LatestTS, &p.NewestTS, &p.BarCount,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -236,11 +239,11 @@ func (s *PGStore) GetProgress(ctx context.Context, instID, timeframe string) (*B
 
 func (s *PGStore) SaveProgress(ctx context.Context, p BackfillProgress) error {
 	const q = `
-		INSERT INTO backfill_progress (inst_id, timeframe, latest_ts, bar_count, updated_at)
-		VALUES ($1,$2,$3,$4, NOW())
+		INSERT INTO backfill_progress (inst_id, timeframe, latest_ts, newest_ts, bar_count, updated_at)
+		VALUES ($1,$2,$3,$4,$5, NOW())
 		ON CONFLICT (inst_id, timeframe)
-		DO UPDATE SET latest_ts=$3, bar_count=$4, updated_at=NOW()`
-	_, err := s.pool.Exec(ctx, q, p.InstID, p.Timeframe, p.LatestTS, p.BarCount)
+		DO UPDATE SET latest_ts=$3, newest_ts=$4, bar_count=$5, updated_at=NOW()`
+	_, err := s.pool.Exec(ctx, q, p.InstID, p.Timeframe, p.LatestTS, p.NewestTS, p.BarCount)
 	return err
 }
 

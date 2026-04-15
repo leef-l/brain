@@ -174,6 +174,79 @@ func TestBackfillOne_Pagination(t *testing.T) {
 	}
 }
 
+// TestBackfillOne_ResumeGap verifies that when progress exists (simulating a
+// restart days later), backfillOne fills the gap from now back to the previous
+// newestEdge before continuing backwards.
+func TestBackfillOne_ResumeGap(t *testing.T) {
+	nowMS := time.Now().UnixMilli()
+	// Simulate: previous run was 2 hours ago, filled back to 3 hours ago.
+	prevNewest := nowMS - 2*3600*1000 // 2 hours ago
+	prevOldest := nowMS - 3*3600*1000 // 3 hours ago
+
+	callCount := int32(0)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&callCount, 1)
+		var body []byte
+		switch {
+		case n <= 2:
+			// Phase 1 (forward-fill): return 3 bars per page, 2 pages
+			if n == 1 {
+				body = makeOKXResponse(prevNewest+30*60000, 3)
+			} else {
+				body = makeOKXResponse(prevNewest+1*60000, 2) // < MaxBars → done
+			}
+		default:
+			// Phase 2 (backward-fill): return empty → already done
+			body = []byte(`{"code":"0","data":[]}`)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body)
+	}))
+	defer srv.Close()
+
+	ms := newMockStore()
+	// Pre-populate progress to simulate previous run.
+	ms.progress["BTC-USDT|1m"] = &store.BackfillProgress{
+		InstID:    "BTC-USDT",
+		Timeframe: "1m",
+		LatestTS:  prevOldest,
+		NewestTS:  prevNewest,
+		BarCount:  100,
+	}
+
+	bf := New(srv.Client(), ms, Config{
+		RESTURL:    srv.URL,
+		GoBack:     4 * time.Hour,
+		Timeframes: []string{"1m"},
+		MaxBars:    3,
+		RateLimit:  1000,
+	})
+
+	err := bf.backfillOne(context.Background(), "BTC-USDT", "1m")
+	if err != nil {
+		t.Fatalf("backfillOne resume: %v", err)
+	}
+
+	// Phase 1 should have been invoked (forward-fill).
+	if atomic.LoadInt32(&callCount) < 2 {
+		t.Fatalf("expected >= 2 API calls for forward-fill, got %d", callCount)
+	}
+
+	// 5 new candles from phase 1
+	if len(ms.candles) != 5 {
+		t.Fatalf("expected 5 candles from forward-fill, got %d", len(ms.candles))
+	}
+
+	// NewestTS should be updated to ~now.
+	prog := ms.progress["BTC-USDT|1m"]
+	if prog == nil {
+		t.Fatal("expected progress to be saved")
+	}
+	if prog.NewestTS < prevNewest {
+		t.Fatalf("NewestTS should be updated: got %d, prev was %d", prog.NewestTS, prevNewest)
+	}
+}
+
 func TestRateLimiter_Respected(t *testing.T) {
 	callCount := int32(0)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
