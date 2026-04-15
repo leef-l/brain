@@ -2,22 +2,21 @@
 
 BrainKernel 是所有大脑（CentralBrain + N 个 SpecialistBrain）共享的**基础设施**，不是"又一个大脑"。它只做六件事：运行 Agent Loop、抽象 LLM Provider、持久化 BrainPlan、管理 Artifact、执行 Guardrail、记账与审计。它**不做**任何业务决策，不拆任务，不判断验收是否通过——这些是大脑自己的活。
 
-> 2026-04-13 v0.6.0：
-> Persistence Driver 抽象层（Register/Open 模式，内置 mem/file 驱动）、
-> OTLP 导出器（Trace/Metrics/Log 批量刷写）、日志脱敏（PatternSanitizer）、
-> Vault Rotate/List、DirectLLMAccess + HybridLLMAccess 策略、
-> SandboxEnforcer（L0-L3）、License 集成到 5 个 sidecar、CDP WebSocket 竞态修复。
-> `go build/test/vet -race` 全绿，二进制 15MB。
+> 2026-04-15 v0.7.0：
+> **三脑架构**：Data Brain sidecar（9 tools）+ Quant Brain sidecar（14 tools）+
+> Bridge Tool 模式（chat/run/serve 直接调用专精工具）+ 跨大脑授权策略 +
+> 动态 orchestrator prompt 生成 + 打包脚本自动探测 sidecar 二进制。
+> `go build/test/vet -race` 全绿，10 个二进制。
 
 ## 版本状态
 
 | 维度 | 版本 | 状态 |
 |------|------|------|
 | Protocol | v1.0 | Content-Length framed stdio JSON-RPC 2.0 完整实现 |
-| Kernel | v0.6.0 | Driver 抽象层、OTel 导出器、安全模块完备、License 集成 |
-| CLI | v0.6.0 | 13/13 命令实现，`go build/test/vet -race` 全绿 |
-| SDK | go/0.6.0 | 仅 1 个外部依赖（chroma 语法高亮），Go 1.24 |
-| 代码规模 | 255 个 Go 文件 | ~50,000 行代码 |
+| Kernel | v0.7.0 | 三脑 sidecar 架构、跨大脑授权、Bridge Tool、动态 prompt |
+| CLI | v0.7.0 | 13/13 命令实现，chat/run/serve 全面接入专精大脑工具 |
+| SDK | go/0.7.0 | 仅 1 个外部依赖（chroma 语法高亮），Go 1.24 |
+| 代码规模 | 340+ 个 Go 文件 | ~65,000 行代码 |
 
 ### 测试覆盖
 
@@ -41,34 +40,53 @@ BrainKernel 是所有大脑（CentralBrain + N 个 SpecialistBrain）共享的**
 
 ```
 brain/
-├── agent/              BrainAgent, BrainKind, BrainDescriptor       (02 §3)
-├── protocol/           stdio frame, bidir RPC, lifecycle, methods   (20)
-├── errors/             BrainError, Class, Decide, Fingerprint       (21)
-├── loop/               Run, Turn, Budget, Cache, Stream, Sanitizer  (22)
-│   ├── runner.go       Agent Loop 执行引擎 (LLM → tool_use → tool_result 循环)
-│   └── turn_executor.go 单 Turn 执行器 (Executor 接口实现)
-├── llm/                LLMProvider, ChatRequest/Response            (02 §5 + 22)
-│   └── anthropic_provider.go  Anthropic Claude API Provider (完整实现)
-├── tool/               ToolRegistry, Tool, ToolSchema               (02 §6)
-├── security/           Vault, Sandbox, LLMAccess, AuditEvent, Zones (23)
-├── observability/      MetricsRegistry, TraceExporter, LogExporter, OTLP, Sanitizer (24)
-├── persistence/        PlanStore, ArtifactStore, RunCheckpointStore, Driver (26)
-├── testing/            ComplianceRunner, Cassettes, FakeSidecar     (25)
-├── cli/                exit codes, output formats, VersionInfo      (27)
-├── kernel/             Kernel (top-level assembly), Runner, Transport(02 §12)
-│   └── mcpadapter/     MCP 适配器 — 桥接 MCP 生态工具为 ToolProvider
-├── sidecar/            Sidecar 共享运行时框架 — BrainHandler 注入
-├── cmd/                brain CLI 入口 — 13 个子命令
-│   ├── brain-central/  CentralBrain sidecar 二进制
-│   ├── brain-code/     CodeBrain sidecar 二进制
-│   ├── brain-browser/  BrowserBrain sidecar 二进制
-│   ├── brain-verifier/ VerifierBrain sidecar 二进制
-│   └── brain-fault/    FaultBrain sidecar 二进制
-├── license/            Sidecar License 验证 — CheckSidecar/IsPaidBrain
-├── test/
-│   ├── skeleton/       133 个骨架合规测试
-│   └── compliance/     151 个完整合规测试 (8 类别)
-└── docs/               规格文档 (10 篇 RFC 级规格)
+├── sdk/                    SDK 核心库
+│   ├── agent/              BrainAgent, BrainKind, BrainDescriptor       (02 §3)
+│   ├── protocol/           stdio frame, bidir RPC, lifecycle, methods   (20)
+│   ├── errors/             BrainError, Class, Decide, Fingerprint       (21)
+│   ├── loop/               Run, Turn, Budget, Cache, Stream, Sanitizer  (22)
+│   ├── llm/                LLMProvider, ChatRequest/Response            (02 §5 + 22)
+│   ├── tool/               ToolRegistry, Tool, ToolSchema               (02 §6)
+│   ├── security/           Vault, Sandbox, LLMAccess, AuditEvent, Zones (23)
+│   ├── observability/      OTLP, MetricsRegistry, TraceExporter         (24)
+│   ├── persistence/        PlanStore, ArtifactStore, Driver             (26)
+│   ├── kernel/             Kernel, Orchestrator, Transport              (02 §12)
+│   │   └── mcpadapter/     MCP 适配器 — 桥接 MCP 生态工具
+│   ├── sidecar/            Sidecar 共享运行时框架 — BrainHandler 注入
+│   └── license/            Sidecar License 验证 — CheckSidecar/IsPaidBrain
+├── brains/                 专精大脑实现
+│   ├── data/               数据大脑 — 行情采集、192 维特征向量、Ring Buffer
+│   │   ├── cmd/            standalone 二进制 (brain-data)
+│   │   ├── cmd/sidecar/    sidecar 二进制 (brain-data-sidecar, 9 tools)
+│   │   ├── sidecar/        sidecar handler + tools 实现
+│   │   ├── feature/        特征引擎 (assembler + ML fallback)
+│   │   ├── ringbuf/        Ring Buffer + MarketSnapshot
+│   │   ├── provider/       OKX WebSocket 数据源
+│   │   └── store/          PostgreSQL K 线持久化
+│   ├── quant/              量化大脑 — 策略聚合、风控、交易执行
+│   │   ├── cmd/            standalone 二进制 (quant-brain)
+│   │   ├── cmd/sidecar/    sidecar 二进制 (brain-quant-sidecar, 14 tools)
+│   │   ├── sidecar/        sidecar handler + tools 实现
+│   │   ├── strategy/       4 策略 + RegimeAwareAggregator
+│   │   ├── risk/           AdaptiveGuard + BayesianSizer + GlobalGuard
+│   │   ├── exchange/       Paper/OKX Exchange 适配器
+│   │   ├── tradestore/     交易记录持久化 (Memory/PG)
+│   │   ├── tracer/         信号追踪链 (Memory/PG)
+│   │   └── backtest/       回测引擎
+│   ├── code/               代码大脑 — 读写文件、搜索代码、执行命令
+│   ├── browser/            浏览器大脑 — CDP 自动化
+│   ├── verifier/           验证大脑 — 只读独立验证
+│   └── fault/              故障大脑 — 混沌工程
+├── central/                中央大脑 — 协调器 + LLM 复审
+│   ├── cmd/                brain-central 二进制
+│   ├── llm/                LLM 客户端 (DeepSeek/Claude/HunYuan)
+│   └── quant/              量化复审 handler
+├── cmd/brain/              brain CLI 入口 — 13 个子命令
+│   ├── specialist_bridge.go  Bridge Tool（chat/run 直调专精工具）
+│   └── chat_prompt.go        动态 orchestrator prompt 生成
+├── npm/brain-cli/          pnpm/npm wrapper（从 GitHub Releases 下载二进制）
+├── scripts/release/        发布打包脚本（自动探测所有 sidecar）
+└── docs/                   规格文档 + 使用指南
 ```
 
 ## 快速开始
@@ -76,59 +94,51 @@ brain/
 ### 安装
 
 ```bash
-# 从源码编译安装
-go build -o bin/brain ./cmd/
+# 方式 1：pnpm/npm 全局安装（推荐，自动下载对应平台二进制）
+pnpm add -g @leef-l/brain-cli
+# 或
+npm install -g @leef-l/brain-cli
+
+# 方式 2：从源码编译
+go build -o bin/brain ./cmd/brain/
 sudo mv bin/brain /usr/local/bin/
-```
-
-也可以使用 npm/pnpm wrapper（安装时从 GitHub Releases 下载对应平台正式版）：
-
-```bash
-cd npm/brain-cli
-pnpm install
-node bin/brain.js version --short
 ```
 
 ### 正式发布包
 
-正式版本通过 GitHub Releases 分发，Go 模块继续通过 `go get github.com/leef-l/brain@vX.Y.Z` 使用。
+正式版本通过 GitHub Releases + npm 分发。每个平台发布包包含 **10 个二进制**：
 
-每个平台发布包都会把这些文件放在同一目录，保证 delegated sidecar 开箱即用：
+| 二进制 | 说明 |
+|--------|------|
+| `brain` | CLI 主程序（chat/run/serve/doctor 等 13 命令） |
+| `brain-central` | 中央大脑 sidecar（协调 + LLM 复审） |
+| `brain-code` | 代码大脑 sidecar |
+| `brain-browser` | 浏览器大脑 sidecar（CDP 自动化） |
+| `brain-verifier` | 验证大脑 sidecar（只读） |
+| `brain-fault` | 故障大脑 sidecar |
+| `brain-data` | 数据大脑独立运行版 |
+| `brain-data-sidecar` | 数据大脑 sidecar（9 tools，Kernel stdio） |
+| `brain-quant` | 量化大脑独立运行版 |
+| `brain-quant-sidecar` | 量化大脑 sidecar（14 tools，Kernel stdio） |
 
-- `brain`
-- `brain-central`
-- `brain-code`
-- `brain-verifier`
-- `brain-fault`
-- `brain-browser`
-- `config.example.json`
-- `keybindings.example.json`
-- `VERSION.json`
-- `LICENSE`
-- `CHANGELOG.md`
-- `SECURITY.md`
+打包脚本自动探测 `brains/*/cmd/main.go` 和 `brains/*/cmd/sidecar/main.go`，
+新增专精大脑时无需手动修改打包脚本。
 
 维护者本地 dry-run：
 
 ```bash
-./scripts/release/build-assets.sh 0.6.0 ./dist
-./scripts/release/release-notes.sh 0.6.0
+./scripts/release/build-assets.sh 0.7.0 ./dist
+./scripts/release/release-notes.sh 0.7.0
 ```
 
 正式发布：
 
 ```bash
-git tag v0.6.0
-git push origin v0.6.0
+git tag v0.7.0
+git push origin v0.7.0
+# npm 发布
+cd npm/brain-cli && npm publish --access public --registry https://registry.npmjs.org
 ```
-
-Tag 推上去后，GitHub Actions 会自动：
-
-- 校验 tag 与 `VERSION.json` / `brain version --short` 一致
-- 跑 `go mod verify`、`go vet ./...`、`go test ./... -count=1`
-- 生成多平台压缩包和 `SHA256SUMS`
-- 生成 GitHub artifact attestation
-- 创建 GitHub Release 并上传资产
 
 ### 基本用法
 
@@ -312,6 +322,7 @@ import "github.com/leef-l/brain/loop"
 | 阶段 6 — v2 生产级 | Chat REPL 对标 Claude Code、brain serve Run API、OS 级沙箱三平台 | ✅ |
 | 阶段 7 — v2.1 增强 | Diff 预览 + chroma 语法高亮、交互式审批、ToolObserver 增强 | ✅ |
 | 阶段 8 — v0.6.0 | Persistence Driver 抽象层、OTLP 导出器、日志脱敏、Vault Rotate/List、LLMAccess 双策略、SandboxEnforcer、License sidecar 集成 | ✅ |
+| 阶段 9 — v0.7.0 | 三脑 sidecar 架构：Data Brain (9 tools) + Quant Brain (14 tools)、Bridge Tool、跨大脑授权、动态 prompt、sidecar 自动打包 | ✅ |
 
 ### 未完成
 
@@ -372,6 +383,11 @@ docs/ 目录下包含多篇 RFC 级规格、架构文档与实施计划，常用
 | 32 | [v3 Brain 架构](docs/32-v3-Brain架构.md) | Brain / Manifest / Runtime / Package / Capability 的长期架构冻结 |
 | 33 | [Brain Manifest 规格](docs/33-Brain-Manifest规格.md) | v3 Brain 的稳定 schema、runtime/policy/license/health 声明面 |
 | 34 | [Brain Package 与 Marketplace 规范](docs/34-Brain-Package与Marketplace规范.md) | package 布局、安装、签名、marketplace 索引与分发规则 |
+| 35 | [量化系统三脑架构总览](shared/docs/35-量化系统三脑架构总览.md) | Data/Quant/Central 三脑协作、跨大脑授权、数据流 |
+| 36 | [数据大脑设计](brains/data/docs/36-数据大脑设计.md) | 行情采集、192 维特征向量、Ring Buffer、sidecar 9 tools |
+| 37 | [量化大脑设计](brains/quant/docs/37-量化大脑设计.md) | 策略聚合、风控、交易执行、sidecar 14 tools |
+| 38 | [中央大脑量化职责](central/docs/38-中央大脑量化职责.md) | LLM 复审、日终分析、数据告警 |
+| -- | [三脑系统使用指南](docs/三脑系统使用指南.md) | 部署、配置、运维指南（纸盘/生产模式） |
 | -- | [代码质量修复计划](docs/代码质量修复计划.md) | v0.5.1 审计问题修复，含 2026-04-13 补充回归修复 |
 
 ## 8 项关键设计决策
@@ -390,25 +406,32 @@ docs/ 目录下包含多篇 RFC 级规格、架构文档与实施计划，常用
 ## 架构概览
 
 ```
-┌─────────────────────────────────────────────┐
-│  EasyMVP Orchestrator (调度层)               │
-│  ↕ stdio JSON-RPC                           │
-├─────────────────────────────────────────────┤
-│  BrainKernel (本仓库)                        │
-│  ┌──────────┬──────────┬──────────────────┐ │
-│  │ AgentLoop│ LLM Abst │ Tool Registry    │ │
-│  │ Run/Turn │ Provider │ Schema+Guardrail │ │
-│  ├──────────┼──────────┼──────────────────┤ │
-│  │ Security │ Persist  │ Observability    │ │
-│  │ Sandbox  │ Plan+CAS │ OTel 三信号      │ │
-│  │ Vault    │ Artifact │ Metrics/Trace/Log│ │
-│  └──────────┴──────────┴──────────────────┘ │
-│  ↕ stdio JSON-RPC (sidecar 协议)             │
-├─────────────────────────────────────────────┤
-│  BrainAgent (各种大脑进程)                    │
-│  CentralBrain / CodeBrain / BrowserBrain    │
-│  VerifierBrain / FaultBrain / ...           │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  brain CLI  (chat / run / serve)                            │
+│  ┌────────────────┬────────────────┬──────────────────────┐ │
+│  │ Bridge Tools   │ Orchestrator   │ LLM Provider         │ │
+│  │ quant.* data.* │ CanDelegate    │ Anthropic/Mock       │ │
+│  │ (23 tools)     │ CallTool       │                      │ │
+│  └────────┬───────┴───────┬────────┴──────────────────────┘ │
+│           │               │                                  │
+│  BrainKernel ─────────────┤                                  │
+│  ┌──────────┬─────────┬───┴──────────────────────┐          │
+│  │ AgentLoop│ LLM Abst│ Tool Registry            │          │
+│  │ Run/Turn │ Provider│ Schema + Guardrail        │          │
+│  ├──────────┼─────────┼──────────────────────────┤          │
+│  │ Security │ Persist │ Observability             │          │
+│  │ Sandbox  │ Driver  │ OTel (Trace/Metrics/Log) │          │
+│  └──────────┴─────────┴──────────────────────────┘          │
+│           ↕ stdio JSON-RPC (sidecar 协议)                    │
+├──────────┬──────────┬──────────┬──────────┬─────────────────┤
+│ Central  │  Code    │ Data     │  Quant   │ Browser/Verify/ │
+│ Brain    │  Brain   │ Brain    │  Brain   │ Fault Brain     │
+│ 协调+复审│ 读写代码 │ 9 tools  │ 14 tools │ ...             │
+│          │          │ 行情采集 │ 策略+风控│                  │
+│          │          │ 特征向量 │ 交易执行 │                  │
+└──────────┴──────────┴──────────┴──────────┴─────────────────┘
+                        ↕ Ring Buffer (192-dim feature vector)
+                   Data Brain ──→ Quant Brain
 ```
 
 ## License
