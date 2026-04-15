@@ -31,6 +31,7 @@ func okxSwapFactory(cfg map[string]any) (DataProvider, error) {
 	}
 
 	wsURL, _ := cfg["ws_url"].(string)
+	bizWSURL, _ := cfg["business_ws_url"].(string)
 	restURL, _ := cfg["rest_url"].(string)
 
 	oc := OKXSwapConfig{
@@ -38,6 +39,9 @@ func okxSwapFactory(cfg map[string]any) (DataProvider, error) {
 	}
 	if wsURL != "" {
 		oc.WSURL = wsURL
+	}
+	if bizWSURL != "" {
+		oc.BusinessWSURL = bizWSURL
 	}
 	if restURL != "" {
 		oc.RESTURL = restURL

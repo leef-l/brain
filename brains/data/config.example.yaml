@@ -20,8 +20,9 @@ providers:
   - name: okx-swap               # 实例名称（自定义）
     type: okx-swap                # 数据源类型
     params:
-      ws_url: "wss://ws.okx.com:8443/ws/v5/public"   # WebSocket 地址
-      rest_url: "https://www.okx.com"                  # REST API 地址
+      ws_url: "wss://ws.okx.com:8443/ws/v5/public"              # Public WebSocket（trades/books/funding）
+      business_ws_url: "wss://ws.okx.com:8443/ws/v5/business"  # Business WebSocket（K 线 candle channels）
+      rest_url: "https://www.okx.com"                           # REST API 地址
       ping_interval: 25s                               # WebSocket 心跳间隔
       reconnect_delay:                                 # 断线重连退避（依次尝试）
         - 1s
