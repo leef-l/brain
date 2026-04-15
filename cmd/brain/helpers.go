@@ -49,11 +49,16 @@ func defaultBinResolver() func(kind agent.Kind) (string, error) {
 }
 
 func sidecarBinaryNamesForOS(kind agent.Kind, goos string) []string {
-	name := fmt.Sprintf("brain-%s", kind)
+	// Prefer the dedicated sidecar binary (brain-<kind>-sidecar) which
+	// implements the stdio JSON-RPC protocol. Fall back to brain-<kind>
+	// for brains where the standalone binary doubles as a sidecar
+	// (e.g. brain-code, brain-central).
+	sidecar := fmt.Sprintf("brain-%s-sidecar", kind)
+	fallback := fmt.Sprintf("brain-%s", kind)
 	if goos == "windows" {
-		return []string{name + ".exe", name}
+		return []string{sidecar + ".exe", sidecar, fallback + ".exe", fallback}
 	}
-	return []string{name}
+	return []string{sidecar, fallback}
 }
 
 // orchestratorConfig holds parameters for building an Orchestrator.
