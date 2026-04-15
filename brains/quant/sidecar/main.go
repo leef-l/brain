@@ -148,10 +148,15 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		if err != nil {
 			logger.Warn("pg trade store connect failed, using in-memory", "err", err)
 		} else {
-			_ = pgStore.Migrate(ctx)
+			if err := pgStore.Migrate(ctx); err != nil {
+				logger.Error("pg trade store migrate failed", "err", err)
+			}
 			pgTraceStore := tracer.NewPGTraceStore(pgStore.Pool())
-			_ = pgTraceStore.Migrate(ctx)
+			if err := pgTraceStore.Migrate(ctx); err != nil {
+				logger.Error("pg trace store migrate failed", "err", err)
+			}
 			qb.SetTraceStore(pgTraceStore)
+			logger.Info("trade store: PostgreSQL connected")
 		}
 	}
 
