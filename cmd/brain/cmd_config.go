@@ -235,26 +235,24 @@ func initConfig() error {
 
 	// Generate specialist brain example configs.
 	dir := filepath.Dir(configPath())
-	writeExampleIfMissing(filepath.Join(dir, "data-brain.example.yaml"), dataConfigExample)
-	writeExampleIfMissing(filepath.Join(dir, "quant-brain.example.yaml"), quantConfigExample)
-	writeExampleIfMissing(filepath.Join(dir, "central-brain.example.yaml"), centralConfigExample)
+	writeExample(filepath.Join(dir, "data-brain.example.yaml"), dataConfigExample)
+	writeExample(filepath.Join(dir, "quant-brain.example.yaml"), quantConfigExample)
+	writeExample(filepath.Join(dir, "central-brain.example.yaml"), centralConfigExample)
+	writeExample(filepath.Join(dir, "config-reference.example.yaml"), configReferenceExample)
 
 	return nil
 }
 
-func writeExampleIfMissing(path, content string) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		_ = os.WriteFile(path, []byte(content), 0600)
-	}
+func writeExample(path, content string) {
+	_ = os.WriteFile(path, []byte(content), 0600)
 }
 
 const dataConfigExample = `# ============================================================
 #  数据大脑 (Data Brain) 配置示例
-#  复制本文件为 data-brain.yaml 并按需修改
-#  Sidecar 模式通过 config.json 的 brains.data.env.DATA_CONFIG 指定路径
+#  复制本文件为 config.yaml 并按需修改
 # ============================================================
 
-# ==================== 活跃合约筛选 ====================
+# --- 活跃合约筛选 ---
 active_list:
   min_volume_24h: 10000000       # 24h 最低成交量（USDT），低于此值的合约不跟踪
   max_instruments: 100           # 最多同时跟踪的合约数
@@ -263,8 +261,10 @@ active_list:
     - BTC-USDT-SWAP
     - ETH-USDT-SWAP
     - SOL-USDT-SWAP
+  rank_by_volatility: false      # true = 按 24h 振幅排名（而非成交量），适合量化场景
+  min_amplitude_pct: 0           # 最低 24h 振幅百分比，如 2.0 = 过滤振幅 < 2% 的品种
 
-# ==================== 数据源 ====================
+# --- 数据源 ---
 providers:
   - name: okx-swap               # 实例名称（自定义）
     type: okx-swap                # 数据源类型
@@ -279,7 +279,7 @@ providers:
         - 10s
         - 30s
 
-# ==================== 历史回填 ====================
+# --- 历史回填 ---
 backfill:
   enabled: false                 # 启动时是否回填历史数据
   max_days: 90                   # 回填天数
@@ -287,19 +287,19 @@ backfill:
   rate_limit: 200ms              # REST 请求最小间隔（避免触发限频）
   concurrent: 3                  # 并行回填 worker 数
 
-# ==================== 数据校验 ====================
+# --- 数据校验 ---
 validation:
   max_price_jump: 0.10           # 单根 K 线最大价格跳变比例（0.10 = 10%）
   max_gap_duration: 5m           # K 线序列最大允许缺口
   stale_timeout: 60s             # 数据源静默超过此时间标记为 stale
 
-# ==================== 内存环形缓冲区 ====================
+# --- 内存环形缓冲区 ---
 ring_buffer:
   candle_depth: 1000             # 每个（合约, 周期）保留的 K 线数
   trade_depth: 5000              # 每个合约保留的最近成交数
   order_book_depth: 100          # 每个合约保留的订单簿快照数
 
-# ==================== 实时特征计算 ====================
+# --- 实时特征计算 ---
 feature:
   enabled: true                  # 是否开启 192 维特征向量计算
   windows:                       # 滚动窗口大小（K 线根数）
@@ -309,14 +309,14 @@ feature:
     - 60
   interval: 1s                   # 特征重算周期
 
-# ==================== 数据库（可选） ====================
+# --- 数据库（通过命令行或环境变量传入） ---
 # PostgreSQL 连接串，以下二选一：
 #   命令行:   brain-data -pg "postgres://user:pass@localhost:5432/brain"
 #   环境变量: export PG_URL="postgres://user:pass@localhost:5432/brain"
 #
 # 不配置则以无持久化模式运行（仅内存，适合调试）
 
-# ==================== 完整启动命令示例 ====================
+# --- 完整启动命令示例 ---
 # 最小启动（无持久化，自动发现合约）:
 #   brain-data
 #
@@ -329,9 +329,8 @@ feature:
 
 const quantConfigExample = `# ============================================================
 #  量化大脑 (Quant Brain) 配置示例
-#  复制本文件为 quant-brain.yaml 并按需修改
-#  Sidecar 模式通过 config.json 的 brains.quant.env.QUANT_CONFIG 指定路径
 #  文件格式：YAML（代码同时支持 .yaml 和 .json）
+#  启动命令：quant-brain -config config.yaml
 # ============================================================
 
 # ==================== 大脑核心参数 ====================
@@ -355,7 +354,7 @@ accounts:
       # allowed_symbols:          # 限制可交易品种（空=全部允许）
       #   - BTC-USDT-SWAP
 
-  # --- OKX 实盘账户（取消注释并填入密钥） ---
+  # --- OKX 实盘账户（示例） ---
   # - id: okx-main
   #   exchange: okx
   #   api_key: "your-api-key"
@@ -379,10 +378,14 @@ accounts:
   #   secret_key: "demo-secret-key"       # OKX 自动生成的 Secret Key（只显示一次）
   #   passphrase: "demo-passphrase"       # 创建 API 时你自己设置的口令密码
   #   base_url: "https://www.okx.com"     # API 地址（一般不用改）
-  #   simulated: true                     # true=模拟盘（关键！false=实盘真金白银）
+  #   simulated: true                     # true=模拟盘（关键开关！false=实盘）
   #   tags: [demo]                        # 标签，用于分组筛选（自定义）
   #   route:
   #     weight_factor: 1.0                # 仓位权重（1.0=满仓, 0.5=半仓）
+  #     # allowed_strategies:             # 限制可用策略（不填=全部策略可用）
+  #     #   - trend_follower
+  #     # allowed_symbols:                # 限制可交易品种（不填=全部品种可交易）
+  #     #   - BTC-USDT-SWAP
 
 # ==================== 交易单元 ====================
 # 交易单元 = "交易员"，绑定一个账户，负责交易指定品种
@@ -390,7 +393,9 @@ accounts:
 #
 # symbols 行为：
 #   配了 symbols  → 只做列出的品种（固定模式）
-#   不配 symbols  → 自动做 OKX 24h 成交量 Top 50 活跃品种（发现模式）
+#   不配 symbols  → 自动发现模式：从 OKX 按 24h 振幅排名，取波动最大的 Top 20
+#                    筛选条件：24h 成交量 > $10M（保证流动性）+ 振幅 > 2%（过滤横盘币）
+#   混合也行：unit-A 指定 BTC/ETH，unit-B 不配 → unit-B 做波动大的活跃品种
 units:
   - id: unit-btc                          # 单元唯一标识（自定义）
     account_id: paper-main                # 绑定的账户 ID（对应 accounts 中的 id）
@@ -407,10 +412,10 @@ units:
     #   1D   — 日线（长线，信号最少但最稳定）
     #
     # 各策略适用的 timeframe：
-    #   trend_follower     — 1H, 4H
-    #   mean_reversion     — 15m, 1H
-    #   breakout_momentum  — 1H, 4H
-    #   order_flow         — tick 级（自动，不受此字段影响）
+    #   trend_follower     — 1H, 4H（趋势在大周期更清晰）
+    #   mean_reversion     — 15m, 1H（均值回归在小周期效果好）
+    #   breakout_momentum  — 1H, 4H（突破需要足够的价格结构）
+    #   order_flow         — tick 级（自动使用实时逐笔数据，不受此字段影响）
     timeframe: "1H"
     max_leverage: 10                      # 最大杠杆倍数
     enabled: true                         # true=启用, false=禁用（不参与交易）
@@ -424,47 +429,76 @@ units:
   #   max_leverage: 5
   #   enabled: true
 
-# ==================== 策略层 (Strategy) ====================
-# 策略权重和聚合器通过 Go 代码配置，以下仅为参考
+# ==================== 执行层 (Execution) ====================
+# 可执行文件：brain-quant-execution (exchange-executor)
+# 用途：OrderIntent → ExecutionResult 的薄 sidecar
 #
-# strategy:
-#   weights:
-#     trend_follower: 0.30       # 趋势跟踪
-#     mean_reversion: 0.25       # 均值回归
-#     breakout_momentum: 0.25    # 突破动量
-#     order_flow: 0.20           # 订单流
+# --- 命令行参数 ---
+# -intent <json>         内联 OrderIntent JSON
+# -intent-file <path>    OrderIntent JSON 文件路径
+# -backend <name>        执行后端（默认 "paper"）
+# -mark-price <float>    纸盘参考标记价格（默认 0）
+# -slippage-bps <float>  纸盘滑点（基点，默认 0）
+# -fee-bps <float>       纸盘手续费（基点，默认 5）
 #
-#   long_threshold: 0.45         # 做多信号最低分数
-#   short_threshold: 0.45        # 做空信号最低分数
-#   dominance_factor: 1.5        # 主方向必须是反方向的 1.5 倍
+# --- 启动示例 ---
+# 纸盘模式（默认）:
+#   brain-quant-execution -intent '{"symbol":"BTC-USDT-SWAP","side":"buy","quantity":"0.1","leverage":10}'
+#
+# 从文件读取:
+#   brain-quant-execution -intent-file ./order.json -mark-price 65000 -slippage-bps 2
 
-# ==================== 风控层 (Risk) ====================
-# --- 单账户风控守卫 (Guard) ---
-# risk:
-#   guard:
-#     max_single_position_pct: 5       # 单仓最大占权益百分比
-#     max_leverage: 20                 # 最大杠杆
-#     min_stop_distance_atr: 1         # 止损最小距离（ATR 倍数）
-#     max_stop_distance_pct: 10        # 止损最大距离（入场价百分比）
-#     max_concurrent_positions: 5      # 最大同时持仓数
-#     max_total_exposure_pct: 30       # 总敞口上限（权益百分比）
-#     max_same_direction_pct: 20       # 同向敞口上限
-#     stop_new_trades_loss_pct: 3      # 日亏损停止开新仓
-#     liquidate_all_loss_pct: 5        # 日亏损全平仓
+# ==================== 策略层 (Strategy) =====================
+# 策略权重和聚合器配置。这些值会从配置文件读取，不再是硬编码。
 #
-#   position_sizer:
-#     min_fraction: 0.005              # 最小仓位比例（0.5%）
-#     max_fraction: 0.05               # 最大仓位比例（5%）
-#     scale_fraction: 0.25             # Kelly 缩放因子（1/4 Kelly）
+# 阈值自适应机制（自动，无需配置）：
+#   1m/5m  → 阈值 × 0.65，dominance × 0.80（短周期信号弱，降低门槛）
+#   15m    → 阈值 × 0.80
+#   1H+    → 使用配置原值
+#
+# weights 的 key 必须与策略名完全匹配（区分大小写）：
+#   TrendFollower / MeanReversion / BreakoutMomentum / OrderFlow
+strategy:
+  weights:
+    TrendFollower: 0.30          # 趋势跟踪
+    MeanReversion: 0.25          # 均值回归
+    BreakoutMomentum: 0.25       # 突破动量
+    OrderFlow: 0.20              # 订单流
+
+  long_threshold: 0.45           # 做多信号最低分数
+  short_threshold: 0.45          # 做空信号最低分数
+  dominance_factor: 1.5          # 主方向必须是反方向的 1.5 倍
+
+# ==================== 风控层 (Risk) =========================
+
+# --- 单账户风控守卫 (Guard) ---
+# 所有字段不配置则使用默认值（括号内即默认值）
+risk:
+  guard:
+    max_single_position_pct: 5         # 单仓最大占权益百分比
+    max_leverage: 20                   # 最大杠杆
+    min_stop_distance_atr: 1           # 止损最小距离（ATR 倍数）
+    max_stop_distance_pct: 10          # 止损最大距离（入场价百分比）
+    max_concurrent_positions: 5        # 最大同时持仓数
+    max_total_exposure_pct: 30         # 总敞口上限（权益百分比）
+    max_same_direction_pct: 20         # 同向敞口上限
+    stop_new_trades_loss_pct: 3        # 日亏损停止开新仓
+    liquidate_all_loss_pct: 5          # 日亏损全平仓
+
+  position_sizer:
+    min_fraction: 0.005                # 最小仓位比例（0.5%）
+    max_fraction: 0.05                 # 最大仓位比例（5%）
+    scale_fraction: 0.25               # Kelly 缩放因子（1/4 Kelly）
 
 # --- 跨账户全局风控 (GlobalRiskGuard) ---
-# global_risk:
-#   max_global_exposure_pct: 50        # 所有账号总敞口/总权益上限
-#   max_global_same_direction: 30      # 同方向总敞口上限
-#   max_global_daily_loss: 5           # 所有账号累计日亏损上限
-#   max_symbol_exposure: 15            # 单品种跨账号总敞口上限
+# 不配置则使用默认值
+global_risk:
+  max_global_exposure_pct: 50          # 所有账号总敞口/总权益上限
+  max_global_same_direction: 30        # 同方向总敞口上限
+  max_global_daily_loss: 5             # 所有账号累计日亏损上限
+  max_symbol_exposure: 15              # 单品种跨账号总敞口上限
 
-# ==================== LLM 复审 (Review) ====================
+# ==================== LLM 复审 (Review) =====================
 # 触发条件满足任一即请求中央大脑 LLM 审查
 #
 # review:
@@ -474,17 +508,20 @@ units:
 #   trigger_daily_loss: 3              # 当日亏损 > 3% 时触发
 #   timeout: 10s                       # LLM 响应超时（超时则自动放行）
 #   max_tokens: 500                    # LLM 输出 token 上限
+#
+# LLM 复审需要中央大脑运行并设置 LLM_API_KEY 环境变量
+# 支持的 LLM 服务：DeepSeek V3.2、Claude、HunYuan 或任何 OpenAI 兼容 API
 
-# ==================== 崩溃恢复 (Recovery) ====================
+# ==================== 崩溃恢复 (Recovery) ===================
 # 需要 PostgreSQL 持久化存储才能启用
 #
 # recovery:
-#   warmup_ticks: 10                   # 恢复后跳过 N 个评估周期
+#   warmup_ticks: 10                   # 恢复后跳过 N 个评估周期（等策略状态重建）
 #   validate_with_exchange: true       # 恢复时与交易所核对持仓
 
 # ==================== 持久化 (PostgreSQL) ====================
 # 通过命令行参数或环境变量传入：
-#   quant-brain -config quant-brain.yaml -pg "postgres://user:pass@localhost:5432/brain"
+#   quant-brain -config config.yaml -pg "postgres://user:pass@localhost:5432/brain"
 #   或
 #   export PG_URL="postgres://user:pass@localhost:5432/brain"
 #
@@ -494,20 +531,123 @@ units:
 #   - 崩溃恢复支持（CrashRecovery）
 # 不配置则使用内存存储（重启丢失）
 
-# ==================== 完整启动命令示例 ====================
+# ==================== 完整启动命令 ====================
+#
 # 纸盘快速启动（无需配置文件）:
 #   quant-brain -paper
 #   quant-brain -paper -equity 50000
 #
 # 配置文件启动:
-#   quant-brain -config quant-brain.yaml
+#   quant-brain -config config.yaml
 #
 # 带 PostgreSQL 持久化:
-#   quant-brain -config quant-brain.yaml -pg "postgres://brain:secret@db:5432/brain"
+#   quant-brain -config config.yaml -pg "postgres://brain:secret@db:5432/brain"
+#
+# 完整生产模式（含持久化 + 中央大脑 LLM 复审）:
+#   export PG_URL="postgres://brain:secret@db:5432/brain"
+#   export LLM_API_KEY="your-llm-api-key"
+#   quant-brain -config config.yaml -pg "$PG_URL"
 `
 
 const centralConfigExample = `# ============================================================
-#  Brain 主配置文件 (config.json) 字段说明
+#  中央大脑 (Central Brain) 配置示例
+#  中央大脑通过环境变量配置，无需配置文件
+# ============================================================
+
+# ==================== 环境变量 ====================
+
+# --- LLM API 配置（必填，启用 LLM 复审功能） ---
+# LLM_API_KEY:   API 密钥
+# LLM_BASE_URL:  API 地址（默认 https://api.deepseek.com/v1，DeepSeek）
+# LLM_MODEL:     模型名称（默认 deepseek-chat）
+#
+# 支持的 LLM 服务：
+#   DeepSeek V3.2（默认，推荐）:
+#     export LLM_API_KEY="sk-xxx"
+#     # LLM_BASE_URL 和 LLM_MODEL 使用默认值即可
+#
+#   Claude（Anthropic）:
+#     export LLM_API_KEY="sk-ant-xxx"
+#     export LLM_BASE_URL="https://api.anthropic.com/v1"
+#     export LLM_MODEL="claude-sonnet-4-20250514"
+#
+#   HunYuan（腾讯混元）:
+#     export LLM_API_KEY="your-hunyuan-key"
+#     export LLM_BASE_URL="https://api.hunyuan.cloud.tencent.com/v1"
+#     export LLM_MODEL="hunyuan-pro"
+#
+#   任何 OpenAI 兼容 API:
+#     export LLM_API_KEY="your-key"
+#     export LLM_BASE_URL="https://your-api.example.com/v1"
+#     export LLM_MODEL="your-model-name"
+
+# ==================== 提供的工具 ====================
+# 中央大脑注册以下工具供 Kernel 调用：
+#
+# central.plan_create    — 创建计划
+# central.plan_update    — 更新计划
+# central.delegate       — 委派子任务给专家大脑
+# central.review_trade   — LLM 交易复审（量化大脑触发）
+# central.daily_review   — 日终分析报告
+# central.data_alert     — 数据质量告警处理
+# central.echo           — 回声测试
+# central.reject_task    — 拒绝任务
+
+# ==================== 启动命令 ====================
+#
+# 最小启动（不启用 LLM，复审请求将自动放行）:
+#   brain-central
+#
+# 启用 LLM 复审（DeepSeek V3.2）:
+#   export LLM_API_KEY="sk-xxx"
+#   brain-central
+#
+# 启用 LLM 复审（自定义 API）:
+#   LLM_API_KEY="sk-xxx" LLM_BASE_URL="https://api.example.com/v1" LLM_MODEL="model-name" brain-central
+
+# ==================== 工具调用说明 ====================
+#
+# --- central.review_trade（交易复审） ---
+# 输入:
+#   signal:      信号信息（direction, confidence）
+#   portfolio:   组合状态（total_equity, daily_pnl_pct, open_positions, largest_pos_pct）
+#   market:      市场环境（symbol, price, vol_percentile, market_regime, funding_rate）
+#   reason:      触发原因
+#
+# 输出:
+#   approved:    是否批准（true/false）
+#   size_factor: 仓位系数（0.0-1.0）
+#   reason:      LLM 判断理由
+#
+# --- central.daily_review（日终分析） ---
+# 输入:
+#   date:           日期
+#   accounts:       账户统计
+#   strategy_stats: 策略表现
+#   total_trades:   总交易数
+#   total_pnl:      总盈亏
+#
+# 输出:
+#   assessment:     整体评价
+#   strategy_notes: 策略建议
+#   risk_notes:     风险提醒
+#   actions:        建议操作列表
+#
+# --- central.data_alert（数据告警） ---
+# 输入:
+#   level:      告警级别（warning | critical）
+#   alert_type: 告警类型（price_spike | gap | stale）
+#   symbol:     品种
+#   detail:     详细信息
+#
+# 输出:
+#   received:    已接收
+#   action:      响应动作（logged | risk_pause）
+#   description: 描述
+`
+
+const configReferenceExample = `# ============================================================
+#  Brain 主配置文件 (config.json) 字段参考
 #  路径: ~/.brain/config.json（Linux/Mac）或 %USERPROFILE%\.brain\config.json（Windows）
 #  生成: brain config init
 # ============================================================
@@ -586,26 +726,6 @@ const centralConfigExample = `# ================================================
 #   deny           拒绝列表（优先级最高），如 [".git/**", "**/.env"]
 #
 # 提示：restricted 模式必须配置 file_policy 才能使用
-
-# ==================== 中央大脑 LLM 复审服务 ====================
-#
-# brain-central 是独立的 LLM 复审服务，量化大脑请求交易审批时调用。
-# 通过环境变量配置：
-#
-# DeepSeek V3.2（默认，推荐）:
-#   export LLM_API_KEY="sk-xxx"
-#
-# Claude（Anthropic）:
-#   export LLM_API_KEY="sk-ant-xxx"
-#   export LLM_BASE_URL="https://api.anthropic.com/v1"
-#   export LLM_MODEL="claude-sonnet-4-20250514"
-#
-# 腾讯混元:
-#   export LLM_API_KEY="your-key"
-#   export LLM_BASE_URL="https://api.hunyuan.cloud.tencent.com/v1"
-#   export LLM_MODEL="hunyuan-pro"
-#
-# 不启动 brain-central 时，量化大脑的 LLM 复审请求会自动放行。
 `
 
 // printConfigSetupGuide prints instructions for first-time configuration.
