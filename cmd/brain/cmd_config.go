@@ -184,7 +184,7 @@ func initConfig() error {
 		Mode:               "solo",
 		DefaultBrain:       "central",
 		ChatMode:           "accept-edits",
-		PermissionMode:     "restricted",
+		PermissionMode:     "accept-edits",
 		ServeWorkdirPolicy: string(serveWorkdirPolicyConfined),
 		Timeout:            "30m",
 		LogLevel:           "info",

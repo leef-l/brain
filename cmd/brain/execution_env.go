@@ -33,11 +33,18 @@ type executionEnvironment struct {
 	interactive    bool
 }
 
-func resolvePermissionMode(flagValue string, cfg *brainConfig) (permissionMode, error) {
+// resolvePermissionMode resolves the effective permission mode.
+// preferChatMode should be true for interactive commands (chat, run) so that
+// chat_mode takes precedence; false for serve where permission_mode governs.
+func resolvePermissionMode(flagValue string, cfg *brainConfig, preferChatMode ...bool) (permissionMode, error) {
 	if flagValue != "" {
 		return parsePermissionMode(flagValue)
 	}
+	chatFirst := len(preferChatMode) > 0 && preferChatMode[0]
 	if cfg != nil {
+		if chatFirst && cfg.ChatMode != "" {
+			return parsePermissionMode(cfg.ChatMode)
+		}
 		if cfg.PermissionMode != "" {
 			return parsePermissionMode(cfg.PermissionMode)
 		}

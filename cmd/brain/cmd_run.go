@@ -79,7 +79,7 @@ func runRun(args []string) int {
 		return cli.ExitUsage
 	}
 	filePolicyInput = resolveFilePolicyInput(cfg, filePolicyInput)
-	mode, err := resolvePermissionMode(*modeFlag, cfg)
+	mode, err := resolvePermissionMode(*modeFlag, cfg, true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)
 		return cli.ExitUsage

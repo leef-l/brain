@@ -15,6 +15,7 @@ import (
 	"github.com/leef-l/brain/sdk/cli"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/loop"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,7 +63,7 @@ func runChat(args []string) int {
 		return cli.ExitFailed
 	}
 
-	mode, err := resolvePermissionMode(*modeFlag, cfg)
+	mode, err := resolvePermissionMode(*modeFlag, cfg, true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain chat: %v\n", err)
 		return cli.ExitUsage
@@ -476,6 +477,14 @@ func runChatLineMode(state *chatState, provider llm.Provider, brainID *string, m
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "\033[1;31m! Error: %v\033[0m\n\n", err)
 			continue
+		}
+
+		// Surface LLM errors that Runner.Execute buries in TurnResults.
+		if result.Run.State == loop.StateFailed {
+			if errMsg := lastTurnError(result); errMsg != "" {
+				fmt.Fprintf(os.Stderr, "\033[1;31m! Error: %s\033[0m\n\n", errMsg)
+				continue
+			}
 		}
 
 		state.messages = result.FinalMessages

@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/loop"
 )
 
 // ---------------------------------------------------------------------------
@@ -327,6 +328,15 @@ func handleChatRunResult(state *chatState, provider llm.Provider, brainID string
 		return
 	}
 
+	// Check for LLM errors buried in TurnResults (Runner.Execute returns nil
+	// error even when the LLM call fails — the error is inside the last Turn).
+	if rr.result != nil && rr.result.Run.State == loop.StateFailed {
+		if errMsg := lastTurnError(rr.result); errMsg != "" {
+			fmt.Fprintf(os.Stderr, "\033[1;31m! Error: %s\033[0m\n\n", errMsg)
+			return
+		}
+	}
+
 	state.messages = rr.result.FinalMessages
 
 	replyText := rr.replyText
@@ -428,4 +438,19 @@ func showResponseSelector(mode chatMode, stdinCh <-chan []byte, stdinErrCh <-cha
 		return result.UserInput
 	}
 	return ""
+}
+
+// lastTurnError extracts the error message from the last failed Turn in a
+// RunResult. Runner.Execute returns (result, nil) even when the LLM call
+// fails — the error is only inside TurnResult.Error. This helper surfaces
+// it so the UI can display it to the user instead of silently swallowing it.
+func lastTurnError(rr *loop.RunResult) string {
+	if rr == nil || len(rr.Turns) == 0 {
+		return ""
+	}
+	last := rr.Turns[len(rr.Turns)-1]
+	if last.Error == nil {
+		return ""
+	}
+	return last.Error.Error()
 }
