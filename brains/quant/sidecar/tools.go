@@ -69,6 +69,8 @@ func (t *globalPortfolioTool) Execute(ctx context.Context, _ json.RawMessage) (*
 		Quantity  float64 `json:"quantity"`
 		AvgPrice  float64 `json:"avg_price"`
 		MarkPrice float64 `json:"mark_price"`
+		Notional  float64 `json:"notional"`
+		Margin    float64 `json:"margin"`
 		PnL       float64 `json:"unrealized_pnl"`
 	}
 
@@ -122,6 +124,8 @@ func (t *globalPortfolioTool) Execute(ctx context.Context, _ json.RawMessage) (*
 				Quantity:  p.Quantity,
 				AvgPrice:  p.AvgPrice,
 				MarkPrice: p.MarkPrice,
+				Notional:  p.Notional,
+				Margin:    p.Margin,
 				PnL:       p.UnrealizedPL,
 			})
 		}
@@ -376,6 +380,8 @@ func (t *accountStatusTool) Execute(ctx context.Context, args json.RawMessage) (
 		Quantity  float64 `json:"quantity"`
 		AvgPrice  float64 `json:"avg_price"`
 		MarkPrice float64 `json:"mark_price"`
+		Notional  float64 `json:"notional"`
+		Margin    float64 `json:"margin"`
 		PnL       float64 `json:"unrealized_pnl"`
 		Leverage  int     `json:"leverage"`
 	}
@@ -425,6 +431,8 @@ func (t *accountStatusTool) Execute(ctx context.Context, args json.RawMessage) (
 				Quantity:  p.Quantity,
 				AvgPrice:  p.AvgPrice,
 				MarkPrice: p.MarkPrice,
+				Notional:  p.Notional,
+				Margin:    p.Margin,
 				PnL:       p.UnrealizedPL,
 				Leverage:  p.Leverage,
 			})
@@ -704,7 +712,9 @@ func (t *accountCloseAllTool) Execute(ctx context.Context, args json.RawMessage)
 
 	var results []closeResult
 	for _, p := range positions {
-		// Close by placing an opposite market order
+		// Close by placing an opposite market order.
+		// Must include MarkPrice so PaperExchange can fill the order
+		// (paper backend has no external price feed — it needs a reference price).
 		closeSide := "sell"
 		closePosSide := "long"
 		if p.Side == "short" {
@@ -712,13 +722,21 @@ func (t *accountCloseAllTool) Execute(ctx context.Context, args json.RawMessage)
 			closePosSide = "short"
 		}
 
+		// Use MarkPrice as reference; fall back to AvgPrice.
+		refPrice := p.MarkPrice
+		if refPrice <= 0 {
+			refPrice = p.AvgPrice
+		}
+
 		result, err := acc.Exchange.PlaceOrder(ctx, exchange.PlaceOrderParams{
-			Symbol:   p.Symbol,
-			Side:     closeSide,
-			PosSide:  closePosSide,
-			Type:     "market",
-			Quantity: p.Quantity,
-			ClientID: fmt.Sprintf("close-%s-%d", p.Symbol, time.Now().UnixMilli()),
+			Symbol:     p.Symbol,
+			Side:       closeSide,
+			PosSide:    closePosSide,
+			Type:       "market",
+			Price:      refPrice,
+			Quantity:   p.Quantity,
+			ReduceOnly: true,
+			ClientID:   fmt.Sprintf("close-%s-%d", p.Symbol, time.Now().UnixMilli()),
 		})
 		if err != nil {
 			results = append(results, closeResult{
@@ -814,13 +832,21 @@ func (t *forceCloseTool) Execute(ctx context.Context, args json.RawMessage) (*to
 		closePosSide = "short"
 	}
 
+	// Use MarkPrice as reference so PaperExchange can fill the order.
+	refPrice := target.MarkPrice
+	if refPrice <= 0 {
+		refPrice = target.AvgPrice
+	}
+
 	result, err := acc.Exchange.PlaceOrder(ctx, exchange.PlaceOrderParams{
-		Symbol:   input.Symbol,
-		Side:     closeSide,
-		PosSide:  closePosSide,
-		Type:     "market",
-		Quantity: target.Quantity,
-		ClientID: fmt.Sprintf("force-%s-%d", input.Symbol, time.Now().UnixMilli()),
+		Symbol:     input.Symbol,
+		Side:       closeSide,
+		PosSide:    closePosSide,
+		Type:       "market",
+		Price:      refPrice,
+		Quantity:   target.Quantity,
+		ReduceOnly: true,
+		ClientID:   fmt.Sprintf("force-%s-%d", input.Symbol, time.Now().UnixMilli()),
 	})
 	if err != nil {
 		return errorResult("place close order failed: " + err.Error())
@@ -926,16 +952,17 @@ func (t *tradeHistoryTool) Risk() tool.Risk { return tool.RiskSafe }
 func (t *tradeHistoryTool) Schema() tool.Schema {
 	return tool.Schema{
 		Name:        "quant.trade_history",
-		Description: "查询历史交易记录。可按单元、品种、方向过滤。",
+		Description: "查询历史交易记录。可按账户、单元、品种、方向过滤。",
 		Brain:       "quant",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"unit_id":   {"type": "string", "description": "交易单元ID，为空返回全部"},
-				"symbol":    {"type": "string", "description": "品种过滤"},
-				"direction": {"type": "string", "description": "方向过滤: long/short"},
-				"since":     {"type": "string", "description": "起始时间 (RFC3339)"},
-				"limit":     {"type": "integer", "description": "最大返回条数，默认100"}
+				"account_id": {"type": "string", "description": "账户ID过滤，为空返回全部"},
+				"unit_id":    {"type": "string", "description": "交易单元ID，为空返回全部"},
+				"symbol":     {"type": "string", "description": "品种过滤"},
+				"direction":  {"type": "string", "description": "方向过滤: long/short"},
+				"since":      {"type": "string", "description": "起始时间 (RFC3339)"},
+				"limit":      {"type": "integer", "description": "最大返回条数，默认100"}
 			}
 		}`),
 	}
@@ -943,6 +970,7 @@ func (t *tradeHistoryTool) Schema() tool.Schema {
 
 func (t *tradeHistoryTool) Execute(_ context.Context, args json.RawMessage) (*tool.Result, error) {
 	var input struct {
+		AccountID string `json:"account_id"`
 		UnitID    string `json:"unit_id"`
 		Symbol    string `json:"symbol"`
 		Direction string `json:"direction"`
@@ -956,16 +984,20 @@ func (t *tradeHistoryTool) Execute(_ context.Context, args json.RawMessage) (*to
 		input.Limit = 100
 	}
 
-	// Collect trades from all units (or specific unit)
+	// Collect trades from all units (or specific unit/account)
 	var allRecords []tradestore.TradeRecord
 	for _, u := range t.qb.Units() {
 		if input.UnitID != "" && u.ID != input.UnitID {
 			continue
 		}
+		if input.AccountID != "" && u.Account.ID != input.AccountID {
+			continue
+		}
 		filter := tradestore.Filter{
-			UnitID: u.ID,
-			Symbol: input.Symbol,
-			Limit:  input.Limit,
+			AccountID: input.AccountID,
+			UnitID:    u.ID,
+			Symbol:    input.Symbol,
+			Limit:     input.Limit,
 		}
 		if input.Direction != "" {
 			filter.Direction = dirFromString(input.Direction)

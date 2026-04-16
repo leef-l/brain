@@ -1,6 +1,9 @@
 package strategy
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // HistoricalOracle optionally supplies historical win rates for feature-vector
 // similarity checks.
@@ -24,6 +27,10 @@ type Aggregator struct {
 	ShortThreshold  float64
 	DominanceFactor float64
 	Oracle          HistoricalOracle
+	// MinActiveStrategies is the minimum number of strategies that must produce
+	// a directional (non-hold) signal for the aggregator to output a trade.
+	// Default 0 = no minimum. Set to 2 to require multi-strategy agreement.
+	MinActiveStrategies int
 }
 
 // AggregatedSignal is the final decision produced by the aggregator.
@@ -77,6 +84,21 @@ func (a Aggregator) Aggregate(view MarketView, signals []Signal, review ReviewCo
 			result.ShortScore += score
 		}
 		result.Signals = append(result.Signals, signal)
+	}
+
+	// Count how many distinct strategies produced a directional signal.
+	if a.MinActiveStrategies > 0 {
+		activeCount := 0
+		for _, s := range result.Signals {
+			if s.Direction == DirectionLong || s.Direction == DirectionShort {
+				activeCount++
+			}
+		}
+		if activeCount < a.MinActiveStrategies {
+			result.Direction = DirectionHold
+			result.RejectionReason = fmt.Sprintf("only %d active strategies, need %d", activeCount, a.MinActiveStrategies)
+			return result
+		}
 	}
 
 	switch {

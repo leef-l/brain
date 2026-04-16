@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -195,6 +197,15 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
 	}
+
+	// Auto-inject sidecar config paths from ~/.brain/<kind>-brain.yaml
+	// if the corresponding env var is not already set.
+	cmd.Env = injectSidecarConfigEnv(cmd.Env, kind)
+
+	// On Linux, ask the kernel to send SIGTERM to the child when the
+	// parent process dies. This prevents orphan sidecar processes when
+	// the user kills brain chat with Ctrl+C/Ctrl+D/kill.
+	setSidecarDeathSignal(cmd)
 
 	// Redirect sidecar stderr to a log file instead of polluting the
 	// interactive chat/run UI. Logs go to ~/.brain/logs/<kind>.log.
@@ -560,4 +571,44 @@ func openSidecarLog(kind agent.Kind) (io.Writer, io.Closer) {
 func toJSONRaw(v interface{}) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// sidecarConfigEnvMap maps brain kind to the env var name and the config
+// file basename under ~/.brain/.
+var sidecarConfigEnvMap = map[agent.Kind]struct {
+	envVar   string
+	filename string
+}{
+	agent.KindData:    {"DATA_CONFIG", "data-brain.yaml"},
+	agent.KindQuant:   {"QUANT_CONFIG", "quant-brain.yaml"},
+	agent.KindCentral: {"CENTRAL_CONFIG", "central-brain.yaml"},
+}
+
+// injectSidecarConfigEnv auto-discovers config files under ~/.brain/ and
+// injects the corresponding *_CONFIG env var if not already set.
+func injectSidecarConfigEnv(env []string, kind agent.Kind) []string {
+	entry, ok := sidecarConfigEnvMap[kind]
+	if !ok {
+		return env
+	}
+
+	// Check if already set.
+	prefix := entry.envVar + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return env // user explicitly set it, don't override
+		}
+	}
+
+	// Probe ~/.brain/<kind>-brain.yaml
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return env
+	}
+	configPath := filepath.Join(home, ".brain", entry.filename)
+	if _, err := os.Stat(configPath); err != nil {
+		return env // file doesn't exist, skip
+	}
+
+	return append(env, entry.envVar+"="+configPath)
 }

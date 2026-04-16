@@ -76,6 +76,15 @@ func (ra *RegimeAwareAggregator) SetOracle(oracle HistoricalOracle) {
 	ra.base.Oracle = oracle
 }
 
+// SetWeights updates the base strategy weights from L1 learning.
+// This affects the fallback weights when regime detection is not active.
+func (ra *RegimeAwareAggregator) SetWeights(weights map[string]float64) {
+	if len(weights) == 0 {
+		return
+	}
+	ra.base.Weights = weights
+}
+
 // Aggregate dynamically selects weights by market regime, then delegates to
 // the base Aggregator logic.
 func (ra *RegimeAwareAggregator) Aggregate(view MarketView, signals []Signal, review ReviewContext) AggregatedSignal {

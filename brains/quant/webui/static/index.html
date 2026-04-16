@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brain Quant - 量化交易面板</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body x-data="app" x-init="init()">
+
+<!-- Top Bar -->
+<header class="top-bar">
+    <div class="top-bar-left">
+        <span class="logo">Brain Quant</span>
+        <span class="logo-sub">量化交易面板</span>
+    </div>
+    <div class="top-bar-right">
+        <span class="ws-status" :class="connected ? 'connected' : 'disconnected'">
+            <span class="dot"></span>
+            <span x-text="connected ? '实时连接中' : '连接断开'"></span>
+        </span>
+    </div>
+</header>
+
+<div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <nav>
+            <a href="#/" :class="page === 'dashboard' && 'active'" @click="page='dashboard'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                <span>总览</span>
+            </a>
+            <a href="#/positions" :class="page === 'positions' && 'active'" @click="page='positions'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                <span>持仓</span>
+            </a>
+            <a href="#/trades" :class="page === 'trades' && 'active'" @click="page='trades'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+                <span>交易记录</span>
+            </a>
+            <a href="#/chart" :class="page === 'chart' && 'active'" @click="page='chart'; $nextTick(() => initKlineChart())">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg>
+                <span>K线</span>
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="content">
+
+        <!-- Dashboard Page -->
+        <div x-show="page === 'dashboard'" x-cloak>
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">总权益</div>
+                    <div class="kpi-value" x-text="formatUSD(portfolio.total_equity)"></div>
+                    <div class="kpi-sub" x-text="portfolio.accountCount ? portfolio.accountCount + ' 个账户' : ''"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">今日盈亏</div>
+                    <div class="kpi-value" :class="portfolio.day_pnl >= 0 ? 'profit' : 'loss'"
+                       x-text="formatPnL(portfolio.day_pnl)"></div>
+                    <div class="kpi-sub" :class="portfolio.unrealized_pnl >= 0 ? 'profit' : 'loss'"
+                         x-text="'浮动: ' + formatPnL(portfolio.unrealized_pnl)"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">总敞口</div>
+                    <div class="kpi-value" x-text="formatPct(portfolio.total_exposure, portfolio.total_equity)"></div>
+                    <div class="kpi-sub">
+                        <span class="profit" x-text="'多: ' + formatUSD(portfolio.long_exposure)"></span>
+                        <span class="loss" style="margin-left: 0.5rem;" x-text="'空: ' + formatUSD(portfolio.short_exposure)"></span>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">胜率</div>
+                    <div class="kpi-value" x-text="portfolio.win_rate.toFixed(1) + '%'"></div>
+                    <div class="kpi-sub" x-text="portfolio.wins + ' 胜 / ' + portfolio.losses + ' 负 / 共 ' + portfolio.total_trades + ' 笔'"></div>
+                </div>
+            </div>
+
+            <!-- Equity Curve -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="chart-toolbar">
+                        <span class="panel-title">权益曲线</span>
+                        <select class="chart-select chart-select-sm" x-model="equityAccount" @change="loadEquityCurve(equityDays)">
+                            <option value="all">全部账户</option>
+                            <template x-for="a in accountList" :key="a">
+                                <option :value="a" x-text="a"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="chart-controls">
+                        <button class="btn-sm" :class="equityDays === 1 && 'btn-sm-active'" @click="loadEquityCurve(1)">1天</button>
+                        <button class="btn-sm" :class="equityDays === 7 && 'btn-sm-active'" @click="loadEquityCurve(7)">7天</button>
+                        <button class="btn-sm" :class="equityDays === 30 && 'btn-sm-active'" @click="loadEquityCurve(30)">30天</button>
+                    </div>
+                </div>
+                <div id="equity-chart" style="height: 220px;"></div>
+            </div>
+
+            <!-- Position Summary -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">当前持仓 (<span x-text="positions.length"></span>)</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>币种</th>
+                                <th>方向</th>
+                                <th>开仓价</th>
+                                <th>标记价</th>
+                                <th>浮动盈亏</th>
+                                <th>健康度</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="p in positions" :key="p.symbol">
+                                <tr>
+                                    <td>
+                                        <a href="#" class="symbol-link" @click.prevent="goToChart(p.symbol)">
+                                            <strong x-text="p.symbol.replace('-USDT-SWAP','')"></strong>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="badge" :class="p.side === 'long' ? 'badge-long' : 'badge-short'"
+                                              x-text="p.side === 'long' ? '做多' : '做空'"></span>
+                                    </td>
+                                    <td x-text="formatPrice(p.avg_price)"></td>
+                                    <td x-text="formatPrice(p.mark_price)"></td>
+                                    <td :class="p.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(p.pnl)"></td>
+                                    <td>
+                                        <div class="health-bar-wrap" x-show="p.health >= 0">
+                                            <div class="health-bar">
+                                                <div class="health-fill"
+                                                     :style="`width: ${p.health * 100}%`"
+                                                     :class="healthClass(p.health)">
+                                                </div>
+                                            </div>
+                                            <span class="health-label" :class="healthClass(p.health)"
+                                                  x-text="healthText(p.health)"></span>
+                                        </div>
+                                        <span class="text-muted" x-show="p.health < 0">未追踪</span>
+                                    </td>
+                                    <td>
+                                        <button class="btn-danger-sm" @click="closePosition(p.account_id, p.symbol)"
+                                                :disabled="closing === p.symbol"
+                                                x-text="closing === p.symbol ? '平仓中...' : '平仓'"></button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="positions.length === 0">
+                                <td colspan="7" class="empty-row">暂无持仓</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Positions Page -->
+        <div x-show="page === 'positions'" x-cloak>
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">全部持仓明细</span>
+                    <div class="panel-header-stats">
+                        <span class="profit" x-text="'多头: ' + formatUSD(longExposure())"></span>
+                        <span class="text-muted" style="margin: 0 0.5rem;">|</span>
+                        <span class="loss" x-text="'空头: ' + formatUSD(shortExposure())"></span>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>账户</th>
+                                <th>币种</th>
+                                <th>方向</th>
+                                <th>数量</th>
+                                <th>开仓价</th>
+                                <th>标记价</th>
+                                <th>名义价值</th>
+                                <th>浮动盈亏</th>
+                                <th>健康度</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="p in positions" :key="p.account_id + p.symbol">
+                                <tr>
+                                    <td x-text="p.account_id"></td>
+                                    <td>
+                                        <a href="#" class="symbol-link" @click.prevent="goToChart(p.symbol)">
+                                            <strong x-text="p.symbol.replace('-USDT-SWAP','')"></strong>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="badge" :class="p.side === 'long' ? 'badge-long' : 'badge-short'"
+                                              x-text="p.side === 'long' ? '做多' : '做空'"></span>
+                                    </td>
+                                    <td x-text="p.quantity.toFixed(4)"></td>
+                                    <td x-text="formatPrice(p.avg_price)"></td>
+                                    <td x-text="formatPrice(p.mark_price)"></td>
+                                    <td x-text="formatUSD(p.notional)"></td>
+                                    <td :class="p.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(p.pnl)"></td>
+                                    <td>
+                                        <div class="health-bar-wrap" x-show="p.health >= 0">
+                                            <div class="health-bar">
+                                                <div class="health-fill"
+                                                     :style="`width: ${p.health * 100}%`"
+                                                     :class="healthClass(p.health)">
+                                                </div>
+                                            </div>
+                                            <span class="health-label" :class="healthClass(p.health)"
+                                                  x-text="healthText(p.health)"></span>
+                                        </div>
+                                        <span class="text-muted" x-show="p.health < 0">未追踪</span>
+                                    </td>
+                                    <td>
+                                        <button class="btn-danger-sm" @click="closePosition(p.account_id, p.symbol)"
+                                                :disabled="closing === p.symbol"
+                                                x-text="closing === p.symbol ? '平仓中...' : '平仓'"></button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="positions.length === 0">
+                                <td colspan="10" class="empty-row">暂无持仓</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Health Legend -->
+            <div class="panel legend-panel">
+                <div class="panel-header"><span class="panel-title">状态说明</span></div>
+                <div class="legend-body">
+                    <div class="legend-item"><span class="legend-dot health-good"></span><strong>健康 (&gt;60%)</strong> — 策略信号支持当前方向，持仓安全</div>
+                    <div class="legend-item"><span class="legend-dot health-warn"></span><strong>警告 (30%-60%)</strong> — 信号减弱，可能即将触发退出</div>
+                    <div class="legend-item"><span class="legend-dot health-danger"></span><strong>危险 (&lt;30%)</strong> — 即将被系统自动平仓（阈值 30%）</div>
+                    <div class="legend-item"><span class="legend-dot" style="background: var(--text-muted);"></span><strong>未追踪</strong> — 手动开仓或系统未纳入健康度监控</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trades Page -->
+        <div x-show="page === 'trades'" x-cloak>
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">交易记录</span>
+                    <span class="text-muted" x-text="trades.length + ' 笔交易'"></span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>平仓时间</th>
+                                <th>币种</th>
+                                <th>方向</th>
+                                <th>开仓价</th>
+                                <th>平仓价</th>
+                                <th>盈亏</th>
+                                <th>盈亏%</th>
+                                <th>平仓原因</th>
+                                <th>策略</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="t in trades" :key="t.id">
+                                <tr>
+                                    <td x-text="formatTime(t.exit_time)"></td>
+                                    <td>
+                                        <a href="#" class="symbol-link" @click.prevent="goToChart(t.symbol)">
+                                            <strong x-text="t.symbol.replace('-USDT-SWAP','')"></strong>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="badge" :class="t.direction === 'long' ? 'badge-long' : 'badge-short'"
+                                              x-text="t.direction === 'long' ? '做多' : '做空'"></span>
+                                    </td>
+                                    <td x-text="formatPrice(t.entry_price)"></td>
+                                    <td x-text="formatPrice(t.exit_price)"></td>
+                                    <td :class="t.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(t.pnl)"></td>
+                                    <td :class="t.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnLPct(t.pnl_pct)"></td>
+                                    <td><span class="badge badge-reason" x-text="reasonText(t.reason)"></span></td>
+                                    <td x-text="strategyText(t.strategy)"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="trades.length === 0">
+                                <td colspan="9" class="empty-row">暂无交易记录</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Reason Legend -->
+            <div class="panel legend-panel">
+                <div class="panel-header"><span class="panel-title">平仓原因说明</span></div>
+                <div class="legend-body">
+                    <div class="legend-item"><span class="badge badge-reason">信号退出</span> — 健康度 EWMA 低于阈值，策略信号不再支持持仓方向</div>
+                    <div class="legend-item"><span class="badge badge-reason">止损</span> — 价格触及止损线，防止更大亏损</div>
+                    <div class="legend-item"><span class="badge badge-reason">止盈</span> — 价格触及止盈线，锁定利润</div>
+                    <div class="legend-item"><span class="badge badge-reason">手动平仓</span> — 通过面板或 LLM 工具手动操作</div>
+                    <div class="legend-item"><span class="badge badge-reason">超时退出</span> — 持仓时间超过最大持有期限</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- K-line Chart Page -->
+        <div x-show="page === 'chart'" x-cloak>
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="chart-toolbar">
+                        <select class="chart-select" x-model="klineSymbol" @change="loadKline()">
+                            <template x-for="s in symbolList" :key="s">
+                                <option :value="s" x-text="s.replace('-USDT-SWAP','')"></option>
+                            </template>
+                        </select>
+                        <div class="chart-controls">
+                            <template x-for="b in klineBars" :key="b.value">
+                                <button class="btn-sm" :class="klineBar === b.value && 'btn-sm-active'"
+                                        @click="klineBar = b.value; loadKline()"
+                                        x-text="b.label"></button>
+                            </template>
+                        </div>
+                    </div>
+                    <span class="text-muted" x-text="klineData.length + ' 根K线'"></span>
+                </div>
+                <div id="kline-chart" style="height: 450px;"></div>
+            </div>
+
+            <!-- Volume panel below -->
+            <div class="panel" x-show="klineData.length > 0">
+                <div class="panel-header">
+                    <span class="panel-title">成交量</span>
+                </div>
+                <div id="volume-chart" style="height: 120px;"></div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- Footer -->
+<footer class="bottom-bar">
+    <span x-text="'持仓: ' + positions.length + ' 个'"></span>
+    <span x-text="'最后更新: ' + lastUpdate"></span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

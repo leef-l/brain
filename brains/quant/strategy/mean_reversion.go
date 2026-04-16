@@ -116,9 +116,13 @@ func (m MeanReversion) computeFromFeatures(view MarketView) Signal {
 
 	confidence = clamp(confidence, 0, 1)
 	priceNow := f.CurrentPrice()
-	stopDistance := atrRatio * priceNow * 1.5
+	// Use higher-TF ATR for stop/take to avoid 1m noise whipsaws.
+	slATR := bestATRRatio(f, tf)
+	// SL = 1.2× ATR, TP = 1.8× ATR → 1:1.5 盈亏比.
+	// 1m 短线快进快出，均值回归本身目标距离短.
+	stopDistance := slATR * priceNow * 1.2
 	if stopDistance <= 0 {
-		stopDistance = math.Abs(priceNow) * 0.01
+		stopDistance = math.Abs(priceNow) * 0.006
 	}
 
 	signal := Signal{
@@ -129,8 +133,7 @@ func (m MeanReversion) computeFromFeatures(view MarketView) Signal {
 		Reason:     reason,
 		Timestamp:  time.Now().UTC(),
 	}
-	// Target = mid band (bbPos ≈ 0.5), estimate distance from ATR
-	takeDistance := atrRatio * priceNow * 2
+	takeDistance := slATR * priceNow * 1.8
 	if long {
 		signal.StopLoss = priceNow - stopDistance
 		signal.TakeProfit = priceNow + takeDistance

@@ -89,6 +89,15 @@ func Run(handler BrainHandler) error {
 	writer := protocol.NewFrameWriter(os.Stdout)
 	rpc := protocol.NewBidirRPC(protocol.RoleSidecar, reader, writer)
 
+	// Detect stdin EOF (parent process exited). On Linux the kernel sends
+	// SIGTERM via Pdeathsig, but on Windows/macOS the only signal is stdin
+	// closing. When the RPC readLoop hits EOF it closes rpc — we monitor
+	// that and cancel our context so Run() exits cleanly.
+	go func() {
+		<-rpc.Done()
+		cancel()
+	}()
+
 	// Register initialize handler.
 	rpc.Handle("initialize", func(_ context.Context, params json.RawMessage) (interface{}, error) {
 		return map[string]interface{}{

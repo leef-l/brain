@@ -228,6 +228,7 @@ func (r *AccountRouter) dispatchToUnit(
 		// Persist trade record
 		if err := unit.TradeStore.Save(ctx, tradestore.TradeRecord{
 			ID:         result.OrderID,
+			AccountID:  unit.Account.ID,
 			UnitID:     unit.ID,
 			Symbol:     view.Symbol(),
 			Direction:  signal.Direction,

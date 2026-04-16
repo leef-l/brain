@@ -85,7 +85,8 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 	// Feature Engine + Assembler
 	feat := feature.NewEngine(candles, orderbook, tradeflow)
 	fallback := feature.NewRuleFallback(candles, orderbook, tradeflow)
-	assembler := feature.NewFeatureAssembler(feat, nil, fallback) // nil MLEngine → NullMLEngine
+	mlEngine := feature.NewStatisticalMLEngine() // 统计增强引擎，50 次 Update 后自动就绪
+	assembler := feature.NewFeatureAssembler(feat, mlEngine, fallback)
 
 	// ActiveList
 	alCfg := active.Config{
@@ -224,6 +225,22 @@ func (b *DataBrain) Start(ctx context.Context) error {
 				b.logger.Error("backfill failed", "err", err)
 			} else {
 				b.logger.Info("backfill completed", "instruments", len(instIDs))
+				// Reload CandleWindows from PG so the feature engine sees
+				// the freshly backfilled data — without this, strategies
+				// that started before backfill finished see zero vectors.
+				reloaded := 0
+				for _, id := range instIDs {
+					for _, tf := range []string{"1m", "5m", "15m", "1H", "4H"} {
+						candles, err := b.loadCandlesForFeature(ctx, id, tf, 500)
+						if err != nil || len(candles) == 0 {
+							continue
+						}
+						w := b.candles.GetWindow(id, tf)
+						w.LoadHistory(candles)
+						reloaded++
+					}
+				}
+				b.logger.Info("reloaded candle windows after backfill", "windows", reloaded)
 			}
 		}()
 	}

@@ -57,6 +57,8 @@ type PositionInfo struct {
 	Quantity     float64
 	AvgPrice     float64
 	MarkPrice    float64
+	Notional     float64 // 持仓金额 = Quantity * MarkPrice
+	Margin       float64 // 占用保证金 = Notional / Leverage
 	UnrealizedPL float64
 	Leverage     int
 	UpdatedAt    time.Time
@@ -86,6 +88,7 @@ type PlaceOrderParams struct {
 	Leverage    int
 	TimeInForce string // "GTC", "IOC", etc.
 	ClientID    string // client-assigned ID
+	ReduceOnly  bool   // true = only reduce existing position, never open new
 }
 
 // Exchange is the venue-agnostic interface for trading operations.
@@ -117,4 +120,9 @@ type Exchange interface {
 // to trigger stop-loss / take-profit on simulated orders (e.g. PaperExchange).
 type TickFeeder interface {
 	ProcessPriceTick(ctx context.Context, symbol string, price float64) ([]OrderResult, error)
+}
+
+// BulkCanceller is an optional interface for cancelling all open orders for a symbol.
+type BulkCanceller interface {
+	CancelOpenOrders(ctx context.Context, symbol string) int
 }

@@ -201,6 +201,28 @@ func (o *Orchestrator) syncLLMModels() {
 	}
 }
 
+// AutoStartBrains launches all sidecars that have AutoStart=true in their
+// registration. This should be called after Orchestrator creation with a
+// long-lived context (e.g. the serve context). Errors are logged to stderr
+// but do not prevent other brains from starting.
+func (o *Orchestrator) AutoStartBrains(ctx context.Context) {
+	for kind, reg := range o.registrations {
+		if !reg.AutoStart {
+			continue
+		}
+		if !o.available[kind] {
+			fmt.Fprintf(os.Stderr, "orchestrator: auto-start %s skipped (no binary)\n", kind)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "orchestrator: auto-starting %s sidecar...\n", kind)
+		if _, err := o.getOrStartSidecar(ctx, kind); err != nil {
+			fmt.Fprintf(os.Stderr, "orchestrator: auto-start %s failed: %v\n", kind, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "orchestrator: auto-start %s ok\n", kind)
+		}
+	}
+}
+
 // StartBrain explicitly starts a sidecar for the given kind. Returns an
 // error if the kind is not available or the sidecar fails to start.
 func (o *Orchestrator) StartBrain(ctx context.Context, kind agent.Kind) error {

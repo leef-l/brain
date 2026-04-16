@@ -73,6 +73,21 @@ func (b *PaperBackend) Execute(ctx context.Context, state *MemoryState, intent O
 		return b.reject(state, now, intent, "market order requires a reference price"), nil
 	}
 
+	// ReduceOnly guard: reject if no existing position to reduce.
+	if intent.ReduceOnly {
+		snap := state.Snapshot()
+		hasPosition := false
+		for _, p := range snap.Positions {
+			if strings.EqualFold(p.Symbol, intent.Symbol) && strings.EqualFold(p.PosSide, intent.PosSide) && p.Quantity > 0 {
+				hasPosition = true
+				break
+			}
+		}
+		if !hasPosition {
+			return b.reject(state, now, intent, "reduce_only: no position to reduce"), nil
+		}
+	}
+
 	order := state.PutOrder(now, intent, OrderStatusAccepted)
 	if order.Intent.ID == "" {
 		return ExecutionResult{}, fmt.Errorf("paper state returned empty order id")
@@ -85,6 +100,8 @@ func (b *PaperBackend) Execute(ctx context.Context, state *MemoryState, intent O
 		if _, err := state.ApplyFill(now, intent, fillPrice, fillQty, fee); err != nil {
 			return b.reject(state, now, intent, err.Error()), nil
 		}
+		// Set initial mark price and margin on the position.
+		state.UpdateMarkPrice(now, intent.Symbol, intent.PosSide, fillPrice, intent.Leverage)
 
 		_, _ = state.UpdateOrder(now, order.Intent.ID, func(record *OrderRecord) error {
 			record.Status = OrderStatusFilled
@@ -93,6 +110,9 @@ func (b *PaperBackend) Execute(ctx context.Context, state *MemoryState, intent O
 			record.Fee = fee
 			return nil
 		})
+
+		// Auto-create SL/TP child orders so ProcessPriceTick can trigger them.
+		b.createChildOrders(state, now, intent)
 
 		return ExecutionResult{
 			OrderID:     order.Intent.ID,
@@ -122,9 +142,23 @@ func (b *PaperBackend) ProcessPriceTick(ctx context.Context, state *MemoryState,
 	now := nowUnix()
 	_ = ctx
 
+	// Update mark price, unrealized PnL, and margin for all positions of this symbol.
+	state.UpdateMarkPrice(now, symbol, PosSideLong, markPrice, 0)
+	state.UpdateMarkPrice(now, symbol, PosSideShort, markPrice, 0)
+
 	openOrders := state.ListOpenOrders(symbol)
 	results := make([]ExecutionResult, 0, len(openOrders))
+
+	// Track which posSide already had a fill this tick (OCO: first wins).
+	filledPosSide := make(map[string]bool)
+
 	for _, order := range openOrders {
+		// OCO guard: if this posSide already had a SL or TP fill, cancel siblings.
+		if filledPosSide[order.Intent.PosSide] {
+			_, _ = state.CancelOrder(now, order.Intent.ID)
+			continue
+		}
+
 		fillable, fillPrice := b.shouldFill(order.Intent, markPrice, true)
 		if !fillable {
 			continue
@@ -134,6 +168,8 @@ func (b *PaperBackend) ProcessPriceTick(ctx context.Context, state *MemoryState,
 		fillQty := order.Intent.Quantity
 		fee := b.calcFee(fillPrice, fillQty)
 		if _, err := state.ApplyFill(now, order.Intent, fillPrice, fillQty, fee); err != nil {
+			// Position already closed (e.g. by signal exit) — cancel this order.
+			_, _ = state.CancelOrder(now, order.Intent.ID)
 			continue
 		}
 		_, _ = state.UpdateOrder(now, order.Intent.ID, func(record *OrderRecord) error {
@@ -143,6 +179,10 @@ func (b *PaperBackend) ProcessPriceTick(ctx context.Context, state *MemoryState,
 			record.Fee = fee
 			return nil
 		})
+
+		// Mark this posSide as filled so sibling SL/TP gets cancelled.
+		filledPosSide[order.Intent.PosSide] = true
+
 		results = append(results, ExecutionResult{
 			OrderID:     order.Intent.ID,
 			ClientOrdID: order.Intent.ClientOrdID,
@@ -154,6 +194,40 @@ func (b *PaperBackend) ProcessPriceTick(ctx context.Context, state *MemoryState,
 		})
 	}
 	return results, nil
+}
+
+// createChildOrders creates stop-loss and take-profit child orders
+// when a market order fills. The child orders have the opposite side
+// so they close the position when triggered.
+func (b *PaperBackend) createChildOrders(state *MemoryState, now int64, parent OrderIntent) {
+	closeSide := OrderSideSell
+	if parent.PosSide == PosSideShort {
+		closeSide = OrderSideBuy
+	}
+
+	if parent.StopLoss != "" {
+		state.PutOrder(now, OrderIntent{
+			Symbol:    parent.Symbol,
+			Side:      closeSide,
+			PosSide:   parent.PosSide,
+			OrderType: OrderTypeStopLoss,
+			Leverage:  parent.Leverage,
+			Quantity:  parent.Quantity,
+			StopLoss:  parent.StopLoss,
+		}, OrderStatusOpen)
+	}
+
+	if parent.TakeProfit != "" {
+		state.PutOrder(now, OrderIntent{
+			Symbol:     parent.Symbol,
+			Side:       closeSide,
+			PosSide:    parent.PosSide,
+			OrderType:  OrderTypeTakeProfit,
+			Leverage:   parent.Leverage,
+			Quantity:   parent.Quantity,
+			TakeProfit: parent.TakeProfit,
+		}, OrderStatusOpen)
+	}
 }
 
 func (b *PaperBackend) shouldFill(intent OrderIntent, markPrice float64, hasPrice bool) (bool, float64) {
@@ -193,23 +267,29 @@ func (b *PaperBackend) shouldFill(intent OrderIntent, markPrice float64, hasPric
 	}
 }
 
+// stopTriggered checks if a stop-loss order should trigger.
+//   - Long SL (Side=Sell): triggers when price drops to or below stop → markPrice <= trigger
+//   - Short SL (Side=Buy): triggers when price rises to or above stop → markPrice >= trigger
 func stopTriggered(intent OrderIntent, markPrice, trigger float64) bool {
 	switch intent.Side {
-	case OrderSideBuy:
-		return markPrice >= trigger
-	case OrderSideSell:
+	case OrderSideSell: // closing long
 		return markPrice <= trigger
+	case OrderSideBuy: // closing short
+		return markPrice >= trigger
 	default:
 		return false
 	}
 }
 
+// takeProfitTriggered checks if a take-profit order should trigger.
+//   - Long TP (Side=Sell): triggers when price rises to or above TP → markPrice >= trigger
+//   - Short TP (Side=Buy): triggers when price drops to or below TP → markPrice <= trigger
 func takeProfitTriggered(intent OrderIntent, markPrice, trigger float64) bool {
 	switch intent.Side {
-	case OrderSideBuy:
-		return markPrice <= trigger
-	case OrderSideSell:
+	case OrderSideSell: // closing long
 		return markPrice >= trigger
+	case OrderSideBuy: // closing short
+		return markPrice <= trigger
 	default:
 		return false
 	}

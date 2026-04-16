@@ -18,12 +18,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/leef-l/brain/brains/data/ringbuf"
 	"github.com/leef-l/brain/brains/quant"
 	"github.com/leef-l/brain/brains/quant/exchange"
+	"github.com/leef-l/brain/brains/quant/learning"
+	"github.com/leef-l/brain/brains/quant/risk"
 	"github.com/leef-l/brain/brains/quant/tracer"
 	"github.com/leef-l/brain/brains/quant/tradestore"
+	"github.com/leef-l/brain/brains/quant/webui"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/sidecar"
 
@@ -41,19 +45,56 @@ func Main() {
 	}
 
 	cfg := loadConfig(logger)
-	accounts, qb := buildQuantBrain(cfg, logger)
+	accounts, qb, paperSaver, pgStore := buildQuantBrain(cfg, logger)
 
 	handler := NewHandler(qb, accounts, logger)
 
 	// Start the quant brain evaluation loop in background.
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if err := qb.Start(ctx); err != nil {
 		// Non-fatal: sidecar tools still work for status queries even if
 		// the evaluation loop can't start (e.g. no units configured).
 		logger.Warn("quant brain start", "err", err)
 	}
 
-	if err := sidecar.Run(handler); err != nil {
+	// Start periodic paper state saver (every 30s).
+	if paperSaver != nil {
+		go paperSaver.Run(ctx, 30*time.Second)
+	}
+
+	// Start WebUI HTTP/WebSocket dashboard if enabled.
+	if cfg.WebUI.Enabled {
+		addr := cfg.WebUI.Addr
+		if addr == "" {
+			addr = ":8380"
+		}
+		webServer := webui.NewServer(webui.ServerConfig{
+			Addr:     addr,
+			QB:       qb,
+			Accounts: accounts,
+			PGStore:  pgStore,
+			Logger:   logger,
+		})
+		go webServer.Start(ctx)
+	}
+
+	// sidecar.Run blocks until stdin closes (kernel exits) or signal.
+	// Do NOT register our own SIGINT/SIGTERM — sidecar.Run handles it internally.
+	err := sidecar.Run(handler)
+
+	// sidecar.Run returned — stop quant brain first to prevent new trades.
+	cancel()
+	qb.Stop(context.Background())
+
+	// Then save paper state (no concurrent writes now).
+	if paperSaver != nil {
+		logger.Info("saving paper state before exit...")
+		paperSaver.SaveAll()
+	}
+
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain-quant: %v\n", err)
 		os.Exit(1)
 	}
@@ -91,21 +132,60 @@ func loadConfig(logger *slog.Logger) quant.FullConfig {
 	return cfg
 }
 
+// paperStateSaver manages periodic saving of paper exchange state to PG.
+type paperStateSaver struct {
+	store    *tradestore.PaperPGStore
+	papers   map[string]*exchange.PaperExchange // accountID → PaperExchange
+	logger   *slog.Logger
+}
+
+// Run saves paper state every interval until ctx is cancelled.
+func (s *paperStateSaver) Run(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.SaveAll()
+		}
+	}
+}
+
+// SaveAll persists all paper accounts' state to PG.
+func (s *paperStateSaver) SaveAll() {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for id, pe := range s.papers {
+		if err := pe.SaveState(ctx, id, s.store); err != nil {
+			s.logger.Error("save paper state failed", "account", id, "err", err)
+		} else {
+			s.logger.Debug("paper state saved", "account", id)
+		}
+	}
+}
+
 // buildQuantBrain constructs accounts and QuantBrain from config.
 // Market data comes from the Data sidecar via RemoteBufferManager (wired
 // later in SetKernelCaller); a placeholder empty BufferManager is used here.
-func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*quant.Account, *quant.QuantBrain) {
+func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*quant.Account, *quant.QuantBrain, *paperStateSaver, *tradestore.PGStore) {
 	ctx := context.Background()
 
-	// Build accounts
+	// Build accounts — track paper exchanges for PG persistence.
 	accounts := make(map[string]*quant.Account, len(cfg.Accounts))
+	paperExchanges := make(map[string]*exchange.PaperExchange)
 	for _, ac := range cfg.Accounts {
 		var ex exchange.Exchange
 		switch ac.Exchange {
 		case "paper":
-			ex = exchange.NewPaperExchange(exchange.PaperConfig{
+			pe := exchange.NewPaperExchange(exchange.PaperConfig{
 				InitialEquity: ac.InitialEquity,
+				SlippageBps:   ac.SlippageBps,
+				FeeBps:        ac.FeeBps,
 			})
+			ex = pe
+			paperExchanges[ac.ID] = pe
 		case "okx":
 			ex = exchange.NewOKXExchange(exchange.OKXConfig{
 				APIKey:     ac.APIKey,
@@ -137,9 +217,20 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		logger.Info("global risk config applied from config file")
 	}
 
+	// Apply signal exit config.
+	if cfg.SignalExit.Enabled {
+		qb.SetSignalExitConfig(cfg.SignalExit)
+		logger.Info("signal exit enabled", "min_confidence", cfg.SignalExit.MinConfidence,
+			"require_multi_strategy", cfg.SignalExit.RequireMultiStrategy,
+			"min_hold", cfg.SignalExit.MinHoldDuration,
+			"cooldown", cfg.SignalExit.CooldownAfterExit)
+	}
+
 	// Optional PG trade store
 	pgURL := os.Getenv("PG_URL")
 	var pgStore *tradestore.PGStore
+	var paperStore *tradestore.PaperPGStore
+	var saver *paperStateSaver
 	if pgURL != "" {
 		var err error
 		pgStore, err = tradestore.NewPGStoreFromURL(ctx, pgURL)
@@ -155,12 +246,81 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			}
 			qb.SetTraceStore(pgTraceStore)
 			logger.Info("trade store: PostgreSQL connected")
+
+			// Paper exchange PG persistence.
+			if len(paperExchanges) > 0 {
+				paperStore = tradestore.NewPaperPGStore(pgStore.Pool(), logger)
+				if err := paperStore.Migrate(ctx); err != nil {
+					logger.Error("paper pg store migrate failed", "err", err)
+					paperStore = nil // prevent use of unmigrated store
+				} else {
+					// Restore paper exchange state from PG.
+					for id, pe := range paperExchanges {
+						if err := pe.RestoreState(ctx, id, paperStore, logger); err != nil {
+							logger.Warn("restore paper state failed (starting fresh)", "account", id, "err", err)
+						}
+					}
+					saver = &paperStateSaver{
+						store:  paperStore,
+						papers: paperExchanges,
+						logger: logger,
+					}
+				}
+			}
 		}
 	}
 
-	// Build shared risk components from config (applied to all units).
-	guard := cfg.Risk.BuildGuard()
-	sizer := cfg.Risk.BuildSizer()
+	// Build risk components — auto-scale per account if enabled.
+	type accountRisk struct {
+		guard *risk.AdaptiveGuard
+		sizer *risk.BayesianSizer
+	}
+	perAccountRisk := make(map[string]accountRisk)
+
+	if cfg.AutoRisk.Enabled {
+		for id, acc := range accounts {
+			bal, err := acc.Exchange.QueryBalance(ctx)
+			equity := bal.Equity
+			if err != nil || equity <= 0 {
+				for _, ac := range cfg.Accounts {
+					if ac.ID == id {
+						equity = ac.InitialEquity
+						break
+					}
+				}
+			}
+			scaled := cfg.AutoRisk.AutoScale(equity, cfg.Risk)
+			perAccountRisk[id] = accountRisk{
+				guard: scaled.BuildGuard(),
+				sizer: scaled.BuildSizer(),
+			}
+			logger.Info("auto_risk scaled",
+				"account", id,
+				"equity", equity,
+				"level", cfg.AutoRisk.Level,
+				"max_concurrent", scaled.Guard.MaxConcurrentPositions,
+				"max_exposure", scaled.Guard.MaxTotalExposurePct,
+				"min_fraction", scaled.Sizer.MinFraction,
+				"max_fraction", scaled.Sizer.MaxFraction,
+				"kelly_scale", scaled.Sizer.ScaleFraction,
+			)
+		}
+		globalRisk := cfg.AutoRisk.AutoScaleGlobalRisk(cfg.GlobalRisk)
+		qb.SetGlobalRiskConfig(globalRisk)
+		logger.Info("auto_risk global",
+			"max_exposure", globalRisk.MaxGlobalExposurePct,
+			"max_same_dir", globalRisk.MaxGlobalSameDirection,
+			"max_daily_loss", globalRisk.MaxGlobalDailyLoss,
+		)
+	} else {
+		shared := accountRisk{
+			guard: cfg.Risk.BuildGuard(),
+			sizer: cfg.Risk.BuildSizer(),
+		}
+		for id := range accounts {
+			perAccountRisk[id] = shared
+		}
+	}
 
 	// Register trading units
 	for _, uc := range cfg.Units {
@@ -195,6 +355,7 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			}
 		}
 
+		ar := perAccountRisk[uc.AccountID]
 		unit := quant.NewTradingUnit(quant.TradingUnitConfig{
 			ID:          uc.ID,
 			Account:     acc,
@@ -204,8 +365,8 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			Pool:        cfg.Strategy.BuildPool(),
 			TradeStore:  ts,
 			Aggregator:  agg,
-			Guard:       guard,
-			Sizer:       sizer,
+			Guard:       ar.guard,
+			Sizer:       ar.sizer,
 			RouteConfig: routeCfg,
 		}, logger)
 		qb.AddUnit(unit)
@@ -214,5 +375,24 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			"short_threshold", agg.BaseAggregator().ShortThreshold)
 	}
 
-	return accounts, qb
+	// Wire up L1 adaptive learning (requires PG trade store for history).
+	if pgStore != nil {
+		wa := learning.NewWeightAdapter(learning.WeightAdapterConfig{
+			BaseWeights: cfg.Strategy.Weights,
+			WindowSize:  100,
+			MinSamples:  20,
+		}, logger.With("component", "weight_adapter"))
+		ss := learning.NewSymbolScorer(learning.SymbolScorerConfig{
+			WindowDays: 7,
+			MinTrades:  5,
+		}, logger.With("component", "symbol_scorer"))
+		opt := learning.NewSLTPOptimizer(learning.SLTPOptimizerConfig{
+			MinSamples: 20,
+			WindowDays: 14,
+		}, logger.With("component", "sltp_optimizer"))
+		qb.SetLearning(wa, ss, opt)
+		logger.Info("L1 adaptive learning enabled")
+	}
+
+	return accounts, qb, saver, pgStore
 }

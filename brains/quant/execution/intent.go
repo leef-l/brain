@@ -16,6 +16,7 @@ type OrderIntent struct {
 	TakeProfit  string `json:"take_profit,omitempty"`
 	TimeInForce string `json:"time_in_force,omitempty"`
 	ClientOrdID string `json:"client_ord_id,omitempty"`
+	ReduceOnly  bool   `json:"reduce_only,omitempty"`
 	Timestamp   int64  `json:"timestamp"`
 }
 

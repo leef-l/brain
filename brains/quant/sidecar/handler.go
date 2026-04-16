@@ -373,13 +373,20 @@ func (h *quantHandler) execForceClose(ctx context.Context, rawCtx json.RawMessag
 			closeSide = "buy"
 			closePosSide = "short"
 		}
+		// Use MarkPrice as reference so PaperExchange can fill the order.
+		refPrice := p.MarkPrice
+		if refPrice <= 0 {
+			refPrice = p.AvgPrice
+		}
 		result, err := acc.Exchange.PlaceOrder(ctx, exchange.PlaceOrderParams{
-			Symbol:   input.Symbol,
-			Side:     closeSide,
-			PosSide:  closePosSide,
-			Type:     "market",
-			Quantity: p.Quantity,
-			ClientID: fmt.Sprintf("force-%s-%d", input.Symbol, time.Now().UnixMilli()),
+			Symbol:     input.Symbol,
+			Side:       closeSide,
+			PosSide:    closePosSide,
+			Type:       "market",
+			Price:      refPrice,
+			Quantity:   p.Quantity,
+			ReduceOnly: true,
+			ClientID:   fmt.Sprintf("force-%s-%d", input.Symbol, time.Now().UnixMilli()),
 		})
 		if err != nil {
 			return &sidecar.ExecuteResult{

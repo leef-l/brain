@@ -133,11 +133,16 @@ func (t TrendFollower) computeFromFeatures(view MarketView) Signal {
 
 	confidence = clamp(confidence, 0, 1)
 	priceNow := f.CurrentPrice()
-	stopDistance := atrRatio * priceNow * 2
-	takeDistance := atrRatio * priceNow * 4
+	// Use higher-TF ATR for stop/take distances to avoid noise whipsaws
+	// on short timeframes (1m/5m ATR is too tight).
+	slATR := bestATRRatio(f, tf)
+	// SL = 1.5× ATR, TP = 2× ATR → 1:1.3 盈亏比.
+	// 1m 短线快进快出，缩小 SL/TP 距离加速平仓周转.
+	stopDistance := slATR * priceNow * 1.5
+	takeDistance := slATR * priceNow * 2.0
 	if stopDistance <= 0 {
-		stopDistance = math.Abs(priceNow) * 0.01
-		takeDistance = stopDistance * 2
+		stopDistance = math.Abs(priceNow) * 0.008
+		takeDistance = stopDistance * 1.3
 	}
 
 	signal := Signal{
@@ -242,11 +247,11 @@ func (TrendFollower) computeLegacy(view MarketView) Signal {
 	}
 
 	confidence = clamp(confidence, 0, 1)
-	stopDistance := atrValue * 2
-	takeDistance := atrValue * 4
+	stopDistance := atrValue * 1.5
+	takeDistance := atrValue * 2.0
 	if stopDistance <= 0 {
-		stopDistance = math.Abs(priceNow) * 0.01
-		takeDistance = stopDistance * 2
+		stopDistance = math.Abs(priceNow) * 0.008
+		takeDistance = stopDistance * 1.3
 	}
 	signal := Signal{
 		Strategy:   "TrendFollower",

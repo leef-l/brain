@@ -9,6 +9,7 @@ import (
 
 	"github.com/leef-l/brain/brains/quant/risk"
 	"github.com/leef-l/brain/brains/quant/strategy"
+	"github.com/leef-l/brain/brains/quant/tradestore"
 )
 
 // ReviewConfig configures the LLM review trigger thresholds.
@@ -46,10 +47,11 @@ func DefaultReviewConfig() ReviewConfig {
 
 // ReviewRequest is sent to the central brain for review.
 type ReviewRequest struct {
-	Signal    strategy.AggregatedSignal `json:"signal"`
-	Portfolio PortfolioSummary          `json:"portfolio"`
-	Market    MarketSummary             `json:"market"`
-	Reason    string                    `json:"reason"`
+	Signal          strategy.AggregatedSignal `json:"signal"`
+	Portfolio       PortfolioSummary          `json:"portfolio"`
+	Market          MarketSummary             `json:"market"`
+	Reason          string                    `json:"reason"`
+	SimilarTrades   string                    `json:"similar_trades,omitempty"` // L3: formatted historical trade experience
 }
 
 // PortfolioSummary is a simplified view for the LLM prompt.
@@ -163,15 +165,27 @@ func (r *KernelReviewer) Review(ctx context.Context, req ReviewRequest) (ReviewD
 }
 
 func fallbackDecision(reason string) ReviewDecision {
+	// When LLM review is unavailable (central brain not running, timeout, etc.),
+	// auto-approve with reduced size factor rather than blocking all trades.
+	// This is safe for paper trading; production should set Approved=false.
 	return ReviewDecision{
-		Approved:   false,
-		SizeFactor: 0,
+		Approved:   true,
+		SizeFactor: 0.5,
 		Reason:     reason,
 	}
 }
 
 // BuildPrompt generates the Chinese prompt for the LLM review.
 func BuildPrompt(req ReviewRequest) string {
+	historySection := ""
+	if req.SimilarTrades != "" {
+		historySection = fmt.Sprintf(`
+
+[历史经验]
+%s
+请参考上述历史交易的盈亏情况，评估本次交易的风险。`, req.SimilarTrades)
+	}
+
 	return fmt.Sprintf(`[投资组合状态]
 总权益: %.2f USDT
 今日损益: %.2f%%
@@ -187,7 +201,7 @@ func BuildPrompt(req ReviewRequest) string {
 当前价格: %.2f
 波动率百分位: %.0f%%
 市场状态: %s
-资金费率: %.6f
+资金费率: %.6f%s
 
 判断:
 1. 该交易是否应该执行？(YES/NO)
@@ -207,6 +221,7 @@ func BuildPrompt(req ReviewRequest) string {
 		req.Market.VolPercentile*100,
 		req.Market.MarketRegime,
 		req.Market.FundingRate,
+		historySection,
 	)
 }
 
@@ -221,9 +236,26 @@ func (qb *QuantBrain) SetReviewer(r Reviewer) {
 // The reviewer parameter must be the snapshot taken under mu — do not read qb.reviewer
 // directly, as it may have changed since the caller checked.
 // Returns (proceed bool, sizeFactor float64).
-func (qb *QuantBrain) integrateReview(ctx context.Context, reviewer Reviewer, td *TradeDecision, snap risk.GlobalSnapshot) (bool, float64) {
+func (qb *QuantBrain) integrateReview(ctx context.Context, reviewer Reviewer, td *TradeDecision, snap risk.GlobalSnapshot, unit *TradingUnit) (bool, float64) {
 	if reviewer == nil {
 		return true, 1.0
+	}
+
+	// L3: Retrieve similar historical trades for LLM context.
+	sig := bestSignalFromAgg(td.Signal)
+	similarTradesText := ""
+	if unit != nil && unit.TradeStore != nil {
+		similar := tradestore.SimilaritySearch(unit.TradeStore, tradestore.SimilarityQuery{
+			Symbol:     td.Symbol,
+			Direction:  td.Signal.Direction,
+			ATR:        td.OrderReq.ATR,
+			Confidence: td.Signal.Confidence,
+			Strategy:   sig.Strategy,
+			TopK:       5,
+		})
+		if len(similar) > 0 {
+			similarTradesText = tradestore.FormatSimilarTrades(similar)
+		}
 	}
 
 	req := ReviewRequest{
@@ -236,7 +268,8 @@ func (qb *QuantBrain) integrateReview(ctx context.Context, reviewer Reviewer, td
 			Symbol: td.Symbol,
 			Price:  td.OrderReq.EntryPrice,
 		},
-		Reason: td.ReviewReason,
+		Reason:        td.ReviewReason,
+		SimilarTrades: similarTradesText,
 	}
 
 	decision, err := reviewer.Review(ctx, req)

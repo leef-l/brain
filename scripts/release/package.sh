@@ -72,7 +72,7 @@ for entry in "${binaries[@]}"; do
   pkg="${entry#*=}"
   printf '  → %s (%s)\n' "${name}" "${pkg}" >&2
   CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
-    go build -trimpath -ldflags "${ldflags}" -o "${stage_dir}/${name}${ext}" "${pkg}"
+    go build -trimpath -ldflags "${ldflags}" -o "${stage_dir}/${name}${ext}" "${root_dir}/${pkg}"
 done
 
 # --- install to GOPATH/bin (覆盖式) ---

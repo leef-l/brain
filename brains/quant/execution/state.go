@@ -26,8 +26,11 @@ type Position struct {
 	PosSide       string  `json:"pos_side"`
 	Quantity      float64 `json:"quantity"`
 	AvgPrice      float64 `json:"avg_price"`
+	MarkPrice     float64 `json:"mark_price"`
 	RealizedPnL   float64 `json:"realized_pnl"`
 	UnrealizedPnL float64 `json:"unrealized_pnl"`
+	Margin        float64 `json:"margin"`
+	Leverage      int     `json:"leverage"`
 	UpdatedAt     int64   `json:"updated_at"`
 }
 
@@ -246,6 +249,99 @@ func (s *MemoryState) markAcceptedLocked(now int64, orderID string) (OrderRecord
 func (s *MemoryState) nextOrderIDLocked() string {
 	s.nextID++
 	return fmt.Sprintf("paper-%d", s.nextID)
+}
+
+// UpdateMarkPrice updates a position's mark price, unrealized PnL, and margin.
+func (s *MemoryState) UpdateMarkPrice(now int64, symbol, posSide string, markPrice float64, leverage int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := positionKey(symbol, posSide)
+	pos, ok := s.positions[key]
+	if !ok || pos.Quantity == 0 {
+		return
+	}
+
+	pos.MarkPrice = markPrice
+	switch pos.PosSide {
+	case PosSideLong:
+		pos.UnrealizedPnL = pos.Quantity * (markPrice - pos.AvgPrice)
+	case PosSideShort:
+		pos.UnrealizedPnL = pos.Quantity * (pos.AvgPrice - markPrice)
+	}
+
+	lev := leverage
+	if lev <= 0 {
+		lev = pos.Leverage
+	}
+	if lev <= 0 {
+		lev = 1
+	}
+	pos.Leverage = lev
+	pos.Margin = pos.Quantity * markPrice / float64(lev)
+	pos.UpdatedAt = now
+}
+
+// RestorePositions loads positions from persistence into memory.
+// Existing positions are cleared first.
+func (s *MemoryState) RestorePositions(positions []Position) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Clear existing.
+	for k := range s.positions {
+		delete(s.positions, k)
+	}
+
+	for _, p := range positions {
+		if p.Quantity == 0 {
+			continue
+		}
+		cp := p // copy
+		key := positionKey(p.Symbol, p.PosSide)
+		s.positions[key] = &cp
+	}
+}
+
+// RestoreOrders loads open orders from persistence into memory.
+// Existing orders and client order mappings are cleared first.
+// Only open/accepted/triggered orders should be passed.
+func (s *MemoryState) RestoreOrders(orders []OrderRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Clear existing orders and client order mappings.
+	for k := range s.orders {
+		delete(s.orders, k)
+	}
+	for k := range s.clientOrd {
+		delete(s.clientOrd, k)
+	}
+
+	for _, o := range orders {
+		cp := o // copy
+		s.orders[o.Intent.ID] = &cp
+		if o.Intent.ClientOrdID != "" {
+			s.clientOrd[o.Intent.ClientOrdID] = o.Intent.ID
+		}
+	}
+}
+
+// SetNextID sets the order ID counter for resumption after restart.
+// nextOrderIDLocked pre-increments, so pass the persisted nextID directly.
+func (s *MemoryState) SetNextID(id int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id > s.nextID {
+		s.nextID = id
+	}
+}
+
+// NextID returns the current nextID counter value (for persistence).
+func (s *MemoryState) NextID() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.nextID
 }
 
 func positionKey(symbol, posSide string) string {

@@ -253,6 +253,10 @@ func runServe(args []string) int {
 			_ = startupOrch.Shutdown(context.Background())
 		}
 	}()
+	// Auto-start sidecars marked with auto_start: true in config.
+	if startupOrch != nil {
+		startupOrch.AutoStartBrains(serveCtx)
+	}
 	runtime.Kernel.ToolRegistry = buildManagedRegistry(cfg, env, "central", func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, startupOrch, env)
 		registerSpecialistBridgeTools(reg, startupOrch)

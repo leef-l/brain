@@ -19,6 +19,8 @@ type AccountConfig struct {
 
 	// Paper exchange config
 	InitialEquity float64 `json:"initial_equity" yaml:"initial_equity"`
+	SlippageBps   float64 `json:"slippage_bps" yaml:"slippage_bps"` // paper滑点(基点), default 5 = 0.05%
+	FeeBps        float64 `json:"fee_bps" yaml:"fee_bps"`           // paper手续费(基点), default 4 = 0.04%
 
 	// Tags for grouping
 	Tags []string `json:"tags" yaml:"tags"`
@@ -43,6 +45,9 @@ type StrategyConfig struct {
 	LongThreshold   float64                         `json:"long_threshold" yaml:"long_threshold"`
 	ShortThreshold  float64                         `json:"short_threshold" yaml:"short_threshold"`
 	DominanceFactor float64                         `json:"dominance_factor" yaml:"dominance_factor"`
+	// MinActiveStrategies requires at least N strategies to produce directional
+	// signals before the aggregator will output a trade. 0 = no minimum.
+	MinActiveStrategies int                          `json:"min_active_strategies" yaml:"min_active_strategies"`
 	TrendFollower   strategy.TrendFollowerParams     `json:"trend_follower" yaml:"trend_follower"`
 	MeanReversion   strategy.MeanReversionParams     `json:"mean_reversion" yaml:"mean_reversion"`
 	BreakoutMomentum strategy.BreakoutMomentumParams `json:"breakout_momentum" yaml:"breakout_momentum"`
@@ -75,6 +80,57 @@ type RiskConfig struct {
 	Sizer  SizerConfig `json:"position_sizer" yaml:"position_sizer"`
 }
 
+// SignalExitConfig controls signal-reversal-based position closing.
+type SignalExitConfig struct {
+	// Enabled turns on signal reversal exit. Default: false.
+	Enabled bool `json:"enabled" yaml:"enabled"`
+
+	// MinConfidence is the minimum aggregated confidence required for the
+	// reversal signal to trigger a close. Default: 0.5.
+	MinConfidence float64 `json:"min_confidence" yaml:"min_confidence"`
+
+	// RequireMultiStrategy requires at least N strategies to agree on the
+	// reversal direction before closing. Default: 2.
+	RequireMultiStrategy int `json:"require_multi_strategy" yaml:"require_multi_strategy"`
+
+	// MinHoldDuration is the minimum time a position must be held before
+	// signal_exit can close it. Prevents the open→close→open churn loop
+	// that occurs when signals flicker on short timeframes.
+	// Default: 60s. Set to 0 to disable.
+	MinHoldDuration time.Duration `json:"min_hold_duration" yaml:"min_hold_duration"`
+
+	// CooldownAfterExit is the cooldown period after a signal_exit close
+	// before the same symbol can be re-opened. Prevents immediately
+	// re-entering a position that was just closed by signal reversal.
+	// Default: 120s. Set to 0 to disable.
+	CooldownAfterExit time.Duration `json:"cooldown_after_exit" yaml:"cooldown_after_exit"`
+
+	// PositionHealth configures the EWMA-based health tracker for smooth exits.
+	// When enabled, replaces the binary reversal check with a continuous health
+	// score that decays gradually as signals turn against the position.
+	PositionHealth PositionHealthConfig `json:"position_health" yaml:"position_health"`
+}
+
+// DefaultSignalExitConfig returns conservative defaults for signal-based exits.
+func DefaultSignalExitConfig() SignalExitConfig {
+	return SignalExitConfig{
+		Enabled:              false,
+		MinConfidence:        0.5,
+		RequireMultiStrategy: 2,
+		MinHoldDuration:      30 * time.Second,
+		CooldownAfterExit:    60 * time.Second,
+		PositionHealth:       DefaultPositionHealthConfig(),
+	}
+}
+
+// WebUIConfig configures the embedded Web dashboard.
+type WebUIConfig struct {
+	// Enabled turns on the HTTP/WebSocket dashboard. Default: false.
+	Enabled bool   `json:"enabled" yaml:"enabled"`
+	// Addr is the listen address. Default: ":8380".
+	Addr    string `json:"addr" yaml:"addr"`
+}
+
 // FullConfig is the complete quant brain configuration.
 type FullConfig struct {
 	Brain      Config            `json:"brain" yaml:"brain"`
@@ -82,7 +138,10 @@ type FullConfig struct {
 	Units      []UnitConfig      `json:"units" yaml:"units"`
 	Strategy   StrategyConfig    `json:"strategy" yaml:"strategy"`
 	Risk       RiskConfig        `json:"risk" yaml:"risk"`
+	AutoRisk   AutoRiskConfig    `json:"auto_risk" yaml:"auto_risk"`
 	GlobalRisk risk.GlobalRiskConfig `json:"global_risk" yaml:"global_risk"`
+	SignalExit SignalExitConfig  `json:"signal_exit" yaml:"signal_exit"`
+	WebUI      WebUIConfig       `json:"webui" yaml:"webui"`
 }
 
 // DefaultFullConfig returns a minimal working configuration with a paper account.
@@ -138,17 +197,25 @@ func (sc StrategyConfig) BuildAggregator(timeframe string) *strategy.RegimeAware
 	if sc.DominanceFactor > 0 {
 		base.DominanceFactor = sc.DominanceFactor
 	}
+	if sc.MinActiveStrategies > 0 {
+		base.MinActiveStrategies = sc.MinActiveStrategies
+	}
 
 	// Adaptive threshold: short timeframes produce weaker, less correlated
-	// signals across strategies, so the aggregation threshold must be lower.
+	// signals across strategies. We scale thresholds down slightly but not
+	// aggressively — too-low thresholds cause noisy single-strategy trades.
 	switch timeframe {
-	case "1m", "5m":
-		base.LongThreshold *= 0.65
-		base.ShortThreshold *= 0.65
-		base.DominanceFactor = max(base.DominanceFactor*0.8, 1.1)
-	case "15m":
+	case "1m":
 		base.LongThreshold *= 0.80
 		base.ShortThreshold *= 0.80
+		base.DominanceFactor = max(base.DominanceFactor*0.9, 1.2)
+	case "5m":
+		base.LongThreshold *= 0.80
+		base.ShortThreshold *= 0.80
+		base.DominanceFactor = max(base.DominanceFactor*0.85, 1.15)
+	case "15m":
+		base.LongThreshold *= 0.85
+		base.ShortThreshold *= 0.85
 	}
 	// 1H, 4H, 1D keep the configured threshold as-is.
 

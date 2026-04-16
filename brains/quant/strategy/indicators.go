@@ -285,3 +285,23 @@ func clamp(value, minValue, maxValue float64) float64 {
 	}
 	return value
 }
+
+// bestATRRatio returns the ATR ratio from the highest available timeframe to
+// avoid using 1m/5m ATR for stop-loss distances (too tight, causes whipsaws).
+// It walks up the timeframe ladder: 15m → 1H → 4H, falling back to the
+// strategy's own TF if none of the higher TFs have data.
+func bestATRRatio(f FeatureView, strategyTF string) float64 {
+	// For timeframes 1H and above, use the strategy's own TF.
+	switch strategyTF {
+	case "1H", "4H", "1D":
+		return f.ATRRatio(strategyTF)
+	}
+	// For short TFs (1m, 5m, 15m), prefer a higher TF's ATR.
+	for _, htf := range []string{"1H", "15m", "5m"} {
+		if atr := f.ATRRatio(htf); atr > 0 {
+			return atr
+		}
+	}
+	// Fallback to own TF.
+	return f.ATRRatio(strategyTF)
+}

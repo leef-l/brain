@@ -69,7 +69,6 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	volRatio := f.VolumeRatio(tf)
 	obvSl := f.OBVSlope(tf)
 	volBreakout := f.VolumeBreakout(tf)
-	atrRatio := f.ATRRatio(tf)
 	momentum10 := f.Momentum(tf, 10)
 
 	volumeExpansion := volBreakout || volRatio > b.Params.VolumeRatioThreshold
@@ -167,9 +166,13 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	}
 
 	confidence = clamp(confidence, 0, 1)
-	atrDist := atrRatio * priceNow
+	// Use higher-TF ATR for stop/take to avoid 1m noise whipsaws.
+	// SL = 1.5× ATR, TP = 2.5× ATR → 1:1.7 盈亏比.
+	// 1m 短线快进快出，突破动量抓短期冲击波.
+	slATR := bestATRRatio(f, tf)
+	atrDist := slATR * priceNow
 	if atrDist <= 0 {
-		atrDist = priceNow * 0.01
+		atrDist = priceNow * 0.006
 	}
 
 	signal := Signal{
@@ -186,14 +189,14 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 			sl = priceNow - atrDist*1.5
 		}
 		signal.StopLoss = sl
-		signal.TakeProfit = priceNow + atrDist*3
+		signal.TakeProfit = priceNow + atrDist*2.5
 	} else {
 		sl := breakLow + atrDist*1.5
 		if breakLow <= 0 {
 			sl = priceNow + atrDist*1.5
 		}
 		signal.StopLoss = sl
-		signal.TakeProfit = priceNow - atrDist*3
+		signal.TakeProfit = priceNow - atrDist*2.5
 	}
 	return signal
 }
@@ -279,12 +282,12 @@ func (BreakoutMomentum) computeLegacy(view MarketView) Signal {
 	if long {
 		signal.Direction = DirectionLong
 		signal.StopLoss = breakHigh - atrNow*1.5
-		signal.TakeProfit = entry + atrNow*3
+		signal.TakeProfit = entry + atrNow*2.5
 	}
 	if short {
 		signal.Direction = DirectionShort
 		signal.StopLoss = breakLow + atrNow*1.5
-		signal.TakeProfit = entry - atrNow*3
+		signal.TakeProfit = entry - atrNow*2.5
 	}
 	return signal
 }

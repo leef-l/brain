@@ -187,6 +187,18 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 		return nil, nil
 	}
 
+	// Fast path: skip full pipeline if symbol already has an open position.
+	// This avoids running strategies → aggregate → risk check every cycle
+	// only to get rejected by the "same symbol already open" guard rule.
+	positions, err := u.Account.Exchange.QueryPositions(ctx)
+	if err == nil {
+		for _, p := range positions {
+			if p.Symbol == view.Symbol() && p.Quantity > 0 {
+				return nil, nil
+			}
+		}
+	}
+
 	// Run strategies
 	signals := u.Pool.Compute(view)
 
@@ -201,6 +213,18 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 
 	if agg.Direction == strategy.DirectionHold {
 		return nil, nil
+	}
+
+	// Filter: prevent opening opposite direction on same symbol when already
+	// holding a position. This avoids wasteful dual-direction hedging in paper trading.
+	for _, rp := range portfolio.Positions {
+		if rp.Symbol == view.Symbol() && rp.Quantity > 0 && rp.Direction != agg.Direction {
+			u.Logger.Debug("skipping opposite-direction signal on symbol with existing position",
+				"symbol", view.Symbol(),
+				"existing", rp.Direction,
+				"signal", agg.Direction)
+			return nil, nil
+		}
 	}
 
 	// Filter: if exchange can't short, skip short signals
@@ -236,6 +260,11 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 	if err != nil {
 		return nil, fmt.Errorf("position sizing: %w", err)
 	}
+
+	// Adjust SL/TP distances based on leverage.
+	// Higher leverage = smaller price move to hit the same % account impact,
+	// so we tighten SL/TP proportionally. Base calibration assumes 3x leverage.
+	u.adjustSLTPForLeverage(&agg)
 
 	// Build risk check request
 	sig := bestSignal(agg)
@@ -294,15 +323,16 @@ func (u *TradingUnit) Execute(ctx context.Context, td *TradeDecision) (*exchange
 
 	sig := bestSignal(td.Signal)
 	params := exchange.PlaceOrderParams{
-		Symbol:   td.Symbol,
-		Side:     side,
-		PosSide:  posSide,
-		Type:     "market",
-		Quantity: td.SizeResult.Quantity,
-		StopLoss: sig.StopLoss,
+		Symbol:     td.Symbol,
+		Side:       side,
+		PosSide:    posSide,
+		Type:       "market",
+		Price:      sig.Entry,
+		Quantity:   td.SizeResult.Quantity,
+		StopLoss:   sig.StopLoss,
 		TakeProfit: sig.TakeProfit,
-		Leverage: u.MaxLeverage,
-		ClientID: fmt.Sprintf("%s-%s-%d", u.ID, td.Symbol, time.Now().UnixMilli()),
+		Leverage:   u.MaxLeverage,
+		ClientID:   fmt.Sprintf("%s-%s-%d", u.ID, td.Symbol, time.Now().UnixMilli()),
 	}
 
 	result, err := u.Account.Exchange.PlaceOrder(ctx, params)
@@ -318,6 +348,35 @@ func (u *TradingUnit) Execute(ctx context.Context, td *TradeDecision) (*exchange
 		"orderID", result.OrderID)
 
 	return &result, nil
+}
+
+// adjustSLTPForLeverage scales SL/TP distances based on leverage.
+// Strategies are calibrated for ~3x leverage. At higher leverage (10x, 20x),
+// the same price move causes a larger account impact, so we tighten SL/TP.
+// Scale factor = baseLeverage / actualLeverage (e.g. 3/20 = 0.15x distance).
+// Clamped to [0.3, 1.0] to avoid extremely tight stops that get noise-swept.
+func (u *TradingUnit) adjustSLTPForLeverage(agg *strategy.AggregatedSignal) {
+	lev := u.MaxLeverage
+	if lev <= 3 {
+		return // strategies already calibrated for low leverage
+	}
+	// Scale: 3x base → at 10x shrink to 0.3, at 20x shrink to 0.15 → clamp 0.3
+	scale := 3.0 / float64(lev)
+	if scale < 0.3 {
+		scale = 0.3
+	}
+
+	for i := range agg.Signals {
+		sig := &agg.Signals[i]
+		if sig.Entry <= 0 || sig.StopLoss <= 0 {
+			continue
+		}
+		slDist := sig.Entry - sig.StopLoss // positive for long
+		tpDist := sig.TakeProfit - sig.Entry
+
+		sig.StopLoss = sig.Entry - slDist*scale
+		sig.TakeProfit = sig.Entry + tpDist*scale
+	}
 }
 
 // buildReviewContext queries the exchange for current positions and builds

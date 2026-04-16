@@ -154,6 +154,12 @@ type BidirRPC interface {
 	// Close tears down the session: stops the reader, fails every pending
 	// waiter with CodeShuttingDown, and closes the underlying FrameWriter.
 	Close() error
+
+	// Done returns a channel that is closed when the RPC session ends
+	// (either via explicit Close or stdin EOF in the readLoop). Sidecar
+	// code monitors this to detect parent process exit on platforms
+	// without Pdeathsig (Windows, macOS).
+	Done() <-chan struct{}
 }
 
 // HandlerFunc is the server-side handler signature invoked by BidirRPC
@@ -268,6 +274,11 @@ func (r *bidirRPC) Close() error {
 
 	close(r.done)
 	return r.writer.Close()
+}
+
+// Done returns a channel that is closed when the RPC session ends.
+func (r *bidirRPC) Done() <-chan struct{} {
+	return r.done
 }
 
 // Call sends a Request and blocks for the matching response. The call

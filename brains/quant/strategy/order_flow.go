@@ -165,11 +165,13 @@ func (o OrderFlow) computeFromFeatures(view MarketView) Signal {
 		Reason:     reason,
 		Timestamp:  time.Now().UTC(),
 	}
+	// SL = 1.2× ATR, TP = 1.8× ATR → 1:1.5 盈亏比.
+	// 1m 短线快进快出，10x 杠杆下留够呼吸空间.
 	if direction == DirectionLong {
-		signal.StopLoss = priceNow - atrDist
+		signal.StopLoss = priceNow - atrDist*1.2
 		signal.TakeProfit = priceNow + atrDist*1.8
 	} else {
-		signal.StopLoss = priceNow + atrDist
+		signal.StopLoss = priceNow + atrDist*1.2
 		signal.TakeProfit = priceNow - atrDist*1.8
 	}
 	return signal
@@ -231,12 +233,12 @@ func (OrderFlow) computeLegacy(view MarketView) Signal {
 	}
 	if long {
 		signal.Direction = DirectionLong
-		signal.StopLoss = entry - atrValue
+		signal.StopLoss = entry - atrValue*1.2
 		signal.TakeProfit = entry + atrValue*1.8
 	}
 	if short {
 		signal.Direction = DirectionShort
-		signal.StopLoss = entry + atrValue
+		signal.StopLoss = entry + atrValue*1.2
 		signal.TakeProfit = entry - atrValue*1.8
 	}
 	return signal

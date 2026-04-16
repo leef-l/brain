@@ -54,9 +54,32 @@ func (m *BufferManager) Latest(instID string) (ringbuf.MarketSnapshot, bool) {
 
 // Start begins a background goroutine that polls the Data sidecar at the
 // given interval. It blocks until ctx is cancelled.
+//
+// On startup, specialist.call_tool may not yet be registered on the kernel
+// side (registerReverseHandlers runs AFTER runner.Start returns, but
+// SetKernelCaller fires DURING the initialize handshake). We retry the
+// initial fetch with exponential backoff to bridge this timing gap.
 func (m *BufferManager) Start(ctx context.Context, interval time.Duration) {
-	// Initial fetch before first tick.
-	m.fetch(ctx)
+	// Retry initial fetch with backoff — kernel needs time to register
+	// specialist.call_tool after the initialize handshake completes.
+	backoff := 500 * time.Millisecond
+	for attempt := 0; attempt < 10; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
+		if m.fetch(ctx) {
+			break
+		}
+		m.logger.Info("waiting for kernel RPC handlers", "attempt", attempt+1, "backoff", backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 5*time.Second {
+			backoff = backoff * 2
+		}
+	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -95,7 +118,8 @@ type wireSnapshot struct {
 	VolPercentile      float64      `json:"vol_pct"`
 }
 
-func (m *BufferManager) fetch(ctx context.Context) {
+// fetch retrieves snapshots from the Data sidecar. Returns true on success.
+func (m *BufferManager) fetch(ctx context.Context) bool {
 	var raw json.RawMessage
 	err := m.caller.CallKernel(ctx, "specialist.call_tool", map[string]any{
 		"target_kind": "data",
@@ -104,7 +128,7 @@ func (m *BufferManager) fetch(ctx context.Context) {
 	}, &raw)
 	if err != nil {
 		m.logger.Warn("remote snapshot fetch failed", "err", err)
-		return
+		return false
 	}
 
 	// Parse the tool result — it's wrapped in a tool.Result envelope.
@@ -114,13 +138,14 @@ func (m *BufferManager) fetch(ctx context.Context) {
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		// Try direct parse (no envelope).
 		m.parseAndStore(raw)
-		return
+		return true
 	}
 	if len(envelope.Output) > 0 {
 		m.parseAndStore(envelope.Output)
 	} else {
 		m.parseAndStore(raw)
 	}
+	return true
 }
 
 func (m *BufferManager) parseAndStore(data json.RawMessage) {

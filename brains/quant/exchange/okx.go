@@ -164,12 +164,19 @@ func (e *OKXExchange) QueryPositions(ctx context.Context) ([]PositionInfo, error
 		lever, _ := strconv.Atoi(p.Lever)
 		ut, _ := strconv.ParseInt(p.UTime, 10, 64)
 
+		notional := qty * markPx
+		margin := 0.0
+		if lever > 0 {
+			margin = notional / float64(lever)
+		}
 		positions = append(positions, PositionInfo{
 			Symbol:       p.InstID,
 			Side:         p.PosSide,
 			Quantity:     qty,
 			AvgPrice:     avgPx,
 			MarkPrice:    markPx,
+			Notional:     notional,
+			Margin:       margin,
 			UnrealizedPL: upl,
 			Leverage:     lever,
 			UpdatedAt:    time.UnixMilli(ut),
@@ -181,13 +188,14 @@ func (e *OKXExchange) QueryPositions(ctx context.Context) ([]PositionInfo, error
 // ── Place Order ─────────────────────────────────────────────────
 
 type okxOrderReq struct {
-	InstID  string `json:"instId"`
-	TdMode  string `json:"tdMode"`
-	Side    string `json:"side"`
-	PosSide string `json:"posSide,omitempty"`
-	OrdType string `json:"ordType"`
-	Sz      string `json:"sz"`
-	Px      string `json:"px,omitempty"`
+	InstID     string `json:"instId"`
+	TdMode     string `json:"tdMode"`
+	Side       string `json:"side"`
+	PosSide    string `json:"posSide,omitempty"`
+	OrdType    string `json:"ordType"`
+	Sz         string `json:"sz"`
+	Px         string `json:"px,omitempty"`
+	ReduceOnly bool   `json:"reduceOnly,omitempty"`
 	SlTriggerPx string `json:"slTriggerPx,omitempty"`
 	SlOrdPx     string `json:"slOrdPx,omitempty"`
 	TpTriggerPx string `json:"tpTriggerPx,omitempty"`
@@ -220,13 +228,14 @@ func (e *OKXExchange) PlaceOrder(ctx context.Context, params PlaceOrderParams) (
 	}
 
 	reqBody := okxOrderReq{
-		InstID:  params.Symbol,
-		TdMode:  "cross",
-		Side:    params.Side,
-		PosSide: params.PosSide,
-		OrdType: ordType,
-		Sz:      strconv.FormatFloat(params.Quantity, 'f', -1, 64),
-		ClOrdID: params.ClientID,
+		InstID:     params.Symbol,
+		TdMode:     "cross",
+		Side:       params.Side,
+		PosSide:    params.PosSide,
+		OrdType:    ordType,
+		Sz:         strconv.FormatFloat(params.Quantity, 'f', -1, 64),
+		ReduceOnly: params.ReduceOnly,
+		ClOrdID:    params.ClientID,
 	}
 	if params.Price > 0 && ordType == "limit" {
 		reqBody.Px = strconv.FormatFloat(params.Price, 'f', -1, 64)
@@ -290,6 +299,131 @@ func (e *OKXExchange) CancelOrder(ctx context.Context, symbol, orderID string) e
 		return fmt.Errorf("OKX cancel error: %s %s", resp.Code, resp.Msg)
 	}
 	return nil
+}
+
+// CancelOpenOrders cancels all open orders (regular + algo) for a symbol.
+// This covers:
+//  1. Regular pending limit orders via /api/v5/trade/cancel-batch-orders
+//  2. All algo orders (conditional, oco, trigger) via /api/v5/trade/cancel-algos
+//
+// OKX attached SL/TP (slTriggerPx/tpTriggerPx on a regular order) become
+// independent algo orders (ordType=oco) once the parent order fills. Querying
+// only ordType=conditional would miss them entirely.
+func (e *OKXExchange) CancelOpenOrders(ctx context.Context, symbol string) int {
+	cancelled := 0
+
+	// ── Step 1: Cancel regular pending orders ──
+	cancelled += e.cancelRegularOrders(ctx, symbol)
+
+	// ── Step 2: Cancel algo orders (all types) ──
+	// OKX algo ordTypes: conditional, oco, trigger, move_order_stop, iceberg, twap
+	// We query each relevant type because the API requires ordType filter.
+	for _, ordType := range []string{"conditional", "oco", "trigger", "move_order_stop"} {
+		cancelled += e.cancelAlgoOrdersByType(ctx, symbol, ordType)
+	}
+
+	return cancelled
+}
+
+// cancelRegularOrders cancels all pending regular orders for a symbol.
+func (e *OKXExchange) cancelRegularOrders(ctx context.Context, symbol string) int {
+	query := fmt.Sprintf("instId=%s&instType=SWAP", symbol)
+	body, err := e.signedGet(ctx, "/api/v5/trade/orders-pending", query)
+	if err != nil {
+		return 0
+	}
+	var listResp struct {
+		Code string `json:"code"`
+		Data []struct {
+			OrdID  string `json:"ordId"`
+			InstID string `json:"instId"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &listResp); err != nil || listResp.Code != "0" || len(listResp.Data) == 0 {
+		return 0
+	}
+
+	// OKX batch cancel supports up to 20 orders per call.
+	cancelled := 0
+	for i := 0; i < len(listResp.Data); i += 20 {
+		end := i + 20
+		if end > len(listResp.Data) {
+			end = len(listResp.Data)
+		}
+		batch := make([]map[string]string, 0, end-i)
+		for _, d := range listResp.Data[i:end] {
+			batch = append(batch, map[string]string{
+				"instId": d.InstID,
+				"ordId":  d.OrdID,
+			})
+		}
+		cancelBody, err := e.signedPost(ctx, "/api/v5/trade/cancel-batch-orders", batch)
+		if err != nil {
+			continue
+		}
+		var cancelResp struct {
+			Code string `json:"code"`
+			Data []struct {
+				SCode string `json:"sCode"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(cancelBody, &cancelResp); err != nil {
+			continue
+		}
+		for _, d := range cancelResp.Data {
+			if d.SCode == "0" {
+				cancelled++
+			}
+		}
+	}
+	return cancelled
+}
+
+// cancelAlgoOrdersByType cancels all pending algo orders of a specific type for a symbol.
+func (e *OKXExchange) cancelAlgoOrdersByType(ctx context.Context, symbol, ordType string) int {
+	query := fmt.Sprintf("instId=%s&ordType=%s", symbol, ordType)
+	body, err := e.signedGet(ctx, "/api/v5/trade/orders-algo-pending", query)
+	if err != nil {
+		return 0
+	}
+	var listResp struct {
+		Code string `json:"code"`
+		Data []struct {
+			AlgoID string `json:"algoId"`
+			InstID string `json:"instId"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &listResp); err != nil || listResp.Code != "0" || len(listResp.Data) == 0 {
+		return 0
+	}
+
+	cancelItems := make([]map[string]string, 0, len(listResp.Data))
+	for _, d := range listResp.Data {
+		cancelItems = append(cancelItems, map[string]string{
+			"algoId": d.AlgoID,
+			"instId": d.InstID,
+		})
+	}
+	cancelBody, err := e.signedPost(ctx, "/api/v5/trade/cancel-algos", cancelItems)
+	if err != nil {
+		return 0
+	}
+	var cancelResp struct {
+		Code string `json:"code"`
+		Data []struct {
+			SCode string `json:"sCode"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(cancelBody, &cancelResp); err != nil {
+		return 0
+	}
+	cancelled := 0
+	for _, d := range cancelResp.Data {
+		if d.SCode == "0" {
+			cancelled++
+		}
+	}
+	return cancelled
 }
 
 // ── Set Leverage ────────────────────────────────────────────────

@@ -4,6 +4,7 @@ package tradestore
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 // TradeRecord is a completed trade persisted for analysis.
 type TradeRecord struct {
 	ID         string
+	AccountID  string // paper-main, okx-main, etc.
 	UnitID     string
 	Symbol     string
 	Direction  strategy.Direction
@@ -24,6 +26,20 @@ type TradeRecord struct {
 	EntryTime  time.Time
 	ExitTime   time.Time
 	Reason     string // "stop_loss", "take_profit", "signal_exit", "manual"
+
+	// Trade parameters at entry — for post-trade analysis and optimization.
+	Leverage   int     // actual leverage used
+	StopLoss   float64 // SL price at entry
+	TakeProfit float64 // TP price at entry
+	ATR        float64 // ATR value at entry time (for normalizing SL/TP distances)
+	Confidence float64 // aggregated signal confidence at entry
+	Strategy   string  // dominant strategy name that triggered the trade
+
+	// MAE/MFE: Maximum Adverse/Favorable Excursion during the trade's lifetime.
+	// Stored as absolute price distances from entry (always >= 0).
+	// Used by L1-3 SLTPOptimizer to recommend optimal ATR multipliers.
+	MAE float64 // max adverse price excursion from entry
+	MFE float64 // max favorable price excursion from entry
 }
 
 // Stats holds aggregated trade statistics.
@@ -46,6 +62,14 @@ type Store interface {
 	// cancel or set a deadline on the write operation.
 	Save(ctx context.Context, record TradeRecord) error
 
+	// Update modifies an existing trade record identified by ID.
+	// Only non-zero fields in the update are applied.
+	Update(ctx context.Context, id string, update TradeUpdate) error
+
+	// UpdateMAEMFE updates only the MAE/MFE fields if the new values are larger.
+	// Called on every price tick for open trades; must be fast.
+	UpdateMAEMFE(ctx context.Context, id string, mae, mfe float64) error
+
 	// Query returns trade records matching the filter.
 	Query(filter Filter) []TradeRecord
 
@@ -53,8 +77,20 @@ type Store interface {
 	Stats(filter Filter) Stats
 }
 
+// TradeUpdate holds the fields to update on a closed trade.
+type TradeUpdate struct {
+	ExitPrice float64
+	PnL       float64
+	PnLPct    float64
+	ExitTime  time.Time
+	Reason    string // "stop_loss", "take_profit", "signal_exit", "manual"
+	MAE       float64
+	MFE       float64
+}
+
 // Filter constrains which trades to query.
 type Filter struct {
+	AccountID string             // empty = all accounts
 	UnitID    string             // empty = all units
 	Symbol    string             // empty = all symbols
 	Direction strategy.Direction // empty = all directions
@@ -80,6 +116,51 @@ func (s *MemoryStore) Save(_ context.Context, record TradeRecord) error {
 	return nil
 }
 
+func (s *MemoryStore) Update(_ context.Context, id string, update TradeUpdate) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.records {
+		if s.records[i].ID == id {
+			if update.ExitPrice != 0 {
+				s.records[i].ExitPrice = update.ExitPrice
+			}
+			if !update.ExitTime.IsZero() {
+				s.records[i].ExitTime = update.ExitTime
+			}
+			s.records[i].PnL = update.PnL
+			s.records[i].PnLPct = update.PnLPct
+			if update.Reason != "" {
+				s.records[i].Reason = update.Reason
+			}
+			if update.MAE > s.records[i].MAE {
+				s.records[i].MAE = update.MAE
+			}
+			if update.MFE > s.records[i].MFE {
+				s.records[i].MFE = update.MFE
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("trade %q not found", id)
+}
+
+func (s *MemoryStore) UpdateMAEMFE(_ context.Context, id string, mae, mfe float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.records {
+		if s.records[i].ID == id {
+			if mae > s.records[i].MAE {
+				s.records[i].MAE = mae
+			}
+			if mfe > s.records[i].MFE {
+				s.records[i].MFE = mfe
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("trade %q not found", id)
+}
+
 func (s *MemoryStore) Query(f Filter) []TradeRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -103,6 +184,9 @@ func (s *MemoryStore) Stats(f Filter) Stats {
 }
 
 func matchFilter(r TradeRecord, f Filter) bool {
+	if f.AccountID != "" && r.AccountID != f.AccountID {
+		return false
+	}
 	if f.UnitID != "" && r.UnitID != f.UnitID {
 		return false
 	}
