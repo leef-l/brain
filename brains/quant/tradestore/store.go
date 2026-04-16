@@ -28,9 +28,10 @@ type TradeRecord struct {
 	Reason     string // "stop_loss", "take_profit", "signal_exit", "manual"
 
 	// Trade parameters at entry — for post-trade analysis and optimization.
-	Leverage   int     // actual leverage used
-	StopLoss   float64 // SL price at entry
-	TakeProfit float64 // TP price at entry
+	Leverage       int     // actual leverage used
+	StopLoss     float64 // current SL price (may be updated by trailing stop)
+	TakeProfit   float64 // current TP price (may be updated by trailing stop)
+	OrigStopLoss float64 // original SL price at entry (never changes)
 	ATR        float64 // ATR value at entry time (for normalizing SL/TP distances)
 	Confidence float64 // aggregated signal confidence at entry
 	Strategy   string  // dominant strategy name that triggered the trade
@@ -70,6 +71,10 @@ type Store interface {
 	// Called on every price tick for open trades; must be fast.
 	UpdateMAEMFE(ctx context.Context, id string, mae, mfe float64) error
 
+	// UpdateSLTP updates the stop-loss and take-profit prices on an open trade.
+	// Used by the trailing stop mechanism. Only non-zero values are applied.
+	UpdateSLTP(ctx context.Context, id string, sl, tp float64) error
+
 	// Query returns trade records matching the filter.
 	Query(filter Filter) []TradeRecord
 
@@ -77,15 +82,17 @@ type Store interface {
 	Stats(filter Filter) Stats
 }
 
-// TradeUpdate holds the fields to update on a closed trade.
+// TradeUpdate holds the fields to update on a trade record.
 type TradeUpdate struct {
-	ExitPrice float64
-	PnL       float64
-	PnLPct    float64
-	ExitTime  time.Time
-	Reason    string // "stop_loss", "take_profit", "signal_exit", "manual"
-	MAE       float64
-	MFE       float64
+	ExitPrice  float64
+	PnL        float64
+	PnLPct     float64
+	ExitTime   time.Time
+	Reason     string // "stop_loss", "take_profit", "signal_exit", "manual"
+	MAE        float64
+	MFE        float64
+	StopLoss   float64 // updated by trailing stop
+	TakeProfit float64 // updated by trailing stop
 }
 
 // Filter constrains which trades to query.
@@ -96,6 +103,7 @@ type Filter struct {
 	Direction strategy.Direction // empty = all directions
 	Since     time.Time          // zero = no lower bound
 	Limit     int                // 0 = no limit
+	OpenOnly  bool               // true = only records with exit_price == 0
 }
 
 // MemoryStore is a thread-safe in-memory trade store.
@@ -138,6 +146,12 @@ func (s *MemoryStore) Update(_ context.Context, id string, update TradeUpdate) e
 			if update.MFE > s.records[i].MFE {
 				s.records[i].MFE = update.MFE
 			}
+			if update.StopLoss != 0 {
+				s.records[i].StopLoss = update.StopLoss
+			}
+			if update.TakeProfit != 0 {
+				s.records[i].TakeProfit = update.TakeProfit
+			}
 			return nil
 		}
 	}
@@ -154,6 +168,23 @@ func (s *MemoryStore) UpdateMAEMFE(_ context.Context, id string, mae, mfe float6
 			}
 			if mfe > s.records[i].MFE {
 				s.records[i].MFE = mfe
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("trade %q not found", id)
+}
+
+func (s *MemoryStore) UpdateSLTP(_ context.Context, id string, sl, tp float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.records {
+		if s.records[i].ID == id {
+			if sl != 0 {
+				s.records[i].StopLoss = sl
+			}
+			if tp != 0 {
+				s.records[i].TakeProfit = tp
 			}
 			return nil
 		}
@@ -197,6 +228,9 @@ func matchFilter(r TradeRecord, f Filter) bool {
 		return false
 	}
 	if !f.Since.IsZero() && r.ExitTime.Before(f.Since) {
+		return false
+	}
+	if f.OpenOnly && r.ExitPrice != 0 {
 		return false
 	}
 	return true

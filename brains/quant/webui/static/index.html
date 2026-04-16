@@ -13,10 +13,18 @@
 <!-- Top Bar -->
 <header class="top-bar">
     <div class="top-bar-left">
+        <button class="menu-toggle" @click="menuOpen = !menuOpen" :class="menuOpen && 'active'">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <template x-if="!menuOpen"><g><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></g></template>
+                <template x-if="menuOpen"><g><path d="M6 6l12 12"/><path d="M6 18L18 6"/></g></template>
+            </svg>
+        </button>
         <span class="logo">Brain Quant</span>
         <span class="logo-sub">量化交易面板</span>
     </div>
     <div class="top-bar-right">
+        <button class="btn-sm" :class="paused ? 'btn-paused' : 'btn-running'" @click="togglePause()"
+                x-text="paused ? '已暂停 — 点击恢复' : '运行中 — 点击暂停'"></button>
         <span class="ws-status" :class="connected ? 'connected' : 'disconnected'">
             <span class="dot"></span>
             <span x-text="connected ? '实时连接中' : '连接断开'"></span>
@@ -24,8 +32,32 @@
     </div>
 </header>
 
+<!-- Mobile Nav Dropdown -->
+<div class="mobile-nav" x-show="menuOpen" x-cloak @click.outside="menuOpen = false" x-transition>
+    <a href="#/" :class="page === 'dashboard' && 'active'" @click="page='dashboard'; menuOpen=false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <span>总览</span>
+    </a>
+    <a href="#/positions" :class="page === 'positions' && 'active'" @click="page='positions'; menuOpen=false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <span>持仓</span>
+    </a>
+    <a href="#/trades" :class="page === 'trades' && 'active'" @click="page='trades'; menuOpen=false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+        <span>交易记录</span>
+    </a>
+    <a href="#/chart" :class="page === 'chart' && 'active'" @click="page='chart'; menuOpen=false; $nextTick(() => initKlineChart())">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg>
+        <span>K线</span>
+    </a>
+    <a href="#/config" :class="page === 'config' && 'active'" @click="page='config'; menuOpen=false; loadConfig()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span>配置</span>
+    </a>
+</div>
+
 <div class="layout">
-    <!-- Sidebar -->
+    <!-- Sidebar (desktop only) -->
     <aside class="sidebar">
         <nav>
             <a href="#/" :class="page === 'dashboard' && 'active'" @click="page='dashboard'">
@@ -44,6 +76,10 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 4-6"/></svg>
                 <span>K线</span>
             </a>
+            <a href="#/config" :class="page === 'config' && 'active'" @click="page='config'; loadConfig()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                <span>配置</span>
+            </a>
         </nav>
     </aside>
 
@@ -52,22 +88,48 @@
 
         <!-- Dashboard Page -->
         <div x-show="page === 'dashboard'" x-cloak>
+            <!-- Account Filter -->
+            <div class="account-filter">
+                <span class="filter-label">账户:</span>
+                <select class="chart-select chart-select-sm" x-model="selectedAccount" @change="onAccountChange()">
+                    <option value="all">全部账户</option>
+                    <template x-for="a in accountList" :key="a">
+                        <option :value="a" x-text="a"></option>
+                    </template>
+                </select>
+            </div>
+
             <!-- KPI Cards -->
-            <div class="kpi-grid">
+            <div class="kpi-grid kpi-grid-6">
+                <div class="kpi-card">
+                    <div class="kpi-label">本金</div>
+                    <div class="kpi-value" x-text="formatUSD(portfolio.initial_equity)"></div>
+                    <div class="kpi-sub" x-text="selectedAccount === 'all' ? portfolio.accountCount + ' 个账户' : selectedAccount"></div>
+                </div>
                 <div class="kpi-card">
                     <div class="kpi-label">总权益</div>
                     <div class="kpi-value" x-text="formatUSD(portfolio.total_equity)"></div>
-                    <div class="kpi-sub" x-text="portfolio.accountCount ? portfolio.accountCount + ' 个账户' : ''"></div>
+                    <div class="kpi-sub">
+                        <span :class="portfolio.unrealized_pnl >= 0 ? 'profit' : 'loss'" x-text="'浮动 ' + formatPnL(portfolio.unrealized_pnl)"></span>
+                        <span style="margin-left:0.3rem" class="profit" x-show="portfolio.locked_pnl > 0" x-text="'锁利 ' + formatPnL(portfolio.locked_pnl)"></span>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">保证金</div>
+                    <div class="kpi-value" x-text="formatUSD(portfolio.total_margin)"></div>
+                    <div class="kpi-sub" x-text="portfolio.total_equity > 0 ? '占比: ' + formatPct(portfolio.total_margin, portfolio.total_equity) : ''"></div>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-label">今日盈亏</div>
                     <div class="kpi-value" :class="portfolio.day_pnl >= 0 ? 'profit' : 'loss'"
                        x-text="formatPnL(portfolio.day_pnl)"></div>
-                    <div class="kpi-sub" :class="portfolio.unrealized_pnl >= 0 ? 'profit' : 'loss'"
-                         x-text="'浮动: ' + formatPnL(portfolio.unrealized_pnl)"></div>
+                    <div class="kpi-sub">
+                        <span :class="portfolio.unrealized_pnl >= 0 ? 'profit' : 'loss'" x-text="'浮动 ' + formatPnL(portfolio.unrealized_pnl)"></span>
+                        <span style="margin-left:0.3rem" class="profit" x-show="portfolio.locked_pnl > 0" x-text="'锁利 ' + formatPnL(portfolio.locked_pnl)"></span>
+                    </div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-label">总敞口</div>
+                    <div class="kpi-label">总敞口 <small style="color:#666;font-weight:normal">(名义)</small></div>
                     <div class="kpi-value" x-text="formatPct(portfolio.total_exposure, portfolio.total_equity)"></div>
                     <div class="kpi-sub">
                         <span class="profit" x-text="'多: ' + formatUSD(portfolio.long_exposure)"></span>
@@ -81,17 +143,43 @@
                 </div>
             </div>
 
+            <!-- Account List -->
+            <div class="panel" x-show="rawAccounts.length > 0">
+                <div class="panel-header">
+                    <span class="panel-title">账户明细</span>
+                    <span class="text-muted" x-text="'OKX 实际余额: ' + formatUSD(portfolio.exchange_equity || 0)"></span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>账户</th>
+                                <th>配置本金</th>
+                                <th>显示权益</th>
+                                <th>可用余额</th>
+                                <th>保证金</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="a in rawAccounts" :key="a.account_id">
+                                <tr>
+                                    <td><strong x-text="a.account_id"></strong></td>
+                                    <td x-text="a.initial_equity > 0 ? formatUSD(a.initial_equity) : '-'"></td>
+                                    <td x-text="formatUSD(a.equity)"></td>
+                                    <td x-text="formatUSD(a.available)"></td>
+                                    <td x-text="formatUSD(a.margin)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Equity Curve -->
             <div class="panel">
                 <div class="panel-header">
                     <div class="chart-toolbar">
                         <span class="panel-title">权益曲线</span>
-                        <select class="chart-select chart-select-sm" x-model="equityAccount" @change="loadEquityCurve(equityDays)">
-                            <option value="all">全部账户</option>
-                            <template x-for="a in accountList" :key="a">
-                                <option :value="a" x-text="a"></option>
-                            </template>
-                        </select>
                     </div>
                     <div class="chart-controls">
                         <button class="btn-sm" :class="equityDays === 1 && 'btn-sm-active'" @click="loadEquityCurve(1)">1天</button>
@@ -100,29 +188,52 @@
                     </div>
                 </div>
                 <div id="equity-chart" style="height: 220px;"></div>
+                <div class="chart-footer" x-show="equityRange">
+                    <span class="text-muted" x-text="equityRange"></span>
+                </div>
             </div>
 
             <!-- Position Summary -->
             <div class="panel">
-                <div class="panel-header">
+                <div class="panel-header" style="justify-content:flex-start;gap:0.75rem;">
                     <span class="panel-title">当前持仓 (<span x-text="positions.length"></span>)</span>
+                    <button class="btn-danger-sm" @click="forceCloseAll()"
+                            :disabled="closingAll"
+                            x-text="closingAll ? '平仓中...' : 'OKX 强制全平'"></button>
+                    <button class="btn-sm btn-sm-active" @click="syncPositions()">同步 OKX 仓位</button>
+                    <button class="btn-danger-sm" x-show="selectedPositions.length > 0" @click="closeSelected()"
+                            :disabled="closingAll"
+                            x-text="closingAll ? '平仓中...' : '批量平仓 (' + selectedPositions.length + ')'"></button>
                 </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
+                                <th style="width:32px"><input type="checkbox" class="pos-checkbox" @change="toggleAllPositions($event)"></th>
+                                <th>ID</th>
+                                <th>建仓时间</th>
                                 <th>币种</th>
                                 <th>方向</th>
+                                <th>周期</th>
+                                <th>策略</th>
+                                <th>杠杆</th>
+                                <th>名义价值</th>
+                                <th>保证金</th>
                                 <th>开仓价</th>
-                                <th>标记价</th>
+                                <th>止损</th>
+                                <th>止盈</th>
+                                <th>市价</th>
                                 <th>浮动盈亏</th>
                                 <th>健康度</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <template x-for="p in positions" :key="p.symbol">
+                            <template x-for="p in positions" :key="p.account_id + p.symbol">
                                 <tr>
+                                    <td><input type="checkbox" class="pos-checkbox" :value="p.account_id + '|' + p.symbol" x-model="selectedPositions"></td>
+                                    <td class="text-muted trade-id-cell" x-text="p.trade_id || '⚠️ 孤儿'" :class="!p.trade_id && 'orphan-warn'"></td>
+                                    <td class="text-muted" x-text="p.open_time ? formatTime(p.open_time) : '-'"></td>
                                     <td>
                                         <a href="#" class="symbol-link" @click.prevent="goToChart(p.symbol)">
                                             <strong x-text="p.symbol.replace('-USDT-SWAP','')"></strong>
@@ -132,9 +243,39 @@
                                         <span class="badge" :class="p.side === 'long' ? 'badge-long' : 'badge-short'"
                                               x-text="p.side === 'long' ? '做多' : '做空'"></span>
                                     </td>
+                                    <td><span class="badge" :class="tfBadgeClass(p.timeframe)" x-text="p.timeframe || '-'"></span></td>
+                                    <td><span class="badge badge-reason strategy-tip" @click="alert(strategyTip(p.strategy))" :title="strategyTip(p.strategy)" x-text="strategyText(p.strategy)"></span></td>
+                                    <td x-text="p.leverage ? p.leverage + 'x' : '-'"></td>
+                                    <td x-text="formatUSD(p.notional)"></td>
+                                    <td x-text="p.leverage > 0 ? formatUSD(p.notional / p.leverage) : '-'"></td>
                                     <td x-text="formatPrice(p.avg_price)"></td>
+                                    <td>
+                                        <template x-if="p.stop_loss > 0">
+                                            <div class="sltp-cell">
+                                                <span :class="slPnl(p) >= 0 ? 'profit' : 'loss'" x-text="formatPnL(slPnl(p))"></span>
+                                                <span class="text-muted sltp-price" x-text="formatPrice(p.stop_loss)"></span>
+                                            </div>
+                                        </template>
+                                        <span x-show="!p.stop_loss" class="text-muted">-</span>
+                                    </td>
+                                    <td>
+                                        <template x-if="p.take_profit > 0">
+                                            <div class="sltp-cell">
+                                                <span class="profit" x-text="formatPnL(tpPnl(p))"></span>
+                                                <span class="text-muted sltp-price" x-text="formatPrice(p.take_profit)"></span>
+                                            </div>
+                                        </template>
+                                        <span x-show="!p.take_profit" class="text-muted">-</span>
+                                    </td>
                                     <td x-text="formatPrice(p.mark_price)"></td>
-                                    <td :class="p.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(p.pnl)"></td>
+                                    <td>
+                                        <div class="pnl-cell">
+                                            <span :class="p.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(p.pnl)"></span>
+                                            <template x-if="slPnl(p) > 0">
+                                                <span class="text-muted sltp-price profit" x-text="'锁定 ' + formatPnL(slPnl(p))"></span>
+                                            </template>
+                                        </div>
+                                    </td>
                                     <td>
                                         <div class="health-bar-wrap" x-show="p.health >= 0">
                                             <div class="health-bar">
@@ -156,7 +297,7 @@
                                 </tr>
                             </template>
                             <tr x-show="positions.length === 0">
-                                <td colspan="7" class="empty-row">暂无持仓</td>
+                                <td colspan="17" class="empty-row">暂无持仓</td>
                             </tr>
                         </tbody>
                     </table>
@@ -168,7 +309,16 @@
         <div x-show="page === 'positions'" x-cloak>
             <div class="panel">
                 <div class="panel-header">
-                    <span class="panel-title">全部持仓明细</span>
+                    <div style="display:flex;align-items:center;gap:0.75rem;flex:1;">
+                        <span class="panel-title">全部持仓明细</span>
+                        <button class="btn-danger-sm" @click="forceCloseAll()"
+                                :disabled="closingAll"
+                                x-text="closingAll ? '平仓中...' : 'OKX 强制全平'"></button>
+                        <button class="btn-sm btn-sm-active" @click="syncPositions()">同步 OKX 仓位</button>
+                        <button class="btn-danger-sm" x-show="selectedPositions.length > 0" @click="closeSelected()"
+                                :disabled="closingAll"
+                                x-text="closingAll ? '平仓中...' : '批量平仓 (' + selectedPositions.length + ')'"></button>
+                    </div>
                     <div class="panel-header-stats">
                         <span class="profit" x-text="'多头: ' + formatUSD(longExposure())"></span>
                         <span class="text-muted" style="margin: 0 0.5rem;">|</span>
@@ -179,13 +329,22 @@
                     <table>
                         <thead>
                             <tr>
+                                <th style="width:32px"><input type="checkbox" class="pos-checkbox" @change="toggleAllPositions($event)"></th>
+                                <th>ID</th>
+                                <th>建仓时间</th>
                                 <th>账户</th>
                                 <th>币种</th>
                                 <th>方向</th>
+                                <th>周期</th>
+                                <th>策略</th>
+                                <th>杠杆</th>
                                 <th>数量</th>
                                 <th>开仓价</th>
-                                <th>标记价</th>
+                                <th>止损</th>
+                                <th>止盈</th>
+                                <th>市价</th>
                                 <th>名义价值</th>
+                                <th>保证金</th>
                                 <th>浮动盈亏</th>
                                 <th>健康度</th>
                                 <th>操作</th>
@@ -194,6 +353,9 @@
                         <tbody>
                             <template x-for="p in positions" :key="p.account_id + p.symbol">
                                 <tr>
+                                    <td><input type="checkbox" class="pos-checkbox" :value="p.account_id + '|' + p.symbol" x-model="selectedPositions"></td>
+                                    <td class="text-muted trade-id-cell" x-text="p.trade_id || '⚠️ 孤儿'" :class="!p.trade_id && 'orphan-warn'"></td>
+                                    <td class="text-muted" x-text="p.open_time ? formatTime(p.open_time) : '-'"></td>
                                     <td x-text="p.account_id"></td>
                                     <td>
                                         <a href="#" class="symbol-link" @click.prevent="goToChart(p.symbol)">
@@ -204,11 +366,40 @@
                                         <span class="badge" :class="p.side === 'long' ? 'badge-long' : 'badge-short'"
                                               x-text="p.side === 'long' ? '做多' : '做空'"></span>
                                     </td>
+                                    <td><span class="badge" :class="tfBadgeClass(p.timeframe)" x-text="p.timeframe || '-'"></span></td>
+                                    <td><span class="badge badge-reason strategy-tip" @click="alert(strategyTip(p.strategy))" :title="strategyTip(p.strategy)" x-text="strategyText(p.strategy)"></span></td>
+                                    <td x-text="p.leverage ? p.leverage + 'x' : '-'"></td>
                                     <td x-text="p.quantity.toFixed(4)"></td>
                                     <td x-text="formatPrice(p.avg_price)"></td>
+                                    <td>
+                                        <template x-if="p.stop_loss > 0">
+                                            <div class="sltp-cell">
+                                                <span :class="slPnl(p) >= 0 ? 'profit' : 'loss'" x-text="formatPnL(slPnl(p))"></span>
+                                                <span class="text-muted sltp-price" x-text="formatPrice(p.stop_loss)"></span>
+                                            </div>
+                                        </template>
+                                        <span x-show="!p.stop_loss" class="text-muted">-</span>
+                                    </td>
+                                    <td>
+                                        <template x-if="p.take_profit > 0">
+                                            <div class="sltp-cell">
+                                                <span class="profit" x-text="formatPnL(tpPnl(p))"></span>
+                                                <span class="text-muted sltp-price" x-text="formatPrice(p.take_profit)"></span>
+                                            </div>
+                                        </template>
+                                        <span x-show="!p.take_profit" class="text-muted">-</span>
+                                    </td>
                                     <td x-text="formatPrice(p.mark_price)"></td>
                                     <td x-text="formatUSD(p.notional)"></td>
-                                    <td :class="p.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(p.pnl)"></td>
+                                    <td x-text="p.leverage > 0 ? formatUSD(p.notional / p.leverage) : '-'"></td>
+                                    <td>
+                                        <div class="pnl-cell">
+                                            <span :class="p.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(p.pnl)"></span>
+                                            <template x-if="slPnl(p) > 0">
+                                                <span class="text-muted sltp-price profit" x-text="'锁定 ' + formatPnL(slPnl(p))"></span>
+                                            </template>
+                                        </div>
+                                    </td>
                                     <td>
                                         <div class="health-bar-wrap" x-show="p.health >= 0">
                                             <div class="health-bar">
@@ -230,7 +421,7 @@
                                 </tr>
                             </template>
                             <tr x-show="positions.length === 0">
-                                <td colspan="10" class="empty-row">暂无持仓</td>
+                                <td colspan="19" class="empty-row">暂无持仓</td>
                             </tr>
                         </tbody>
                     </table>
@@ -263,7 +454,12 @@
                                 <th>平仓时间</th>
                                 <th>币种</th>
                                 <th>方向</th>
+                                <th>杠杆</th>
+                                <th>名义价值</th>
+                                <th>保证金</th>
                                 <th>开仓价</th>
+                                <th>止损</th>
+                                <th>止盈</th>
                                 <th>平仓价</th>
                                 <th>盈亏</th>
                                 <th>盈亏%</th>
@@ -284,16 +480,31 @@
                                         <span class="badge" :class="t.direction === 'long' ? 'badge-long' : 'badge-short'"
                                               x-text="t.direction === 'long' ? '做多' : '做空'"></span>
                                     </td>
+                                    <td x-text="t.leverage ? t.leverage + 'x' : '-'"></td>
+                                    <td x-text="formatUSD(t.notional)"></td>
+                                    <td x-text="formatUSD(t.margin)"></td>
                                     <td x-text="formatPrice(t.entry_price)"></td>
+                                    <td>
+                                        <template x-if="t.stop_loss > 0">
+                                            <div class="sltp-cell">
+                                                <span class="loss" x-text="formatPrice(t.stop_loss)"></span>
+                                                <template x-if="t.orig_stop_loss > 0 && t.orig_stop_loss !== t.stop_loss">
+                                                    <span class="text-muted sltp-price" x-text="'初始 ' + formatPrice(t.orig_stop_loss)"></span>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <span x-show="!t.stop_loss" class="text-muted">-</span>
+                                    </td>
+                                    <td :class="t.take_profit > 0 ? 'profit' : 'text-muted'" x-text="t.take_profit > 0 ? formatPrice(t.take_profit) : '-'"></td>
                                     <td x-text="formatPrice(t.exit_price)"></td>
                                     <td :class="t.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnL(t.pnl)"></td>
                                     <td :class="t.pnl >= 0 ? 'profit' : 'loss'" x-text="formatPnLPct(t.pnl_pct)"></td>
                                     <td><span class="badge badge-reason" x-text="reasonText(t.reason)"></span></td>
-                                    <td x-text="strategyText(t.strategy)"></td>
+                                    <td><span class="badge badge-reason strategy-tip" @click="alert(strategyTip(t.strategy))" :title="strategyTip(t.strategy)" x-text="strategyText(t.strategy)"></span></td>
                                 </tr>
                             </template>
                             <tr x-show="trades.length === 0">
-                                <td colspan="9" class="empty-row">暂无交易记录</td>
+                                <td colspan="14" class="empty-row">暂无交易记录</td>
                             </tr>
                         </tbody>
                     </table>
@@ -307,7 +518,8 @@
                     <div class="legend-item"><span class="badge badge-reason">信号退出</span> — 健康度 EWMA 低于阈值，策略信号不再支持持仓方向</div>
                     <div class="legend-item"><span class="badge badge-reason">止损</span> — 价格触及止损线，防止更大亏损</div>
                     <div class="legend-item"><span class="badge badge-reason">止盈</span> — 价格触及止盈线，锁定利润</div>
-                    <div class="legend-item"><span class="badge badge-reason">手动平仓</span> — 通过面板或 LLM 工具手动操作</div>
+                    <div class="legend-item"><span class="badge badge-reason">手动平仓</span> — 通过面板单个操作或 LLM 工具手动平仓</div>
+                    <div class="legend-item"><span class="badge badge-reason">批量平仓</span> — 通过面板勾选多个持仓批量平仓</div>
                     <div class="legend-item"><span class="badge badge-reason">超时退出</span> — 持仓时间超过最大持有期限</div>
                 </div>
             </div>
@@ -318,9 +530,9 @@
             <div class="panel">
                 <div class="panel-header">
                     <div class="chart-toolbar">
-                        <select class="chart-select" x-model="klineSymbol" @change="loadKline()">
-                            <template x-for="s in symbolList" :key="s">
-                                <option :value="s" x-text="s.replace('-USDT-SWAP','')"></option>
+                        <select class="chart-select chart-select-rank" x-model="klineSymbol" @change="loadKline()">
+                            <template x-for="s in symbolList" :key="s.symbol">
+                                <option :value="s.symbol" x-text="symbolLabel(s)"></option>
                             </template>
                         </select>
                         <div class="chart-controls">
@@ -343,6 +555,454 @@
                 </div>
                 <div id="volume-chart" style="height: 120px;"></div>
             </div>
+        </div>
+
+        <!-- Config Page -->
+        <div x-show="page === 'config'" x-cloak>
+            <div class="panel" x-show="!configData">
+                <div class="panel-header"><span class="panel-title">加载中...</span></div>
+            </div>
+
+            <template x-if="configData">
+            <div>
+                <!-- Config Header -->
+                <div class="config-header">
+                    <div class="config-tabs">
+                        <button class="config-tab" :class="configTab === 'accounts' && 'active'" @click="configTab = 'accounts'">账户管理</button>
+                        <button class="config-tab" :class="configTab === 'strategy' && 'active'" @click="configTab = 'strategy'">全局策略</button>
+                        <button class="config-tab" :class="configTab === 'risk' && 'active'" @click="configTab = 'risk'">风控参数</button>
+                        <button class="config-tab" :class="configTab === 'advanced' && 'active'" @click="configTab = 'advanced'">高级配置</button>
+                    </div>
+                    <div class="config-actions">
+                        <span class="text-muted" x-show="configData.config_path" x-text="'配置文件: ' + configData.config_path" style="font-size:11px;"></span>
+                        <span class="config-dirty" x-show="configDirty">未保存</span>
+                        <button class="btn-save" :disabled="!configDirty || configSaving" @click="saveConfig()"
+                                x-text="configSaving ? '保存中...' : '保存配置'"></button>
+                    </div>
+                </div>
+
+                <!-- ═══ Accounts Tab ═══ -->
+                <div x-show="configTab === 'accounts'">
+                    <template x-for="(account, ai) in configData.accounts" :key="account.id">
+                    <div class="config-card">
+                        <div class="config-card-header" @click="editingAccount = (editingAccount === account.id ? null : account.id)">
+                            <div class="config-card-title">
+                                <span class="badge" :class="account.exchange === 'okx' ? 'badge-long' : 'badge-reason'" x-text="account.exchange.toUpperCase()"></span>
+                                <strong x-text="account.id"></strong>
+                                <span class="text-muted" x-text="account.simulated ? '(模拟)' : ''"></span>
+                                <span class="text-muted" x-text="'本金: $' + (account.initial_equity || 0).toLocaleString()"></span>
+                            </div>
+                            <div class="config-card-meta">
+                                <span class="badge badge-reason" x-text="unitsForAccount(account.id).length + ' 个交易单元'"></span>
+                                <span class="config-expand" x-text="editingAccount === account.id ? '▼' : '▶'"></span>
+                            </div>
+                        </div>
+
+                        <!-- Account Detail -->
+                        <div class="config-card-body" x-show="editingAccount === account.id">
+                            <div class="config-section-title">基本信息</div>
+                            <div class="config-grid">
+                                <div class="config-field">
+                                    <label>账户 ID</label>
+                                    <div class="config-field-desc">唯一标识符，用于关联交易单元。创建后不建议修改。</div>
+                                    <input type="text" x-model="account.id" @input="markDirty()">
+                                </div>
+                                <div class="config-field">
+                                    <label>交易所</label>
+                                    <div class="config-field-desc">paper = 模拟盘（无需 API Key），okx = OKX 实盘/模拟盘</div>
+                                    <select x-model="account.exchange" @change="markDirty()">
+                                        <option value="paper">Paper（模拟盘）</option>
+                                        <option value="okx">OKX</option>
+                                    </select>
+                                </div>
+                                <div class="config-field">
+                                    <label>配置本金 (USDT)</label>
+                                    <div class="config-field-desc">用于仓位计算的权益上限。Paper 模式为初始余额，OKX 模式为预算上限（不超过实际余额）。</div>
+                                    <input type="number" x-model.number="account.initial_equity" @input="markDirty()" step="100">
+                                </div>
+                                <div class="config-field">
+                                    <label>模拟模式</label>
+                                    <div class="config-field-desc">OKX 交易所：开启后连接 OKX 模拟盘（demo-trading），使用模拟资金。Paper 模式忽略此项。</div>
+                                    <label class="toggle-label"><input type="checkbox" x-model="account.simulated" @change="markDirty()"> <span x-text="account.simulated ? '已开启' : '未开启'"></span></label>
+                                </div>
+                            </div>
+
+                            <template x-if="account.exchange === 'okx'">
+                            <div>
+                                <div class="config-section-title">OKX API 凭证</div>
+                                <div class="config-grid">
+                                    <div class="config-field">
+                                        <label>API Key</label>
+                                        <div class="config-field-desc">OKX API 密钥。在 OKX 官网 → API 管理中创建，需开启交易权限。</div>
+                                        <input type="text" x-model="account.api_key" @input="markDirty()" placeholder="输入完整 API Key">
+                                    </div>
+                                    <div class="config-field">
+                                        <label>Secret Key</label>
+                                        <div class="config-field-desc">API 密钥对应的 Secret。注意：显示为掩码，输入新值会替换原有密钥。</div>
+                                        <input type="password" x-model="account.secret_key" @input="markDirty()" placeholder="输入 Secret Key">
+                                    </div>
+                                    <div class="config-field">
+                                        <label>Passphrase</label>
+                                        <div class="config-field-desc">创建 API 时设置的口令。OKX 要求每次 API 调用都携带此口令。</div>
+                                        <input type="password" x-model="account.passphrase" @input="markDirty()" placeholder="输入 Passphrase">
+                                    </div>
+                                    <div class="config-field">
+                                        <label>Base URL (可选)</label>
+                                        <div class="config-field-desc">OKX REST API 根地址。留空使用默认值。仅在使用代理或自定义节点时需要填写。</div>
+                                        <input type="text" x-model="account.base_url" @input="markDirty()" placeholder="留空使用默认">
+                                    </div>
+                                </div>
+                            </div>
+                            </template>
+
+                            <template x-if="account.exchange === 'paper'">
+                            <div>
+                                <div class="config-section-title">模拟盘参数</div>
+                                <div class="config-grid">
+                                    <div class="config-field">
+                                        <label>滑点 (基点)</label>
+                                        <div class="config-field-desc">模拟执行时的滑点。1 基点 = 0.01%。默认 5 基点 = 0.05%，模拟真实交易的滑点损耗。</div>
+                                        <input type="number" x-model.number="account.slippage_bps" @input="markDirty()" step="1">
+                                    </div>
+                                    <div class="config-field">
+                                        <label>手续费 (基点)</label>
+                                        <div class="config-field-desc">模拟执行时的手续费。默认 4 基点 = 0.04%，接近 OKX VIP1 级别的 taker 费率。</div>
+                                        <input type="number" x-model.number="account.fee_bps" @input="markDirty()" step="1">
+                                    </div>
+                                </div>
+                            </div>
+                            </template>
+
+                            <div class="config-section-title">标签</div>
+                            <div class="tags-wrap">
+                                <template x-for="(tag, ti) in (account.tags || [])" :key="ti">
+                                    <span class="tag-badge" @click="removeTag(account, ti)" :title="'点击移除'"><span x-text="tag"></span> ×</span>
+                                </template>
+                                <button class="btn-sm" @click="addTag(account)">+ 添加标签</button>
+                            </div>
+
+                            <!-- Units for this account -->
+                            <div class="config-section-title">
+                                交易单元
+                                <button class="btn-sm btn-sm-active" style="margin-left:0.5rem" @click="addUnit(account.id)">+ 添加单元</button>
+                            </div>
+                            <template x-for="unit in unitsForAccount(account.id)" :key="unit.id">
+                            <div class="config-subcard">
+                                <div class="config-card-header" @click="editingUnit = (editingUnit === unit.id ? null : unit.id)">
+                                    <div class="config-card-title">
+                                        <span class="badge" :class="unit.enabled ? 'badge-long' : 'badge-short'" x-text="unit.enabled ? '启用' : '停用'"></span>
+                                        <strong x-text="unit.id"></strong>
+                                        <span class="badge" :class="tfBadgeClass(unit.timeframe)" x-text="unit.timeframe"></span>
+                                        <span class="text-muted" x-text="(unit.symbols || []).length + ' 个交易对'"></span>
+                                        <span class="badge badge-reason" x-show="unit.strategy" x-text="'独立策略'"></span>
+                                    </div>
+                                    <div class="config-card-meta">
+                                        <button class="btn-danger-sm" @click.stop="removeUnit(unit.id)" style="font-size:11px;">删除</button>
+                                        <span class="config-expand" x-text="editingUnit === unit.id ? '▼' : '▶'"></span>
+                                    </div>
+                                </div>
+
+                                <div class="config-card-body" x-show="editingUnit === unit.id">
+                                    <div class="config-grid">
+                                        <div class="config-field">
+                                            <label>单元 ID</label>
+                                            <div class="config-field-desc">唯一标识符。用于日志和交易记录关联，创建后不建议修改。</div>
+                                            <input type="text" x-model="unit.id" @input="markDirty()">
+                                        </div>
+                                        <div class="config-field">
+                                            <label>时间周期</label>
+                                            <div class="config-field-desc">策略评估的主时间框架。1m/5m 适合短线，1H/4H 适合波段。不同周期会自动调整信号阈值。</div>
+                                            <select x-model="unit.timeframe" @change="markDirty()">
+                                                <template x-for="tf in timeframeOptions" :key="tf.value">
+                                                    <option :value="tf.value" x-text="tf.label"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                        <div class="config-field">
+                                            <label>最大杠杆</label>
+                                            <div class="config-field-desc">该单元允许的最大杠杆倍数。风控会在此基础上进一步限制实际使用的杠杆。建议 5-20 倍。</div>
+                                            <input type="number" x-model.number="unit.max_leverage" @input="markDirty()" min="1" max="100">
+                                        </div>
+                                        <div class="config-field">
+                                            <label>启用状态</label>
+                                            <div class="config-field-desc">停用后该单元不参与策略评估和交易，但不影响已有持仓的管理。</div>
+                                            <label class="toggle-label"><input type="checkbox" x-model="unit.enabled" @change="markDirty()"> <span x-text="unit.enabled ? '已启用' : '已停用'"></span></label>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-section-title">交易对列表</div>
+                                    <div class="config-field-desc" style="margin-bottom:0.5rem;">指定该单元可交易的币种。留空表示交易所有可用币种（由系统自动选择振幅最大的 Top N 币种）。</div>
+                                    <div class="tags-wrap">
+                                        <template x-for="(sym, si) in (unit.symbols || [])" :key="si">
+                                            <span class="tag-badge" @click="removeSymbolFromUnit(unit, si)"><span x-text="sym.replace('-USDT-SWAP','')"></span> ×</span>
+                                        </template>
+                                        <button class="btn-sm" @click="addSymbolToUnit(unit)">+ 添加交易对</button>
+                                    </div>
+
+                                    <!-- Per-unit strategy override -->
+                                    <div class="config-section-title">
+                                        策略配置覆盖
+                                        <template x-if="!unit.strategy">
+                                            <button class="btn-sm btn-sm-active" style="margin-left:0.5rem" @click="enableUnitStrategy(unit)">启用独立策略</button>
+                                        </template>
+                                        <template x-if="unit.strategy">
+                                            <button class="btn-sm" style="margin-left:0.5rem" @click="disableUnitStrategy(unit)">使用全局策略</button>
+                                        </template>
+                                    </div>
+                                    <div class="config-field-desc" x-show="!unit.strategy">当前使用全局策略配置。点击"启用独立策略"可为该单元设置独立的策略参数。</div>
+
+                                    <template x-if="unit.strategy">
+                                    <div class="config-strategy-block">
+                                        <div class="config-grid">
+                                            <div class="config-field">
+                                                <label>做多阈值</label>
+                                                <div class="config-field-desc">加权信号评分超过此值才触发做多。值越低越容易开仓，但假信号也越多。建议 0.20-0.40。</div>
+                                                <input type="number" x-model.number="unit.strategy.long_threshold" @input="markDirty()" step="0.01" min="0" max="1">
+                                            </div>
+                                            <div class="config-field">
+                                                <label>做空阈值</label>
+                                                <div class="config-field-desc">加权信号评分超过此值才触发做空。通常与做多阈值保持一致。</div>
+                                                <input type="number" x-model.number="unit.strategy.short_threshold" @input="markDirty()" step="0.01" min="0" max="1">
+                                            </div>
+                                            <div class="config-field">
+                                                <label>方向优势比</label>
+                                                <div class="config-field-desc">做多评分必须 > 做空评分 × 此值才算有效。防止多空信号模糊时交易。建议 1.2-1.5。</div>
+                                                <input type="number" x-model.number="unit.strategy.dominance_factor" @input="markDirty()" step="0.1" min="1" max="3">
+                                            </div>
+                                            <div class="config-field">
+                                                <label>最少活跃策略数</label>
+                                                <div class="config-field-desc">至少 N 个策略产生同方向信号才交易。0=不限制，1=单策略即可，2=要求多策略共振。</div>
+                                                <input type="number" x-model.number="unit.strategy.min_active_strategies" @input="markDirty()" min="0" max="4">
+                                            </div>
+                                            <div class="config-field">
+                                                <label>高信心绕过阈值</label>
+                                                <div class="config-field-desc">单策略信心超过此值时，绕过"最少活跃策略数"限制。0=不启用。建议 0.85-0.95。</div>
+                                                <input type="number" x-model.number="unit.strategy.high_confidence_bypass" @input="markDirty()" step="0.05" min="0" max="1">
+                                            </div>
+                                        </div>
+
+                                        <div class="config-section-title" style="margin-top:0.75rem;">策略权重</div>
+                                        <div class="config-field-desc">各策略在聚合时的权重占比。总和不必为 1，系统按比例计算。</div>
+                                        <div class="config-grid">
+                                            <div class="config-field">
+                                                <label>趋势跟踪 (TrendFollower)</label>
+                                                <input type="number" x-model.number="unit.strategy.weights.TrendFollower" @input="markDirty()" step="0.05" min="0" max="1">
+                                            </div>
+                                            <div class="config-field">
+                                                <label>均值回归 (MeanReversion)</label>
+                                                <input type="number" x-model.number="unit.strategy.weights.MeanReversion" @input="markDirty()" step="0.05" min="0" max="1">
+                                            </div>
+                                            <div class="config-field">
+                                                <label>突破动量 (BreakoutMomentum)</label>
+                                                <input type="number" x-model.number="unit.strategy.weights.BreakoutMomentum" @input="markDirty()" step="0.05" min="0" max="1">
+                                            </div>
+                                            <div class="config-field">
+                                                <label>订单流 (OrderFlow)</label>
+                                                <input type="number" x-model.number="unit.strategy.weights.OrderFlow" @input="markDirty()" step="0.05" min="0" max="1">
+                                            </div>
+                                        </div>
+
+                                        <div class="config-section-title" style="margin-top:0.75rem;">趋势跟踪参数</div>
+                                        <div class="config-grid">
+                                            <div class="config-field"><label>ADX 阈值</label><div class="config-field-desc">ADX 低于此值视为无趋势。范围 0~1（归一化），越低越敏感。</div><input type="number" x-model.number="unit.strategy.trend_follower.adx_threshold" @input="markDirty()" step="0.01"></div>
+                                            <div class="config-field"><label>基础信心</label><div class="config-field-desc">趋势确认后的基础信心分。叠加 SignalBoost 和 EMA55Boost 后为最终信心。</div><input type="number" x-model.number="unit.strategy.trend_follower.base_confidence" @input="markDirty()" step="0.05"></div>
+                                            <div class="config-field"><label>方向确认加分</label><div class="config-field-desc">EMA 排列方向与趋势一致时的加分。最终信心 = Base + Boost。</div><input type="number" x-model.number="unit.strategy.trend_follower.signal_boost" @input="markDirty()" step="0.05"></div>
+                                        </div>
+
+                                        <div class="config-section-title" style="margin-top:0.75rem;">均值回归参数</div>
+                                        <div class="config-grid">
+                                            <div class="config-field"><label>BB 超卖线</label><div class="config-field-desc">布林带位置低于此值判定超卖（0=下轨, 0.5=中轨, 1=上轨）。值越高越容易触发。</div><input type="number" x-model.number="unit.strategy.mean_reversion.bb_oversold" @input="markDirty()" step="0.05"></div>
+                                            <div class="config-field"><label>BB 超买线</label><div class="config-field-desc">布林带位置高于此值判定超买。值越低越容易触发。</div><input type="number" x-model.number="unit.strategy.mean_reversion.bb_overbought" @input="markDirty()" step="0.05"></div>
+                                            <div class="config-field"><label>最大量比</label><div class="config-field-desc">成交量/均量比不超过此值才触发。排除放量突破行情，仅在缩量回调时入场。</div><input type="number" x-model.number="unit.strategy.mean_reversion.max_volume_ratio" @input="markDirty()" step="0.1"></div>
+                                        </div>
+
+                                        <div class="config-section-title" style="margin-top:0.75rem;">突破动量参数</div>
+                                        <div class="config-grid">
+                                            <div class="config-field"><label>量比阈值</label><div class="config-field-desc">当前成交量/均量超过此值视为放量。低于此值的突破视为假突破。</div><input type="number" x-model.number="unit.strategy.breakout_momentum.volume_ratio_threshold" @input="markDirty()" step="0.1"></div>
+                                            <div class="config-field"><label>动量阈值</label><div class="config-field-desc">10 根 K 线的价格变化率（%）。低于此值需配合放量；高于强动量阈值则独立触发。</div><input type="number" x-model.number="unit.strategy.breakout_momentum.momentum_threshold" @input="markDirty()" step="0.001"></div>
+                                            <div class="config-field"><label>强动量阈值</label><div class="config-field-desc">超过此值时无需放量确认，直接触发。代表极强单边行情，如暴涨/暴跌。</div><input type="number" x-model.number="unit.strategy.breakout_momentum.strong_momentum" @input="markDirty()" step="0.005"></div>
+                                        </div>
+
+                                        <div class="config-section-title" style="margin-top:0.75rem;">订单流参数</div>
+                                        <div class="config-grid">
+                                            <div class="config-field"><label>失衡阈值</label><div class="config-field-desc">订单簿买卖失衡绝对值超过此值才计分。范围 0~1，越低越敏感。</div><input type="number" x-model.number="unit.strategy.order_flow.imbalance_threshold" @input="markDirty()" step="0.05"></div>
+                                            <div class="config-field"><label>毒性阈值</label><div class="config-field-desc">成交流毒性超过此值才计分。高毒性 = 知情交易者（机构）占比大。</div><input type="number" x-model.number="unit.strategy.order_flow.toxicity_threshold" @input="markDirty()" step="0.05"></div>
+                                            <div class="config-field"><label>流向分阈值</label><div class="config-field-desc">多维度加权评分超过此值才触发信号。越高越严格，建议 0.3-0.6。</div><input type="number" x-model.number="unit.strategy.order_flow.flow_score_threshold" @input="markDirty()" step="0.05"></div>
+                                        </div>
+                                    </div>
+                                    </template>
+
+                                    <!-- Per-unit risk override -->
+                                    <div class="config-section-title">
+                                        风控配置覆盖
+                                        <template x-if="!unit.risk">
+                                            <button class="btn-sm btn-sm-active" style="margin-left:0.5rem" @click="enableUnitRisk(unit)">启用独立风控</button>
+                                        </template>
+                                        <template x-if="unit.risk">
+                                            <button class="btn-sm" style="margin-left:0.5rem" @click="disableUnitRisk(unit)">使用全局风控</button>
+                                        </template>
+                                    </div>
+                                    <div class="config-field-desc" x-show="!unit.risk">当前使用全局风控配置。</div>
+
+                                    <template x-if="unit.risk">
+                                    <div class="config-grid">
+                                        <div class="config-field"><label>单仓最大占比 (%)</label><div class="config-field-desc">单个持仓的名义价值不超过账户权益的此百分比。防止单一币种风险过大。</div><input type="number" x-model.number="unit.risk.guard.max_single_position_pct" @input="markDirty()" step="1"></div>
+                                        <div class="config-field"><label>最大杠杆</label><div class="config-field-desc">风控允许的最大杠杆。即使交易所允许 100x，此处限制实际使用的杠杆。</div><input type="number" x-model.number="unit.risk.guard.max_leverage" @input="markDirty()" min="1"></div>
+                                        <div class="config-field"><label>最小止损距离 (ATR倍数)</label><div class="config-field-desc">止损价格与入场价的最小距离，以 ATR 的倍数表示。太小容易被噪音扫损。建议 0.5-1.5。</div><input type="number" x-model.number="unit.risk.guard.min_stop_distance_atr" @input="markDirty()" step="0.1"></div>
+                                        <div class="config-field"><label>最大同时持仓数</label><div class="config-field-desc">该单元允许同时持有的最大仓位数。超过后新信号被拒绝。</div><input type="number" x-model.number="unit.risk.guard.max_concurrent_positions" @input="markDirty()" min="1"></div>
+                                        <div class="config-field"><label>最大总敞口 (%)</label><div class="config-field-desc">所有持仓的名义价值总和不超过账户权益的此百分比。</div><input type="number" x-model.number="unit.risk.guard.max_total_exposure_pct" @input="markDirty()" step="5"></div>
+                                    </div>
+                                    </template>
+                                </div>
+                            </div>
+                            </template>
+
+                            <div class="config-card-footer">
+                                <button class="btn-danger-sm" @click="removeAccount(account.id)">删除此账户</button>
+                            </div>
+                        </div>
+                    </div>
+                    </template>
+
+                    <div class="config-add-bar">
+                        <button class="btn-sm btn-sm-active" @click="addAccount()">+ 添加新账户</button>
+                    </div>
+                </div>
+
+                <!-- ═══ Global Strategy Tab ═══ -->
+                <div x-show="configTab === 'strategy'">
+                    <div class="panel">
+                        <div class="panel-header"><span class="panel-title">全局策略参数</span></div>
+                        <div class="config-field-desc" style="padding:0 1rem 0.5rem;">这里设置的参数是所有交易单元的默认策略。如果某个单元启用了"独立策略"，则使用单元自己的参数。</div>
+                        <div class="config-card-body" style="display:block;">
+                            <div class="config-section-title">聚合器参数</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>做多阈值</label><div class="config-field-desc">加权信号评分超过此值才触发做多。值越低越容易开仓。建议 0.20-0.40。</div><input type="number" x-model.number="configData.strategy.long_threshold" @input="markDirty()" step="0.01"></div>
+                                <div class="config-field"><label>做空阈值</label><div class="config-field-desc">加权信号评分超过此值才触发做空。</div><input type="number" x-model.number="configData.strategy.short_threshold" @input="markDirty()" step="0.01"></div>
+                                <div class="config-field"><label>方向优势比</label><div class="config-field-desc">做多分必须 > 做空分 × 此值。防止信号模糊时频繁交易。</div><input type="number" x-model.number="configData.strategy.dominance_factor" @input="markDirty()" step="0.1"></div>
+                                <div class="config-field"><label>最少活跃策略数</label><div class="config-field-desc">至少 N 个策略同方向才交易。0=不限制。</div><input type="number" x-model.number="configData.strategy.min_active_strategies" @input="markDirty()" min="0" max="4"></div>
+                                <div class="config-field"><label>高信心绕过阈值</label><div class="config-field-desc">单策略信心超过此值时绕过活跃策略数限制。0=不启用。</div><input type="number" x-model.number="configData.strategy.high_confidence_bypass" @input="markDirty()" step="0.05"></div>
+                            </div>
+
+                            <div class="config-section-title">策略权重</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>趋势跟踪</label><input type="number" x-model.number="configData.strategy.weights.TrendFollower" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>均值回归</label><input type="number" x-model.number="configData.strategy.weights.MeanReversion" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>突破动量</label><input type="number" x-model.number="configData.strategy.weights.BreakoutMomentum" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>订单流</label><input type="number" x-model.number="configData.strategy.weights.OrderFlow" @input="markDirty()" step="0.05"></div>
+                            </div>
+
+                            <div class="config-section-title">趋势跟踪 (TrendFollower)</div>
+                            <div class="config-field-desc">基于 EMA 多周期排列 + ADX 趋势强度确认。适合单边行情。</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>ADX 阈值</label><div class="config-field-desc">低于此值视为无趋势，不开仓。范围 0~1。</div><input type="number" x-model.number="configData.strategy.trend_follower.adx_threshold" @input="markDirty()" step="0.01"></div>
+                                <div class="config-field"><label>基础信心</label><div class="config-field-desc">方向确认后的基础分。</div><input type="number" x-model.number="configData.strategy.trend_follower.base_confidence" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>方向确认加分</label><div class="config-field-desc">EMA 方向对齐时的额外加分。</div><input type="number" x-model.number="configData.strategy.trend_follower.signal_boost" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>EMA55 加分</label><div class="config-field-desc">三条 EMA 完全对齐时的加分。</div><input type="number" x-model.number="configData.strategy.trend_follower.ema55_boost" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>高级 TF 乘数</label><div class="config-field-desc">高一级周期趋势确认时的信心乘数。</div><input type="number" x-model.number="configData.strategy.trend_follower.htf_boost" @input="markDirty()" step="0.05"></div>
+                            </div>
+
+                            <div class="config-section-title">均值回归 (MeanReversion)</div>
+                            <div class="config-field-desc">顺势回调入场策略。高级别趋势 + 低级别超买/超卖信号。</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>BB 超卖线</label><div class="config-field-desc">BB 位置低于此值 = 超卖（0=下轨, 1=上轨）。</div><input type="number" x-model.number="configData.strategy.mean_reversion.bb_oversold" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>BB 超买线</label><div class="config-field-desc">BB 位置高于此值 = 超买。</div><input type="number" x-model.number="configData.strategy.mean_reversion.bb_overbought" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>最大量比</label><div class="config-field-desc">排除放量突破。</div><input type="number" x-model.number="configData.strategy.mean_reversion.max_volume_ratio" @input="markDirty()" step="0.1"></div>
+                                <div class="config-field"><label>基础信心</label><input type="number" x-model.number="configData.strategy.mean_reversion.base_confidence" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>信号加分</label><input type="number" x-model.number="configData.strategy.mean_reversion.signal_boost" @input="markDirty()" step="0.05"></div>
+                            </div>
+
+                            <div class="config-section-title">突破动量 (BreakoutMomentum)</div>
+                            <div class="config-field-desc">价格突破 + 量能扩张 + OBV 确认。</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>量比阈值</label><input type="number" x-model.number="configData.strategy.breakout_momentum.volume_ratio_threshold" @input="markDirty()" step="0.1"></div>
+                                <div class="config-field"><label>动量阈值</label><input type="number" x-model.number="configData.strategy.breakout_momentum.momentum_threshold" @input="markDirty()" step="0.001"></div>
+                                <div class="config-field"><label>强动量阈值</label><input type="number" x-model.number="configData.strategy.breakout_momentum.strong_momentum" @input="markDirty()" step="0.005"></div>
+                                <div class="config-field"><label>基础信心</label><input type="number" x-model.number="configData.strategy.breakout_momentum.base_confidence" @input="markDirty()" step="0.05"></div>
+                            </div>
+
+                            <div class="config-section-title">订单流 (OrderFlow)</div>
+                            <div class="config-field-desc">微观结构策略：订单簿失衡 + 成交流毒性 + 大单检测。</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>失衡阈值</label><input type="number" x-model.number="configData.strategy.order_flow.imbalance_threshold" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>毒性阈值</label><input type="number" x-model.number="configData.strategy.order_flow.toxicity_threshold" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>流向分阈值</label><input type="number" x-model.number="configData.strategy.order_flow.flow_score_threshold" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>基础信心</label><input type="number" x-model.number="configData.strategy.order_flow.base_confidence" @input="markDirty()" step="0.05"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ Risk Tab ═══ -->
+                <div x-show="configTab === 'risk'">
+                    <div class="panel">
+                        <div class="panel-header"><span class="panel-title">全局风控参数</span></div>
+                        <div class="config-field-desc" style="padding:0 1rem 0.5rem;">全局风控参数是所有交易单元的默认限制。如果某个单元启用了"独立风控"，则使用单元自己的参数。</div>
+                        <div class="config-card-body" style="display:block;">
+                            <div class="config-section-title">仓位限制</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>单仓最大占比 (%)</label><div class="config-field-desc">单个持仓名义价值不超过账户权益的此百分比。防止单一币种风险集中。</div><input type="number" x-model.number="configData.risk.guard.max_single_position_pct" @input="markDirty()" step="1"></div>
+                                <div class="config-field"><label>最大杠杆</label><div class="config-field-desc">系统允许的最大杠杆倍数。即使交易所允许更高杠杆，风控也会限制在此值。</div><input type="number" x-model.number="configData.risk.guard.max_leverage" @input="markDirty()" min="1"></div>
+                                <div class="config-field"><label>最大同时持仓数</label><div class="config-field-desc">同时持有的最大仓位数量。超过后新信号被拒绝，直到有仓位关闭。</div><input type="number" x-model.number="configData.risk.guard.max_concurrent_positions" @input="markDirty()" min="1"></div>
+                                <div class="config-field"><label>最大总敞口 (%)</label><div class="config-field-desc">所有持仓名义价值之和不超过权益的此百分比。控制整体杠杆水平。</div><input type="number" x-model.number="configData.risk.guard.max_total_exposure_pct" @input="markDirty()" step="5"></div>
+                                <div class="config-field"><label>同方向最大敞口 (%)</label><div class="config-field-desc">同方向（全多或全空）持仓不超过权益的此百分比。避免方向性风险过大。</div><input type="number" x-model.number="configData.risk.guard.max_same_direction_pct" @input="markDirty()" step="5"></div>
+                            </div>
+
+                            <div class="config-section-title">止损距离</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>最小止损距离 (ATR 倍数)</label><div class="config-field-desc">止损价与入场价的最小距离。太小会被市场噪音扫损。建议 0.5-1.5。</div><input type="number" x-model.number="configData.risk.guard.min_stop_distance_atr" @input="markDirty()" step="0.1"></div>
+                                <div class="config-field"><label>最大止损距离 (%)</label><div class="config-field-desc">止损距离不超过入场价的此百分比。防止止损太远导致单笔亏损过大。</div><input type="number" x-model.number="configData.risk.guard.max_stop_distance_pct" @input="markDirty()" step="1"></div>
+                            </div>
+
+                            <div class="config-section-title">熔断机制</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>日亏损暂停线 (%)</label><div class="config-field-desc">当日累计亏损超过权益的此百分比时，停止开新仓。已有仓位不受影响。</div><input type="number" x-model.number="configData.risk.guard.stop_new_trades_loss_pct" @input="markDirty()" step="0.5"></div>
+                                <div class="config-field"><label>日亏损全清线 (%)</label><div class="config-field-desc">当日累计亏损超过此百分比时，强制平掉所有仓位。最后的安全网。</div><input type="number" x-model.number="configData.risk.guard.liquidate_all_loss_pct" @input="markDirty()" step="0.5"></div>
+                            </div>
+
+                            <div class="config-section-title">仓位大小</div>
+                            <div class="config-grid">
+                                <div class="config-field"><label>最小仓位比例</label><div class="config-field-desc">单笔交易最小使用权益的此比例。低信心信号使用此值。建议 0.01-0.03。</div><input type="number" x-model.number="configData.risk.position_sizer.min_fraction" @input="markDirty()" step="0.005"></div>
+                                <div class="config-field"><label>最大仓位比例</label><div class="config-field-desc">单笔交易最大使用权益的此比例。高信心信号使用此值。建议 0.03-0.10。</div><input type="number" x-model.number="configData.risk.position_sizer.max_fraction" @input="markDirty()" step="0.005"></div>
+                                <div class="config-field"><label>Kelly 缩放系数</label><div class="config-field-desc">Kelly 公式的缩放比例。1.0=全 Kelly（风险最高），0.5=半 Kelly（推荐），0=固定仓位。</div><input type="number" x-model.number="configData.risk.position_sizer.scale_fraction" @input="markDirty()" step="0.1"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ Advanced Tab ═══ -->
+                <div x-show="configTab === 'advanced'">
+                    <div class="panel">
+                        <div class="panel-header"><span class="panel-title">信号退出配置</span></div>
+                        <div class="config-field-desc" style="padding:0 1rem 0.5rem;">当策略信号反向时自动平仓。基于 EWMA 健康度追踪，当持仓健康度低于阈值时退出。</div>
+                        <div class="config-card-body" style="display:block;">
+                            <div class="config-grid">
+                                <div class="config-field"><label>启用信号退出</label><div class="config-field-desc">开启后，当策略信号反向且信心足够高时，自动平掉反向持仓。</div><label class="toggle-label"><input type="checkbox" x-model="configData.signal_exit.enabled" @change="markDirty()"> <span x-text="configData.signal_exit.enabled ? '已开启' : '未开启'"></span></label></div>
+                                <div class="config-field"><label>最小反转信心</label><div class="config-field-desc">反向信号的最低信心值。低于此值的弱反转信号不触发退出。</div><input type="number" x-model.number="configData.signal_exit.min_confidence" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>最少多策略确认</label><div class="config-field-desc">需要至少 N 个策略同意反转方向。防止单策略误判导致提前平仓。</div><input type="number" x-model.number="configData.signal_exit.require_multi_strategy" @input="markDirty()" min="1" max="4"></div>
+                                <div class="config-field"><label>最小持仓时间 (秒)</label><div class="config-field-desc">持仓至少持有此秒数后才允许信号退出。防止开仓后立即被反转信号关闭。</div><input type="number" x-model.number="configData.signal_exit.min_hold_duration_sec" @input="markDirty()" step="10"></div>
+                                <div class="config-field"><label>退出后冷却 (秒)</label><div class="config-field-desc">信号退出后，同一币种在此秒数内不再开新仓。防止快速开关循环。</div><input type="number" x-model.number="configData.signal_exit.cooldown_after_exit_sec" @input="markDirty()" step="10"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header"><span class="panel-title">移动止损配置</span></div>
+                        <div class="config-field-desc" style="padding:0 1rem 0.5rem;">当价格向有利方向移动后，自动跟踪调整止损位，锁定利润。</div>
+                        <div class="config-card-body" style="display:block;">
+                            <div class="config-grid">
+                                <div class="config-field"><label>启用移动止损</label><div class="config-field-desc">开启后，当浮盈达到止盈距离的一定比例时，止损开始跟踪最高/最低价。</div><label class="toggle-label"><input type="checkbox" x-model="configData.trailing_stop.enabled" @change="markDirty()"> <span x-text="configData.trailing_stop.enabled ? '已开启' : '未开启'"></span></label></div>
+                                <div class="config-field"><label>激活比例</label><div class="config-field-desc">浮盈达到止盈距离的此比例时激活。0.5 = 走了 50% 的 TP 路程后开始跟踪。</div><input type="number" x-model.number="configData.trailing_stop.activation_pct" @input="markDirty()" step="0.05"></div>
+                                <div class="config-field"><label>回调距离 (%)</label><div class="config-field-desc">止损跟踪最高价的此百分比距离。0.003 = 距离最高价 0.3% 处设止损。</div><input type="number" x-model.number="configData.trailing_stop.callback_pct" @input="markDirty()" step="0.001"></div>
+                                <div class="config-field"><label>最小更新步长 (%)</label><div class="config-field-desc">止损每次至少改善此百分比才更新。避免频繁发送微小的止损调整请求。</div><input type="number" x-model.number="configData.trailing_stop.step_pct" @input="markDirty()" step="0.0005"></div>
+                                <div class="config-field"><label>未激活最大亏损 (USDT)</label><div class="config-field-desc">未被移动止损激活（价格从未向有利方向移动）且浮亏超过此金额时强制平仓。0=不启用。</div><input type="number" x-model.number="configData.trailing_stop.max_loss_without_trailing" @input="markDirty()" step="0.5"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            </template>
         </div>
 
     </main>

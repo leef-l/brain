@@ -14,13 +14,15 @@ import (
 // PaperExchange wraps execution.PaperBackend behind the Exchange interface.
 // It simulates a 24/7 crypto-like exchange with configurable capabilities.
 type PaperExchange struct {
-	client *execution.Client
-	caps   Capabilities
-	equity float64 // simulated account equity
+	client    *execution.Client
+	caps      Capabilities
+	equity    float64 // simulated account equity
+	accountID string  // unique identifier for this paper account
 }
 
 // PaperConfig configures the paper exchange.
 type PaperConfig struct {
+	AccountID     string       // account ID prefix for globally unique order IDs
 	InitialEquity float64
 	SlippageBps   float64      // 滑点(基点), 0=use default(5)
 	FeeBps        float64      // 手续费(基点), 0=use default(4)
@@ -41,7 +43,11 @@ func NewPaperExchange(cfg PaperConfig) *PaperExchange {
 		execution.WithPaperSlippageBps(slippage),
 		execution.WithPaperFeeBps(fee),
 	)
-	client := execution.NewClient(paper)
+	var clientOpts []execution.ClientOption
+	if cfg.AccountID != "" {
+		clientOpts = append(clientOpts, execution.WithIDPrefix(cfg.AccountID))
+	}
+	client := execution.NewClient(paper, clientOpts...)
 
 	caps := cfg.Capabilities
 	if caps.MaxLeverage == 0 {
@@ -65,13 +71,15 @@ func NewPaperExchange(cfg PaperConfig) *PaperExchange {
 	}
 
 	return &PaperExchange{
-		client: client,
-		caps:   caps,
-		equity: equity,
+		client:    client,
+		caps:      caps,
+		equity:    equity,
+		accountID: cfg.AccountID,
 	}
 }
 
 func (p *PaperExchange) Name() string              { return "paper" }
+func (p *PaperExchange) CredentialKey() string      { return p.accountID }
 func (p *PaperExchange) Capabilities() Capabilities { return p.caps }
 func (p *PaperExchange) IsOpen() bool               { return true } // always open
 
@@ -79,11 +87,19 @@ func (p *PaperExchange) QueryBalance(_ context.Context) (BalanceInfo, error) {
 	snap := p.client.Snapshot()
 	unrealized := 0.0
 	totalMargin := 0.0
+	openRealized := 0.0 // realized PnL still tracked on open positions (partial closes)
 	for _, pos := range snap.Positions {
 		unrealized += pos.UnrealizedPnL
 		totalMargin += pos.Margin
+		openRealized += pos.RealizedPnL
 	}
-	equity := p.equity + unrealized
+	// Total equity = initial + realized from closed positions + realized from
+	// open positions (partial closes) + unrealized.
+	// Note: fees are NOT deducted separately because updatePosition() computes
+	// realized PnL from fill prices that already include slippage. Tracking
+	// fees separately would require persisting them across restarts.
+	realized := snap.CumulativeRealizedPnL + openRealized
+	equity := p.equity + realized + unrealized
 	available := equity - totalMargin
 	if available < 0 {
 		available = 0
@@ -179,6 +195,31 @@ func (p *PaperExchange) CancelOpenOrders(_ context.Context, symbol string) int {
 		}
 	}
 	return cancelled
+}
+
+// UpdateStopLoss updates the SL trigger price for an open position.
+// Implements the StopLossUpdater interface for trailing stop support.
+func (p *PaperExchange) UpdateStopLoss(_ context.Context, symbol, posSide string, newSL float64) error {
+	state := p.client.State()
+	if state == nil {
+		return fmt.Errorf("no execution state")
+	}
+	if !state.UpdateStopLossPrice(time.Now().UnixMilli(), symbol, posSide, newSL) {
+		return fmt.Errorf("no open SL order for %s/%s", symbol, posSide)
+	}
+	return nil
+}
+
+// UpdateTakeProfit updates the TP trigger price for an open position.
+func (p *PaperExchange) UpdateTakeProfit(_ context.Context, symbol, posSide string, newTP float64) error {
+	state := p.client.State()
+	if state == nil {
+		return fmt.Errorf("no execution state")
+	}
+	if !state.UpdateTakeProfitPrice(time.Now().UnixMilli(), symbol, posSide, newTP) {
+		return fmt.Errorf("no open TP order for %s/%s", symbol, posSide)
+	}
+	return nil
 }
 
 // ProcessPriceTick forwards a price update to the paper backend for
@@ -281,6 +322,19 @@ func (p *PaperExchange) RestoreState(ctx context.Context, accountID string, stor
 	// are from the last tick before shutdown.
 
 	return nil
+}
+
+// RestoreCumulativePnL sets the cumulative realized PnL and fees from trade
+// history. Call after RestoreState to ensure QueryBalance is accurate.
+// realizedPnL should be the sum of all closed trades' PnL.
+// totalFees should be the sum of all fees paid (if tracked separately).
+func (p *PaperExchange) RestoreCumulativePnL(realizedPnL, totalFees float64) {
+	state := p.client.State()
+	if state == nil {
+		return
+	}
+	state.SetCumulativeRealizedPnL(realizedPnL)
+	state.SetCumulativeFees(totalFees)
 }
 
 // Snapshot returns a copy of the paper exchange's execution state.

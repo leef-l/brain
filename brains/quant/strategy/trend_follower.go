@@ -8,11 +8,25 @@ import (
 
 // TrendFollowerParams holds tunable parameters for TrendFollower.
 type TrendFollowerParams struct {
-	ADXThreshold float64 `json:"adx_threshold" yaml:"adx_threshold"` // min ADX to confirm trend (default 0.15)
+	ADXThreshold    float64 `json:"adx_threshold" yaml:"adx_threshold"`       // 最低 ADX 确认趋势 (default 0.15)
+	BaseConfidence  float64 `json:"base_confidence" yaml:"base_confidence"`   // 基础置信度 (default 0.35)
+	SignalBoost     float64 `json:"signal_boost" yaml:"signal_boost"`         // 方向确认加分 (default 0.30)
+	EMA55Boost      float64 `json:"ema55_boost" yaml:"ema55_boost"`           // EMA55 同向加分 (default 0.10)
+	HTFBoost        float64 `json:"htf_boost" yaml:"htf_boost"`              // 高级别TF确认乘数 (default 1.20)
+	FundingBoost    float64 `json:"funding_boost" yaml:"funding_boost"`       // 资金费率对齐乘数 (default 1.15)
+	SLFallbackPct   float64 `json:"sl_fallback_pct" yaml:"sl_fallback_pct"`   // ATR 无效时止损回退比例 (default 0.003)
 }
 
 func DefaultTrendFollowerParams() TrendFollowerParams {
-	return TrendFollowerParams{ADXThreshold: 0.15}
+	return TrendFollowerParams{
+		ADXThreshold:   0.10,
+		BaseConfidence: 0.40,
+		SignalBoost:    0.35,
+		EMA55Boost:     0.10,
+		HTFBoost:       1.20,
+		FundingBoost:   1.15,
+		SLFallbackPct:  0.003,
+	}
 }
 
 type TrendFollower struct {
@@ -22,15 +36,34 @@ type TrendFollower struct {
 func NewTrendFollower() Strategy { return TrendFollower{Params: DefaultTrendFollowerParams()} }
 
 func NewTrendFollowerWithParams(p TrendFollowerParams) Strategy {
+	d := DefaultTrendFollowerParams()
 	if p.ADXThreshold <= 0 {
-		p.ADXThreshold = DefaultTrendFollowerParams().ADXThreshold
+		p.ADXThreshold = d.ADXThreshold
+	}
+	if p.BaseConfidence <= 0 {
+		p.BaseConfidence = d.BaseConfidence
+	}
+	if p.SignalBoost <= 0 {
+		p.SignalBoost = d.SignalBoost
+	}
+	if p.EMA55Boost <= 0 {
+		p.EMA55Boost = d.EMA55Boost
+	}
+	if p.HTFBoost <= 0 {
+		p.HTFBoost = d.HTFBoost
+	}
+	if p.FundingBoost <= 0 {
+		p.FundingBoost = d.FundingBoost
+	}
+	if p.SLFallbackPct <= 0 {
+		p.SLFallbackPct = d.SLFallbackPct
 	}
 	return TrendFollower{Params: p}
 }
 
 func (TrendFollower) Name() string { return "TrendFollower" }
 
-func (TrendFollower) Timeframes() []string { return []string{"1H", "4H"} }
+func (TrendFollower) Timeframes() []string { return []string{"1m", "5m", "15m", "1H", "4H"} }
 
 func (t TrendFollower) Compute(view MarketView) Signal {
 	if view.HasFeatureView() {
@@ -50,10 +83,10 @@ func (t TrendFollower) computeFromFeatures(view MarketView) Signal {
 	ema55dev := f.EMADeviation(tf, 55)
 	macdHist := f.MACDHistogram(tf)
 	adxVal := f.ADX(tf)
-	atrRatio := f.ATRRatio(tf)
 
-	// Guard: feature vector not yet populated (EMA/ATR still warming up).
-	if atrRatio == 0 && ema9dev == 0 && ema21dev == 0 {
+	// Guard: EMA deviations are essential for trend detection. If both
+	// EMA9 and EMA21 are zero the indicators haven't warmed up yet.
+	if ema9dev == 0 && ema21dev == 0 {
 		return Signal{Strategy: "TrendFollower", Direction: DirectionHold, Reason: "feature vector not ready", Timestamp: time.Now().UTC()}
 	}
 
@@ -76,46 +109,46 @@ func (t TrendFollower) computeFromFeatures(view MarketView) Signal {
 		}
 	}
 
-	confidence := 0.35
+	confidence := t.Params.BaseConfidence
 	direction := DirectionHold
 	reason := ""
 
 	if bullish {
 		direction = DirectionLong
-		confidence += 0.30
+		confidence += t.Params.SignalBoost
 		reason = fmt.Sprintf("ema alignment bullish, adx=%.2f, macd=%.4f", adxVal, macdHist)
-		// EMA55 same direction → stronger trend
 		if ema55dev > 0 {
-			confidence += 0.10
+			confidence += t.Params.EMA55Boost
 			reason += "; ema55 confirms"
 		}
 	} else {
 		direction = DirectionShort
-		confidence += 0.30
+		confidence += t.Params.SignalBoost
 		reason = fmt.Sprintf("ema alignment bearish, adx=%.2f, macd=%.4f", adxVal, macdHist)
 		if ema55dev < 0 {
-			confidence += 0.10
+			confidence += t.Params.EMA55Boost
 			reason += "; ema55 confirms"
 		}
 	}
 
-	// Higher TF confirmation
-	htf := "4H"
-	htfEma9 := f.EMADeviation(htf, 9)
-	htfEma21 := f.EMADeviation(htf, 21)
-	htfEma55 := f.EMADeviation(htf, 55)
-	if direction == DirectionLong && htfEma9 > 0 && htfEma21 > 0 && htfEma55 > 0 {
-		confidence *= 1.3
-		reason += "; 4H confirms trend"
-	}
-	if direction == DirectionShort && htfEma9 < 0 && htfEma21 < 0 && htfEma55 < 0 {
-		confidence *= 1.3
-		reason += "; 4H confirms trend"
+	// Higher TF confirmation (dynamic: one level up from current TF)
+	htf := higherTF(tf)
+	if htf != tf {
+		htfEma9 := f.EMADeviation(htf, 9)
+		htfEma21 := f.EMADeviation(htf, 21)
+		if direction == DirectionLong && htfEma9 > 0 && htfEma21 > 0 {
+			confidence *= t.Params.HTFBoost
+			reason += "; " + htf + " confirms trend"
+		}
+		if direction == DirectionShort && htfEma9 < 0 && htfEma21 < 0 {
+			confidence *= t.Params.HTFBoost
+			reason += "; " + htf + " confirms trend"
+		}
 	}
 
 	// Funding rate
 	if fr := f.FundingRate(); direction == DirectionLong && fr > 0 || direction == DirectionShort && fr < 0 {
-		confidence *= 1.15
+		confidence *= t.Params.FundingBoost
 		reason += "; funding aligned"
 	}
 
@@ -133,16 +166,13 @@ func (t TrendFollower) computeFromFeatures(view MarketView) Signal {
 
 	confidence = clamp(confidence, 0, 1)
 	priceNow := f.CurrentPrice()
-	// Use higher-TF ATR for stop/take distances to avoid noise whipsaws
-	// on short timeframes (1m/5m ATR is too tight).
 	slATR := bestATRRatio(f, tf)
-	// SL = 1.5× ATR, TP = 2× ATR → 1:1.3 盈亏比.
-	// 1m 短线快进快出，缩小 SL/TP 距离加速平仓周转.
-	stopDistance := slATR * priceNow * 1.5
-	takeDistance := slATR * priceNow * 2.0
+	slMult, tpMult := SLTPMultipliers(tf)
+	stopDistance := slATR * priceNow * slMult
+	takeDistance := slATR * priceNow * tpMult
 	if stopDistance <= 0 {
-		stopDistance = math.Abs(priceNow) * 0.008
-		takeDistance = stopDistance * 1.3
+		stopDistance = math.Abs(priceNow) * t.Params.SLFallbackPct
+		takeDistance = stopDistance * (tpMult / slMult)
 	}
 
 	signal := Signal{
@@ -165,7 +195,7 @@ func (t TrendFollower) computeFromFeatures(view MarketView) Signal {
 
 // computeLegacy is the original candle-based computation, used when
 // FeatureView is not available (backtest mode).
-func (TrendFollower) computeLegacy(view MarketView) Signal {
+func (t TrendFollower) computeLegacy(view MarketView) Signal {
 	candles := view.Candles(view.Timeframe())
 	if len(candles) < 60 {
 		return Signal{Strategy: "TrendFollower", Direction: DirectionHold, Reason: "insufficient candles", Timestamp: time.Now().UTC()}
@@ -192,7 +222,7 @@ func (TrendFollower) computeLegacy(view MarketView) Signal {
 		closePrice < ema55 &&
 		((adxValue > 20 && diMinus > diPlus) || macdHist < 0)
 
-	confidence := 0.35
+	confidence := t.Params.BaseConfidence
 	reason := ""
 	direction := DirectionHold
 
@@ -200,11 +230,11 @@ func (TrendFollower) computeLegacy(view MarketView) Signal {
 	case bullish:
 		direction = DirectionLong
 		reason = fmt.Sprintf("ema alignment bullish, adx=%.2f, macd=%.4f", adxValue, macdHist)
-		confidence += 0.35
+		confidence += t.Params.SignalBoost
 	case bearish:
 		direction = DirectionShort
 		reason = fmt.Sprintf("ema alignment bearish, adx=%.2f, macd=%.4f", adxValue, macdHist)
-		confidence += 0.35
+		confidence += t.Params.SignalBoost
 	default:
 		return Signal{
 			Strategy:   "TrendFollower",
@@ -215,23 +245,23 @@ func (TrendFollower) computeLegacy(view MarketView) Signal {
 		}
 	}
 
-	if higher := view.Candles("4H"); len(higher) >= 55 {
+	htfLegacy := higherTF(view.Timeframe())
+	if higher := view.Candles(htfLegacy); len(higher) >= 21 {
 		higherPrices := closes(higher)
 		higherEma9 := ema(higherPrices, 9)
 		higherEma21 := ema(higherPrices, 21)
-		higherEma55 := ema(higherPrices, 55)
-		if direction == DirectionLong && higherEma9 > higherEma21 && higherEma21 > higherEma55 && last(higherPrices) > higherEma55 {
-			confidence *= 1.3
-			reason += "; 4H confirms trend"
+		if direction == DirectionLong && higherEma9 > higherEma21 {
+			confidence *= t.Params.HTFBoost
+			reason += "; " + htfLegacy + " confirms trend"
 		}
-		if direction == DirectionShort && higherEma9 < higherEma21 && higherEma21 < higherEma55 && last(higherPrices) < higherEma55 {
-			confidence *= 1.3
-			reason += "; 4H confirms trend"
+		if direction == DirectionShort && higherEma9 < higherEma21 {
+			confidence *= t.Params.HTFBoost
+			reason += "; " + htfLegacy + " confirms trend"
 		}
 	}
 
 	if fr := view.FundingRate(); direction == DirectionLong && fr > 0 || direction == DirectionShort && fr < 0 {
-		confidence *= 1.15
+		confidence *= t.Params.FundingBoost
 		reason += "; funding aligned"
 	}
 
@@ -250,7 +280,7 @@ func (TrendFollower) computeLegacy(view MarketView) Signal {
 	stopDistance := atrValue * 1.5
 	takeDistance := atrValue * 2.0
 	if stopDistance <= 0 {
-		stopDistance = math.Abs(priceNow) * 0.008
+		stopDistance = math.Abs(priceNow) * t.Params.SLFallbackPct
 		takeDistance = stopDistance * 1.3
 	}
 	signal := Signal{

@@ -54,10 +54,23 @@ type PositionUpdateEvent struct {
 }
 
 // AccountUpdateEvent is emitted when account balance changes.
+// OKX may send empty strings for numeric fields; we use json.RawMessage
+// and parse manually to avoid unmarshal errors.
 type AccountUpdateEvent struct {
-	TotalEquity float64 `json:"totalEq,string"`
-	Available   float64 `json:"details"` // simplified
-	Timestamp   int64   `json:"uTime,string"`
+	TotalEquity float64             `json:"-"`
+	Details     json.RawMessage     `json:"details"`
+	Timestamp   int64               `json:"-"`
+	RawEquity   string              `json:"totalEq"`
+	RawUTime    string              `json:"uTime"`
+}
+
+func (e *AccountUpdateEvent) Parse() {
+	if e.RawEquity != "" {
+		e.TotalEquity, _ = strconv.ParseFloat(e.RawEquity, 64)
+	}
+	if e.RawUTime != "" {
+		e.Timestamp, _ = strconv.ParseInt(e.RawUTime, 10, 64)
+	}
 }
 
 // PrivateWSCallbacks holds the event handlers.
@@ -83,7 +96,11 @@ type PrivateWSConn struct {
 // NewPrivateWSConn creates a private WS connection for one OKX account.
 func NewPrivateWSConn(accountID string, cfg PrivateWSConfig, cb PrivateWSCallbacks, logger *slog.Logger) *PrivateWSConn {
 	if cfg.WSEndpoint == "" {
-		cfg.WSEndpoint = "wss://ws.okx.com:8443/ws/v5/private"
+		if cfg.Simulated {
+			cfg.WSEndpoint = "wss://wspap.okx.com:8443/ws/v5/private?brokerId=9999"
+		} else {
+			cfg.WSEndpoint = "wss://ws.okx.com:8443/ws/v5/private"
+		}
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -332,12 +349,14 @@ func (c *PrivateWSConn) handleMessage(msg []byte) {
 	case "account":
 		var events []AccountUpdateEvent
 		if err := json.Unmarshal(envelope.Data, &events); err != nil {
-			c.logger.Error("parse account event", "err", err)
+			// OKX account data has many optional fields with empty strings;
+			// ignore parse errors silently.
 			return
 		}
 		if c.callbacks.OnAccountUpdate != nil {
 			for _, e := range events {
 				evt := e
+				evt.Parse()
 				c.safeCallback("OnAccountUpdate", func() { c.callbacks.OnAccountUpdate(c.accountID, evt) })
 			}
 		}

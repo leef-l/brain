@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,6 +31,15 @@ type OKXExchange struct {
 	config OKXConfig
 	client *http.Client
 	caps   Capabilities
+
+	// Contract info cache: instID → contractInfo
+	ctCache sync.Map // map[string]*contractInfo
+}
+
+type contractInfo struct {
+	CtVal  float64 // contract face value (e.g. 0.01 BTC, 10 USDT)
+	LotSz  float64 // minimum lot size (e.g. 1)
+	CtMult float64 // contract multiplier
 }
 
 // NewOKXExchange creates a real OKX exchange connection.
@@ -54,8 +66,56 @@ func NewOKXExchange(cfg OKXConfig) *OKXExchange {
 }
 
 func (e *OKXExchange) Name() string              { return "okx" }
+func (e *OKXExchange) CredentialKey() string      { return e.config.APIKey }
 func (e *OKXExchange) Capabilities() Capabilities { return e.caps }
 func (e *OKXExchange) IsOpen() bool               { return true } // 24/7
+
+// Init sets the OKX account to the correct trading mode.
+// 1. Single-currency margin mode (required for SWAP contracts)
+// 2. Long/short position mode (hedge mode)
+// Must be called before placing orders. Safe to call multiple times.
+func (e *OKXExchange) Init(ctx context.Context) error {
+	// Step 1: Get current account config to check mode
+	body, err := e.signedGet(ctx, "/api/v5/account/config", "")
+	if err != nil {
+		return fmt.Errorf("get account config: %w", err)
+	}
+	var cfgResp struct {
+		Code string `json:"code"`
+		Data []struct {
+			AcctLv  string `json:"acctLv"`  // 1=simple, 2=single-ccy, 3=multi-ccy, 4=portfolio
+			PosMode string `json:"posMode"` // "long_short_mode" or "net_mode"
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &cfgResp); err != nil {
+		return fmt.Errorf("parse account config: %w", err)
+	}
+
+	if cfgResp.Code == "0" && len(cfgResp.Data) > 0 {
+		d := cfgResp.Data[0]
+
+		// Step 2: Upgrade account level to single-currency margin if still in simple mode.
+		// acctLv: 1=simple, 2=single-ccy margin, 3=multi-ccy, 4=portfolio
+		if d.AcctLv == "1" {
+			_, err := e.signedPost(ctx, "/api/v5/account/set-account-level", map[string]string{
+				"acctLv": "2", // single-currency margin mode
+			})
+			if err != nil {
+				return fmt.Errorf("set account level to single-ccy margin: %w (please set manually in OKX web/app: Trade → Settings → Account Mode → Single-currency margin)", err)
+			}
+		}
+
+		// Step 3: Set position mode to hedge (long/short) if not already
+		if d.PosMode != "long_short_mode" {
+			if _, err := e.signedPost(ctx, "/api/v5/account/set-position-mode", map[string]string{
+				"posMode": "long_short_mode",
+			}); err != nil {
+				return fmt.Errorf("set position mode: %w", err)
+			}
+		}
+	}
+	return nil
+}
 
 // ── Balance ─────────────────────────────────────────────────────
 
@@ -154,8 +214,8 @@ func (e *OKXExchange) QueryPositions(ctx context.Context) ([]PositionInfo, error
 
 	positions := make([]PositionInfo, 0, len(resp.Data))
 	for _, p := range resp.Data {
-		qty, _ := strconv.ParseFloat(p.Pos, 64)
-		if qty == 0 {
+		lots, _ := strconv.ParseFloat(p.Pos, 64)
+		if lots == 0 {
 			continue
 		}
 		avgPx, _ := strconv.ParseFloat(p.AvgPx, 64)
@@ -163,6 +223,15 @@ func (e *OKXExchange) QueryPositions(ctx context.Context) ([]PositionInfo, error
 		upl, _ := strconv.ParseFloat(p.Upl, 64)
 		lever, _ := strconv.Atoi(p.Lever)
 		ut, _ := strconv.ParseInt(p.UTime, 10, 64)
+
+		// OKX pos field is in contract lots (张数). Convert to coin
+		// quantity so the rest of the system uses a uniform unit.
+		// qty_coin = lots × ctVal (e.g. 34 lots × 1 ACT/lot = 34 ACT).
+		qty := lots
+		ci, err := e.getContractInfo(ctx, p.InstID)
+		if err == nil && ci.CtVal > 0 {
+			qty = lots * ci.CtVal
+		}
 
 		notional := qty * markPx
 		margin := 0.0
@@ -188,19 +257,25 @@ func (e *OKXExchange) QueryPositions(ctx context.Context) ([]PositionInfo, error
 // ── Place Order ─────────────────────────────────────────────────
 
 type okxOrderReq struct {
-	InstID     string `json:"instId"`
-	TdMode     string `json:"tdMode"`
-	Side       string `json:"side"`
-	PosSide    string `json:"posSide,omitempty"`
-	OrdType    string `json:"ordType"`
-	Sz         string `json:"sz"`
-	Px         string `json:"px,omitempty"`
-	ReduceOnly bool   `json:"reduceOnly,omitempty"`
-	SlTriggerPx string `json:"slTriggerPx,omitempty"`
-	SlOrdPx     string `json:"slOrdPx,omitempty"`
-	TpTriggerPx string `json:"tpTriggerPx,omitempty"`
-	TpOrdPx     string `json:"tpOrdPx,omitempty"`
-	ClOrdID     string `json:"clOrdId,omitempty"`
+	InstID      string            `json:"instId"`
+	TdMode      string            `json:"tdMode"`
+	Side        string            `json:"side"`
+	PosSide     string            `json:"posSide,omitempty"`
+	OrdType     string            `json:"ordType"`
+	Sz          string            `json:"sz"`
+	Px          string            `json:"px,omitempty"`
+	ReduceOnly  bool              `json:"reduceOnly,omitempty"`
+	ClOrdID     string            `json:"clOrdId,omitempty"`
+	AttachAlgoOrds []okxAlgoOrd   `json:"attachAlgoOrds,omitempty"` // SL/TP via algo orders
+}
+
+// okxAlgoOrd is an attached algo order for SL/TP on a new position.
+type okxAlgoOrd struct {
+	AttachAlgoClOrdId string `json:"attachAlgoClOrdId,omitempty"`
+	TpTriggerPx       string `json:"tpTriggerPx,omitempty"`
+	TpOrdPx           string `json:"tpOrdPx,omitempty"`
+	SlTriggerPx       string `json:"slTriggerPx,omitempty"`
+	SlOrdPx           string `json:"slOrdPx,omitempty"`
 }
 
 type okxOrderResp struct {
@@ -227,26 +302,45 @@ func (e *OKXExchange) PlaceOrder(ctx context.Context, params PlaceOrderParams) (
 		ordType = "limit"
 	}
 
+	// OKX clOrdId: snowflake ID, always starts with 'q', max 20 chars.
+	clOrdID := nextClOrdID()
+
+	// Convert coin quantity to OKX contract lots (张数).
+	// OKX SWAP orders use lot count, not coin amount.
+	ci, err := e.getContractInfo(ctx, params.Symbol)
+	if err != nil {
+		return OrderResult{Error: err.Error()}, fmt.Errorf("get contract info: %w", err)
+	}
+	lots := qtyToLots(params.Quantity, ci)
+	sz := strconv.FormatInt(lots, 10)
+
 	reqBody := okxOrderReq{
 		InstID:     params.Symbol,
 		TdMode:     "cross",
 		Side:       params.Side,
 		PosSide:    params.PosSide,
 		OrdType:    ordType,
-		Sz:         strconv.FormatFloat(params.Quantity, 'f', -1, 64),
+		Sz:         sz,
 		ReduceOnly: params.ReduceOnly,
-		ClOrdID:    params.ClientID,
+		ClOrdID:    clOrdID,
 	}
 	if params.Price > 0 && ordType == "limit" {
 		reqBody.Px = strconv.FormatFloat(params.Price, 'f', -1, 64)
 	}
-	if params.StopLoss > 0 {
-		reqBody.SlTriggerPx = strconv.FormatFloat(params.StopLoss, 'f', -1, 64)
-		reqBody.SlOrdPx = "-1" // market price on trigger
-	}
-	if params.TakeProfit > 0 {
-		reqBody.TpTriggerPx = strconv.FormatFloat(params.TakeProfit, 'f', -1, 64)
-		reqBody.TpOrdPx = "-1"
+	// Attach SL/TP as algo orders (OKX v5 requires attachAlgoOrds array).
+	if params.StopLoss > 0 || params.TakeProfit > 0 {
+		algo := okxAlgoOrd{
+			AttachAlgoClOrdId: nextClOrdID(),
+		}
+		if params.StopLoss > 0 {
+			algo.SlTriggerPx = strconv.FormatFloat(params.StopLoss, 'f', -1, 64)
+			algo.SlOrdPx = "-1" // market price on trigger
+		}
+		if params.TakeProfit > 0 {
+			algo.TpTriggerPx = strconv.FormatFloat(params.TakeProfit, 'f', -1, 64)
+			algo.TpOrdPx = "-1"
+		}
+		reqBody.AttachAlgoOrds = []okxAlgoOrd{algo}
 	}
 
 	body, err := e.signedPost(ctx, "/api/v5/trade/order", reqBody)
@@ -269,10 +363,76 @@ func (e *OKXExchange) PlaceOrder(ctx context.Context, params PlaceOrderParams) (
 		return OrderResult{Error: "empty response"}, fmt.Errorf("empty order response")
 	}
 
+	ordID := resp.Data[0].OrdID
+
+	// Market orders fill immediately on OKX. Query fill details
+	// so we can return accurate fill price and quantity.
+	if ordType == "market" {
+		if filled, err := e.queryOrderFill(ctx, params.Symbol, ordID); err == nil {
+			return filled, nil
+		}
+		// Fall through to accepted if query fails — order is still placed.
+	}
+
 	return OrderResult{
-		OrderID:   resp.Data[0].OrdID,
+		OrderID:   ordID,
 		Status:    "accepted",
 		Timestamp: time.Now(),
+	}, nil
+}
+
+// queryOrderFill queries a filled order's details (fill price, qty, fee).
+func (e *OKXExchange) queryOrderFill(ctx context.Context, symbol, ordID string) (OrderResult, error) {
+	// Brief delay for OKX to process the fill.
+	time.Sleep(200 * time.Millisecond)
+
+	query := fmt.Sprintf("instId=%s&ordId=%s", symbol, ordID)
+	body, err := e.signedGet(ctx, "/api/v5/trade/order", query)
+	if err != nil {
+		return OrderResult{}, err
+	}
+
+	var resp struct {
+		Code string `json:"code"`
+		Data []struct {
+			OrdID   string `json:"ordId"`
+			ClOrdID string `json:"clOrdId"`
+			State   string `json:"state"`    // live, partially_filled, filled, canceled
+			AvgPx   string `json:"avgPx"`    // average fill price
+			AccFillSz string `json:"accFillSz"` // accumulated fill quantity
+			Fee     string `json:"fee"`      // negative = fee charged
+			FillTime string `json:"fillTime"` // fill timestamp ms
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Code != "0" || len(resp.Data) == 0 {
+		return OrderResult{}, fmt.Errorf("query order failed")
+	}
+
+	d := resp.Data[0]
+	avgPx, _ := strconv.ParseFloat(d.AvgPx, 64)
+	fillSz, _ := strconv.ParseFloat(d.AccFillSz, 64)
+	fee, _ := strconv.ParseFloat(d.Fee, 64)
+	fillTime, _ := strconv.ParseInt(d.FillTime, 10, 64)
+
+	status := d.State
+	if status == "filled" {
+		// Map OKX "filled" to our standard status.
+	} else if status == "partially_filled" || status == "live" {
+		status = "open"
+	}
+
+	ts := time.Now()
+	if fillTime > 0 {
+		ts = time.UnixMilli(fillTime)
+	}
+
+	return OrderResult{
+		OrderID:   d.OrdID,
+		Status:    status,
+		FillPrice: avgPx,
+		FillQty:   fillSz,
+		Fee:       fee,
+		Timestamp: ts,
 	}, nil
 }
 
@@ -426,6 +586,229 @@ func (e *OKXExchange) cancelAlgoOrdersByType(ctx context.Context, symbol, ordTyp
 	return cancelled
 }
 
+// ── Update SL/TP (Trailing Stop Support) ───────────────────────
+// OKX attached SL/TP become independent algo orders (ordType=oco)
+// after the parent fill. To move SL/TP we:
+//  1. Find the pending algo order for this symbol+posSide
+//  2. Amend it via /api/v5/trade/amend-algos
+
+// UpdateStopLoss modifies the stop-loss trigger price on an existing
+// algo order. Implements the StopLossUpdater interface.
+func (e *OKXExchange) UpdateStopLoss(ctx context.Context, symbol, posSide string, newSL float64) error {
+	algoID, err := e.findAlgoOrder(ctx, symbol, posSide, "sl")
+	if err != nil {
+		return fmt.Errorf("find SL algo order: %w", err)
+	}
+	if algoID == "" {
+		return fmt.Errorf("no SL algo order found for %s/%s", symbol, posSide)
+	}
+
+	reqBody := map[string]string{
+		"instId":      symbol,
+		"algoId":      algoID,
+		"newSlTriggerPx": strconv.FormatFloat(newSL, 'f', -1, 64),
+		"newSlOrdPx":  "-1", // market price on trigger
+	}
+	body, err := e.signedPost(ctx, "/api/v5/trade/amend-algos", reqBody)
+	if err != nil {
+		return fmt.Errorf("amend SL: %w", err)
+	}
+
+	var resp struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			SCode string `json:"sCode"`
+			SMsg  string `json:"sMsg"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("parse amend SL response: %w", err)
+	}
+	if resp.Code != "0" {
+		errMsg := resp.Msg
+		if len(resp.Data) > 0 && resp.Data[0].SMsg != "" {
+			errMsg = resp.Data[0].SMsg
+		}
+		return fmt.Errorf("OKX amend SL error: %s", errMsg)
+	}
+	return nil
+}
+
+// UpdateTakeProfit modifies the take-profit trigger price on an existing
+// algo order.
+func (e *OKXExchange) UpdateTakeProfit(ctx context.Context, symbol, posSide string, newTP float64) error {
+	algoID, err := e.findAlgoOrder(ctx, symbol, posSide, "tp")
+	if err != nil {
+		return fmt.Errorf("find TP algo order: %w", err)
+	}
+	if algoID == "" {
+		return fmt.Errorf("no TP algo order found for %s/%s", symbol, posSide)
+	}
+
+	reqBody := map[string]string{
+		"instId":      symbol,
+		"algoId":      algoID,
+		"newTpTriggerPx": strconv.FormatFloat(newTP, 'f', -1, 64),
+		"newTpOrdPx":  "-1",
+	}
+	body, err := e.signedPost(ctx, "/api/v5/trade/amend-algos", reqBody)
+	if err != nil {
+		return fmt.Errorf("amend TP: %w", err)
+	}
+
+	var resp struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			SCode string `json:"sCode"`
+			SMsg  string `json:"sMsg"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("parse amend TP response: %w", err)
+	}
+	if resp.Code != "0" {
+		errMsg := resp.Msg
+		if len(resp.Data) > 0 && resp.Data[0].SMsg != "" {
+			errMsg = resp.Data[0].SMsg
+		}
+		return fmt.Errorf("OKX amend TP error: %s", errMsg)
+	}
+	return nil
+}
+
+// findAlgoOrder locates the pending algo order (SL or TP) for a given
+// symbol and position side. OKX uses ordType "oco" for attached SL/TP.
+// slOrTp: "sl" to find stop-loss, "tp" to find take-profit.
+func (e *OKXExchange) findAlgoOrder(ctx context.Context, symbol, posSide, slOrTp string) (string, error) {
+	// OKX attached SL/TP are "oco" type algo orders after parent fills.
+	// Also check "conditional" in case they were placed separately.
+	for _, ordType := range []string{"oco", "conditional"} {
+		query := fmt.Sprintf("instId=%s&ordType=%s", symbol, ordType)
+		body, err := e.signedGet(ctx, "/api/v5/trade/orders-algo-pending", query)
+		if err != nil {
+			continue
+		}
+		var resp struct {
+			Code string `json:"code"`
+			Data []struct {
+				AlgoID      string `json:"algoId"`
+				InstID      string `json:"instId"`
+				PosSide     string `json:"posSide"`
+				SlTriggerPx string `json:"slTriggerPx"`
+				TpTriggerPx string `json:"tpTriggerPx"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil || resp.Code != "0" {
+			continue
+		}
+		for _, d := range resp.Data {
+			if d.InstID != symbol {
+				continue
+			}
+			// Match position side (if specified).
+			if posSide != "" && d.PosSide != "" && d.PosSide != posSide {
+				continue
+			}
+			switch slOrTp {
+			case "sl":
+				if d.SlTriggerPx != "" && d.SlTriggerPx != "0" {
+					return d.AlgoID, nil
+				}
+			case "tp":
+				if d.TpTriggerPx != "" && d.TpTriggerPx != "0" {
+					return d.AlgoID, nil
+				}
+			}
+		}
+	}
+	return "", nil
+}
+
+// ── Contract Info (for qty→lots conversion) ─────────────────────
+
+// getContractInfo fetches and caches contract specifications for an instrument.
+func (e *OKXExchange) getContractInfo(ctx context.Context, instID string) (*contractInfo, error) {
+	if v, ok := e.ctCache.Load(instID); ok {
+		return v.(*contractInfo), nil
+	}
+
+	// GET /api/v5/public/instruments?instType=SWAP&instId=BTC-USDT-SWAP
+	body, err := e.publicGet(ctx, "/api/v5/public/instruments", "instType=SWAP&instId="+instID)
+	if err != nil {
+		return nil, fmt.Errorf("get instrument info: %w", err)
+	}
+
+	var resp struct {
+		Code string `json:"code"`
+		Data []struct {
+			CtVal  string `json:"ctVal"`
+			LotSz  string `json:"lotSz"`
+			CtMult string `json:"ctMult"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Code != "0" || len(resp.Data) == 0 {
+		return nil, fmt.Errorf("instrument %s not found", instID)
+	}
+
+	d := resp.Data[0]
+	ci := &contractInfo{}
+	ci.CtVal, _ = strconv.ParseFloat(d.CtVal, 64)
+	ci.LotSz, _ = strconv.ParseFloat(d.LotSz, 64)
+	ci.CtMult, _ = strconv.ParseFloat(d.CtMult, 64)
+	if ci.CtVal <= 0 {
+		ci.CtVal = 1
+	}
+	if ci.LotSz <= 0 {
+		ci.LotSz = 1
+	}
+	if ci.CtMult <= 0 {
+		ci.CtMult = 1
+	}
+
+	e.ctCache.Store(instID, ci)
+	return ci, nil
+}
+
+// qtyToLots converts a coin quantity to OKX contract lots (张数).
+// E.g. BTC-USDT-SWAP: ctVal=0.01, qty=0.05 BTC → 5 lots.
+func qtyToLots(qty float64, ci *contractInfo) int64 {
+	lots := qty / ci.CtVal
+	// Round to nearest lot size
+	if ci.LotSz > 0 {
+		lots = math.Floor(lots/ci.LotSz) * ci.LotSz
+	}
+	if lots < ci.LotSz {
+		lots = ci.LotSz // minimum 1 lot
+	}
+	return int64(lots)
+}
+
+// publicGet makes an unsigned GET request (public endpoints don't need auth).
+func (e *OKXExchange) publicGet(ctx context.Context, path, query string) ([]byte, error) {
+	url := e.config.BaseURL + path
+	if query != "" {
+		url += "?" + query
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if e.config.Simulated {
+		req.Header.Set("x-simulated-trading", "1")
+	}
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
 // ── Set Leverage ────────────────────────────────────────────────
 
 func (e *OKXExchange) setLeverage(ctx context.Context, instID, posSide string, lever int) error {
@@ -509,4 +892,34 @@ func (e *OKXExchange) sign(preSign string) string {
 	h := hmac.New(sha256.New, []byte(e.config.SecretKey))
 	h.Write([]byte(preSign))
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+// okxSnowflake generates globally unique clOrdId for OKX orders.
+// Twitter snowflake layout: 41-bit timestamp | 10-bit machine | 12-bit sequence.
+var okxSnowflake = struct {
+	seq    atomic.Int64
+	lastMs atomic.Int64
+}{}
+
+const okxSnowflakeEpoch = 1704067200000 // 2024-01-01 UTC
+
+// nextClOrdID generates an OKX-compliant clOrdId using snowflake algorithm.
+// Format: "q" + snowflake int64 (max 19 digits) = max 20 chars, well under 32.
+// Always starts with letter 'q', only alphanumeric.
+func nextClOrdID() string {
+	now := time.Now().UnixMilli() - okxSnowflakeEpoch
+	last := okxSnowflake.lastMs.Load()
+	if now == last {
+		seq := okxSnowflake.seq.Add(1) & 0xFFF
+		if seq == 0 {
+			for now <= last {
+				now = time.Now().UnixMilli() - okxSnowflakeEpoch
+			}
+		}
+		okxSnowflake.lastMs.Store(now)
+		return "q" + strconv.FormatInt((now<<22)|(0<<12)|seq, 10)
+	}
+	okxSnowflake.lastMs.Store(now)
+	okxSnowflake.seq.Store(0)
+	return "q" + strconv.FormatInt((now<<22)|(0<<12)|0, 10)
 }

@@ -8,16 +8,32 @@ import (
 
 // OrderFlowParams holds tunable parameters for OrderFlow.
 type OrderFlowParams struct {
-	ImbalanceThreshold float64 `json:"imbalance_threshold" yaml:"imbalance_threshold"` // min |imbalance| to score (default 0.15)
-	ToxicityThreshold  float64 `json:"toxicity_threshold" yaml:"toxicity_threshold"`   // min toxicity to score (default 0.45)
-	FlowScoreThreshold float64 `json:"flow_score_threshold" yaml:"flow_score_threshold"` // min score to trigger (default 0.6)
+	ImbalanceThreshold float64 `json:"imbalance_threshold" yaml:"imbalance_threshold"` // 订单簿失衡阈值 (default 0.15)
+	ToxicityThreshold  float64 `json:"toxicity_threshold" yaml:"toxicity_threshold"`   // 成交流毒性阈值 (default 0.45)
+	FlowScoreThreshold float64 `json:"flow_score_threshold" yaml:"flow_score_threshold"` // 触发最低分数 (default 0.6)
+	BaseConfidence     float64 `json:"base_confidence" yaml:"base_confidence"`         // 基础置信度 (default 0.40)
+	BigOrderThreshold  float64 `json:"big_order_threshold" yaml:"big_order_threshold"` // 大单比例阈值 (default 0.20)
+	DensityThreshold   float64 `json:"density_threshold" yaml:"density_threshold"`     // 交易密度阈值 (default 1.0)
+	BuySellBullish     float64 `json:"buy_sell_bullish" yaml:"buy_sell_bullish"`       // 买卖比看多阈值 (default 1.2)
+	BuySellBearish     float64 `json:"buy_sell_bearish" yaml:"buy_sell_bearish"`       // 买卖比看空阈值 (default 0.8)
+	DirectionEdge      float64 `json:"direction_edge" yaml:"direction_edge"`           // 方向优势比 (default 1.3)
+	SpreadBoost        float64 `json:"spread_boost" yaml:"spread_boost"`               // 窄点差加成 (default 1.10)
+	SLFallbackPct      float64 `json:"sl_fallback_pct" yaml:"sl_fallback_pct"`         // ATR无效时回退 (default 0.005)
 }
 
 func DefaultOrderFlowParams() OrderFlowParams {
 	return OrderFlowParams{
-		ImbalanceThreshold: 0.15,
-		ToxicityThreshold:  0.45,
-		FlowScoreThreshold: 0.6,
+		ImbalanceThreshold: 0.10,
+		ToxicityThreshold:  0.35,
+		FlowScoreThreshold: 0.45,
+		BaseConfidence:     0.45,
+		BigOrderThreshold:  0.20,
+		DensityThreshold:   1.0,
+		BuySellBullish:     1.2,
+		BuySellBearish:     0.8,
+		DirectionEdge:      1.3,
+		SpreadBoost:        1.10,
+		SLFallbackPct:      0.005,
 	}
 }
 
@@ -29,15 +45,17 @@ func NewOrderFlow() Strategy { return OrderFlow{Params: DefaultOrderFlowParams()
 
 func NewOrderFlowWithParams(p OrderFlowParams) Strategy {
 	d := DefaultOrderFlowParams()
-	if p.ImbalanceThreshold <= 0 {
-		p.ImbalanceThreshold = d.ImbalanceThreshold
-	}
-	if p.ToxicityThreshold <= 0 {
-		p.ToxicityThreshold = d.ToxicityThreshold
-	}
-	if p.FlowScoreThreshold <= 0 {
-		p.FlowScoreThreshold = d.FlowScoreThreshold
-	}
+	if p.ImbalanceThreshold <= 0 { p.ImbalanceThreshold = d.ImbalanceThreshold }
+	if p.ToxicityThreshold <= 0 { p.ToxicityThreshold = d.ToxicityThreshold }
+	if p.FlowScoreThreshold <= 0 { p.FlowScoreThreshold = d.FlowScoreThreshold }
+	if p.BaseConfidence <= 0 { p.BaseConfidence = d.BaseConfidence }
+	if p.BigOrderThreshold <= 0 { p.BigOrderThreshold = d.BigOrderThreshold }
+	if p.DensityThreshold <= 0 { p.DensityThreshold = d.DensityThreshold }
+	if p.BuySellBullish <= 0 { p.BuySellBullish = d.BuySellBullish }
+	if p.BuySellBearish <= 0 { p.BuySellBearish = d.BuySellBearish }
+	if p.DirectionEdge <= 0 { p.DirectionEdge = d.DirectionEdge }
+	if p.SpreadBoost <= 0 { p.SpreadBoost = d.SpreadBoost }
+	if p.SLFallbackPct <= 0 { p.SLFallbackPct = d.SLFallbackPct }
 	return OrderFlow{Params: p}
 }
 
@@ -74,7 +92,7 @@ func (o OrderFlow) computeFromFeatures(view MarketView) Signal {
 	atrRatio := f.ATRRatio("1m") // use shortest TF for order flow
 	atrDist := atrRatio * priceNow
 	if atrDist <= 0 {
-		atrDist = math.Abs(priceNow) * 0.005
+		atrDist = math.Abs(priceNow) * o.Params.SLFallbackPct
 	}
 
 	// Scoring approach: each indicator contributes to a directional score.
@@ -100,30 +118,30 @@ func (o OrderFlow) computeFromFeatures(view MarketView) Signal {
 	}
 
 	// Big order flow
-	if bigBuy > 0.2 {
+	if bigBuy > o.Params.BigOrderThreshold {
 		buyScore += bigBuy * 0.5
 	}
-	if bigSell > 0.2 {
+	if bigSell > o.Params.BigOrderThreshold {
 		sellScore += bigSell * 0.5
 	}
 
 	// Trade density (market activity)
-	if density > 1.0 {
-		densityBonus := math.Min((density-1.0)*0.3, 0.3)
+	if density > o.Params.DensityThreshold {
+		densityBonus := math.Min((density-o.Params.DensityThreshold)*0.3, 0.3)
 		buyScore += densityBonus
 		sellScore += densityBonus
 	}
 
 	// Buy/sell ratio
-	if buySell > 1.2 {
+	if buySell > o.Params.BuySellBullish {
 		buyScore += (buySell - 1.0) * 0.3
-	} else if buySell < 0.8 && buySell > 0 {
+	} else if buySell < o.Params.BuySellBearish && buySell > 0 {
 		sellScore += (1.0 - buySell) * 0.3
 	}
 
 	scoreTh := o.Params.FlowScoreThreshold
-	long := buyScore >= scoreTh && buyScore > sellScore*1.3
-	short := sellScore >= scoreTh && sellScore > buyScore*1.3
+	long := buyScore >= scoreTh && buyScore > sellScore*o.Params.DirectionEdge
+	short := sellScore >= scoreTh && sellScore > buyScore*o.Params.DirectionEdge
 
 	if !long && !short {
 		return Signal{
@@ -135,7 +153,7 @@ func (o OrderFlow) computeFromFeatures(view MarketView) Signal {
 		}
 	}
 
-	confidence := 0.40
+	confidence := o.Params.BaseConfidence
 	reason := ""
 	direction := DirectionHold
 
@@ -151,7 +169,7 @@ func (o OrderFlow) computeFromFeatures(view MarketView) Signal {
 
 	// Tight spread = more reliable signal
 	if spread > 0 && spread < 0.001 {
-		confidence *= 1.1
+		confidence *= o.Params.SpreadBoost
 		reason += "; tight spread"
 	}
 
@@ -165,14 +183,14 @@ func (o OrderFlow) computeFromFeatures(view MarketView) Signal {
 		Reason:     reason,
 		Timestamp:  time.Now().UTC(),
 	}
-	// SL = 1.2× ATR, TP = 1.8× ATR → 1:1.5 盈亏比.
-	// 1m 短线快进快出，10x 杠杆下留够呼吸空间.
+	// OrderFlow uses 1m-level SL/TP multipliers (tick ≈ 1m).
+	slMult, tpMult := SLTPMultipliers("1m")
 	if direction == DirectionLong {
-		signal.StopLoss = priceNow - atrDist*1.2
-		signal.TakeProfit = priceNow + atrDist*1.8
+		signal.StopLoss = priceNow - atrDist*slMult
+		signal.TakeProfit = priceNow + atrDist*tpMult
 	} else {
-		signal.StopLoss = priceNow + atrDist*1.2
-		signal.TakeProfit = priceNow - atrDist*1.8
+		signal.StopLoss = priceNow + atrDist*slMult
+		signal.TakeProfit = priceNow - atrDist*tpMult
 	}
 	return signal
 }

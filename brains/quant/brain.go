@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,8 +72,14 @@ type QuantBrain struct {
 	// Position health tracker: EWMA-based smooth exit decisions
 	healthTracker *PositionHealthTracker
 
+	// Trailing stop state
+	trailingStop  TrailingStopConfig
+	// key: "unitID:symbol", value: peak favorable price (high-water for long, low-water for short)
+	trailingPeaks sync.Map // map[string]float64
+
 	// state
 	running  atomic.Bool
+	paused   atomic.Bool // when true, skip new trade evaluation (existing positions still managed)
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	recovery recoveryState // warmup suppression after crash recovery
@@ -100,6 +107,12 @@ type Config struct {
 
 	// DefaultTimeframe is the primary timeframe if TradingUnit doesn't specify one.
 	DefaultTimeframe string `json:"default_timeframe" yaml:"default_timeframe"`
+
+	// MaxTradeSymbols 限制每个周期只对涨跌幅排名前 N 的币种评估新开仓。
+	// 排序方式：1m 周期 20 根 K 线涨跌幅绝对值，每个评估周期实时更新。
+	// 0 = 不限制（交易全部币种）。已有持仓的 SL/TP tick 不受此限制。
+	// Default: 20.
+	MaxTradeSymbols int `json:"max_trade_symbols" yaml:"max_trade_symbols"`
 }
 
 // New creates a QuantBrain. buffers provides market snapshots — either a local
@@ -113,6 +126,9 @@ func New(cfg Config, buffers SnapshotSource, logger *slog.Logger) *QuantBrain {
 	}
 	if cfg.DefaultTimeframe == "" {
 		cfg.DefaultTimeframe = "1H"
+	}
+	if cfg.MaxTradeSymbols <= 0 {
+		cfg.MaxTradeSymbols = 20
 	}
 
 	sigExit := DefaultSignalExitConfig()
@@ -133,6 +149,13 @@ func (qb *QuantBrain) SetSignalExitConfig(cfg SignalExitConfig) {
 	defer qb.mu.Unlock()
 	qb.signalExit = cfg
 	qb.healthTracker = NewPositionHealthTracker(cfg.PositionHealth)
+}
+
+// SetTrailingStopConfig enables and configures the trailing stop mechanism.
+func (qb *QuantBrain) SetTrailingStopConfig(cfg TrailingStopConfig) {
+	qb.mu.Lock()
+	defer qb.mu.Unlock()
+	qb.trailingStop = cfg
 }
 
 // SetSnapshotSource replaces the snapshot data source at runtime.
@@ -193,6 +216,24 @@ func (qb *QuantBrain) Units() []*TradingUnit {
 	return append([]*TradingUnit(nil), qb.units...)
 }
 
+// Pause stops new trade evaluation. Existing positions are still managed
+// (trailing stop, signal exit, health tracking continue to work).
+func (qb *QuantBrain) Pause() {
+	qb.paused.Store(true)
+	qb.logger.Info("quant brain paused — no new trades will be opened")
+}
+
+// Resume re-enables trade evaluation.
+func (qb *QuantBrain) Resume() {
+	qb.paused.Store(false)
+	qb.logger.Info("quant brain resumed — trade evaluation active")
+}
+
+// IsPaused returns whether the brain is paused.
+func (qb *QuantBrain) IsPaused() bool {
+	return qb.paused.Load()
+}
+
 // PositionHealth returns the current health value for a position key
 // ("unitID:symbol"), or -1 if not tracked.
 func (qb *QuantBrain) PositionHealth(key string) float64 {
@@ -215,6 +256,27 @@ func (qb *QuantBrain) Start(ctx context.Context) error {
 	}
 	if unitCount == 0 {
 		return fmt.Errorf("no trading units registered")
+	}
+
+	// Bootstrap: register health tracking for existing positions so
+	// restarted instances show SL/TP and health in WebUI.
+	qb.mu.RLock()
+	bootUnits := qb.units
+	qb.mu.RUnlock()
+	for _, u := range bootUnits {
+		positions, err := u.Account.Exchange.QueryPositions(ctx)
+		if err != nil {
+			qb.logger.Warn("bootstrap: position query failed", "unit", u.ID, "err", err)
+			continue
+		}
+		for _, p := range positions {
+			if p.Quantity > 0 {
+				key := u.ID + ":" + p.Symbol
+				qb.healthTracker.Register(key)
+				qb.logger.Info("bootstrap: registered health tracker",
+					"unit", u.ID, "symbol", p.Symbol)
+			}
+		}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -372,12 +434,51 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 	qb.mu.RUnlock()
 	symbols := buffers.Instruments()
 
+	// ── Top N filtering: only evaluate new trades on 1m涨跌幅 TOP N symbols ──
+	// 排序方式：1m 周期 20 根 K 线涨跌幅绝对值，每个评估周期实时更新。
+	// Tick feeding (SL/TP) still runs for ALL symbols.
+	topN := qb.config.MaxTradeSymbols
+	tradeSet := make(map[string]bool, topN)
+	if topN > 0 && topN < len(symbols) {
+		type symAmp struct {
+			symbol string
+			amp    float64
+		}
+		ranked := make([]symAmp, 0, len(symbols))
+		for _, sym := range symbols {
+			snap, ok := buffers.Latest(sym)
+			if !ok || snap.CurrentPrice <= 0 {
+				continue
+			}
+			// Always use 1m timeframe for ranking — 1m涨跌幅最能反映实时活跃度。
+			fv := strategy.NewLiveFeatureView(snap.FeatureVector, sym, snap.CurrentPrice, snap.MLReady)
+			amp := math.Abs(fv.PriceChange("1m", 20))
+			ranked = append(ranked, symAmp{sym, amp})
+		}
+		sort.Slice(ranked, func(i, j int) bool {
+			return ranked[i].amp > ranked[j].amp
+		})
+		limit := topN
+		if limit > len(ranked) {
+			limit = len(ranked)
+		}
+		for i := 0; i < limit; i++ {
+			tradeSet[ranked[i].symbol] = true
+		}
+	} else {
+		// No limit or fewer symbols than limit — trade all.
+		for _, sym := range symbols {
+			tradeSet[sym] = true
+		}
+	}
+
 	// Log diagnostics periodically (every 60 cycles ≈ 5 min at 5s interval).
 	diagnose := cycle%60 == 1
 	if diagnose {
 		qb.logger.Info("cycle heartbeat",
 			"cycle", cycle,
 			"symbols", len(symbols),
+			"trade_symbols", len(tradeSet),
 			"units", len(units),
 			"warmup", qb.recovery.isWarmingUp())
 	}
@@ -388,6 +489,8 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 			continue
 		}
 
+		canTrade := tradeSet[symbol]
+
 		for _, unit := range units {
 			if !unit.ShouldTrade(symbol) {
 				continue
@@ -395,6 +498,7 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 
 			// Feed price tick to exchanges that support it (e.g. PaperExchange)
 			// to trigger stop-loss / take-profit on existing orders.
+			// This runs for ALL symbols so existing positions get SL/TP updates.
 			if feeder, ok := unit.Account.Exchange.(exchange.TickFeeder); ok {
 				results, err := feeder.ProcessPriceTick(ctx, symbol, snap.CurrentPrice)
 				if err != nil {
@@ -412,12 +516,39 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 							"price", r.FillPrice)
 						// Update TradeStore with exit info.
 						qb.closeTradeRecord(ctx, unit, symbol, r)
+
+						// Cancel orphaned sibling SL/TP orders. The OCO mechanism
+						// inside ProcessPriceTick handles same-tick cancellation,
+						// but cross-tick zombies (e.g. SL fills tick 1, TP still
+						// open in tick 2) need explicit cleanup here.
+						if canceller, ok := unit.Account.Exchange.(exchange.BulkCanceller); ok {
+							if n := canceller.CancelOpenOrders(ctx, symbol); n > 0 {
+								qb.logger.Info("cancelled orphaned orders after SL/TP fill",
+									"unit", unit.ID, "symbol", symbol, "cancelled", n)
+							}
+						}
 					}
 				}
 			}
 
 			// Track MAE/MFE for open trades on this symbol.
 			qb.trackMAEMFE(ctx, unit, symbol, snap.CurrentPrice)
+
+			// Trailing stop: move SL/TP to lock in profits.
+			if qb.trailingStop.Enabled {
+				qb.updateTrailingStop(ctx, unit, symbol, snap.CurrentPrice)
+			}
+
+			// Force close positions that never activated trailing stop and
+			// are losing more than the configured max loss threshold.
+			if qb.trailingStop.Enabled && qb.trailingStop.MaxLossWithoutTrailing > 0 {
+				qb.checkMaxLossWithoutTrailing(ctx, unit, symbol, snap.CurrentPrice)
+			}
+
+			// Only evaluate new trades for Top N symbols.
+			if !canTrade {
+				continue
+			}
 
 			tf := unit.Timeframe
 			if tf == "" {
@@ -491,6 +622,13 @@ func (qb *QuantBrain) runCycle(ctx context.Context) {
 
 	qb.metrics.CycleLatencyMs.Store(time.Since(start).Milliseconds())
 
+	// Periodic orphan cleanup: every 120 cycles (~10 min at 5s interval),
+	// scan for positions without matching TradeStore records (or vice versa)
+	// and clean up zombie orders for symbols that have no open position.
+	if cycle%120 == 0 {
+		qb.cleanupOrphans(ctx)
+	}
+
 	// Tick warmup counter down
 	if qb.recovery.isWarmingUp() {
 		qb.recovery.tick()
@@ -534,6 +672,7 @@ func (qb *QuantBrain) buildGlobalSnapshot(ctx context.Context) (risk.GlobalSnaps
 				Direction: dirFromSide(p.Side),
 				Quantity:  p.Quantity,
 				Notional:  p.Quantity * markPrice,
+				Leverage:  p.Leverage,
 			})
 		}
 		// Daily PnL tracked per unit from trade store stats
@@ -581,6 +720,11 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 			// Cooldown expired, clean up
 			qb.exitCooldowns.Delete(cooldownKey)
 		}
+	}
+
+	// When paused, skip new trade evaluation but still run signal exit / health above.
+	if qb.paused.Load() {
+		return
 	}
 
 	td, err := unit.Evaluate(ctx, view)
@@ -675,6 +819,62 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 		return
 	}
 
+	// Guard: do not open if ANY unit sharing the same physical exchange
+	// already has an open trade for this symbol. When multiple logical
+	// accounts share one OKX API key, opening the same symbol twice
+	// creates an "orphan position" — the exchange merges quantities but
+	// only one unit's trade record matches, leaving the other untracked.
+	if unit.TradeStore != nil {
+		// First check this unit's own records (fast path).
+		openTrades := unit.TradeStore.Query(tradestore.Filter{
+			UnitID:   unit.ID,
+			Symbol:   td.Symbol,
+			OpenOnly: true,
+			Limit:    1,
+		})
+		if len(openTrades) > 0 {
+			qb.logger.Debug("skip open: existing open trade record",
+				"unit", unit.ID, "symbol", td.Symbol, "existing_id", openTrades[0].ID)
+			return
+		}
+
+		// Then check sibling units that share the same physical exchange.
+		// This prevents the race condition where two units both see "no
+		// position" on the shared exchange and both open trades simultaneously.
+		// We compare by Exchange.Name()+credential identity — units sharing
+		// the same OKX API key share the same physical account.
+		qb.mu.RLock()
+		allUnits := qb.units
+		qb.mu.RUnlock()
+		for _, sibling := range allUnits {
+			if sibling.ID == unit.ID {
+				continue
+			}
+			// Same physical exchange = same exchange name + same credential key.
+			if sibling.Account.Exchange.Name() != unit.Account.Exchange.Name() {
+				continue
+			}
+			if sibling.Account.Exchange.CredentialKey() != unit.Account.Exchange.CredentialKey() {
+				continue
+			}
+			if sibling.TradeStore == nil {
+				continue
+			}
+			siblingTrades := sibling.TradeStore.Query(tradestore.Filter{
+				UnitID:   sibling.ID,
+				Symbol:   td.Symbol,
+				OpenOnly: true,
+				Limit:    1,
+			})
+			if len(siblingTrades) > 0 {
+				qb.logger.Debug("skip open: sibling unit has open trade on shared exchange",
+					"unit", unit.ID, "sibling", sibling.ID,
+					"symbol", td.Symbol, "existing_id", siblingTrades[0].ID)
+				return
+			}
+		}
+	}
+
 	// Execute the trade
 	qb.metrics.TradesAttempted.Add(1)
 	execStart := time.Now()
@@ -720,20 +920,21 @@ func (qb *QuantBrain) evaluateUnit(ctx context.Context, unit *TradingUnit, view 
 			entryPrice = td.OrderReq.EntryPrice // fallback to order request price
 		}
 		if err := unit.TradeStore.Save(ctx, tradestore.TradeRecord{
-			ID:         result.OrderID,
-			AccountID:  unit.Account.ID,
-			UnitID:     unit.ID,
-			Symbol:     td.Symbol,
-			Direction:  td.Signal.Direction,
-			EntryPrice: entryPrice,
-			Quantity:   td.SizeResult.Quantity,
-			EntryTime:  result.Timestamp,
-			Leverage:   unit.MaxLeverage,
-			StopLoss:   sig.StopLoss,
-			TakeProfit: sig.TakeProfit,
-			ATR:        td.OrderReq.ATR,
-			Confidence: td.Signal.Confidence,
-			Strategy:   sig.Strategy,
+			ID:             result.OrderID,
+			AccountID:      unit.Account.ID,
+			UnitID:         unit.ID,
+			Symbol:         td.Symbol,
+			Direction:      td.Signal.Direction,
+			EntryPrice:     entryPrice,
+			Quantity:       td.SizeResult.Quantity,
+			EntryTime:      result.Timestamp,
+			Leverage:       unit.MaxLeverage,
+			StopLoss:       sig.StopLoss,
+			TakeProfit:     sig.TakeProfit,
+			OrigStopLoss: sig.StopLoss,
+			ATR:            td.OrderReq.ATR,
+			Confidence:     td.Signal.Confidence,
+			Strategy:       sig.Strategy,
 		}); err != nil {
 			qb.logger.Error("trade store save failed",
 				"unit", unit.ID,
@@ -888,15 +1089,18 @@ func (qb *QuantBrain) closeTradeRecord(ctx context.Context, unit *TradingUnit, s
 
 // closeTradeRecordWithReason updates the trade store with an explicit reason.
 // If reason is empty, it is auto-detected from PnL.
+// Closes ALL open records for this unit+symbol (not just the first) to prevent
+// orphaned trade records when the duplicate-open guard failed.
 func (qb *QuantBrain) closeTradeRecordWithReason(ctx context.Context, unit *TradingUnit, symbol string, r exchange.OrderResult, reason string) {
 	records := unit.TradeStore.Query(tradestore.Filter{
-		UnitID: unit.ID,
-		Symbol: symbol,
-		Limit:  10,
+		UnitID:   unit.ID,
+		Symbol:   symbol,
+		OpenOnly: true,
+		Limit:    10,
 	})
 	for _, rec := range records {
 		if rec.ExitPrice != 0 {
-			continue // already closed
+			continue // already closed (defensive check)
 		}
 		var pnl float64
 		switch rec.Direction {
@@ -913,11 +1117,12 @@ func (qb *QuantBrain) closeTradeRecordWithReason(ctx context.Context, unit *Trad
 			}
 		}
 
-		if reason == "" {
+		recReason := reason
+		if recReason == "" {
 			if pnl > 0 {
-				reason = "take_profit"
+				recReason = "take_profit"
 			} else {
-				reason = "stop_loss"
+				recReason = "stop_loss"
 			}
 		}
 
@@ -926,7 +1131,7 @@ func (qb *QuantBrain) closeTradeRecordWithReason(ctx context.Context, unit *Trad
 			PnL:       pnl,
 			PnLPct:    pnlPct,
 			ExitTime:  r.Timestamp,
-			Reason:    reason,
+			Reason:    recReason,
 		}); err != nil {
 			qb.logger.Warn("update trade record failed",
 				"unit", unit.ID, "tradeID", rec.ID, "err", err)
@@ -938,14 +1143,126 @@ func (qb *QuantBrain) closeTradeRecordWithReason(ctx context.Context, unit *Trad
 				"entry", rec.EntryPrice,
 				"exit", r.FillPrice,
 				"pnl", pnl,
-				"reason", reason)
+				"reason", recReason)
+		}
+	}
+
+	// Clean up position tracking for any close reason (SL/TP/signal_exit).
+	closeKey := unit.ID + ":" + symbol
+	qb.healthTracker.Remove(closeKey)
+	qb.openTimes.Delete(closeKey)
+	qb.trailingPeaks.Delete(closeKey)
+}
+
+// cleanupOrphans performs a periodic consistency sweep across all units.
+// It detects and fixes two types of orphan state:
+//
+//  1. Zombie orders: open SL/TP orders for symbols that have no position.
+//     This happens when signal_exit or an external action closes a position
+//     but the child orders were not cancelled (e.g. exchange doesn't support
+//     BulkCanceller, or a race condition).
+//
+//  2. Orphan trade records: TradeStore records marked as open but no matching
+//     position exists on the exchange. These get force-closed with reason
+//     "orphan_cleanup" so they don't block new trades via the duplicate guard.
+func (qb *QuantBrain) cleanupOrphans(ctx context.Context) {
+	qb.mu.RLock()
+	units := qb.units
+	qb.mu.RUnlock()
+
+	totalOrders := 0
+	totalRecords := 0
+
+	for _, u := range units {
+		positions, err := u.Account.Exchange.QueryPositions(ctx)
+		if err != nil {
+			continue
 		}
 
-		// Clean up position tracking for any close reason (SL/TP/signal_exit).
-		closeKey := unit.ID + ":" + symbol
-		qb.healthTracker.Remove(closeKey)
-		qb.openTimes.Delete(closeKey)
-		return
+		// Build set of symbols that have an actual position.
+		posSet := make(map[string]bool, len(positions))
+		for _, p := range positions {
+			if p.Quantity > 0 {
+				posSet[p.Symbol] = true
+			}
+		}
+
+		// Build the scan list: explicit symbols if configured, otherwise
+		// derive from open trade records (auto-discover units have Symbols=[]).
+		scanSymbols := u.Symbols
+		if len(scanSymbols) == 0 && u.TradeStore != nil {
+			// Collect symbols from open trade records — these are the only
+			// symbols that could have orphan orders or records.
+			openRecs := u.TradeStore.Query(tradestore.Filter{UnitID: u.ID, OpenOnly: true, Limit: 100})
+			seen := make(map[string]bool, len(openRecs))
+			for _, r := range openRecs {
+				if !seen[r.Symbol] {
+					seen[r.Symbol] = true
+					scanSymbols = append(scanSymbols, r.Symbol)
+				}
+			}
+		}
+
+		// 1. Cancel zombie orders: for every symbol this unit trades that has
+		//    no open position, attempt to cancel any lingering orders.
+		if canceller, ok := u.Account.Exchange.(exchange.BulkCanceller); ok {
+			for _, sym := range scanSymbols {
+				if posSet[sym] {
+					continue // position exists, orders are valid
+				}
+				n := canceller.CancelOpenOrders(ctx, sym)
+				if n > 0 {
+					totalOrders += n
+					qb.logger.Warn("orphan cleanup: cancelled zombie orders",
+						"unit", u.ID, "symbol", sym, "cancelled", n)
+				}
+			}
+		}
+
+		// 2. Close orphan trade records (open in TradeStore but no position on exchange).
+		if u.TradeStore == nil {
+			continue
+		}
+		for _, sym := range scanSymbols {
+			if posSet[sym] {
+				continue // position exists, trade record is valid
+			}
+			openRecords := u.TradeStore.Query(tradestore.Filter{
+				UnitID:   u.ID,
+				Symbol:   sym,
+				OpenOnly: true,
+				Limit:    10,
+			})
+			for _, rec := range openRecords {
+				if rec.ExitPrice != 0 {
+					continue
+				}
+				totalRecords++
+				// Force-close with zero exit price — this is a data inconsistency,
+				// not a real trade closure. Mark it clearly.
+				_ = u.TradeStore.Update(ctx, rec.ID, tradestore.TradeUpdate{
+					ExitPrice: rec.EntryPrice, // close at entry = 0 PnL (unknown real exit)
+					PnL:       0,
+					PnLPct:    0,
+					ExitTime:  time.Now(),
+					Reason:    "orphan_cleanup",
+				})
+				qb.logger.Warn("orphan cleanup: force-closed trade record",
+					"unit", u.ID, "symbol", sym, "tradeID", rec.ID,
+					"direction", rec.Direction, "entry", rec.EntryPrice)
+			}
+			// Also clean up in-memory tracking for this symbol.
+			cleanKey := u.ID + ":" + sym
+			qb.healthTracker.Remove(cleanKey)
+			qb.openTimes.Delete(cleanKey)
+			qb.trailingPeaks.Delete(cleanKey)
+		}
+	}
+
+	if totalOrders > 0 || totalRecords > 0 {
+		qb.logger.Info("orphan cleanup complete",
+			"zombie_orders_cancelled", totalOrders,
+			"orphan_records_closed", totalRecords)
 	}
 }
 
@@ -1015,9 +1332,10 @@ func (qb *QuantBrain) trackMAEMFE(ctx context.Context, unit *TradingUnit, symbol
 	}
 	// Find open trades for this symbol.
 	records := unit.TradeStore.Query(tradestore.Filter{
-		UnitID: unit.ID,
-		Symbol: symbol,
-		Limit:  5,
+		UnitID:   unit.ID,
+		Symbol:   symbol,
+		OpenOnly: true,
+		Limit:    5,
 	})
 	for _, rec := range records {
 		if !rec.ExitTime.IsZero() || rec.EntryPrice <= 0 {
@@ -1045,6 +1363,284 @@ func (qb *QuantBrain) trackMAEMFE(ctx context.Context, unit *TradingUnit, symbol
 			_ = unit.TradeStore.UpdateMAEMFE(ctx, rec.ID, adverse, favorable)
 		}
 	}
+}
+
+// updateTrailingStop moves SL (and TP) to lock in profits when price moves favorably.
+//
+// Logic:
+//  1. Find open trade record for this symbol in this unit.
+//  2. Calculate favorable distance from entry.
+//  3. If favorable distance >= activation threshold (% of original TP distance), activate.
+//  4. Track peak favorable price (high-water mark for longs, low-water for shorts).
+//  5. New SL = peak - callback distance. New TP = peak + callback distance (mirrors SL).
+//  6. Only update if new SL/TP is better than current (SL moves up for longs, down for shorts).
+//  7. Call StopLossUpdater on exchange to update the child orders.
+func (qb *QuantBrain) updateTrailingStop(ctx context.Context, unit *TradingUnit, symbol string, currentPrice float64) {
+	if unit.TradeStore == nil || currentPrice <= 0 {
+		return
+	}
+
+	cfg := qb.trailingStop
+	if cfg.ActivationPct <= 0 {
+		cfg.ActivationPct = 0.5
+	}
+	if cfg.CallbackPct <= 0 {
+		cfg.CallbackPct = 0.003
+	}
+	if cfg.StepPct <= 0 {
+		cfg.StepPct = 0.001
+	}
+
+	// Find open trade record.
+	records := unit.TradeStore.Query(tradestore.Filter{
+		UnitID:   unit.ID,
+		Symbol:   symbol,
+		OpenOnly: true,
+		Limit:    1,
+	})
+	if len(records) == 0 {
+		return
+	}
+	rec := records[0]
+	if rec.EntryPrice <= 0 || rec.TakeProfit <= 0 || rec.StopLoss <= 0 {
+		return
+	}
+
+	// Track peak price.
+	peakKey := unit.ID + ":" + symbol
+	var peak float64
+	alreadyActivated := false
+	if v, ok := qb.trailingPeaks.Load(peakKey); ok {
+		peak = v.(float64)
+		alreadyActivated = true
+	}
+
+	// Detect if trailing stop was already activated before restart:
+	// if current SL differs from original SL, it has been moved.
+	if !alreadyActivated && rec.OrigStopLoss > 0 {
+		switch rec.Direction {
+		case strategy.DirectionLong:
+			if rec.StopLoss > rec.OrigStopLoss {
+				alreadyActivated = true
+			}
+		case strategy.DirectionShort:
+			if rec.StopLoss < rec.OrigStopLoss {
+				alreadyActivated = true
+			}
+		}
+	}
+
+	// Activation check: only on first activation.
+	// Use original SL distance as stable reference (TP keeps moving).
+	if !alreadyActivated {
+		var refDist float64
+		if rec.OrigStopLoss > 0 {
+			refDist = math.Abs(rec.EntryPrice - rec.OrigStopLoss)
+		} else {
+			refDist = math.Abs(rec.TakeProfit - rec.EntryPrice)
+		}
+		activationDist := refDist * cfg.ActivationPct
+
+		var favorable float64
+		switch rec.Direction {
+		case strategy.DirectionLong:
+			favorable = currentPrice - rec.EntryPrice
+		case strategy.DirectionShort:
+			favorable = rec.EntryPrice - currentPrice
+		default:
+			return
+		}
+
+		if favorable < activationDist {
+			return // not yet activated
+		}
+	}
+
+	// Update peak (high-water for longs, low-water for shorts).
+	switch rec.Direction {
+	case strategy.DirectionLong:
+		if currentPrice > peak || peak == 0 {
+			peak = currentPrice
+			qb.trailingPeaks.Store(peakKey, peak)
+		}
+	case strategy.DirectionShort:
+		if currentPrice < peak || peak == 0 {
+			peak = currentPrice
+			qb.trailingPeaks.Store(peakKey, peak)
+		}
+	}
+
+	callbackDist := peak * cfg.CallbackPct
+
+	// Calculate new SL and TP from peak.
+	var newSL, newTP float64
+	switch rec.Direction {
+	case strategy.DirectionLong:
+		newSL = peak - callbackDist  // trail below peak
+		newTP = peak + callbackDist  // extend TP above peak
+		// Never move SL backwards.
+		if newSL <= rec.StopLoss {
+			return
+		}
+		// Minimum step check.
+		if (newSL-rec.StopLoss)/rec.EntryPrice < cfg.StepPct {
+			return
+		}
+	case strategy.DirectionShort:
+		newSL = peak + callbackDist  // trail above peak (lower is better for shorts)
+		newTP = peak - callbackDist  // extend TP below peak
+		// Never move SL backwards (for shorts, SL should only decrease).
+		if newSL >= rec.StopLoss {
+			return
+		}
+		if (rec.StopLoss-newSL)/rec.EntryPrice < cfg.StepPct {
+			return
+		}
+	}
+
+	// Update SL on exchange.
+	posSide := "long"
+	if rec.Direction == strategy.DirectionShort {
+		posSide = "short"
+	}
+	if updater, ok := unit.Account.Exchange.(exchange.StopLossUpdater); ok {
+		if err := updater.UpdateStopLoss(ctx, symbol, posSide, newSL); err != nil {
+			qb.logger.Warn("trailing stop: update SL failed",
+				"unit", unit.ID, "symbol", symbol, "err", err)
+			return
+		}
+	}
+
+	// Update TP on exchange (if paper exchange supports it).
+	type tpUpdater interface {
+		UpdateTakeProfit(ctx context.Context, symbol, posSide string, newTP float64) error
+	}
+	if upd, ok := unit.Account.Exchange.(tpUpdater); ok && newTP > 0 {
+		_ = upd.UpdateTakeProfit(ctx, symbol, posSide, newTP)
+	}
+
+	// Update trade record SL/TP in store.
+	_ = unit.TradeStore.UpdateSLTP(ctx, rec.ID, newSL, newTP)
+
+	qb.logger.Info("trailing stop moved",
+		"unit", unit.ID,
+		"symbol", symbol,
+		"direction", rec.Direction,
+		"peak", peak,
+		"old_sl", rec.StopLoss,
+		"new_sl", newSL,
+		"old_tp", rec.TakeProfit,
+		"new_tp", newTP)
+}
+
+// checkMaxLossWithoutTrailing force-closes positions that never activated
+// the trailing stop and are losing more than MaxLossWithoutTrailing USDT.
+func (qb *QuantBrain) checkMaxLossWithoutTrailing(ctx context.Context, unit *TradingUnit, symbol string, currentPrice float64) {
+	if unit.TradeStore == nil || currentPrice <= 0 {
+		return
+	}
+	maxLoss := qb.trailingStop.MaxLossWithoutTrailing
+	if maxLoss <= 0 {
+		return
+	}
+
+	// Check if trailing stop was activated (peak tracked).
+	peakKey := unit.ID + ":" + symbol
+	if _, ok := qb.trailingPeaks.Load(peakKey); ok {
+		return // trailing stop active, not our concern
+	}
+
+	// Find open trade record.
+	records := unit.TradeStore.Query(tradestore.Filter{
+		UnitID:   unit.ID,
+		Symbol:   symbol,
+		OpenOnly: true,
+		Limit:    1,
+	})
+	if len(records) == 0 {
+		return
+	}
+	rec := records[0]
+	if rec.EntryPrice <= 0 {
+		return
+	}
+
+	// Also check if SL was already moved (trailing activated before restart).
+	if rec.OrigStopLoss > 0 {
+		switch rec.Direction {
+		case strategy.DirectionLong:
+			if rec.StopLoss > rec.OrigStopLoss {
+				return // trailing was active
+			}
+		case strategy.DirectionShort:
+			if rec.StopLoss < rec.OrigStopLoss {
+				return // trailing was active
+			}
+		}
+	}
+
+	// Calculate unrealized PnL.
+	var pnl float64
+	switch rec.Direction {
+	case strategy.DirectionLong:
+		pnl = (currentPrice - rec.EntryPrice) * rec.Quantity
+	case strategy.DirectionShort:
+		pnl = (rec.EntryPrice - currentPrice) * rec.Quantity
+	default:
+		return
+	}
+
+	// Only act on losses exceeding threshold.
+	if pnl >= -maxLoss {
+		return
+	}
+
+	// Force close.
+	closeSide := "sell"
+	posSide := "long"
+	if rec.Direction == strategy.DirectionShort {
+		closeSide = "buy"
+		posSide = "short"
+	}
+
+	result, err := unit.Account.Exchange.PlaceOrder(ctx, exchange.PlaceOrderParams{
+		Symbol:     symbol,
+		Side:       closeSide,
+		PosSide:    posSide,
+		Type:       "market",
+		Price:      currentPrice,
+		Quantity:   rec.Quantity,
+		Leverage:   unit.MaxLeverage,
+		ReduceOnly: true,
+		ClientID:   fmt.Sprintf("max-loss-%s-%d", symbol, time.Now().UnixMilli()),
+	})
+	if err != nil {
+		qb.logger.Warn("max_loss_without_trailing: close failed",
+			"unit", unit.ID, "symbol", symbol, "pnl", pnl, "err", err)
+		return
+	}
+
+	qb.logger.Info("max_loss_without_trailing: force closed",
+		"unit", unit.ID,
+		"symbol", symbol,
+		"direction", rec.Direction,
+		"pnl", pnl,
+		"threshold", -maxLoss,
+		"fill_price", result.FillPrice)
+
+	// Close trade record.
+	qb.closeTradeRecord(ctx, unit, symbol, result)
+
+	// Cancel orphaned SL/TP orders.
+	if canceller, ok := unit.Account.Exchange.(exchange.BulkCanceller); ok {
+		canceller.CancelOpenOrders(ctx, symbol)
+	}
+
+	// Clean up tracking state.
+	closeKey := unit.ID + ":" + symbol
+	qb.healthTracker.Remove(closeKey)
+	qb.openTimes.Delete(closeKey)
+	qb.trailingPeaks.Delete(closeKey)
 }
 
 // saveTrace persists a signal trace to the trace store.

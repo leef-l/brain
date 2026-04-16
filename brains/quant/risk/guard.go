@@ -31,10 +31,10 @@ func DefaultGuard() Guard {
 	return Guard{
 		MaxSinglePositionPct:   5,
 		MaxLeverage:            20,
-		MinStopDistanceATR:     1,
+		MinStopDistanceATR:     0.5,
 		MaxStopDistancePct:     10,
-		MaxConcurrentPositions: 5,
-		MaxTotalExposurePct:    30,
+		MaxConcurrentPositions: 10,
+		MaxTotalExposurePct:    40,
 		MaxSameDirectionPct:    20,
 		StopNewTradesLossPct:   3,
 		LiquidateAllLossPct:    5,
@@ -105,13 +105,21 @@ func (g Guard) CheckPortfolio(req OrderRequest, portfolio PortfolioSnapshot) Dec
 	shortExposure := 0.0
 	openSymbols := make(map[string]strategy.Direction, len(portfolio.Positions))
 	for _, position := range portfolio.Positions {
-		totalExposure += position.Notional
+		// Convert leveraged notional (qty*price) to margin-equivalent exposure.
+		// PositionSizer outputs margin-sized Notional (equity*fraction), but
+		// portfolio positions store qty*markPrice (the full leveraged value).
+		// To compare consistently, divide by leverage to get margin usage.
+		margin := position.Notional
+		if position.Leverage > 1 {
+			margin = position.Notional / float64(position.Leverage)
+		}
+		totalExposure += margin
 		openSymbols[position.Symbol] = position.Direction
 		switch position.Direction {
 		case strategy.DirectionLong:
-			longExposure += position.Notional
+			longExposure += margin
 		case strategy.DirectionShort:
-			shortExposure += position.Notional
+			shortExposure += margin
 		}
 	}
 

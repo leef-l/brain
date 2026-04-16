@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/leef-l/brain/brains/quant/exchange"
@@ -43,6 +44,9 @@ type TradingUnit struct {
 
 	// RouteConfig controls per-account routing behavior (WeightFactor, filters).
 	RouteConfig RouteConfig
+
+	// BudgetEquity: when > 0, overrides exchange balance for position sizing.
+	BudgetEquity float64
 }
 
 // TradingUnitConfig is the configuration for creating a TradingUnit.
@@ -62,6 +66,11 @@ type TradingUnitConfig struct {
 	TradeStore  tradestore.Store
 	// RouteConfig for per-account routing (weight factor, allowed strategies/symbols).
 	RouteConfig RouteConfig
+	// BudgetEquity overrides QueryBalance for position sizing.
+	// When > 0, the unit uses this as its equity cap instead of the
+	// exchange's real balance. This lets multiple units share one
+	// exchange account while each operating within its own budget.
+	BudgetEquity float64
 }
 
 // NewTradingUnit creates a TradingUnit with defaults for unset fields.
@@ -127,20 +136,21 @@ func NewTradingUnit(cfg TradingUnitConfig, logger *slog.Logger) *TradingUnit {
 	agg.SetOracle(oracle)
 
 	return &TradingUnit{
-		ID:          cfg.ID,
-		Account:     cfg.Account,
-		Pool:        pool,
-		Aggregator:  agg,
-		Guard:       guard,
-		Sizer:       sizer,
-		TradeStore:  ts,
-		Oracle:      oracle,
-		Logger:      logger.With("unit", cfg.ID),
-		Symbols:     cfg.Symbols,
-		Timeframe:   tf,
-		MaxLeverage: maxLev,
-		Enabled:     true,
-		RouteConfig: cfg.RouteConfig,
+		ID:           cfg.ID,
+		Account:      cfg.Account,
+		Pool:         pool,
+		Aggregator:   agg,
+		Guard:        guard,
+		Sizer:        sizer,
+		TradeStore:   ts,
+		Oracle:       oracle,
+		Logger:       logger.With("unit", cfg.ID),
+		Symbols:      cfg.Symbols,
+		Timeframe:    tf,
+		MaxLeverage:  maxLev,
+		Enabled:      true,
+		RouteConfig:  cfg.RouteConfig,
+		BudgetEquity: cfg.BudgetEquity,
 	}
 }
 
@@ -187,20 +197,40 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 		return nil, nil
 	}
 
-	// Fast path: skip full pipeline if symbol already has an open position.
-	// This avoids running strategies → aggregate → risk check every cycle
-	// only to get rejected by the "same symbol already open" guard rule.
-	positions, err := u.Account.Exchange.QueryPositions(ctx)
-	if err == nil {
-		for _, p := range positions {
-			if p.Symbol == view.Symbol() && p.Quantity > 0 {
-				return nil, nil
-			}
+	// Fast path: skip full pipeline if THIS unit already has an open trade
+	// for this symbol. We check TradeStore (unit-scoped) rather than
+	// QueryPositions (exchange-scoped) because multiple units share the
+	// same physical exchange account — one unit's position would block
+	// all siblings from trading that symbol.
+	if u.TradeStore != nil {
+		openTrades := u.TradeStore.Query(tradestore.Filter{
+			UnitID:   u.ID,
+			Symbol:   view.Symbol(),
+			OpenOnly: true,
+			Limit:    1,
+		})
+		if len(openTrades) > 0 {
+			return nil, nil
 		}
 	}
 
 	// Run strategies
 	signals := u.Pool.Compute(view)
+
+	// Filter signals by allowed strategies (from route config).
+	if len(u.RouteConfig.AllowedStrategies) > 0 {
+		allowed := make(map[string]bool, len(u.RouteConfig.AllowedStrategies))
+		for _, s := range u.RouteConfig.AllowedStrategies {
+			allowed[s] = true
+		}
+		filtered := signals[:0]
+		for _, sig := range signals {
+			if allowed[sig.Strategy] {
+				filtered = append(filtered, sig)
+			}
+		}
+		signals = filtered
+	}
 
 	// Build review context from current positions
 	review, portfolio, err := u.buildReviewContext(ctx)
@@ -240,6 +270,13 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 		return nil, fmt.Errorf("query balance: %w", err)
 	}
 
+	// Use BudgetEquity (from config initial_equity) if set,
+	// so each unit only trades within its configured budget.
+	equity := balance.Equity
+	if u.BudgetEquity > 0 {
+		equity = u.BudgetEquity
+	}
+
 	// Query historical stats from Oracle for better sizing
 	winRate, avgWin, avgLoss, samples := u.Oracle.StatsForSizer(view.Symbol(), agg.Direction)
 	if samples == 0 {
@@ -249,7 +286,7 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 	}
 
 	sizeReq := risk.BayesianSizeRequest{
-		AccountEquity: balance.Equity,
+		AccountEquity: equity,
 		Signal:        bestSignal(agg),
 		WinRate:       winRate,
 		AvgWin:        avgWin,
@@ -259,6 +296,17 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 	sized, err := u.Sizer.Size(sizeReq)
 	if err != nil {
 		return nil, fmt.Errorf("position sizing: %w", err)
+	}
+
+	// Apply leverage to position size. The sizer computes margin-based values:
+	//   Notional = equity * fraction  (e.g. 80 USDT margin)
+	//   Quantity = Notional / price   (margin-sized quantity)
+	// With leverage, the actual position is larger:
+	//   Leveraged quantity = Quantity * leverage (e.g. 80 * 20 / price)
+	// We keep Notional as margin for risk guard checks, but scale up Quantity
+	// for the actual order placed on the exchange.
+	if u.MaxLeverage > 1 {
+		sized.Quantity *= float64(u.MaxLeverage)
 	}
 
 	// Adjust SL/TP distances based on leverage.
@@ -273,6 +321,17 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 			"symbol", view.Symbol(), "direction", agg.Direction)
 		return nil, nil
 	}
+	// Derive ATR from actual stop distance set by the strategy.
+	// The strategy computes SL as entry ± atrDist*slMult, so dividing
+	// stopDistance back by slMult gives a reasonable ATR proxy.
+	// This avoids the previous fixed 1% estimate that was too large for
+	// short timeframes (1m/5m), causing the risk guard to reject valid signals.
+	stopDist := math.Abs(sig.Entry - sig.StopLoss)
+	estimatedATR := stopDist // conservative: treat stop distance itself as ATR
+	if estimatedATR <= 0 {
+		estimatedATR = sig.Entry * 0.005
+	}
+
 	orderReq := risk.OrderRequest{
 		Symbol:        view.Symbol(),
 		Action:        risk.ActionOpen,
@@ -282,8 +341,8 @@ func (u *TradingUnit) Evaluate(ctx context.Context, view strategy.MarketView) (*
 		Quantity:      sized.Quantity,
 		Notional:      sized.Notional,
 		Leverage:      u.MaxLeverage,
-		ATR:           sig.Entry * 0.01, // rough ATR estimate from entry
-		AccountEquity: balance.Equity,
+		ATR:           estimatedATR,
+		AccountEquity: equity,
 	}
 
 	// Risk check with adaptive guard
@@ -392,6 +451,12 @@ func (u *TradingUnit) buildReviewContext(ctx context.Context) (strategy.ReviewCo
 		return strategy.ReviewContext{}, risk.PortfolioSnapshot{}, err
 	}
 
+	// Use BudgetEquity if configured.
+	eqForCalc := balance.Equity
+	if u.BudgetEquity > 0 {
+		eqForCalc = u.BudgetEquity
+	}
+
 	riskPositions := make([]risk.Position, len(positions))
 	largestPct := 0.0
 	for i, p := range positions {
@@ -402,8 +467,8 @@ func (u *TradingUnit) buildReviewContext(ctx context.Context) (strategy.ReviewCo
 		}
 		notional := p.Quantity * markPrice
 		pct := 0.0
-		if balance.Equity > 0 {
-			pct = notional / balance.Equity * 100
+		if eqForCalc > 0 {
+			pct = notional / eqForCalc * 100
 		}
 		if pct > largestPct {
 			largestPct = pct
@@ -430,7 +495,7 @@ func (u *TradingUnit) buildReviewContext(ctx context.Context) (strategy.ReviewCo
 	}
 
 	portfolio := risk.PortfolioSnapshot{
-		Equity:    balance.Equity,
+		Equity:    eqForCalc,
 		Positions: riskPositions,
 	}
 

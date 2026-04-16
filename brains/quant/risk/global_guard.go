@@ -67,20 +67,26 @@ func (g *GlobalRiskGuard) Evaluate(req OrderRequest, snap GlobalSnapshot) Decisi
 		return deny("global", "total equity must be positive", false)
 	}
 
-	// Aggregate existing exposures
+	// Aggregate existing exposures (margin-equivalent).
+	// Position.Notional is qty*markPrice (leveraged). Divide by leverage
+	// to get margin usage, matching the margin-sized Notional from PositionSizer.
 	totalExposure := 0.0
 	longExposure := 0.0
 	shortExposure := 0.0
 	symbolExposure := make(map[string]float64)
 
 	for _, p := range snap.Positions {
-		totalExposure += p.Notional
-		symbolExposure[p.Symbol] += p.Notional
+		margin := p.Notional
+		if p.Leverage > 1 {
+			margin = p.Notional / float64(p.Leverage)
+		}
+		totalExposure += margin
+		symbolExposure[p.Symbol] += margin
 		switch p.Direction {
 		case strategy.DirectionLong:
-			longExposure += p.Notional
+			longExposure += margin
 		case strategy.DirectionShort:
-			shortExposure += p.Notional
+			shortExposure += margin
 		}
 	}
 

@@ -110,6 +110,7 @@ func main() {
 		switch ac.Exchange {
 		case "paper":
 			pe := exchange.NewPaperExchange(exchange.PaperConfig{
+				AccountID:     ac.ID,
 				InitialEquity: ac.InitialEquity,
 				SlippageBps:   ac.SlippageBps,
 				FeeBps:        ac.FeeBps,
@@ -205,6 +206,15 @@ func main() {
 				for id, pe := range paperExchanges {
 					if err := pe.RestoreState(ctx, id, paperStore, logger); err != nil {
 						logger.Warn("restore paper state failed (starting fresh)", "account", id, "err", err)
+					}
+					// Restore cumulative realized PnL from closed trade records.
+					if pgStore != nil {
+						stats := pgStore.Stats(tradestore.Filter{AccountID: id})
+						if stats.TotalPnL != 0 {
+							pe.RestoreCumulativePnL(stats.TotalPnL, 0)
+							logger.Info("restored cumulative realized PnL",
+								"account", id, "pnl", stats.TotalPnL, "trades", stats.TotalTrades)
+						}
 					}
 				}
 			}

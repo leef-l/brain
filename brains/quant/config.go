@@ -1,10 +1,16 @@
 package quant
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/leef-l/brain/brains/quant/risk"
 	"github.com/leef-l/brain/brains/quant/strategy"
+	"gopkg.in/yaml.v3"
 )
 
 // AccountConfig describes one trading account in the config file.
@@ -30,6 +36,9 @@ type AccountConfig struct {
 }
 
 // UnitConfig describes one trading unit in the config file.
+// Each unit can override the global Strategy/Risk config. When Strategy or Risk
+// is nil/zero, the global config is used. This allows one account to run
+// multiple units with different strategy parameters and timeframes.
 type UnitConfig struct {
 	ID          string   `json:"id" yaml:"id"`
 	AccountID   string   `json:"account_id" yaml:"account_id"`
@@ -37,6 +46,14 @@ type UnitConfig struct {
 	Timeframe   string   `json:"timeframe" yaml:"timeframe"`
 	MaxLeverage int      `json:"max_leverage" yaml:"max_leverage"`
 	Enabled     bool     `json:"enabled" yaml:"enabled"`
+
+	// Per-unit strategy override. When non-nil, this unit uses its own strategy
+	// parameters instead of the global StrategyConfig. This enables running
+	// different strategies on the same account (e.g. 1m scalping + 1H trend).
+	Strategy *StrategyConfig `json:"strategy,omitempty" yaml:"strategy,omitempty"`
+
+	// Per-unit risk override. When non-nil, this unit uses its own risk params.
+	Risk *RiskConfig `json:"risk,omitempty" yaml:"risk,omitempty"`
 }
 
 // StrategyConfig holds strategy weights, aggregator thresholds, and per-strategy tunable params.
@@ -48,6 +65,9 @@ type StrategyConfig struct {
 	// MinActiveStrategies requires at least N strategies to produce directional
 	// signals before the aggregator will output a trade. 0 = no minimum.
 	MinActiveStrategies int                          `json:"min_active_strategies" yaml:"min_active_strategies"`
+	// HighConfidenceBypass: 当单策略 confidence 超过此值时，绕过 MinActiveStrategies 限制。
+	// 0 = 不启用。推荐 0.85-0.95，防止错过强势行情。
+	HighConfidenceBypass float64                     `json:"high_confidence_bypass" yaml:"high_confidence_bypass"`
 	TrendFollower   strategy.TrendFollowerParams     `json:"trend_follower" yaml:"trend_follower"`
 	MeanReversion   strategy.MeanReversionParams     `json:"mean_reversion" yaml:"mean_reversion"`
 	BreakoutMomentum strategy.BreakoutMomentumParams `json:"breakout_momentum" yaml:"breakout_momentum"`
@@ -123,6 +143,46 @@ func DefaultSignalExitConfig() SignalExitConfig {
 	}
 }
 
+// TrailingStopConfig controls trailing stop-loss behavior.
+// When price moves favorably past the activation threshold, SL follows
+// the peak price at a configurable callback distance, locking in profits.
+type TrailingStopConfig struct {
+	// Enabled turns on trailing stop. Default: false.
+	Enabled bool `json:"enabled" yaml:"enabled"`
+
+	// ActivationPct: activate trailing stop when unrealized profit reaches
+	// this percentage of the TP distance. E.g. 0.5 = 50% of the way to TP.
+	// Default: 0.5.
+	ActivationPct float64 `json:"activation_pct" yaml:"activation_pct"`
+
+	// CallbackPct: once activated, SL trails the peak price at this percentage
+	// distance. E.g. 0.003 = 0.3% below peak (for longs).
+	// Default: 0.003.
+	CallbackPct float64 `json:"callback_pct" yaml:"callback_pct"`
+
+	// StepPct: minimum improvement required to update SL (avoids flooding
+	// the exchange with tiny updates). E.g. 0.001 = only move SL when the
+	// new value is at least 0.1% better than current.
+	// Default: 0.001.
+	StepPct float64 `json:"step_pct" yaml:"step_pct"`
+
+	// MaxLossWithoutTrailing: 当仓位未被移动止损激活（即价格从未向有利方向
+	// 移动到激活线）且浮动亏损超过此金额（USDT）时，强制平仓止损。
+	// 防止没有移动止损保护的仓位持续亏损。支持小数，如 0.5 = 0.5 USDT。
+	// 0 = 不启用。Default: 0.
+	MaxLossWithoutTrailing float64 `json:"max_loss_without_trailing" yaml:"max_loss_without_trailing"`
+}
+
+// DefaultTrailingStopConfig returns conservative defaults.
+func DefaultTrailingStopConfig() TrailingStopConfig {
+	return TrailingStopConfig{
+		Enabled:       false,
+		ActivationPct: 0.5,
+		CallbackPct:   0.003,
+		StepPct:       0.001,
+	}
+}
+
 // WebUIConfig configures the embedded Web dashboard.
 type WebUIConfig struct {
 	// Enabled turns on the HTTP/WebSocket dashboard. Default: false.
@@ -140,8 +200,37 @@ type FullConfig struct {
 	Risk       RiskConfig        `json:"risk" yaml:"risk"`
 	AutoRisk   AutoRiskConfig    `json:"auto_risk" yaml:"auto_risk"`
 	GlobalRisk risk.GlobalRiskConfig `json:"global_risk" yaml:"global_risk"`
-	SignalExit SignalExitConfig  `json:"signal_exit" yaml:"signal_exit"`
-	WebUI      WebUIConfig       `json:"webui" yaml:"webui"`
+	SignalExit    SignalExitConfig    `json:"signal_exit" yaml:"signal_exit"`
+	TrailingStop TrailingStopConfig `json:"trailing_stop" yaml:"trailing_stop"`
+	WebUI        WebUIConfig        `json:"webui" yaml:"webui"`
+
+	// ConfigPath is the file path from which this config was loaded.
+	// Not serialized — set at load time for SaveConfig to know where to write.
+	ConfigPath string `json:"-" yaml:"-"`
+}
+
+// SaveConfig writes the config back to the file it was loaded from.
+// Format is determined by file extension (.json or .yaml).
+func (fc FullConfig) SaveConfig() error {
+	if fc.ConfigPath == "" {
+		return fmt.Errorf("no config path set (using defaults, cannot save)")
+	}
+	ext := strings.ToLower(filepath.Ext(fc.ConfigPath))
+	var data []byte
+	var err error
+	switch ext {
+	case ".json":
+		data, err = json.MarshalIndent(fc, "", "  ")
+	default:
+		data, err = yaml.Marshal(fc)
+	}
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(fc.ConfigPath, data, 0644); err != nil {
+		return fmt.Errorf("write config %s: %w", fc.ConfigPath, err)
+	}
+	return nil
 }
 
 // DefaultFullConfig returns a minimal working configuration with a paper account.
@@ -200,22 +289,39 @@ func (sc StrategyConfig) BuildAggregator(timeframe string) *strategy.RegimeAware
 	if sc.MinActiveStrategies > 0 {
 		base.MinActiveStrategies = sc.MinActiveStrategies
 	}
+	if sc.HighConfidenceBypass > 0 {
+		base.HighConfidenceBypass = sc.HighConfidenceBypass
+	}
 
 	// Adaptive threshold: short timeframes produce weaker, less correlated
 	// signals across strategies. We scale thresholds down slightly but not
 	// aggressively — too-low thresholds cause noisy single-strategy trades.
+	//
+	// MinActiveStrategies is also reduced for short TFs because 1m/5m
+	// signals are noisier and rarely align across 2+ strategies. Requiring
+	// multi-strategy consensus at 1m effectively blocks all trades.
+	// Short timeframes: lower thresholds + reduce MinActiveStrategies for
+	// high-frequency trading. 1m signals are weak individually so we need
+	// lower barriers. Risk is managed by tight trailing stops, not by
+	// blocking entries.
 	switch timeframe {
 	case "1m":
-		base.LongThreshold *= 0.80
-		base.ShortThreshold *= 0.80
-		base.DominanceFactor = max(base.DominanceFactor*0.9, 1.2)
+		base.LongThreshold *= 0.70   // 1m HFT: low barrier, rely on trailing stop
+		base.ShortThreshold *= 0.70
+		base.MinActiveStrategies = 1  // single strategy OK for 1m
+		if base.HighConfidenceBypass > 0 {
+			base.HighConfidenceBypass *= 0.80
+		}
 	case "5m":
 		base.LongThreshold *= 0.80
 		base.ShortThreshold *= 0.80
-		base.DominanceFactor = max(base.DominanceFactor*0.85, 1.15)
+		base.MinActiveStrategies = 1
+		if base.HighConfidenceBypass > 0 {
+			base.HighConfidenceBypass *= 0.85
+		}
 	case "15m":
-		base.LongThreshold *= 0.85
-		base.ShortThreshold *= 0.85
+		base.LongThreshold *= 0.90
+		base.ShortThreshold *= 0.90
 	}
 	// 1H, 4H, 1D keep the configured threshold as-is.
 

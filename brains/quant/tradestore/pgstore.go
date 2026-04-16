@@ -81,6 +81,7 @@ DO $$ BEGIN
     ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS atr DOUBLE PRECISION NOT NULL DEFAULT 0;
     ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION NOT NULL DEFAULT 0;
     ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS strategy VARCHAR(32) NOT NULL DEFAULT '';
+    ALTER TABLE trade_records ADD COLUMN IF NOT EXISTS orig_stop_loss DOUBLE PRECISION NOT NULL DEFAULT 0;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 `
@@ -96,8 +97,9 @@ func (s *PGStore) Save(ctx context.Context, record TradeRecord) error {
 		INSERT INTO trade_records
 			(id, account_id, unit_id, symbol, direction, entry_price, exit_price,
 			 quantity, pnl, pnl_pct, entry_time, exit_time, reason, mae, mfe,
-			 leverage, stop_loss, take_profit, atr, confidence, strategy)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+			 leverage, stop_loss, take_profit, atr, confidence, strategy,
+			 orig_stop_loss)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 		ON CONFLICT (id) DO UPDATE SET
 			exit_price = EXCLUDED.exit_price,
 			pnl        = EXCLUDED.pnl,
@@ -108,6 +110,11 @@ func (s *PGStore) Save(ctx context.Context, record TradeRecord) error {
 			mfe        = GREATEST(trade_records.mfe, EXCLUDED.mfe)`
 
 	exitTime := nilTime(record.ExitTime)
+	// If OrigStopLoss not set, default to StopLoss (backwards compat).
+	origSL := record.OrigStopLoss
+	if origSL == 0 {
+		origSL = record.StopLoss
+	}
 	ctx, cancel := context.WithTimeout(ctx, pgQueryTimeout)
 	defer cancel()
 	_, err := s.pool.Exec(ctx, q,
@@ -132,6 +139,7 @@ func (s *PGStore) Save(ctx context.Context, record TradeRecord) error {
 		record.ATR,
 		record.Confidence,
 		record.Strategy,
+		origSL,
 	)
 	return err
 }
@@ -154,6 +162,16 @@ func (s *PGStore) Update(ctx context.Context, id string, update TradeUpdate) err
 	return nil
 }
 
+// UpdateSLTP updates the stop-loss and take-profit on an open trade record.
+// Used by the trailing stop mechanism.
+func (s *PGStore) UpdateSLTP(ctx context.Context, id string, sl, tp float64) error {
+	const q = `UPDATE trade_records SET stop_loss = $2, take_profit = $3 WHERE id = $1`
+	ctx, cancel := context.WithTimeout(ctx, pgQueryTimeout)
+	defer cancel()
+	_, err := s.pool.Exec(ctx, q, id, sl, tp)
+	return err
+}
+
 // UpdateMAEMFE atomically updates MAE/MFE if new values are larger.
 func (s *PGStore) UpdateMAEMFE(ctx context.Context, id string, mae, mfe float64) error {
 	const q = `UPDATE trade_records
@@ -171,7 +189,8 @@ func (s *PGStore) Query(f Filter) []TradeRecord {
 	             quantity, pnl, pnl_pct, entry_time, COALESCE(exit_time, '0001-01-01'), reason,
 	             COALESCE(mae, 0), COALESCE(mfe, 0),
 	             COALESCE(leverage, 0), COALESCE(stop_loss, 0), COALESCE(take_profit, 0),
-	             COALESCE(atr, 0), COALESCE(confidence, 0), COALESCE(strategy, '')
+	             COALESCE(atr, 0), COALESCE(confidence, 0), COALESCE(strategy, ''),
+	             COALESCE(orig_stop_loss, 0)
 	      FROM trade_records WHERE 1=1`
 	args := []any{}
 	idx := 1
@@ -201,6 +220,9 @@ func (s *PGStore) Query(f Filter) []TradeRecord {
 		args = append(args, f.Since)
 		idx++
 	}
+	if f.OpenOnly {
+		q += " AND exit_price = 0"
+	}
 
 	q += " ORDER BY entry_time DESC"
 
@@ -229,6 +251,7 @@ func (s *PGStore) Query(f Filter) []TradeRecord {
 			&r.MAE, &r.MFE,
 			&r.Leverage, &r.StopLoss, &r.TakeProfit,
 			&r.ATR, &r.Confidence, &r.Strategy,
+			&r.OrigStopLoss,
 		); err != nil {
 			continue
 		}
@@ -266,7 +289,8 @@ func (s *PGStore) LoadAll(ctx context.Context) ([]TradeRecord, error) {
 		       quantity, pnl, pnl_pct, entry_time, COALESCE(exit_time, '0001-01-01'), reason,
 		       COALESCE(mae, 0), COALESCE(mfe, 0),
 		       COALESCE(leverage, 0), COALESCE(stop_loss, 0), COALESCE(take_profit, 0),
-		       COALESCE(atr, 0), COALESCE(confidence, 0), COALESCE(strategy, '')
+		       COALESCE(atr, 0), COALESCE(confidence, 0), COALESCE(strategy, ''),
+		       COALESCE(orig_stop_loss, 0)
 		FROM trade_records ORDER BY entry_time`)
 	if err != nil {
 		return nil, err
@@ -284,6 +308,7 @@ func (s *PGStore) LoadAll(ctx context.Context) ([]TradeRecord, error) {
 			&r.MAE, &r.MFE,
 			&r.Leverage, &r.StopLoss, &r.TakeProfit,
 			&r.ATR, &r.Confidence, &r.Strategy,
+			&r.OrigStopLoss,
 		); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}

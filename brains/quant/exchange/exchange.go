@@ -97,6 +97,11 @@ type Exchange interface {
 	// Name returns the exchange identifier (e.g. "okx", "ibkr", "paper").
 	Name() string
 
+	// CredentialKey returns an opaque key that identifies the physical account.
+	// Exchanges sharing the same API key return the same value, allowing the
+	// system to detect when multiple logical accounts map to one physical account.
+	CredentialKey() string
+
 	// Capabilities returns what this exchange supports.
 	Capabilities() Capabilities
 
@@ -120,6 +125,13 @@ type Exchange interface {
 // to trigger stop-loss / take-profit on simulated orders (e.g. PaperExchange).
 type TickFeeder interface {
 	ProcessPriceTick(ctx context.Context, symbol string, price float64) ([]OrderResult, error)
+}
+
+// StopLossUpdater is an optional interface for exchanges that support
+// updating the stop-loss trigger price on an existing position.
+// Used by the trailing stop mechanism to move SL in the favorable direction.
+type StopLossUpdater interface {
+	UpdateStopLoss(ctx context.Context, symbol, posSide string, newSL float64) error
 }
 
 // BulkCanceller is an optional interface for cancelling all open orders for a symbol.

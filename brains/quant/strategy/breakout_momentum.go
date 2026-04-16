@@ -7,16 +7,26 @@ import (
 
 // BreakoutMomentumParams holds tunable parameters for BreakoutMomentum.
 type BreakoutMomentumParams struct {
-	VolumeRatioThreshold float64 `json:"volume_ratio_threshold" yaml:"volume_ratio_threshold"` // volume expansion threshold (default 1.3)
-	MomentumThreshold    float64 `json:"momentum_threshold" yaml:"momentum_threshold"`         // 10-bar momentum for fallback (default 0.008)
-	StrongMomentum       float64 `json:"strong_momentum" yaml:"strong_momentum"`               // momentum alone trigger (default 0.02)
+	VolumeRatioThreshold float64 `json:"volume_ratio_threshold" yaml:"volume_ratio_threshold"` // 量能扩张阈值 (default 1.3)
+	MomentumThreshold    float64 `json:"momentum_threshold" yaml:"momentum_threshold"`         // 动量阈值 (default 0.008)
+	StrongMomentum       float64 `json:"strong_momentum" yaml:"strong_momentum"`               // 强动量独立触发 (default 0.02)
+	BaseConfidence       float64 `json:"base_confidence" yaml:"base_confidence"`               // 基础置信度 (default 0.45)
+	SignalBoost          float64 `json:"signal_boost" yaml:"signal_boost"`                     // 方向确认加分 (default 0.30)
+	MomentumConfirmBoost float64 `json:"momentum_confirm_boost" yaml:"momentum_confirm_boost"` // 强动量确认乘数 (default 1.15)
+	HTFBoost             float64 `json:"htf_boost" yaml:"htf_boost"`                          // 高TF动量确认乘数 (default 1.15)
+	SLFallbackPct        float64 `json:"sl_fallback_pct" yaml:"sl_fallback_pct"`               // ATR无效时回退 (default 0.003)
 }
 
 func DefaultBreakoutMomentumParams() BreakoutMomentumParams {
 	return BreakoutMomentumParams{
-		VolumeRatioThreshold: 1.3,
-		MomentumThreshold:    0.008,
-		StrongMomentum:       0.02,
+		VolumeRatioThreshold: 1.2,
+		MomentumThreshold:    0.006,
+		StrongMomentum:       0.015,
+		BaseConfidence:       0.50,
+		SignalBoost:          0.30,
+		MomentumConfirmBoost: 1.15,
+		HTFBoost:             1.15,
+		SLFallbackPct:        0.003,
 	}
 }
 
@@ -28,21 +38,20 @@ func NewBreakoutMomentum() Strategy { return BreakoutMomentum{Params: DefaultBre
 
 func NewBreakoutMomentumWithParams(p BreakoutMomentumParams) Strategy {
 	d := DefaultBreakoutMomentumParams()
-	if p.VolumeRatioThreshold <= 0 {
-		p.VolumeRatioThreshold = d.VolumeRatioThreshold
-	}
-	if p.MomentumThreshold <= 0 {
-		p.MomentumThreshold = d.MomentumThreshold
-	}
-	if p.StrongMomentum <= 0 {
-		p.StrongMomentum = d.StrongMomentum
-	}
+	if p.VolumeRatioThreshold <= 0 { p.VolumeRatioThreshold = d.VolumeRatioThreshold }
+	if p.MomentumThreshold <= 0 { p.MomentumThreshold = d.MomentumThreshold }
+	if p.StrongMomentum <= 0 { p.StrongMomentum = d.StrongMomentum }
+	if p.BaseConfidence <= 0 { p.BaseConfidence = d.BaseConfidence }
+	if p.SignalBoost <= 0 { p.SignalBoost = d.SignalBoost }
+	if p.MomentumConfirmBoost <= 0 { p.MomentumConfirmBoost = d.MomentumConfirmBoost }
+	if p.HTFBoost <= 0 { p.HTFBoost = d.HTFBoost }
+	if p.SLFallbackPct <= 0 { p.SLFallbackPct = d.SLFallbackPct }
 	return BreakoutMomentum{Params: p}
 }
 
 func (BreakoutMomentum) Name() string { return "BreakoutMomentum" }
 
-func (BreakoutMomentum) Timeframes() []string { return []string{"1H", "4H"} }
+func (BreakoutMomentum) Timeframes() []string { return []string{"1m", "5m", "15m", "1H", "4H"} }
 
 func (b BreakoutMomentum) Compute(view MarketView) Signal {
 	if view.HasFeatureView() {
@@ -58,8 +67,8 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	f := view.Feature()
 	tf := view.Timeframe()
 
-	// Guard: feature vector not yet populated.
-	if f.ATRRatio(tf) == 0 && f.VolumeRatio(tf) == 0 {
+	// Guard: only bail when there is genuinely no price data.
+	if f.CurrentPrice() <= 0 {
 		return Signal{Strategy: "BreakoutMomentum", Direction: DirectionHold, Reason: "feature vector not ready", Timestamp: time.Now().UTC()}
 	}
 
@@ -129,13 +138,13 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 		}
 	}
 
-	confidence := 0.45
+	confidence := b.Params.BaseConfidence
 	reason := ""
 	direction := DirectionHold
 
 	if long {
 		direction = DirectionLong
-		confidence += 0.30
+		confidence += b.Params.SignalBoost
 		if breakHigh > 0 {
 			reason = fmt.Sprintf("breakout above %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakHigh, volRatio, obvSl)
 		} else {
@@ -143,7 +152,7 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 		}
 	} else {
 		direction = DirectionShort
-		confidence += 0.30
+		confidence += b.Params.SignalBoost
 		if breakLow > 0 {
 			reason = fmt.Sprintf("breakdown below %.4f, vol_ratio=%.2f, obv_slope=%.4f", breakLow, volRatio, obvSl)
 		} else {
@@ -152,27 +161,27 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 	}
 
 	// Strong momentum confirmation
-	if (direction == DirectionLong && momentum10 > 0.02) || (direction == DirectionShort && momentum10 < -0.02) {
-		confidence *= 1.15
+	if (direction == DirectionLong && momentum10 > b.Params.StrongMomentum) || (direction == DirectionShort && momentum10 < -b.Params.StrongMomentum) {
+		confidence *= b.Params.MomentumConfirmBoost
 		reason += fmt.Sprintf("; momentum10=%.4f confirms", momentum10)
 	}
 
-	// Higher TF confirmation
-	htf := "4H"
-	htfMom := f.Momentum(htf, 10)
-	if (direction == DirectionLong && htfMom > 0) || (direction == DirectionShort && htfMom < 0) {
-		confidence *= 1.2
-		reason += "; 4H momentum aligned"
+	// Higher TF confirmation (dynamic)
+	htf := higherTF(tf)
+	if htf != tf {
+		htfMom := f.Momentum(htf, 10)
+		if (direction == DirectionLong && htfMom > 0) || (direction == DirectionShort && htfMom < 0) {
+			confidence *= b.Params.HTFBoost
+			reason += "; " + htf + " momentum aligned"
+		}
 	}
 
 	confidence = clamp(confidence, 0, 1)
-	// Use higher-TF ATR for stop/take to avoid 1m noise whipsaws.
-	// SL = 1.5× ATR, TP = 2.5× ATR → 1:1.7 盈亏比.
-	// 1m 短线快进快出，突破动量抓短期冲击波.
 	slATR := bestATRRatio(f, tf)
+	slMult, tpMult := SLTPMultipliers(tf)
 	atrDist := slATR * priceNow
 	if atrDist <= 0 {
-		atrDist = priceNow * 0.006
+		atrDist = priceNow * b.Params.SLFallbackPct
 	}
 
 	signal := Signal{
@@ -184,19 +193,19 @@ func (b BreakoutMomentum) computeFromFeatures(view MarketView) Signal {
 		Timestamp:  time.Now().UTC(),
 	}
 	if direction == DirectionLong {
-		sl := breakHigh - atrDist*1.5
+		sl := breakHigh - atrDist*slMult
 		if breakHigh <= 0 {
-			sl = priceNow - atrDist*1.5
+			sl = priceNow - atrDist*slMult
 		}
 		signal.StopLoss = sl
-		signal.TakeProfit = priceNow + atrDist*2.5
+		signal.TakeProfit = priceNow + atrDist*tpMult
 	} else {
-		sl := breakLow + atrDist*1.5
+		sl := breakLow + atrDist*slMult
 		if breakLow <= 0 {
-			sl = priceNow + atrDist*1.5
+			sl = priceNow + atrDist*slMult
 		}
 		signal.StopLoss = sl
-		signal.TakeProfit = priceNow - atrDist*2.5
+		signal.TakeProfit = priceNow - atrDist*tpMult
 	}
 	return signal
 }

@@ -6,7 +6,55 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
+
+// snowflakeGen generates Twitter-style snowflake IDs.
+// Layout: 41-bit timestamp (ms) | 10-bit machine/account | 12-bit sequence.
+// Epoch: 2024-01-01 00:00:00 UTC.
+type snowflakeGen struct {
+	machineID int64
+	sequence  atomic.Int64
+	lastMs    atomic.Int64
+}
+
+const snowflakeEpoch = 1704067200000 // 2024-01-01 UTC in millis
+
+func newSnowflakeGen(machineID int64) *snowflakeGen {
+	return &snowflakeGen{machineID: machineID & 0x3FF} // 10 bits
+}
+
+func (g *snowflakeGen) Next() int64 {
+	now := time.Now().UnixMilli() - snowflakeEpoch
+	last := g.lastMs.Load()
+	if now == last {
+		seq := g.sequence.Add(1) & 0xFFF // 12 bits
+		if seq == 0 {
+			// Sequence exhausted for this ms, spin until next ms.
+			for now <= last {
+				now = time.Now().UnixMilli() - snowflakeEpoch
+			}
+		}
+		g.lastMs.Store(now)
+		return (now << 22) | (g.machineID << 12) | seq
+	}
+	g.lastMs.Store(now)
+	g.sequence.Store(0)
+	return (now << 22) | (g.machineID << 12)
+}
+
+// hashAccountID produces a stable 10-bit machine ID from account name.
+func hashAccountID(accountID string) int64 {
+	var h int64
+	for _, c := range accountID {
+		h = h*31 + int64(c)
+	}
+	if h < 0 {
+		h = -h
+	}
+	return h & 0x3FF
+}
 
 // OrderRecord stores the intent plus the mutable execution state.
 type OrderRecord struct {
@@ -36,21 +84,47 @@ type Position struct {
 
 // StateSnapshot is a read-only view of the in-memory execution state.
 type StateSnapshot struct {
-	Orders    []OrderRecord `json:"orders"`
-	Positions []Position    `json:"positions"`
+	Orders                []OrderRecord `json:"orders"`
+	Positions             []Position    `json:"positions"`
+	CumulativeRealizedPnL float64       `json:"cumulative_realized_pnl"`
+	CumulativeFees        float64       `json:"cumulative_fees"`
 }
 
 // MemoryState keeps order and position state in memory.
 type MemoryState struct {
 	mu        sync.RWMutex
-	nextID    int64
+	idPrefix  string // account-specific prefix for human-readable order IDs
+	nextID    int64  // legacy counter (only used for SetNextID/NextID persistence compat)
+	snowflake *snowflakeGen // snowflake ID generator for globally unique order IDs
 	orders    map[string]*OrderRecord
 	clientOrd map[string]string
 	positions map[string]*Position
+
+	// Cumulative realized PnL across all closed positions. When a position
+	// is fully closed, its RealizedPnL is added here before deletion.
+	// This ensures QueryBalance reflects profits/losses from past trades.
+	cumulativeRealizedPnL float64
+	// Cumulative fees paid across all fills.
+	cumulativeFees float64
 }
 
+// NewMemoryState creates a new MemoryState with default snowflake generator.
 func NewMemoryState() *MemoryState {
 	return &MemoryState{
+		snowflake: newSnowflakeGen(0),
+		orders:    make(map[string]*OrderRecord),
+		clientOrd: make(map[string]string),
+		positions: make(map[string]*Position),
+	}
+}
+
+// NewMemoryStateWithPrefix creates a MemoryState with an account-specific ID
+// prefix and a snowflake generator seeded from the account ID. This ensures
+// order IDs are globally unique across multiple paper exchanges.
+func NewMemoryStateWithPrefix(prefix string) *MemoryState {
+	return &MemoryState{
+		idPrefix:  prefix,
+		snowflake: newSnowflakeGen(hashAccountID(prefix)),
 		orders:    make(map[string]*OrderRecord),
 		clientOrd: make(map[string]string),
 		positions: make(map[string]*Position),
@@ -84,8 +158,10 @@ func (s *MemoryState) Snapshot() StateSnapshot {
 	})
 
 	return StateSnapshot{
-		Orders:    orders,
-		Positions: positions,
+		Orders:                orders,
+		Positions:             positions,
+		CumulativeRealizedPnL: s.cumulativeRealizedPnL,
+		CumulativeFees:        s.cumulativeFees,
 	}
 }
 
@@ -175,6 +251,51 @@ func (s *MemoryState) ListOpenOrders(symbol string) []OrderRecord {
 	return orders
 }
 
+// UpdateStopLossPrice finds the open stop_loss order for a symbol/posSide
+// and updates its trigger price. Returns true if an order was updated.
+// Used by the trailing stop mechanism.
+func (s *MemoryState) UpdateStopLossPrice(now int64, symbol, posSide string, newSL float64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, record := range s.orders {
+		if record.Status != OrderStatusOpen && record.Status != OrderStatusAccepted {
+			continue
+		}
+		if record.Intent.OrderType != OrderTypeStopLoss {
+			continue
+		}
+		if !strings.EqualFold(record.Intent.Symbol, symbol) || !strings.EqualFold(record.Intent.PosSide, posSide) {
+			continue
+		}
+		record.Intent.StopLoss = strconv.FormatFloat(newSL, 'f', -1, 64)
+		record.UpdatedAt = now
+		return true
+	}
+	return false
+}
+
+// UpdateTakeProfitPrice finds the open take_profit order for a symbol/posSide
+// and updates its trigger price. Used by trailing take-profit.
+func (s *MemoryState) UpdateTakeProfitPrice(now int64, symbol, posSide string, newTP float64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, record := range s.orders {
+		if record.Status != OrderStatusOpen && record.Status != OrderStatusAccepted {
+			continue
+		}
+		if record.Intent.OrderType != OrderTypeTakeProfit {
+			continue
+		}
+		if !strings.EqualFold(record.Intent.Symbol, symbol) || !strings.EqualFold(record.Intent.PosSide, posSide) {
+			continue
+		}
+		record.Intent.TakeProfit = strconv.FormatFloat(newTP, 'f', -1, 64)
+		record.UpdatedAt = now
+		return true
+	}
+	return false
+}
+
 func (s *MemoryState) CancelOrder(now int64, orderID string) (OrderRecord, error) {
 	return s.UpdateOrder(now, orderID, func(record *OrderRecord) error {
 		if record.Status == OrderStatusFilled || record.Status == OrderStatusCancelled || record.Status == OrderStatusRejected {
@@ -213,10 +334,13 @@ func (s *MemoryState) ApplyFill(now int64, intent OrderIntent, fillPrice float64
 	pos.AvgPrice = newAvg
 	pos.RealizedPnL += realized
 	pos.UpdatedAt = now
+	s.cumulativeFees += fee
 
 	if pos.Quantity == 0 {
+		// Preserve realized PnL before deleting the position.
+		s.cumulativeRealizedPnL += pos.RealizedPnL
 		delete(s.positions, key)
-		return Position{Symbol: intent.Symbol, PosSide: intent.PosSide, UpdatedAt: now}, nil
+		return Position{Symbol: intent.Symbol, PosSide: intent.PosSide, RealizedPnL: pos.RealizedPnL, UpdatedAt: now}, nil
 	}
 
 	return *clonePosition(pos), nil
@@ -247,8 +371,12 @@ func (s *MemoryState) markAcceptedLocked(now int64, orderID string) (OrderRecord
 }
 
 func (s *MemoryState) nextOrderIDLocked() string {
-	s.nextID++
-	return fmt.Sprintf("paper-%d", s.nextID)
+	id := s.snowflake.Next()
+	s.nextID++ // keep legacy counter in sync for NextID() persistence
+	if s.idPrefix != "" {
+		return fmt.Sprintf("p-%s-%d", s.idPrefix, id)
+	}
+	return fmt.Sprintf("p-%d", id)
 }
 
 // UpdateMarkPrice updates a position's mark price, unrealized PnL, and margin.
@@ -342,6 +470,20 @@ func (s *MemoryState) NextID() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.nextID
+}
+
+// SetCumulativeRealizedPnL sets the cumulative realized PnL (for restoration from trade history).
+func (s *MemoryState) SetCumulativeRealizedPnL(pnl float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cumulativeRealizedPnL = pnl
+}
+
+// SetCumulativeFees sets the cumulative fees (for restoration from trade history).
+func (s *MemoryState) SetCumulativeFees(fees float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cumulativeFees = fees
 }
 
 func positionKey(symbol, posSide string) string {

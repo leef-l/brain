@@ -243,12 +243,14 @@ func TestAdaptiveGuardExtremeVol(t *testing.T) {
 	ag := DefaultAdaptiveGuard()
 	view := fakeMarketView{fv: &fakeFeatureView{volPercentile: 0.95}}
 
-	// MaxConcurrentPositions = 5 * 0.4 = 2
+	// MaxConcurrentPositions = 10 * 0.4 = 4
 	portfolio := PortfolioSnapshot{
 		Equity: 10000,
 		Positions: []Position{
 			{Symbol: "BTC-USDT-SWAP", Direction: strategy.DirectionLong, Notional: 100},
 			{Symbol: "ETH-USDT-SWAP", Direction: strategy.DirectionShort, Notional: 100},
+			{Symbol: "DOGE-USDT-SWAP", Direction: strategy.DirectionLong, Notional: 100},
+			{Symbol: "XRP-USDT-SWAP", Direction: strategy.DirectionShort, Notional: 100},
 		},
 	}
 	req := OrderRequest{

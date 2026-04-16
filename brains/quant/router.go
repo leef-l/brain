@@ -3,6 +3,7 @@ package quant
 import (
 	"context"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/leef-l/brain/brains/quant/adapter"
@@ -170,6 +171,13 @@ func (r *AccountRouter) dispatchToUnit(
 		return dr
 	}
 
+	// Derive ATR from actual stop distance (same logic as trading_unit.go).
+	routeStopDist := math.Abs(sig.Entry - sig.StopLoss)
+	routeATR := routeStopDist
+	if routeATR <= 0 {
+		routeATR = sig.Entry * 0.005
+	}
+
 	// Build risk order request
 	orderReq := risk.OrderRequest{
 		Symbol:        view.Symbol(),
@@ -180,7 +188,7 @@ func (r *AccountRouter) dispatchToUnit(
 		Quantity:      sized.Quantity,
 		Notional:      sized.Notional,
 		Leverage:      unit.MaxLeverage,
-		ATR:           sig.Entry * 0.01,
+		ATR:           routeATR,
 		AccountEquity: balance.Equity,
 	}
 

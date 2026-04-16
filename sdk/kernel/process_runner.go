@@ -546,23 +546,32 @@ var _ agent.RPCAgent = (*pipeAgent)(nil)
 var _ BrainRunner = (*ProcessRunner)(nil)
 var _ BrainRunner = (*StdioRunner)(nil)
 
-// openSidecarLog returns a writer for sidecar stderr output. Logs go to
-// ~/.brain/logs/<kind>.log. Falls back to os.Stderr if the log file cannot
-// be created.
+// openSidecarLog returns a writer for sidecar stderr output. Logs are
+// organized by date: ~/.brain/logs/2026-04-16/<kind>.log. A symlink
+// ~/.brain/logs/<kind>.log always points to today's file for convenience.
+// Falls back to os.Stderr if the log directory cannot be created.
 func openSidecarLog(kind agent.Kind) (io.Writer, io.Closer) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return os.Stderr, nil
 	}
-	logDir := fmt.Sprintf("%s/.brain/logs", home)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	baseDir := filepath.Join(home, ".brain", "logs")
+	dateStr := time.Now().Format("2006-01-02")
+	dayDir := filepath.Join(baseDir, dateStr)
+	if err := os.MkdirAll(dayDir, 0755); err != nil {
 		return os.Stderr, nil
 	}
-	logPath := fmt.Sprintf("%s/%s.log", logDir, kind)
+	logPath := filepath.Join(dayDir, fmt.Sprintf("%s.log", kind))
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return os.Stderr, nil
 	}
+
+	// Update convenience symlink: ~/.brain/logs/<kind>.log → today's file
+	symlink := filepath.Join(baseDir, fmt.Sprintf("%s.log", kind))
+	_ = os.Remove(symlink)
+	_ = os.Symlink(logPath, symlink)
+
 	return f, f
 }
 

@@ -45,7 +45,7 @@ func Main() {
 	}
 
 	cfg := loadConfig(logger)
-	accounts, qb, paperSaver, pgStore := buildQuantBrain(cfg, logger)
+	accounts, qb, paperSaver, pgStore, wsManager := buildQuantBrain(cfg, logger)
 
 	handler := NewHandler(qb, accounts, logger)
 
@@ -59,6 +59,13 @@ func Main() {
 		logger.Warn("quant brain start", "err", err)
 	}
 
+	// Start OKX private WebSocket for real-time order/position notifications.
+	if wsManager != nil {
+		if err := wsManager.StartAll(ctx); err != nil {
+			logger.Warn("OKX private WS start", "err", err)
+		}
+	}
+
 	// Start periodic paper state saver (every 30s).
 	if paperSaver != nil {
 		go paperSaver.Run(ctx, 30*time.Second)
@@ -70,12 +77,19 @@ func Main() {
 		if addr == "" {
 			addr = ":8380"
 		}
+		// Build account config map for WebUI (initial equity, etc.)
+		acConfigs := make(map[string]quant.AccountConfig, len(cfg.Accounts))
+		for _, ac := range cfg.Accounts {
+			acConfigs[ac.ID] = ac
+		}
 		webServer := webui.NewServer(webui.ServerConfig{
-			Addr:     addr,
-			QB:       qb,
-			Accounts: accounts,
-			PGStore:  pgStore,
-			Logger:   logger,
+			Addr:           addr,
+			QB:             qb,
+			Accounts:       accounts,
+			AccountConfigs: acConfigs,
+			PGStore:        pgStore,
+			FullConfig:     &cfg,
+			Logger:         logger,
 		})
 		go webServer.Start(ctx)
 	}
@@ -87,6 +101,11 @@ func Main() {
 	// sidecar.Run returned — stop quant brain first to prevent new trades.
 	cancel()
 	qb.Stop(context.Background())
+
+	// Stop OKX private WebSocket connections.
+	if wsManager != nil {
+		wsManager.StopAll()
+	}
 
 	// Then save paper state (no concurrent writes now).
 	if paperSaver != nil {
@@ -127,6 +146,7 @@ func loadConfig(logger *slog.Logger) quant.FullConfig {
 		os.Exit(1)
 	}
 
+	cfg.ConfigPath = configPath
 	logger.Info("config loaded", "path", configPath,
 		"accounts", len(cfg.Accounts), "units", len(cfg.Units))
 	return cfg
@@ -169,7 +189,7 @@ func (s *paperStateSaver) SaveAll() {
 // buildQuantBrain constructs accounts and QuantBrain from config.
 // Market data comes from the Data sidecar via RemoteBufferManager (wired
 // later in SetKernelCaller); a placeholder empty BufferManager is used here.
-func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*quant.Account, *quant.QuantBrain, *paperStateSaver, *tradestore.PGStore) {
+func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*quant.Account, *quant.QuantBrain, *paperStateSaver, *tradestore.PGStore, *exchange.PrivateWSManager) {
 	ctx := context.Background()
 
 	// Build accounts — track paper exchanges for PG persistence.
@@ -180,6 +200,7 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		switch ac.Exchange {
 		case "paper":
 			pe := exchange.NewPaperExchange(exchange.PaperConfig{
+				AccountID:     ac.ID,
 				InitialEquity: ac.InitialEquity,
 				SlippageBps:   ac.SlippageBps,
 				FeeBps:        ac.FeeBps,
@@ -187,13 +208,20 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			ex = pe
 			paperExchanges[ac.ID] = pe
 		case "okx":
-			ex = exchange.NewOKXExchange(exchange.OKXConfig{
+			okxEx := exchange.NewOKXExchange(exchange.OKXConfig{
 				APIKey:     ac.APIKey,
 				SecretKey:  ac.SecretKey,
 				Passphrase: ac.Passphrase,
 				BaseURL:    ac.BaseURL,
 				Simulated:  ac.Simulated,
 			})
+			// Set hedge mode (long/short) on first OKX account init.
+			if err := okxEx.Init(ctx); err != nil {
+				logger.Error("okx init failed", "account", ac.ID, "err", err)
+			} else {
+				logger.Info("okx account initialized", "account", ac.ID, "simulated", ac.Simulated)
+			}
+			ex = okxEx
 		default:
 			logger.Error("unknown exchange", "exchange", ac.Exchange, "account", ac.ID)
 			os.Exit(1)
@@ -224,6 +252,15 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			"require_multi_strategy", cfg.SignalExit.RequireMultiStrategy,
 			"min_hold", cfg.SignalExit.MinHoldDuration,
 			"cooldown", cfg.SignalExit.CooldownAfterExit)
+	}
+
+	// Apply trailing stop config.
+	if cfg.TrailingStop.Enabled {
+		qb.SetTrailingStopConfig(cfg.TrailingStop)
+		logger.Info("trailing stop enabled",
+			"activation_pct", cfg.TrailingStop.ActivationPct,
+			"callback_pct", cfg.TrailingStop.CallbackPct,
+			"step_pct", cfg.TrailingStop.StepPct)
 	}
 
 	// Optional PG trade store
@@ -259,6 +296,16 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 						if err := pe.RestoreState(ctx, id, paperStore, logger); err != nil {
 							logger.Warn("restore paper state failed (starting fresh)", "account", id, "err", err)
 						}
+						// Restore cumulative realized PnL from closed trade records.
+						// Without this, equity resets to initial value on restart.
+						if pgStore != nil {
+							stats := pgStore.Stats(tradestore.Filter{AccountID: id})
+							if stats.TotalPnL != 0 {
+								pe.RestoreCumulativePnL(stats.TotalPnL, 0)
+								logger.Info("restored cumulative realized PnL",
+									"account", id, "pnl", stats.TotalPnL, "trades", stats.TotalTrades)
+							}
+						}
 					}
 					saver = &paperStateSaver{
 						store:  paperStore,
@@ -279,14 +326,19 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 
 	if cfg.AutoRisk.Enabled {
 		for id, acc := range accounts {
-			bal, err := acc.Exchange.QueryBalance(ctx)
-			equity := bal.Equity
-			if err != nil || equity <= 0 {
-				for _, ac := range cfg.Accounts {
-					if ac.ID == id {
-						equity = ac.InitialEquity
-						break
-					}
+			// Use configured initial_equity as budget cap if set;
+			// otherwise fall back to exchange balance.
+			var equity float64
+			for _, ac := range cfg.Accounts {
+				if ac.ID == id && ac.InitialEquity > 0 {
+					equity = ac.InitialEquity
+					break
+				}
+			}
+			if equity <= 0 {
+				bal, err := acc.Exchange.QueryBalance(ctx)
+				if err == nil && bal.Equity > 0 {
+					equity = bal.Equity
 				}
 			}
 			scaled := cfg.AutoRisk.AutoScale(equity, cfg.Risk)
@@ -343,31 +395,50 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			tf = cfg.Brain.DefaultTimeframe
 		}
 
-		// Build aggregator with timeframe-adaptive thresholds.
-		agg := cfg.Strategy.BuildAggregator(tf)
+		// Per-unit strategy override: use unit-level config if set, else global.
+		stratCfg := cfg.Strategy
+		if uc.Strategy != nil {
+			stratCfg = *uc.Strategy
+		}
 
-		// Resolve route config from account definition.
+		// Build aggregator with timeframe-adaptive thresholds.
+		agg := stratCfg.BuildAggregator(tf)
+
+		// Resolve route config + budget equity from account definition.
 		var routeCfg quant.RouteConfig
+		var budgetEquity float64
 		for _, ac := range cfg.Accounts {
-			if ac.ID == uc.AccountID && ac.Route != nil {
-				routeCfg = *ac.Route
+			if ac.ID == uc.AccountID {
+				if ac.Route != nil {
+					routeCfg = *ac.Route
+				}
+				budgetEquity = ac.InitialEquity
 				break
 			}
 		}
 
+		// Per-unit risk override.
 		ar := perAccountRisk[uc.AccountID]
+		if uc.Risk != nil {
+			ar = accountRisk{
+				guard: uc.Risk.BuildGuard(),
+				sizer: uc.Risk.BuildSizer(),
+			}
+		}
+
 		unit := quant.NewTradingUnit(quant.TradingUnitConfig{
-			ID:          uc.ID,
-			Account:     acc,
-			Symbols:     uc.Symbols,
-			Timeframe:   uc.Timeframe,
-			MaxLeverage: uc.MaxLeverage,
-			Pool:        cfg.Strategy.BuildPool(),
-			TradeStore:  ts,
-			Aggregator:  agg,
-			Guard:       ar.guard,
-			Sizer:       ar.sizer,
-			RouteConfig: routeCfg,
+			ID:           uc.ID,
+			Account:      acc,
+			Symbols:      uc.Symbols,
+			Timeframe:    uc.Timeframe,
+			MaxLeverage:  uc.MaxLeverage,
+			Pool:         stratCfg.BuildPool(),
+			TradeStore:   ts,
+			Aggregator:   agg,
+			Guard:        ar.guard,
+			Sizer:        ar.sizer,
+			RouteConfig:  routeCfg,
+			BudgetEquity: budgetEquity,
 		}, logger)
 		qb.AddUnit(unit)
 		logger.Info("unit registered", "id", uc.ID, "timeframe", tf,
@@ -394,5 +465,52 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		logger.Info("L1 adaptive learning enabled")
 	}
 
-	return accounts, qb, saver, pgStore
+	// Build OKX private WebSocket manager for real-time order/position notifications.
+	var wsManager *exchange.PrivateWSManager
+	for _, ac := range cfg.Accounts {
+		if ac.Exchange != "okx" || ac.APIKey == "" {
+			continue
+		}
+		if wsManager == nil {
+			wsManager = exchange.NewPrivateWSManager(logger.With("component", "private_ws"))
+		}
+		wsConn := exchange.NewPrivateWSConn(ac.ID, exchange.PrivateWSConfig{
+			APIKey:     ac.APIKey,
+			SecretKey:  ac.SecretKey,
+			Passphrase: ac.Passphrase,
+			Simulated:  ac.Simulated,
+		}, exchange.PrivateWSCallbacks{
+			OnOrderFill: func(accountID string, evt exchange.OrderFillEvent) {
+				logger.Info("OKX order fill",
+					"account", accountID,
+					"symbol", evt.InstID,
+					"side", evt.Side,
+					"posSide", evt.PosSide,
+					"fillPrice", evt.FillPrice,
+					"fillQty", evt.FillQty,
+					"fee", evt.Fee,
+					"state", evt.State,
+					"orderId", evt.OrderID,
+					"clientId", evt.ClientID)
+			},
+			OnPositionUpdate: func(accountID string, evt exchange.PositionUpdateEvent) {
+				logger.Info("OKX position update",
+					"account", accountID,
+					"symbol", evt.InstID,
+					"posSide", evt.PosSide,
+					"qty", evt.Quantity,
+					"avgPrice", evt.AvgPrice,
+					"uPnL", evt.UPnL)
+			},
+			OnAccountUpdate: func(accountID string, evt exchange.AccountUpdateEvent) {
+				logger.Debug("OKX account update",
+					"account", accountID,
+					"equity", evt.TotalEquity)
+			},
+		}, logger)
+		wsManager.Add(wsConn)
+		logger.Info("OKX private WS registered", "account", ac.ID, "simulated", ac.Simulated)
+	}
+
+	return accounts, qb, saver, pgStore, wsManager
 }

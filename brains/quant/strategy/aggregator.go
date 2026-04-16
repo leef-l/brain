@@ -31,6 +31,12 @@ type Aggregator struct {
 	// a directional (non-hold) signal for the aggregator to output a trade.
 	// Default 0 = no minimum. Set to 2 to require multi-strategy agreement.
 	MinActiveStrategies int
+
+	// HighConfidenceBypass: when any single strategy's confidence exceeds this
+	// threshold, the MinActiveStrategies requirement is bypassed. This prevents
+	// missing obvious strong moves (like ORDI surging) where only one strategy
+	// fires but with very high conviction. Default 0 = disabled.
+	HighConfidenceBypass float64
 }
 
 // AggregatedSignal is the final decision produced by the aggregator.
@@ -58,9 +64,9 @@ func DefaultWeights() map[string]float64 {
 func NewAggregator() Aggregator {
 	return Aggregator{
 		Weights:         DefaultWeights(),
-		LongThreshold:   0.45,
-		ShortThreshold:  0.45,
-		DominanceFactor: 1.5,
+		LongThreshold:   0.28,
+		ShortThreshold:  0.28,
+		DominanceFactor: 1.3,
 	}
 }
 
@@ -89,12 +95,19 @@ func (a Aggregator) Aggregate(view MarketView, signals []Signal, review ReviewCo
 	// Count how many distinct strategies produced a directional signal.
 	if a.MinActiveStrategies > 0 {
 		activeCount := 0
+		maxConfidence := 0.0
 		for _, s := range result.Signals {
 			if s.Direction == DirectionLong || s.Direction == DirectionShort {
 				activeCount++
+				if s.Confidence > maxConfidence {
+					maxConfidence = s.Confidence
+				}
 			}
 		}
-		if activeCount < a.MinActiveStrategies {
+		// High-confidence bypass: if any single strategy has extremely high
+		// conviction, allow the trade even with fewer active strategies.
+		bypassed := a.HighConfidenceBypass > 0 && maxConfidence >= a.HighConfidenceBypass
+		if activeCount < a.MinActiveStrategies && !bypassed {
 			result.Direction = DirectionHold
 			result.RejectionReason = fmt.Sprintf("only %d active strategies, need %d", activeCount, a.MinActiveStrategies)
 			return result
@@ -115,14 +128,14 @@ func (a Aggregator) Aggregate(view MarketView, signals []Signal, review ReviewCo
 		if winRate, ok := a.Oracle.HistoricalWinRate(view.Symbol(), result.Direction, view.FeatureVector()); ok {
 			switch result.Direction {
 			case DirectionLong:
-				if winRate < 0.35 {
+				if winRate < 0.30 {
 					result.Direction = DirectionHold
-					result.RejectionReason = "historical long win rate below 0.35"
+					result.RejectionReason = "historical long win rate below 0.30"
 				}
 			case DirectionShort:
-				if winRate > 0.65 {
+				if winRate > 0.70 {
 					result.Direction = DirectionHold
-					result.RejectionReason = "historical short win rate above 0.65"
+					result.RejectionReason = "historical short win rate above 0.70"
 				}
 			}
 		}

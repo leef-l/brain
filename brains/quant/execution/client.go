@@ -35,6 +35,16 @@ func WithClientState(state *MemoryState) ClientOption {
 	}
 }
 
+// WithIDPrefix sets the account-specific ID prefix for order IDs.
+// This ensures globally unique order IDs across multiple paper exchanges.
+func WithIDPrefix(prefix string) ClientOption {
+	return func(c *Client) {
+		if prefix != "" {
+			c.state = NewMemoryStateWithPrefix(prefix)
+		}
+	}
+}
+
 func (c *Client) Execute(ctx context.Context, intent OrderIntent) (ExecutionResult, error) {
 	if c == nil || c.backend == nil {
 		return ExecutionResult{}, fmt.Errorf("execution client is not initialized")

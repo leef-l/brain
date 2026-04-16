@@ -286,22 +286,50 @@ func clamp(value, minValue, maxValue float64) float64 {
 	return value
 }
 
-// bestATRRatio returns the ATR ratio from the highest available timeframe to
-// avoid using 1m/5m ATR for stop-loss distances (too tight, causes whipsaws).
-// It walks up the timeframe ladder: 15m → 1H → 4H, falling back to the
-// strategy's own TF if none of the higher TFs have data.
+// bestATRRatio returns the ATR ratio for stop-loss/take-profit distance.
+// Uses the strategy's own TF ATR directly, with one-level-up fallback.
 func bestATRRatio(f FeatureView, strategyTF string) float64 {
-	// For timeframes 1H and above, use the strategy's own TF.
-	switch strategyTF {
-	case "1H", "4H", "1D":
-		return f.ATRRatio(strategyTF)
+	if atr := f.ATRRatio(strategyTF); atr > 0 {
+		return atr
 	}
-	// For short TFs (1m, 5m, 15m), prefer a higher TF's ATR.
-	for _, htf := range []string{"1H", "15m", "5m"} {
+	// Fallback: one level up.
+	htf := higherTF(strategyTF)
+	if htf != strategyTF {
 		if atr := f.ATRRatio(htf); atr > 0 {
 			return atr
 		}
 	}
-	// Fallback to own TF.
-	return f.ATRRatio(strategyTF)
+	return 0
+}
+
+// tfLadder defines the timeframe hierarchy from shortest to longest.
+var tfLadder = []string{"1m", "5m", "15m", "1H", "4H", "1D"}
+
+// higherTF returns the next higher timeframe in the ladder.
+func higherTF(tf string) string {
+	for i, t := range tfLadder {
+		if t == tf && i+1 < len(tfLadder) {
+			return tfLadder[i+1]
+		}
+	}
+	return tf
+}
+
+// SLTPMultipliers returns (stopMult, takeMult) scaled by timeframe.
+// Shorter TFs use tighter SL/TP for fast scalping; longer TFs use wider.
+func SLTPMultipliers(tf string) (stop, take float64) {
+	switch tf {
+	case "1m":
+		return 1.5, 3.5 // 盈亏比 2.3x: 止损放宽防噪音扫损, TP 加大拉高期望
+	case "5m":
+		return 1.2, 3.0 // 盈亏比 2.5x
+	case "15m":
+		return 1.5, 3.5 // 盈亏比 2.3x
+	case "1H":
+		return 1.5, 3.5 // 盈亏比 2.3x
+	case "4H":
+		return 2.0, 5.0 // 盈亏比 2.5x: 大周期趋势跟踪，让利润跑
+	default:
+		return 1.5, 3.0
+	}
 }
