@@ -73,6 +73,10 @@ type Kernel struct {
 	// for hot-pluggable sidecar management. When empty, the Orchestrator
 	// falls back to probing built-in kinds.
 	OrchestratorCfg *OrchestratorConfig
+
+	// BrainPool 是可选的共享进程池。当注入后，Orchestrator 可通过
+	// NewOrchestratorWithPool 使用该 pool，让多个 Run 共享 sidecar。
+	BrainPool BrainPool
 }
 
 // Option configures a Kernel during construction. Options compose functionally
@@ -193,6 +197,12 @@ func WithOrchestrator(o interface{}) Option {
 // WithLLMProxy installs the reverse-RPC LLM proxy for sidecars.
 func WithLLMProxy(p interface{}) Option {
 	return func(k *Kernel) { k.LLMProxy = p }
+}
+
+// WithBrainPool 注入共享进程池。当设置后，可通过 NewOrchestratorWithPool
+// 创建使用该 pool 的 Orchestrator，实现多 Run 共享 sidecar。
+func WithBrainPool(p BrainPool) Option {
+	return func(k *Kernel) { k.BrainPool = p }
 }
 
 // WithOrchestratorConfig installs an OrchestratorConfig for configuration-

@@ -47,6 +47,13 @@ func (t *ReadFileTool) Schema() Schema {
 }`),
 		OutputSchema: readFileOutputSchema,
 		Brain:        t.brainKind,
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "file.read",
+			ResourceKeyTemplate: "file:{{path}}",
+			AccessMode:          "shared-read",
+			Scope:               "turn",
+			ApprovalClass:       "readonly",
+		},
 	}
 }
 

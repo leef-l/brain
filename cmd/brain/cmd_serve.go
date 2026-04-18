@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	iofs "io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -15,20 +16,34 @@ import (
 	"time"
 
 	brain "github.com/leef-l/brain"
+	"github.com/leef-l/brain/cmd/brain/dashboard"
+	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/cli"
+	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/tool"
 )
 
 // runEntry tracks an in-flight or finished Run.
 type runEntry struct {
-	mu        sync.Mutex      `json:"-"`
-	ID        string          `json:"run_id"`
-	Status    string          `json:"status"`
-	Brain     string          `json:"brain,omitempty"`
-	Prompt    string          `json:"prompt,omitempty"`
-	Result    json.RawMessage `json:"result,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
+	mu          sync.Mutex      `json:"-"`
+	ID          string          `json:"run_id"`
+	ExecutionID string          `json:"execution_id,omitempty"` // v3: 与 run_id 相同，用于 executions 端点
+	Status      string          `json:"status"`
+	Brain       string          `json:"brain,omitempty"`
+	Prompt      string          `json:"prompt,omitempty"`
+	Result      json.RawMessage `json:"result,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+
+	// v3 execution 扩展字段（omitempty 保持向后兼容）
+	Mode      string `json:"mode,omitempty"`
+	Lifecycle string `json:"lifecycle,omitempty"`
+	Restart   string `json:"restart,omitempty"`
+
+	// taskExec 持有 v3 TaskExecution 状态机实例，避免 executeRun 中重复创建。
+	taskExec *kernel.TaskExecution `json:"-"`
 
 	cancel context.CancelFunc `json:"-"`
 }
@@ -38,12 +53,16 @@ func (e *runEntry) snapshot() *runEntry {
 	defer e.mu.Unlock()
 
 	return &runEntry{
-		ID:        e.ID,
-		Status:    e.Status,
-		Brain:     e.Brain,
-		Prompt:    e.Prompt,
-		Result:    append(json.RawMessage(nil), e.Result...),
-		CreatedAt: e.CreatedAt,
+		ID:          e.ID,
+		ExecutionID: e.ExecutionID,
+		Status:      e.Status,
+		Brain:       e.Brain,
+		Prompt:      e.Prompt,
+		Result:      append(json.RawMessage(nil), e.Result...),
+		CreatedAt:   e.CreatedAt,
+		Mode:        e.Mode,
+		Lifecycle:   e.Lifecycle,
+		Restart:     e.Restart,
 	}
 }
 
@@ -55,7 +74,7 @@ func (e *runEntry) status() string {
 
 func (e *runEntry) markCancelled() string {
 	e.mu.Lock()
-	if e.Status != "running" {
+	if e.Status != "running" && e.Status != "waiting" {
 		status := e.Status
 		e.mu.Unlock()
 		return status
@@ -88,6 +107,13 @@ func (e *runEntry) finish(status string, result json.RawMessage) {
 type runManager struct {
 	runs     sync.Map // id → *runEntry
 	store    *runtimeStore
+	pool         *kernel.ProcessBrainPool  // 全局共享的 BrainPool，多 run 复用
+	eventBus     *events.MemEventBus       // 全局事件总线，用于 SSE 推送
+	leaseManager *kernel.MemLeaseManager   // 全局租约管理器，协调资源互斥与共享访问
+	capMatcher   *kernel.CapabilityMatcher // 全局能力匹配器，三阶段 brain 选择
+	learner      *kernel.LearningEngine    // 全局自适应学习引擎（L1-L3）
+	ctxEngine    kernel.ContextEngine      // 全局上下文装配引擎
+	orgEnforcer  kernel.OrgPolicyEnforcer // 组织级授权策略执行器（可为 nil）
 	rootCtx  context.Context
 	wg       sync.WaitGroup
 	launchMu sync.Mutex // guards concurrent slot reservations
@@ -102,7 +128,7 @@ func (rm *runManager) get(id string) (*runEntry, bool) {
 	if rm.store == nil {
 		return nil, false
 	}
-	rec, ok := rm.store.get(id)
+	rec, ok := rm.store.Get(id)
 	if !ok {
 		return nil, false
 	}
@@ -118,7 +144,7 @@ func (rm *runManager) get(id string) (*runEntry, bool) {
 
 func (rm *runManager) list() []*runEntry {
 	if rm.store != nil {
-		records := rm.store.list(0, "all")
+		records := rm.store.List(0, "all")
 		out := make([]*runEntry, 0, len(records))
 		for _, rec := range records {
 			out = append(out, &runEntry{
@@ -188,8 +214,8 @@ func (rm *runManager) cancelAll(reason string) {
 		status := entry.markCancelled()
 		if rm.store != nil && status == "cancelled" {
 			data, _ := json.Marshal(map[string]string{"reason": reason})
-			_ = rm.store.appendEvent(entry.ID, "run.cancel.requested", reason, data)
-			_, _ = rm.store.finish(entry.ID, "cancelled", entry.Result, reason)
+			_ = rm.store.AppendEvent(entry.ID, "run.cancel.requested", reason, data)
+			_, _ = rm.store.Finish(entry.ID, "cancelled", entry.Result, reason)
 		}
 		return true
 	})
@@ -247,15 +273,21 @@ func runServe(args []string) int {
 		return cli.ExitSoftware
 	}
 
-	startupOrch := buildOrchestrator(orchestratorConfig{cfg: cfg})
+	// 全局 BrainPool：所有并发 run 共享，不再 per-run fork sidecar。
+	pool := buildBrainPool(cfg)
 	defer func() {
-		if startupOrch != nil {
-			_ = startupOrch.Shutdown(context.Background())
+		if pool != nil {
+			_ = pool.Shutdown(context.Background())
 		}
 	}()
-	// Auto-start sidecars marked with auto_start: true in config.
-	if startupOrch != nil {
-		startupOrch.AutoStartBrains(serveCtx)
+	if pool != nil {
+		pool.AutoStart(serveCtx)
+	}
+
+	// 为 startup 工具注册构建一个临时 Orchestrator（共享 pool）。
+	var startupOrch *kernel.Orchestrator
+	if pool != nil {
+		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{})
 	}
 	runtime.Kernel.ToolRegistry = buildManagedRegistry(cfg, env, "central", func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, startupOrch, env)
@@ -266,14 +298,49 @@ func runServe(args []string) int {
 	fmt.Fprintf(os.Stderr, "  listen:    %s\n", *listen)
 	fmt.Fprintf(os.Stderr, "  max_runs:  %d\n", *maxRuns)
 	fmt.Fprintf(os.Stderr, "  mode:      %s\n", mode)
-	fmt.Fprintf(os.Stderr, "  workdir:   %s\n", env.workdir)
+	fmt.Fprintf(os.Stderr, "  workdir:   %s\n", env.Workdir)
 	fmt.Fprintf(os.Stderr, "  run_wd:    %s\n", runWorkdirPolicy)
 	fmt.Fprintf(os.Stderr, "  store:     %s\n\n", runtime.FileStore.Path())
 
 	if cfgErr != nil {
 		fmt.Fprintf(os.Stderr, "brain serve: warning: config load: %v\n", cfgErr)
 	}
-	mgr := &runManager{store: runtime.RunStore, rootCtx: serveCtx}
+	// 创建全局事件总线，供 SSE 端点和运行时事件推送使用
+	globalEventBus := events.NewMemEventBus()
+	leaseManager := kernel.NewMemLeaseManager()
+	capIndex := kernel.NewCapabilityIndex()
+
+	// 从 brain.json manifest 加载能力标签并注册到 CapabilityIndex。
+	// 搜索路径：项目内 brains/<kind>/brain.json 和 central/brain.json，
+	// 以及 ~/.brain/brains/<kind>/brain.json（安装目录）。
+	// 找不到 manifest 时静默跳过，保持向后兼容。
+	loadManifestCapabilities(capIndex, pool, env.Workdir)
+
+	capMatcher := kernel.NewCapabilityMatcher(capIndex)
+	learner := kernel.NewLearningEngine()
+	ctxEngine := kernel.NewDefaultContextEngine()
+
+	// 加载组织级授权策略（如果 ~/.brain/org-policy.json 存在）
+	var orgEnforcer kernel.OrgPolicyEnforcer
+	if enforcer, err := kernel.LoadOrgPolicyIfExists(); err != nil {
+		fmt.Fprintf(os.Stderr, "brain serve: warning: org policy load: %v\n", err)
+	} else if enforcer != nil {
+		orgEnforcer = enforcer
+		p := enforcer.Policy()
+		fmt.Fprintf(os.Stderr, "  org:       %s (audit: %s)\n", p.OrgID, p.AuditLevel)
+	}
+
+	mgr := &runManager{
+		store:        runtime.RunStore,
+		pool:         pool,
+		eventBus:     globalEventBus,
+		leaseManager: leaseManager,
+		capMatcher:   capMatcher,
+		learner:      learner,
+		ctxEngine:    ctxEngine,
+		orgEnforcer:  orgEnforcer,
+		rootCtx:      serveCtx,
+	}
 
 	mux := http.NewServeMux()
 
@@ -324,7 +391,7 @@ func runServe(args []string) int {
 	mux.HandleFunc("/v1/runs", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			handleCreateRun(w, r, mgr, runtime, cfg, *maxRuns, mode, env.workdir, runWorkdirPolicy)
+			handleCreateRun(w, r, mgr, runtime, cfg, *maxRuns, mode, env.Workdir, runWorkdirPolicy)
 		case http.MethodGet:
 			handleListRuns(w, r, mgr)
 		default:
@@ -348,6 +415,70 @@ func runServe(args []string) int {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	})
+
+	// ---------------------------------------------------------------
+	// v3 Execution 路由族 — /v1/executions
+	// /v1/runs 保留为别名，/v1/executions 是 v3 规范入口
+	// ---------------------------------------------------------------
+
+	// POST /v1/executions — 创建执行（包装 handleCreateRun，添加 mode/lifecycle/restart 字段）
+	// GET  /v1/executions — 列出所有执行
+	mux.HandleFunc("/v1/executions", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			handleCreateExecution(w, r, mgr, runtime, cfg, *maxRuns, mode, env.Workdir, runWorkdirPolicy)
+		case http.MethodGet:
+			handleListExecutions(w, r, mgr)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// GET    /v1/executions/{id}        — 查询执行状态
+	// POST   /v1/executions/{id}/stop   — 停止执行
+	// GET    /v1/executions/{id}/events — SSE 事件流
+	mux.HandleFunc("/v1/executions/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/v1/executions/")
+		if path == "" {
+			http.Error(w, "missing execution id", http.StatusBadRequest)
+			return
+		}
+
+		// 解析子路径：{id}/stop 或 {id}/events
+		parts := strings.SplitN(path, "/", 2)
+		id := parts[0]
+		sub := ""
+		if len(parts) > 1 {
+			sub = parts[1]
+		}
+
+		switch {
+		case sub == "stop" && r.Method == http.MethodPost:
+			handleStopExecution(w, r, mgr, id)
+		case sub == "events" && r.Method == http.MethodGet:
+			handleExecutionEvents(w, r, mgr, id)
+		case sub == "" && r.Method == http.MethodGet:
+			handleGetExecution(w, r, mgr, id)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Dashboard API 路由
+	serverStart := time.Now().UTC()
+	registerDashboardRoutes(mux, mgr, pool, globalEventBus, cfg, serverStart, leaseManager)
+
+	// Dashboard 静态文件服务（嵌入式 SPA）
+	staticFS, _ := iofs.Sub(dashboard.StaticFS, "static")
+	mux.Handle("/dashboard/", http.StripPrefix("/dashboard/", http.FileServer(http.FS(staticFS))))
+	// 根路径重定向到 dashboard
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/dashboard/", http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
 	})
 
 	server := &http.Server{
@@ -413,7 +544,14 @@ type createRunRequest struct {
 	ModelConfig *modelConfigInput `json:"model_config,omitempty"`
 	FilePolicy  *filePolicyInput  `json:"file_policy,omitempty"`
 
-	timeoutDuration time.Duration `json:"-"`
+	// v3 execution 扩展字段（可选，默认值兼容旧行为）
+	Mode          string `json:"mode,omitempty"`           // interactive / background，默认 interactive
+	Lifecycle     string `json:"lifecycle,omitempty"`      // oneshot / daemon / watch，默认 oneshot
+	Restart       string `json:"restart,omitempty"`        // never / on-failure / always，默认 never
+	WatchInterval string `json:"watch_interval,omitempty"` // watch 模式执行间隔，如 "60s"/"5m"，默认 60s
+
+	timeoutDuration       time.Duration `json:"-"`
+	watchIntervalDuration time.Duration `json:"-"`
 }
 
 func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, runtime *cliRuntime, cfg *brainConfig, maxConcurrent int, mode permissionMode, defaultWorkdir string, workdirPolicy serveWorkdirPolicy) {
@@ -472,9 +610,25 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest)
 		return
 	}
-	if mode == modeRestricted && env.filePolicy == nil {
+	if mode == modeRestricted && env.FilePolicy == nil {
 		http.Error(w, `{"error":"restricted mode requires file_policy (config or request body)"}`, http.StatusBadRequest)
 		return
+	}
+
+	// 组织级策略检查
+	if mgr.orgEnforcer != nil {
+		orgAction := kernel.OrgAction{
+			Type:      "start_run",
+			BrainKind: req.Brain,
+		}
+		if err := mgr.orgEnforcer.Check(r.Context(), orgAction); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusForbidden)
+			return
+		}
+		// 如果组织策略指定了 MaxConcurrent 且小于服务端限制，使用组织限制
+		if p := mgr.orgEnforcer.Policy(); p != nil && p.MaxConcurrent > 0 && p.MaxConcurrent < maxConcurrent {
+			maxConcurrent = p.MaxConcurrent
+		}
 	}
 
 	if !mgr.reserveSlot(maxConcurrent) {
@@ -482,7 +636,7 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		return
 	}
 
-	runRec, err := runtime.RunStore.create(req.Brain, req.Prompt, string(mode), req.Workdir)
+	runRec, err := runtime.RunStore.Create(req.Brain, req.Prompt, string(mode), req.Workdir)
 	if err != nil {
 		mgr.releaseSlot()
 		http.Error(w, fmt.Sprintf(`{"error":"create run record: %s"}`, err), http.StatusInternalServerError)
@@ -497,76 +651,226 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		ctx, cancel = context.WithCancel(mgr.rootCtx)
 	}
 
-	entry := &runEntry{
-		ID:        runRec.ID,
-		Status:    "running",
-		Brain:     req.Brain,
-		Prompt:    req.Prompt,
-		CreatedAt: time.Now().UTC(),
-		cancel:    cancel,
+	// 设置 v3 execution 默认值
+	if req.Mode == "" {
+		req.Mode = "interactive"
 	}
-	_ = runtime.RunStore.appendEvent(runRec.ID, "run.accepted", "run accepted by serve API", nil)
+	if req.Lifecycle == "" {
+		req.Lifecycle = "oneshot"
+	}
+	if req.Restart == "" {
+		req.Restart = "never"
+	}
+
+	// 解析 watch 模式的执行间隔
+	if req.Lifecycle == "watch" {
+		if req.WatchInterval == "" {
+			req.watchIntervalDuration = 60 * time.Second
+		} else {
+			dur, err := time.ParseDuration(req.WatchInterval)
+			if err != nil {
+				cancel() // 释放 context，避免泄漏
+				http.Error(w, fmt.Sprintf(`{"error":"invalid watch_interval: %s"}`, err), http.StatusBadRequest)
+				return
+			}
+			if dur < 5*time.Second {
+				dur = 5 * time.Second // 最小 5 秒间隔
+			}
+			req.watchIntervalDuration = dur
+		}
+	}
+
+	te := kernel.NewTaskExecution(kernel.TaskExecutionConfig{
+		BrainID:   req.Brain,
+		Mode:      kernel.ExecutionMode(req.Mode),
+		Lifecycle: kernel.LifecyclePolicy(req.Lifecycle),
+		Restart:   kernel.RestartPolicy(req.Restart),
+	})
+	entry := &runEntry{
+		ID:          runRec.ID,
+		ExecutionID: runRec.ID,
+		Status:      "running",
+		Brain:       req.Brain,
+		Prompt:      req.Prompt,
+		CreatedAt:   time.Now().UTC(),
+		Mode:        req.Mode,
+		Lifecycle:   req.Lifecycle,
+		Restart:     req.Restart,
+		taskExec:    te,
+		cancel:      cancel,
+	}
+	_ = runtime.RunStore.AppendEvent(runRec.ID, "run.accepted", "run accepted by serve API", nil)
 	mgr.launchReserved(entry, func() {
 		executeRun(ctx, entry, mgr, runtime, providerSession, req, runRec, cfg, mode)
 	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"run_id": runRec.ID, "status": "running"})
+	// 响应中同时返回 run_id 和 execution_id（值相同）
+	json.NewEncoder(w).Encode(map[string]string{"run_id": runRec.ID, "execution_id": runRec.ID, "status": "running"})
 }
 
 func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *cliRuntime, providerSession providerSession, req createRunRequest, runRec *persistedRunRecord, cfg *brainConfig, mode permissionMode) {
+	// 复用 runEntry 中创建的 TaskExecution 状态机实例
+	te := entry.taskExec
+	_ = te.Transition(kernel.StateRunning)
+
 	env := newExecutionEnvironment(runRec.Workdir, mode, cfg, nil, false)
 	_ = applyFilePolicy(env, req.FilePolicy)
 
+	// 使用全局 BrainPool 创建轻量 Orchestrator（共享 sidecar 进程）。
 	var orch *kernel.Orchestrator
-	if req.Brain == "central" && !wantsMockProvider("", req.ModelConfig) {
-		orch = buildOrchestrator(orchestratorConfig{
-			cfg:         cfg,
-			modelConfig: req.ModelConfig,
-		})
-	}
-	defer func() {
-		if orch != nil {
-			_ = orch.Shutdown(context.Background())
+	if req.Brain == "central" && !wantsMockProvider("", req.ModelConfig) && mgr.pool != nil {
+		llmProxy := &kernel.LLMProxy{
+			ProviderFactory: func(kind agent.Kind) llm.Provider {
+				session, err := openConfiguredProvider(cfg, string(kind), req.ModelConfig, "", "", "", "")
+				if err != nil {
+					return nil
+				}
+				return session.Provider
+			},
 		}
-	}()
+		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
+			kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
+			kernel.WithCapabilityMatcher(mgr.capMatcher),
+			kernel.WithLearningEngine(mgr.learner),
+			kernel.WithContextEngine(mgr.ctxEngine),
+		)
+	}
 
 	runReg := buildManagedRegistry(cfg, env, req.Brain, func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, orch, env)
 		registerSpecialistBridgeTools(reg, orch)
 	})
-	systemPrompt := buildSystemPrompt(mode, env.sandbox)
+	systemPrompt := buildSystemPrompt(mode, env.Sandbox)
 	if orch != nil {
 		systemPrompt += buildOrchestratorPrompt(orch, runReg)
 	}
 
-	outcome, err := executeManagedRun(ctx, managedRunExecution{
-		Runtime:       runtime,
-		Record:        runRec,
-		Registry:      runReg,
-		Provider:      providerSession.Provider,
-		ProviderName:  providerSession.Name,
-		ProviderModel: providerSession.Model,
-		BrainID:       req.Brain,
-		Prompt:        req.Prompt,
-		MaxTurns:      req.MaxTurns,
-		MaxDuration:   req.timeoutDuration,
-		Stream:        req.Stream,
-		SystemPrompt:  systemPrompt,
-	})
-
-	if err != nil {
-		errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
-		status := "failed"
-		if ctx.Err() != nil || entry.status() == "cancelled" {
-			status = "cancelled"
-		}
-		entry.finish(status, errJSON)
-	} else {
-		entry.finish(outcome.FinalStatus, outcome.SummaryJSON)
+	// background 模式：不限 timeout（清除 caller 设的 deadline）
+	if te.Mode == kernel.ModeBackground && req.timeoutDuration == 0 {
+		req.timeoutDuration = 0
 	}
-	mgr.runs.Store(entry.ID, entry)
+
+	var batchPlanner loop.ToolBatchPlanner
+	if mgr.leaseManager != nil {
+		batchPlanner = newBatchPlannerAdapter(mgr.leaseManager)
+	}
+
+	execOnce := func() (outcome *managedRunOutcome, err error) {
+		return executeManagedRun(ctx, managedRunExecution{
+			Runtime:       runtime,
+			Record:        runRec,
+			Registry:      runReg,
+			Provider:      providerSession.Provider,
+			ProviderName:  providerSession.Name,
+			ProviderModel: providerSession.Model,
+			BrainID:       req.Brain,
+			Prompt:        req.Prompt,
+			MaxTurns:      req.MaxTurns,
+			MaxDuration:   req.timeoutDuration,
+			Stream:        req.Stream,
+			SystemPrompt:  systemPrompt,
+			EventBus:      mgr.eventBus,
+			BatchPlanner:  batchPlanner,
+		})
+	}
+
+	for {
+		outcome, err := execOnce()
+
+		if err != nil {
+			errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
+			if ctx.Err() != nil || entry.status() == "cancelled" {
+				_ = te.Transition(kernel.StateCanceled)
+				entry.finish("cancelled", errJSON)
+				mgr.runs.Store(entry.ID, entry)
+				return
+			}
+			_ = te.Transition(kernel.StateFailed)
+
+			// restart 策略：失败后自动重启
+			if te.ShouldRestart() {
+				te.IncrementRestart()
+				_ = te.Transition(kernel.StateRestarting)
+				_ = te.Transition(kernel.StatePending)
+				_ = te.Transition(kernel.StateRunning)
+				fmt.Fprintf(os.Stderr, "serve: execution %s restarting (attempt %d)\n", entry.ID, te.RestartCount)
+				continue
+			}
+			entry.finish("failed", errJSON)
+			mgr.runs.Store(entry.ID, entry)
+			return
+		}
+
+		// daemon 模式：执行完一轮后立即重新执行，直到被 cancel/stop
+		if te.Lifecycle == kernel.LifecycleDaemon {
+			// 先回到 pending/running 状态准备下一轮
+			_ = te.Transition(kernel.StateCompleted)
+			te.IncrementRestart()
+			entry.finish("running", outcome.SummaryJSON)
+			mgr.runs.Store(entry.ID, entry)
+			fmt.Fprintf(os.Stderr, "serve: daemon execution %s completed round %d, restarting\n", entry.ID, te.RestartCount)
+
+			// 检查 context 是否已取消
+			select {
+			case <-ctx.Done():
+				entry.finish("completed", outcome.SummaryJSON)
+				mgr.runs.Store(entry.ID, entry)
+				return
+			default:
+			}
+
+			// 重置状态机以开始下一轮
+			_ = te.Transition(kernel.StateRestarting)
+			_ = te.Transition(kernel.StatePending)
+			_ = te.Transition(kernel.StateRunning)
+			continue
+		}
+
+		// watch 模式：执行完后等待指定间隔再重新执行
+		if te.Lifecycle == kernel.LifecycleWatch {
+			_ = te.Transition(kernel.StateCompleted)
+			te.IncrementRestart()
+			interval := req.watchIntervalDuration
+			if interval <= 0 {
+				interval = 60 * time.Second
+			}
+			entry.finish("waiting", outcome.SummaryJSON)
+			entry.mu.Lock()
+			entry.Status = "waiting"
+			entry.mu.Unlock()
+			mgr.runs.Store(entry.ID, entry)
+			fmt.Fprintf(os.Stderr, "serve: watch execution %s completed round %d, next in %s\n", entry.ID, te.RestartCount, interval)
+
+			// 等待间隔或 context 取消
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				entry.finish("completed", outcome.SummaryJSON)
+				mgr.runs.Store(entry.ID, entry)
+				return
+			case <-timer.C:
+			}
+
+			// 重置状态机以开始下一轮
+			_ = te.Transition(kernel.StateRestarting)
+			_ = te.Transition(kernel.StatePending)
+			_ = te.Transition(kernel.StateRunning)
+			entry.mu.Lock()
+			entry.Status = "running"
+			entry.mu.Unlock()
+			mgr.runs.Store(entry.ID, entry)
+			continue
+		}
+
+		// oneshot：正常完成后退出
+		_ = te.Transition(kernel.StateCompleted)
+		entry.finish(outcome.FinalStatus, outcome.SummaryJSON)
+		mgr.runs.Store(entry.ID, entry)
+		return
+	}
 }
 
 func handleGetRun(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
@@ -588,8 +892,8 @@ func handleCancelRun(w http.ResponseWriter, _ *http.Request, mgr *runManager, id
 	status := entry.markCancelled()
 	if mgr.store != nil && status == "cancelled" {
 		data, _ := json.Marshal(map[string]string{"reason": "api cancel"})
-		_ = mgr.store.appendEvent(id, "run.cancel.requested", "api cancel", data)
-		_, _ = mgr.store.finish(id, status, entry.Result, "")
+		_ = mgr.store.AppendEvent(id, "run.cancel.requested", "api cancel", data)
+		_, _ = mgr.store.Finish(id, status, entry.Result, "")
 	}
 	mgr.runs.Store(id, entry)
 	w.Header().Set("Content-Type", "application/json")
@@ -603,4 +907,86 @@ func handleListRuns(w http.ResponseWriter, _ *http.Request, mgr *runManager) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"runs": runs})
+}
+
+// --- v3 Execution 端点处理函数 ---
+
+// handleCreateExecution 创建一个新的 execution（包装 handleCreateRun，添加 mode/lifecycle/restart）。
+func handleCreateExecution(w http.ResponseWriter, r *http.Request, mgr *runManager, runtime *cliRuntime, cfg *brainConfig, maxConcurrent int, mode permissionMode, defaultWorkdir string, workdirPolicy serveWorkdirPolicy) {
+	// 直接复用 handleCreateRun，因为 createRunRequest 已包含 mode/lifecycle/restart 字段
+	handleCreateRun(w, r, mgr, runtime, cfg, maxConcurrent, mode, defaultWorkdir, workdirPolicy)
+}
+
+// handleListExecutions 列出所有 executions（复用 handleListRuns）。
+func handleListExecutions(w http.ResponseWriter, r *http.Request, mgr *runManager) {
+	runs := mgr.list()
+	if runs == nil {
+		runs = []*runEntry{}
+	}
+	// 以 executions 为 key 返回，与 /v1/runs 的 runs key 区分
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"executions": runs})
+}
+
+// handleGetExecution 查询单个 execution 状态（复用 handleGetRun，额外返回 execution_id）。
+func handleGetExecution(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
+	entry, ok := mgr.get(id)
+	if !ok {
+		http.Error(w, `{"error":"execution not found"}`, http.StatusNotFound)
+		return
+	}
+	snap := entry.snapshot()
+	// 确保 execution_id 字段有值
+	if snap.ExecutionID == "" {
+		snap.ExecutionID = snap.ID
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(snap)
+}
+
+// handleStopExecution 停止一个 execution（复用 handleCancelRun 逻辑）。
+func handleStopExecution(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
+	entry, ok := mgr.get(id)
+	if !ok {
+		http.Error(w, `{"error":"execution not found"}`, http.StatusNotFound)
+		return
+	}
+	status := entry.markCancelled()
+	if mgr.store != nil && status == "cancelled" {
+		data, _ := json.Marshal(map[string]string{"reason": "api stop execution"})
+		_ = mgr.store.AppendEvent(id, "execution.stop.requested", "api stop execution", data)
+		_, _ = mgr.store.Finish(id, status, entry.Result, "")
+	}
+	mgr.runs.Store(id, entry)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"execution_id": id, "status": status})
+}
+
+// handleExecutionEvents 提供 SSE 事件流端点，客户端可实时接收 execution 相关事件。
+func handleExecutionEvents(w http.ResponseWriter, r *http.Request, mgr *runManager, id string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch, cancel := mgr.eventBus.Subscribe(r.Context(), id)
+	defer cancel()
+
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
 }

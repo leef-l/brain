@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/runtimeaudit"
@@ -24,6 +25,8 @@ type managedRunExecution struct {
 	MaxDuration   time.Duration
 	Stream        bool
 	SystemPrompt  string
+	EventBus      *events.MemEventBus // 可选，非 nil 时双写事件到 EventBus
+	BatchPlanner  loop.ToolBatchPlanner // 可选，非 nil 时启用并行工具分组
 }
 
 type managedRunOutcome struct {
@@ -36,13 +39,20 @@ type managedRunOutcome struct {
 }
 
 func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRunOutcome, error) {
-	ctx = runtimeaudit.WithSink(ctx, runtimeaudit.SinkFunc(func(_ context.Context, ev runtimeaudit.Event) {
+	ctx = runtimeaudit.WithSink(ctx, runtimeaudit.SinkFunc(func(sinkCtx context.Context, ev runtimeaudit.Event) {
 		if req.Runtime == nil || req.Runtime.RunStore == nil || req.Record == nil {
 			return
 		}
-		_ = req.Runtime.RunStore.appendEvent(req.Record.ID, ev.Type, ev.Message, append(json.RawMessage(nil), ev.Data...))
+		_ = req.Runtime.RunStore.AppendEvent(req.Record.ID, ev.Type, ev.Message, append(json.RawMessage(nil), ev.Data...))
+		if req.EventBus != nil {
+			req.EventBus.Publish(sinkCtx, events.Event{
+				ExecutionID: req.Record.ID,
+				Type:        ev.Type,
+				Data:        append(json.RawMessage(nil), ev.Data...),
+			})
+		}
 	}))
-	_ = req.Runtime.RunStore.appendEvent(req.Record.ID, "run.started", "run started", json.RawMessage(fmtJSON(map[string]interface{}{
+	_ = req.Runtime.RunStore.AppendEvent(req.Record.ID, "run.started", "run started", json.RawMessage(fmtJSON(map[string]interface{}{
 		"brain":          req.BrainID,
 		"provider":       req.ProviderName,
 		"provider_model": req.ProviderModel,
@@ -61,6 +71,10 @@ func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRu
 			runtime: req.Runtime,
 			runID:   req.Record.ID,
 		},
+		Sanitizer:    loop.NewMemSanitizer(),
+		LoopDetector: loop.NewMemLoopDetector(),
+		CacheBuilder: loop.NewMemCacheBuilder(),
+		BatchPlanner: req.BatchPlanner,
 	}
 
 	opts := loop.RunOptions{
@@ -84,7 +98,7 @@ func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRu
 		if ctx.Err() == context.Canceled {
 			status = "cancelled"
 		}
-		_, _ = req.Runtime.RunStore.finish(req.Record.ID, status, errJSON, err.Error())
+		_, _ = req.Runtime.RunStore.Finish(req.Record.ID, status, errJSON, err.Error())
 		return nil, err
 	}
 
@@ -144,7 +158,7 @@ func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRu
 		"plan_id":      planID,
 	}
 	summaryJSON, _ := json.Marshal(summary)
-	if _, err := req.Runtime.RunStore.finish(req.Record.ID, finalStatus, summaryJSON, ""); err != nil {
+	if _, err := req.Runtime.RunStore.Finish(req.Record.ID, finalStatus, summaryJSON, ""); err != nil {
 		return nil, err
 	}
 
@@ -169,8 +183,9 @@ func managedRunBudget(maxTurns int, maxDuration time.Duration) loop.Budget {
 }
 
 type runtimeToolObserver struct {
-	runtime *cliRuntime
-	runID   string
+	runtime  *cliRuntime
+	runID    string
+	eventBus *events.MemEventBus // 可选，非 nil 时双写
 }
 
 func (o *runtimeToolObserver) OnToolStart(_ context.Context, _ *loop.Run, _ *loop.Turn, toolName string, input json.RawMessage) {
@@ -181,7 +196,7 @@ func (o *runtimeToolObserver) OnToolStart(_ context.Context, _ *loop.Run, _ *loo
 		"tool":  toolName,
 		"input": json.RawMessage(append([]byte(nil), input...)),
 	}
-	_ = o.runtime.RunStore.appendEvent(o.runID, "tool.start", toolName, json.RawMessage(fmtJSON(data)))
+	_ = o.runtime.RunStore.AppendEvent(o.runID, "tool.start", toolName, json.RawMessage(fmtJSON(data)))
 }
 
 func (o *runtimeToolObserver) OnToolEnd(_ context.Context, _ *loop.Run, _ *loop.Turn, toolName string, ok bool, output json.RawMessage) {
@@ -193,7 +208,7 @@ func (o *runtimeToolObserver) OnToolEnd(_ context.Context, _ *loop.Run, _ *loop.
 		"ok":     ok,
 		"output": json.RawMessage(append([]byte(nil), output...)),
 	}
-	_ = o.runtime.RunStore.appendEvent(o.runID, "tool.end", toolName, json.RawMessage(fmtJSON(data)))
+	_ = o.runtime.RunStore.AppendEvent(o.runID, "tool.end", toolName, json.RawMessage(fmtJSON(data)))
 }
 
 func fmtJSON(v interface{}) []byte {

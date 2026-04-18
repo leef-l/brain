@@ -40,6 +40,13 @@ func (t *WriteFileTool) Schema() Schema {
 }`),
 		OutputSchema: writeFileOutputSchema,
 		Brain:        t.brainKind,
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "file.write",
+			ResourceKeyTemplate: "file:{{path}}",
+			AccessMode:          "exclusive-write",
+			Scope:               "turn",
+			ApprovalClass:       "workspace-write",
+		},
 	}
 }
 

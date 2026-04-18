@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "data",
+  "name": "Data Brain",
+  "brain_version": "0.1.0",
+  "description": "行情数据采集：K线、快照、特征向量、回放、健康检查",
+  "capabilities": [
+    "market.candles",
+    "market.snapshot",
+    "market.features",
+    "market.replay",
+    "market.health",
+    "domain.market_data",
+    "resource.exchange_api",
+    "mode.background"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-data-sidecar"
+  },
+  "policy": {
+    "approval_class": "readonly",
+    "approval_mode": "auto",
+    "sandbox_profile": "workspace",
+    "tool_scope": "data"
+  },
+  "task_patterns": [
+    "K线数据获取",
+    "市场快照查询",
+    "特征向量计算",
+    "历史数据回放"
+  ],
+  "health": {
+    "startup_timeout_ms": 5000,
+    "heartbeat_timeout_ms": 30000,
+    "expected_methods": ["brain/execute", "brain/tools_list"]
+  }
+}

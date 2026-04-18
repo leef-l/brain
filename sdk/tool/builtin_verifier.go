@@ -36,6 +36,13 @@ func (t *VerifierReadFileTool) Schema() Schema {
 }`),
 		OutputSchema: readFileOutputSchema,
 		Brain:        "verifier",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "verify.read",
+			ResourceKeyTemplate: "file:{{path}}",
+			AccessMode:          "shared-read",
+			Scope:               "turn",
+			ApprovalClass:       "readonly",
+		},
 	}
 }
 
@@ -94,6 +101,13 @@ func (t *RunTestsTool) Schema() Schema {
 }`),
 		OutputSchema: runTestsOutputSchema,
 		Brain:        "verifier",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "verify.test",
+			ResourceKeyTemplate: "test:{{test_path}}",
+			AccessMode:          "exclusive-write",
+			Scope:               "turn",
+			ApprovalClass:       "exec-capable",
+		},
 	}
 }
 
@@ -153,6 +167,13 @@ func (t *CheckOutputTool) Schema() Schema {
 }`),
 		OutputSchema: checkOutputResultSchema,
 		Brain:        "verifier",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "verify.check",
+			ResourceKeyTemplate: "verify:*",
+			AccessMode:          "shared-read",
+			Scope:               "turn",
+			ApprovalClass:       "readonly",
+		},
 	}
 }
 
@@ -311,6 +332,13 @@ func (t *BrowserActionTool) Schema() Schema {
 }`),
 		OutputSchema: dynamicJSONOutputSchema,
 		Brain:        "verifier",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "verify.browse",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 

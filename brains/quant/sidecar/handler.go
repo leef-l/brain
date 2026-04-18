@@ -26,6 +26,7 @@ type quantHandler struct {
 	accounts map[string]*quant.Account
 	registry tool.Registry
 	caller   sidecar.KernelCaller
+	learner  *quant.QuantBrainLearner // L0 标准学习接口适配器
 	logger   *slog.Logger
 }
 
@@ -59,6 +60,7 @@ func NewHandler(qb *quant.QuantBrain, accounts map[string]*quant.Account, logger
 		qb:       qb,
 		accounts: accounts,
 		registry: reg,
+		learner:  quant.NewQuantBrainLearner(qb),
 		logger:   logger,
 	}
 }
@@ -115,7 +117,39 @@ func (h *quantHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	h.qb.SetSnapshotSource(remoteBuf)
 	go remoteBuf.Start(context.Background(), 2*time.Second)
 
-	h.logger.Info("kernel caller injected, LLM reviewer wired, remote data source started")
+	// L0 BrainLearner: 定期将聚合指标上报给 kernel LearningEngine。
+	// 每 5 分钟通过 brain/metrics RPC 上报一次。
+	go h.metricsReportLoop(context.Background(), caller)
+
+	h.logger.Info("kernel caller injected, LLM reviewer wired, remote data source started, L0 metrics reporter started")
+}
+
+// metricsReportLoop 定期将 QuantBrainLearner 的聚合指标上报到 kernel。
+func (h *quantHandler) metricsReportLoop(ctx context.Context, caller sidecar.KernelCaller) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			metrics := h.learner.ExportMetrics()
+			if metrics.TaskCount == 0 {
+				continue // 无数据时不上报
+			}
+			var result json.RawMessage
+			err := caller.CallKernel(ctx, "brain/metrics", metrics, &result)
+			if err != nil {
+				h.logger.Warn("L0 metrics report failed", "err", err)
+			} else {
+				h.logger.Debug("L0 metrics reported",
+					"task_count", metrics.TaskCount,
+					"success_rate", metrics.SuccessRate,
+					"confidence_trend", metrics.ConfidenceTrend)
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,6 @@
+// Deprecated: specialist_tool_policy.go 中的 SpecialistToolCallAuthorizer 静态白名单
+// 已被 approval.go 中的 SemanticApprover 五级语义审批取代。
+// 保留此文件仅为向后兼容，新代码应使用 WithSemanticApprover。
 package kernel
 
 import (

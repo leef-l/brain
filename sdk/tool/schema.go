@@ -33,4 +33,32 @@ type Schema struct {
 	// "browser", "central"). Used by Registry.ListByBrain. See
 	// 02-BrainKernel设计.md §6.1 naming convention.
 	Brain string `json:"brain"`
+
+	// Concurrency 声明该工具的并发资源约束。nil 表示无约束（默认串行）。
+	// Phase B 的 BatchPlanner 根据此字段推导 LeaseRequest 并构建冲突图。
+	Concurrency *ToolConcurrencySpec `json:"concurrency,omitempty"`
+}
+
+// ToolConcurrencySpec 描述工具执行时所需的资源锁规格。
+type ToolConcurrencySpec struct {
+	// Capability 标识资源类别，如 "execution.order"、"data.candle"。
+	Capability string `json:"capability"`
+
+	// ResourceKeyTemplate 是从工具参数推导具体 ResourceKey 的模板，
+	// 如 "account:{{.account}}"。运行时用 tool_call 参数填充。
+	ResourceKeyTemplate string `json:"resource_key_template"`
+
+	// AccessMode 声明访问模式。
+	AccessMode string `json:"access_mode"`
+
+	// Scope 声明 lease 的生效范围。
+	Scope string `json:"scope"`
+
+	// AcquireTimeout 获取 lease 的超时时间（秒）。0 表示使用默认值。
+	AcquireTimeout float64 `json:"acquire_timeout,omitempty"`
+
+	// ApprovalClass 是该工具的语义审批等级（五级：readonly / workspace-write /
+	// exec-capable / control-plane / external-network）。
+	// 当非空时，SemanticApprover 会优先使用此值而非启发式推断。
+	ApprovalClass string `json:"approval_class,omitempty"`
 }

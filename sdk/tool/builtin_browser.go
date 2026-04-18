@@ -112,6 +112,13 @@ func (t *browserOpenTool) Schema() Schema {
 }`),
 		OutputSchema: browserOpenOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.navigate",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "task",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -174,6 +181,13 @@ func (t *browserNavigateTool) Schema() Schema {
 }`),
 		OutputSchema: browserNavigateOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.navigate",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "task",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -252,6 +266,13 @@ func (t *browserClickTool) Schema() Schema {
 }`),
 		OutputSchema: browserPointOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -303,6 +324,13 @@ func (t *browserDoubleClickTool) Schema() Schema {
 }`),
 		OutputSchema: browserPointOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -354,6 +382,13 @@ func (t *browserRightClickTool) Schema() Schema {
 }`),
 		OutputSchema: browserPointOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -407,6 +442,13 @@ func (t *browserTypeTool) Schema() Schema {
 }`),
 		OutputSchema: browserTypeOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -481,6 +523,13 @@ func (t *browserPressKeyTool) Schema() Schema {
 }`),
 		OutputSchema: browserKeyOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -547,6 +596,13 @@ func (t *browserScrollTool) Schema() Schema {
 }`),
 		OutputSchema: browserScrollOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -637,6 +693,13 @@ func (t *browserHoverTool) Schema() Schema {
 }`),
 		OutputSchema: browserPointOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -695,6 +758,13 @@ func (t *browserDragTool) Schema() Schema {
 }`),
 		OutputSchema: browserDragOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -781,6 +851,13 @@ func (t *browserSelectTool) Schema() Schema {
 }`),
 		OutputSchema: browserSelectOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -861,6 +938,13 @@ func (t *browserUploadFileTool) Schema() Schema {
 }`),
 		OutputSchema: browserUploadOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -920,6 +1004,13 @@ func (t *browserScreenshotTool) Schema() Schema {
 }`),
 		OutputSchema: browserScreenshotOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.screenshot",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "shared-read",
+			Scope:               "turn",
+			ApprovalClass:       "readonly",
+		},
 	}
 }
 
@@ -1018,6 +1109,13 @@ func (t *browserEvalTool) Schema() Schema {
 }`),
 		OutputSchema: browserEvalOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.evaluate",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "exclusive-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
 	}
 }
 
@@ -1096,6 +1194,13 @@ func (t *browserWaitTool) Schema() Schema {
 }`),
 		OutputSchema: browserWaitOutputSchema,
 		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.interact",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "shared-read",
+			Scope:               "turn",
+			ApprovalClass:       "readonly",
+		},
 	}
 }
 

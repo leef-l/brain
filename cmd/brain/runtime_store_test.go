@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+
+	"github.com/leef-l/brain/cmd/brain/cliruntime"
 )
 
 func TestRuntimeStore_PersistsRunRecords(t *testing.T) {
@@ -13,20 +15,20 @@ func TestRuntimeStore_PersistsRunRecords(t *testing.T) {
 		t.Fatalf("openRuntimeStore: %v", err)
 	}
 
-	rec, err := store.create("central", "hello", string(modeAcceptEdits), "/tmp/work")
+	rec, err := store.Create("central", "hello", string(modeAcceptEdits), "/tmp/work")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.setCheckpoint(rec.ID, "turn-1"); err != nil {
+	if err := store.SetCheckpoint(rec.ID, "turn-1"); err != nil {
 		t.Fatalf("setCheckpoint: %v", err)
 	}
-	if err := store.setPlanID(rec.ID, 42); err != nil {
+	if err := store.SetPlanID(rec.ID, 42); err != nil {
 		t.Fatalf("setPlanID: %v", err)
 	}
-	if err := store.appendEvent(rec.ID, "tool.exec", "shell_exec", json.RawMessage(`{"ok":true}`)); err != nil {
+	if err := store.AppendEvent(rec.ID, "tool.exec", "shell_exec", json.RawMessage(`{"ok":true}`)); err != nil {
 		t.Fatalf("appendEvent: %v", err)
 	}
-	if _, err := store.finish(rec.ID, "completed", json.RawMessage(`{"reply":"done"}`), ""); err != nil {
+	if _, err := store.Finish(rec.ID, "completed", json.RawMessage(`{"reply":"done"}`), ""); err != nil {
 		t.Fatalf("finish: %v", err)
 	}
 
@@ -34,7 +36,7 @@ func TestRuntimeStore_PersistsRunRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	got, ok := reopened.get(rec.ID)
+	got, ok := reopened.Get(rec.ID)
 	if !ok {
 		t.Fatalf("run %s not found after reopen", rec.ID)
 	}
@@ -53,7 +55,7 @@ func TestRuntimeStore_PersistsRunRecords(t *testing.T) {
 }
 
 func TestFileCLIRuntimeBackend_OpenWiresPersistentKernel(t *testing.T) {
-	rt, err := (&fileCLIRuntimeBackend{dataDir: t.TempDir()}).Open("central")
+	rt, err := (&cliruntime.FileBackend{DataDir: t.TempDir()}).Open("central")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

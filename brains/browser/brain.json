@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "browser",
+  "name": "Browser Brain",
+  "brain_version": "0.1.0",
+  "description": "浏览器专家：网页导航、元素交互、截图、JavaScript 执行",
+  "capabilities": [
+    "web.navigate",
+    "web.interact",
+    "web.screenshot",
+    "web.evaluate",
+    "web.upload",
+    "domain.browser",
+    "resource.browser_session",
+    "mode.interactive"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-browser-sidecar"
+  },
+  "policy": {
+    "approval_class": "external-network",
+    "approval_mode": "review",
+    "sandbox_profile": "browser",
+    "tool_scope": "browser"
+  },
+  "task_patterns": [
+    "网页浏览与信息提取",
+    "表单填写与交互操作",
+    "页面截图与视觉验证",
+    "JavaScript 脚本执行"
+  ],
+  "health": {
+    "startup_timeout_ms": 10000,
+    "heartbeat_timeout_ms": 30000,
+    "expected_methods": ["brain/execute", "brain/tools_list"]
+  }
+}

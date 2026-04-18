@@ -45,9 +45,9 @@ func TestFilePolicy_ValidatesCommandDiffs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st := tool.NewShellExecTool("code", env.sandbox)
-	st.SetCommandSandbox(env.cmdSandbox)
-	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.sandbox), env.cmdSandbox, env.sandboxCfg, env.filePolicy)
+	st := tool.NewShellExecTool("code", env.Sandbox)
+	st.SetCommandSandbox(env.CmdSandbox)
+	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.Sandbox), env.CmdSandbox, env.SandboxCfg, env.FilePolicy)
 	var eventTypes []string
 	ctx := runtimeaudit.WithSink(context.Background(), runtimeaudit.SinkFunc(func(_ context.Context, ev runtimeaudit.Event) {
 		eventTypes = append(eventTypes, ev.Type)
@@ -92,7 +92,7 @@ func TestFilePolicy_ReadDeleteAndCommandFlags(t *testing.T) {
 		t.Fatalf("applyFilePolicy: %v", err)
 	}
 
-	readTool := env.manageTool(tool.NewReadFileTool("code"), toolClassRead)
+	readTool := manageTool(env, tool.NewReadFileTool("code"), toolClassRead)
 	if res, err := readTool.Execute(context.Background(), json.RawMessage(fmtJSON(map[string]string{"path": allowed}))); err != nil || res.IsError {
 		t.Fatalf("allowed read: res=%v err=%v", res, err)
 	}
@@ -102,7 +102,7 @@ func TestFilePolicy_ReadDeleteAndCommandFlags(t *testing.T) {
 		t.Fatal("expected blocked read to be denied")
 	}
 
-	deleteTool := env.manageTool(tool.NewDeleteFileTool("code"), toolClassDelete)
+	deleteTool := manageTool(env, tool.NewDeleteFileTool("code"), toolClassDelete)
 	if res, err := deleteTool.Execute(context.Background(), json.RawMessage(fmtJSON(map[string]string{"path": blocked}))); err != nil {
 		t.Fatalf("blocked delete err: %v", err)
 	} else if !res.IsError {
@@ -112,9 +112,9 @@ func TestFilePolicy_ReadDeleteAndCommandFlags(t *testing.T) {
 		t.Fatalf("blocked.txt should still exist: %v", err)
 	}
 
-	st := tool.NewShellExecTool("code", env.sandbox)
-	st.SetCommandSandbox(env.cmdSandbox)
-	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.sandbox), env.cmdSandbox, env.sandboxCfg, env.filePolicy)
+	st := tool.NewShellExecTool("code", env.Sandbox)
+	st.SetCommandSandbox(env.CmdSandbox)
+	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.Sandbox), env.CmdSandbox, env.SandboxCfg, env.FilePolicy)
 	var eventTypes []string
 	ctx := runtimeaudit.WithSink(context.Background(), runtimeaudit.SinkFunc(func(_ context.Context, ev runtimeaudit.Event) {
 		eventTypes = append(eventTypes, ev.Type)
@@ -149,9 +149,9 @@ func TestFilePolicy_RestrictsCommandReadSurface(t *testing.T) {
 		t.Fatalf("applyFilePolicy: %v", err)
 	}
 
-	st := tool.NewShellExecTool("code", env.sandbox)
-	st.SetCommandSandbox(env.cmdSandbox)
-	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.sandbox), env.cmdSandbox, env.sandboxCfg, env.filePolicy)
+	st := tool.NewShellExecTool("code", env.Sandbox)
+	st.SetCommandSandbox(env.CmdSandbox)
+	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.Sandbox), env.CmdSandbox, env.SandboxCfg, env.FilePolicy)
 
 	result, err := cmd.Execute(context.Background(), json.RawMessage(`{"command":"if [ -e blocked.txt ]; then echo visible; else echo missing; fi"}`))
 	if err != nil {
@@ -188,9 +188,9 @@ func TestFilePolicy_CommandCanBlindEditWithoutRead(t *testing.T) {
 		t.Fatalf("applyFilePolicy: %v", err)
 	}
 
-	st := tool.NewShellExecTool("code", env.sandbox)
-	st.SetCommandSandbox(env.cmdSandbox)
-	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.sandbox), env.cmdSandbox, env.sandboxCfg, env.filePolicy)
+	st := tool.NewShellExecTool("code", env.Sandbox)
+	st.SetCommandSandbox(env.CmdSandbox)
+	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.Sandbox), env.CmdSandbox, env.SandboxCfg, env.FilePolicy)
 
 	result, err := cmd.Execute(context.Background(), json.RawMessage(`{"command":"if [ -s hidden.txt ]; then echo visible; else echo hidden; fi; printf rewritten > hidden.txt"}`))
 	if err != nil {

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brain Control Plane</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Brain Control Plane</h1>
+        <div id="connection-status" class="status-indicator">Connecting...</div>
+    </header>
+
+    <main class="grid">
+        <section class="panel" id="panel-overview">
+            <h2>Overview</h2>
+            <div class="panel-content">
+                <div class="stat-grid">
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-active-brains">-</span>
+                        <span class="stat-label">Active Brains</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-running">-</span>
+                        <span class="stat-label">Running</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-completed">-</span>
+                        <span class="stat-label">Completed</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-failed">-</span>
+                        <span class="stat-label">Failed</span>
+                    </div>
+                </div>
+                <div class="meta-info">
+                    <span id="server-uptime"></span>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-brains">
+            <h2>Brains</h2>
+            <div class="panel-content" id="brains-list">
+                <div class="placeholder">Loading brains...</div>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-events">
+            <h2>Events <span class="badge" id="event-count">0</span></h2>
+            <div class="panel-content scrollable" id="events-list">
+                <div class="placeholder">Waiting for events...</div>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-executions">
+            <h2>Executions</h2>
+            <div class="panel-content scrollable" id="executions-list">
+                <div class="placeholder">Loading executions...</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

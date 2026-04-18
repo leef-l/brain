@@ -85,15 +85,15 @@ func TestBridgeTool_UnavailableKind(t *testing.T) {
 	orch := kernel.NewOrchestrator(nil, nil, nil)
 
 	bt := &bridgeTool{
-		schema: tool.Schema{
+		Sch: tool.Schema{
 			Name:        "quant.global_portfolio",
 			Description: "test",
 			Brain:       "quant",
 			InputSchema: json.RawMessage(`{"type":"object"}`),
 		},
-		risk: tool.RiskSafe,
-		kind: agent.KindQuant,
-		orch: orch,
+		Rsk:  tool.RiskSafe,
+		Kind: agent.KindQuant,
+		Orch: orch,
 	}
 
 	result, err := bt.Execute(context.Background(), json.RawMessage(`{}`))
@@ -110,10 +110,10 @@ func TestBridgeTool_UnavailableSidecar(t *testing.T) {
 	orch := kernel.NewOrchestrator(nil, nil, nil)
 
 	bt := &bridgeTool{
-		schema: tool.Schema{Name: "data.get_snapshot", Brain: "data"},
-		risk:   tool.RiskSafe,
-		kind:   agent.KindData,
-		orch:   orch,
+		Sch:  tool.Schema{Name: "data.get_snapshot", Brain: "data"},
+		Rsk:  tool.RiskSafe,
+		Kind: agent.KindData,
+		Orch: orch,
 	}
 
 	result, err := bt.Execute(context.Background(), json.RawMessage(`{"instrument_id":"BTC"}`))

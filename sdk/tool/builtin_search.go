@@ -59,6 +59,13 @@ func (t *SearchTool) Schema() Schema {
 }`),
 		OutputSchema: searchOutputSchema,
 		Brain:        t.brainKind,
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "code.search",
+			ResourceKeyTemplate: "fs:*",
+			AccessMode:          "shared-read",
+			Scope:               "turn",
+			ApprovalClass:       "readonly",
+		},
 	}
 }
 

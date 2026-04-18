@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "kind": "{{.Kind}}",
+  "name": "{{.Name}}",
+  "brain_version": "0.1.0",
+  "capabilities": [],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-{{.Kind}}-sidecar"
+  },
+  "policy": {
+    "approval_class": "workspace-write"
+  }
+}

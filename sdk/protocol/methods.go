@@ -98,6 +98,15 @@ const (
 	MethodSpecialistCallTool = "specialist.call_tool"
 )
 
+// Brain learning methods — sidecar→host direction.
+// L0 BrainLearner 上报聚合指标到 central LearningEngine。
+const (
+	// MethodBrainMetrics is the sidecar→host request that uploads the
+	// brain's aggregated learning metrics (BrainMetrics) so that the
+	// central LearningEngine can update its L1 capability profile.
+	MethodBrainMetrics = "brain/metrics"
+)
+
 // Observability methods — 20-协议规格.md §10.1 (sidecar→host
 // notifications).
 const (

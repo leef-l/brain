@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "kind": "central",
+  "name": "Central Brain",
+  "brain_version": "0.1.0",
+  "description": "中央协调者：理解任务意图、选择目标脑、委托执行、审查结果",
+  "capabilities": [
+    "domain.orchestration",
+    "task.understand",
+    "task.delegate",
+    "task.review",
+    "mode.interactive",
+    "mode.background"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain"
+  },
+  "policy": {
+    "approval_class": "control-plane",
+    "approval_mode": "auto",
+    "tool_scope": "central"
+  },
+  "task_patterns": [
+    "任务理解与分解",
+    "脑选择与委托",
+    "结果审查与汇总",
+    "多脑协作编排"
+  ],
+  "health": {
+    "startup_timeout_ms": 5000,
+    "heartbeat_timeout_ms": 30000
+  }
+}

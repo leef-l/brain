@@ -1,0 +1,101 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/sidecar"
+)
+
+// {{.Kind}}Handler 实现 sidecar.BrainHandler 接口。
+// 这是第三方专精大脑的核心业务逻辑入口。
+type {{.Kind}}Handler struct{}
+
+// Kind 返回此专精大脑的角色标识符。
+// Kernel/Orchestrator 通过此标识路由任务到对应的 sidecar。
+func (h *{{.Kind}}Handler) Kind() agent.Kind {
+	return agent.Kind("{{.Kind}}")
+}
+
+// Version 返回此 sidecar 自身的版本号。
+// 此版本独立于 Kernel/SDK 版本，由第三方开发者自行管理。
+func (h *{{.Kind}}Handler) Version() string {
+	return "0.1.0"
+}
+
+// Tools 返回此专精大脑支持的工具名列表。
+// 列表内容会在 initialize 握手和 tools/list 响应中返回给 Kernel。
+// 注意：只返回当前配置下实际有效的工具，不要返回理论上全部工具。
+func (h *{{.Kind}}Handler) Tools() []string {
+	return []string{
+		"{{.Kind}}.hello",
+	}
+}
+
+// HandleMethod 处理 Kernel 发来的 RPC 方法调用。
+// sidecar 框架会自动处理 initialize / tools/list / $/shutdown，
+// 其余方法（brain/execute, tools/call 等）会路由到此方法。
+func (h *{{.Kind}}Handler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
+	switch method {
+	case "brain/execute":
+		return h.handleExecute(ctx, params)
+	case "tools/call":
+		return h.handleToolCall(ctx, params)
+	default:
+		return nil, sidecar.ErrMethodNotFound
+	}
+}
+
+// handleExecute 处理 brain/execute 请求。
+// 这是专精大脑最核心的业务入口：Kernel 通过此方法把子任务交给你。
+// 典型流程：解析请求 → 执行业务逻辑 → 返回结果摘要。
+func (h *{{.Kind}}Handler) handleExecute(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	// 解析执行请求
+	var req struct {
+		Task      string `json:"task"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("parse execute request: %w", err)
+	}
+
+	// TODO: 在此实现你的业务逻辑
+	// 如需调用 LLM，请实现 sidecar.RichBrainHandler 接口获取 KernelCaller，
+	// 然后通过 KernelCaller.CallKernel(ctx, "llm.complete", ...) 进行推理。
+
+	return map[string]interface{}{
+		"status":  "completed",
+		"summary": fmt.Sprintf("{{.Kind}} brain completed task: %s", req.Task),
+		"turns":   1,
+	}, nil
+}
+
+// handleToolCall 处理 tools/call 请求。
+// Kernel 或其他 sidecar 可通过此方法调用你注册的本地工具。
+func (h *{{.Kind}}Handler) handleToolCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("parse tool call: %w", err)
+	}
+
+	switch req.Name {
+	case "{{.Kind}}.hello":
+		// 示例工具：返回一条问候消息
+		return map[string]interface{}{
+			"tool":    req.Name,
+			"output":  map[string]string{"message": "Hello from {{.Kind}} brain!"},
+			"isError": false,
+		}, nil
+	default:
+		return map[string]interface{}{
+			"tool":    req.Name,
+			"isError": true,
+			"error":   fmt.Sprintf("unknown tool: %s", req.Name),
+		}, nil
+	}
+}

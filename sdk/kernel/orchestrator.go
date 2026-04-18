@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/executionpolicy"
 	"github.com/leef-l/brain/sdk/protocol"
 )
@@ -42,6 +43,15 @@ type SubtaskRequest struct {
 	// Execution carries the effective workdir / file policy boundary the
 	// specialist must inherit from the caller.
 	Execution *executionpolicy.ExecutionSpec `json:"execution,omitempty"`
+
+	// RequiredCaps 是硬匹配标签（全部必须满足，否则 brain 被过滤）。
+	RequiredCaps []string `json:"required_caps,omitempty"`
+
+	// PreferredCaps 是软匹配标签（命中越多分越高）。
+	PreferredCaps []string `json:"preferred_caps,omitempty"`
+
+	// TaskType 用于 LearningEngine 的 L1 能力画像查询和更新。
+	TaskType string `json:"task_type,omitempty"`
 }
 
 // SubtaskBudget limits a single delegated subtask.
@@ -103,14 +113,33 @@ type Orchestrator struct {
 	binResolver func(kind agent.Kind) (string, error)
 	toolCalls   SpecialistToolCallAuthorizer
 
+	// contextEngine 是可选的上下文装配引擎。当非 nil 时，Delegate 在
+	// 发送消息给下游 brain 之前会调用 Assemble() 装配和压缩上下文。
+	contextEngine ContextEngine
+
+	// capMatcher 是可选的能力匹配器。当非 nil 且 TargetKind 为空时，
+	// Delegate 会通过三阶段匹配算法自动选择最佳 brain。
+	capMatcher *CapabilityMatcher
+
+	// learner 是可选的自适应学习引擎。当非 nil 时，
+	// Delegate 在任务完成后记录结果用于 L1 能力画像更新。
+	learner *LearningEngine
+
+	// approver 是可选的语义审批器。当非 nil 时，HandleSpecialistCallToolFrom
+	// 优先使用它代替 toolCalls（静态白名单），实现基于操作语义的授权决策。
+	approver SemanticApprover
+
+	// pool 是可选的共享进程池。当非 nil 时，getOrStartSidecar 会
+	// 委托给 pool.GetBrain，使多个 Run 共享同一个全局池。
+	pool BrainPool
+
 	// available records which sidecar binaries exist on disk.
 	available map[agent.Kind]bool
 
 	// registrations stores BrainRegistration for config-driven brains.
 	registrations map[agent.Kind]*BrainRegistration
 
-	mu     sync.Mutex
-	active map[agent.Kind]agent.Agent // running sidecar pool (reused)
+	mu sync.Mutex
 }
 
 // NewOrchestrator creates an Orchestrator. It probes the filesystem for
@@ -134,7 +163,6 @@ func NewOrchestratorWithConfig(runner BrainRunner, llmProxy *LLMProxy, binResolv
 		toolCalls:     DefaultSpecialistToolCallAuthorizer(),
 		available:     make(map[agent.Kind]bool),
 		registrations: make(map[agent.Kind]*BrainRegistration),
-		active:        make(map[agent.Kind]agent.Agent),
 	}
 
 	if len(cfg.Brains) > 0 {
@@ -155,6 +183,54 @@ func NewOrchestratorWithConfig(runner BrainRunner, llmProxy *LLMProxy, binResolv
 	// so that the LLM proxy knows which model each brain should use.
 	o.syncLLMModels()
 
+	return o
+}
+
+// OrchestratorOption 是 Orchestrator 的可选配置函数。
+type OrchestratorOption func(*Orchestrator)
+
+// WithContextEngine 设置可选的上下文装配引擎。
+// 当设置后，Delegate 在发送消息给下游 brain 之前会调用 Assemble() 装配上下文。
+func WithContextEngine(ce ContextEngine) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.contextEngine = ce
+	}
+}
+
+// WithCapabilityMatcher 设置可选的能力匹配器。
+// 当 SubtaskRequest.TargetKind 为空时，用匹配算法自动选择最佳 brain。
+func WithCapabilityMatcher(cm *CapabilityMatcher) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.capMatcher = cm
+	}
+}
+
+// WithLearningEngine 设置可选的自适应学习引擎。
+// Delegate 完成后会记录结果，用于 L1 能力画像的 EWMA 更新。
+func WithLearningEngine(le *LearningEngine) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.learner = le
+	}
+}
+
+// WithSemanticApprover 设置语义审批器，替代 SpecialistToolCallAuthorizer 的静态白名单。
+// 当设置后，HandleSpecialistCallToolFrom 优先使用语义审批而非静态规则。
+func WithSemanticApprover(sa SemanticApprover) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.approver = sa
+	}
+}
+
+// NewOrchestratorWithPool 创建一个使用外部 BrainPool 的 Orchestrator。
+// 当 pool 非 nil 时，getOrStartSidecar 会委托给 pool.GetBrain，
+// 使多个 Orchestrator / Run 共享同一个全局进程池。
+// 这是 v3 架构过渡期的推荐构造函数。
+func NewOrchestratorWithPool(pool BrainPool, runner BrainRunner, llmProxy *LLMProxy, binResolver func(agent.Kind) (string, error), cfg OrchestratorConfig, opts ...OrchestratorOption) *Orchestrator {
+	o := NewOrchestratorWithConfig(runner, llmProxy, binResolver, cfg)
+	o.pool = pool
+	for _, opt := range opts {
+		opt(o)
+	}
 	return o
 }
 
@@ -206,48 +282,40 @@ func (o *Orchestrator) syncLLMModels() {
 // long-lived context (e.g. the serve context). Errors are logged to stderr
 // but do not prevent other brains from starting.
 func (o *Orchestrator) AutoStartBrains(ctx context.Context) {
-	for kind, reg := range o.registrations {
-		if !reg.AutoStart {
-			continue
-		}
-		if !o.available[kind] {
-			fmt.Fprintf(os.Stderr, "orchestrator: auto-start %s skipped (no binary)\n", kind)
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "orchestrator: auto-starting %s sidecar...\n", kind)
-		if _, err := o.getOrStartSidecar(ctx, kind); err != nil {
-			fmt.Fprintf(os.Stderr, "orchestrator: auto-start %s failed: %v\n", kind, err)
-		} else {
-			fmt.Fprintf(os.Stderr, "orchestrator: auto-start %s ok\n", kind)
-		}
+	if o.pool == nil {
+		fmt.Fprintf(os.Stderr, "orchestrator: AutoStartBrains skipped (no pool)\n")
+		return
 	}
+	o.pool.AutoStart(ctx)
 }
 
 // StartBrain explicitly starts a sidecar for the given kind. Returns an
 // error if the kind is not available or the sidecar fails to start.
 func (o *Orchestrator) StartBrain(ctx context.Context, kind agent.Kind) error {
+	if o.pool == nil {
+		return fmt.Errorf("brain %q: no pool available", kind)
+	}
 	if !o.available[kind] {
 		return fmt.Errorf("brain %q not available (no sidecar binary found)", kind)
 	}
-	_, err := o.getOrStartSidecar(ctx, kind)
+	_, err := o.pool.GetBrain(ctx, kind)
 	return err
 }
 
 // StopBrain stops a running sidecar for the given kind. No-op if not running.
 func (o *Orchestrator) StopBrain(ctx context.Context, kind agent.Kind) error {
-	o.mu.Lock()
-	ag, ok := o.active[kind]
-	if ok {
-		delete(o.active, kind)
-	}
-	o.mu.Unlock()
-	if !ok {
+	if o.pool == nil {
 		return nil
 	}
-	if ag != nil {
-		ag.Shutdown(ctx)
+	// BrainPool 接口的 RemoveBrain 由具体实现提供（ProcessBrainPool）。
+	// 这里用类型断言调用，如果 pool 不支持则忽略。
+	type brainRemover interface {
+		RemoveBrain(kind agent.Kind)
 	}
-	return o.runner.Stop(ctx, kind)
+	if rm, ok := o.pool.(brainRemover); ok {
+		rm.RemoveBrain(kind)
+	}
+	return nil
 }
 
 // BrainStatus describes the state of a specialist brain.
@@ -259,14 +327,17 @@ type BrainStatus struct {
 
 // ListBrains returns the status of all available specialist brains.
 func (o *Orchestrator) ListBrains() []BrainStatus {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+	if o.pool != nil {
+		var out []BrainStatus
+		for _, bs := range o.pool.Status() {
+			out = append(out, bs)
+		}
+		return out
+	}
+	// 无 pool 时返回静态可用性列表（不含运行状态）。
 	var list []BrainStatus
 	for kind := range o.available {
-		status := BrainStatus{
-			Kind:    kind,
-			Running: o.isAlive(o.active[kind]),
-		}
+		status := BrainStatus{Kind: kind}
 		if o.binResolver != nil {
 			if path, err := o.binResolver(kind); err == nil {
 				status.Binary = path
@@ -341,6 +412,20 @@ func (o *Orchestrator) AvailableKinds() []agent.Kind {
 func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*SubtaskResult, error) {
 	start := time.Now()
 
+	// 如果 TargetKind 为空且有 capMatcher，自动选择最佳 brain。
+	if req.TargetKind == "" && o.capMatcher != nil {
+		resolved := o.resolveTargetKind(req)
+		if resolved == "" {
+			return &SubtaskResult{
+				TaskID: req.TaskID,
+				Status: "rejected",
+				Error:  "no brain matches the required capabilities",
+				Usage:  SubtaskUsage{Duration: time.Since(start)},
+			}, nil
+		}
+		req.TargetKind = resolved
+	}
+
 	// Check availability.
 	if !o.CanDelegate(req.TargetKind) {
 		return &SubtaskResult{
@@ -368,6 +453,7 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 	result, err := o.delegateOnce(attemptCtx, req, start)
 	attemptCancel()
 	if err == nil && result.Status != "failed" {
+		o.recordDelegateOutcome(req, result)
 		return result, nil
 	}
 
@@ -378,7 +464,7 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 
 	// Remove crashed sidecar from pool and retry once with a fresh timeout.
 	fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar failed, retrying: %s\n", req.TargetKind, result.Error)
-	o.removeSidecar(req.TargetKind)
+	o.poolRemoveBrain(req.TargetKind)
 
 	retryCtx := ctx
 	retryCancel := func() {}
@@ -389,9 +475,9 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 
 	retryResult, retryErr := o.delegateOnce(retryCtx, req, start)
 	if retryErr != nil || retryResult.Status == "failed" {
-		// Both attempts failed — mark the kind as degraded.
 		fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar retry failed, marking degraded\n", req.TargetKind)
 	}
+	o.recordDelegateOutcome(req, retryResult)
 	return retryResult, retryErr
 }
 
@@ -429,12 +515,49 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 		}, nil
 	}
 
+	// 如果配置了 ContextEngine，在发送给下游 brain 之前装配上下文。
+	// 将 instruction 包装为 user 消息，通过 Assemble() 进行 token 预算控制和压缩。
+	var assembledContext json.RawMessage
+	if o.contextEngine != nil {
+		messages := []llm.Message{{
+			Role: "user",
+			Content: []llm.ContentBlock{{Type: "text", Text: req.Instruction}},
+		}}
+		// 如果请求中已有 context，将其作为 system 消息前置
+		if req.Context != nil {
+			messages = append([]llm.Message{{
+				Role:    "system",
+				Content: []llm.ContentBlock{{Type: "text", Text: string(req.Context)}},
+			}}, messages...)
+		}
+		tokenBudget := 0
+		if req.Budget != nil {
+			// 用 MaxTurns * 4000 作为粗略 token 预算估算
+			tokenBudget = req.Budget.MaxTurns * 4000
+		}
+		assembled, assembleErr := o.contextEngine.Assemble(ctx, AssembleRequest{
+			RunID:       req.TaskID,
+			BrainKind:   req.TargetKind,
+			TaskType:    "delegation",
+			Messages:    messages,
+			TokenBudget: tokenBudget,
+		})
+		if assembleErr != nil {
+			fmt.Fprintf(os.Stderr, "orchestrator: context assemble warning: %v\n", assembleErr)
+			// 装配失败不阻断，降级为原始上下文
+		} else if len(assembled) > 0 {
+			assembledContext, _ = json.Marshal(assembled)
+		}
+	}
+
 	// Build brain/execute payload.
 	payload := map[string]interface{}{
 		"task_id":     req.TaskID,
 		"instruction": req.Instruction,
 	}
-	if req.Context != nil {
+	if assembledContext != nil {
+		payload["context"] = assembledContext
+	} else if req.Context != nil {
 		payload["context"] = req.Context
 	}
 	if req.Budget != nil {
@@ -507,84 +630,22 @@ func (o *Orchestrator) CallTool(ctx context.Context, req *protocol.SpecialistToo
 }
 
 // getOrStartSidecar returns an existing running sidecar or starts a new one.
-// If a cached sidecar is no longer alive, it is removed and a fresh one is started.
+// Delegates entirely to the BrainPool. Returns an error if no pool is set.
 func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (agent.Agent, error) {
-	o.mu.Lock()
-
-	// Reuse existing sidecar if available AND alive.
-	// Skip nil placeholders — those are handled by the "starting" check below.
-	if ag, ok := o.active[kind]; ok && ag != nil {
-		if o.isAlive(ag) {
-			o.mu.Unlock()
-			return ag, nil
-		}
-		// Dead sidecar — remove from pool.
-		fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar dead, removing from pool\n", kind)
-		delete(o.active, kind)
-		// Try to clean up in background.
-		go func() {
-			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			ag.Shutdown(shutCtx)
-			o.runner.Stop(shutCtx, kind)
-		}()
+	if o.pool == nil {
+		return nil, fmt.Errorf("no BrainPool available; cannot start sidecar %s", kind)
 	}
-
-	// Mark this kind as "starting" by inserting nil so that concurrent
-	// callers don't race to start duplicate sidecars.
-	if ag, starting := o.active[kind]; starting && ag == nil {
-		// Another goroutine is already starting this kind — wait outside lock
-		// with a bounded retry loop instead of recursion (avoids stack overflow).
-		o.mu.Unlock()
-
-		resolved, resolvedAg, resolvedErr := o.waitForSidecar(ctx, kind)
-		if resolvedErr != nil {
-			return nil, resolvedErr
-		}
-		if resolved {
-			return resolvedAg, nil
-		}
-
-		// Starter failed and removed placeholder — we'll try starting ourselves.
-		o.mu.Lock()
-		// Re-check: maybe another waiter already started it.
-		if ag, ok := o.active[kind]; ok && ag != nil {
-			o.mu.Unlock()
-			return ag, nil
-		}
-		// Fall through to start it ourselves.
-	}
-	o.active[kind] = nil // placeholder: "starting"
-	o.mu.Unlock()
-
-	// Start a new sidecar outside the lock.
-	desc := agent.Descriptor{
-		Kind:      kind,
-		LLMAccess: agent.LLMAccessProxied,
-	}
-
-	ag, err := o.runner.Start(ctx, kind, desc)
+	ag, err := o.pool.GetBrain(ctx, kind)
 	if err != nil {
-		// Remove the placeholder on failure.
-		o.mu.Lock()
-		if o.active[kind] == nil {
-			delete(o.active, kind)
-		}
-		o.mu.Unlock()
 		return nil, err
 	}
 
-	// Register LLM proxy handlers on the new sidecar's RPC session.
+	// Register LLM proxy and reverse RPC handlers on the sidecar's session.
 	if rpcAgent, ok := ag.(agent.RPCAgent); ok {
 		if rpc, ok := rpcAgent.RPC().(protocol.BidirRPC); ok {
 			o.registerReverseHandlers(rpc, kind)
 		}
 	}
-
-	// Cache the sidecar for reuse (replaces the nil placeholder).
-	o.mu.Lock()
-	o.active[kind] = ag
-	o.mu.Unlock()
 
 	return ag, nil
 }
@@ -603,89 +664,44 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 		return o.HandleSubtaskDelegate()(ctx, params)
 	})
 	rpc.Handle(protocol.MethodSpecialistCallTool, o.HandleSpecialistCallToolFrom(callerKind))
+
+	// L0 学习指标上报：sidecar 调用 brain/metrics 将聚合指标喂给 LearningEngine。
+	rpc.Handle(protocol.MethodBrainMetrics, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		if o.learner == nil {
+			return map[string]string{"status": "ignored"}, nil
+		}
+		var metrics BrainMetrics
+		if err := json.Unmarshal(params, &metrics); err != nil {
+			return nil, fmt.Errorf("unmarshal BrainMetrics: %w", err)
+		}
+		// 如果 sidecar 没有填 BrainKind，用 callerKind 兜底。
+		if metrics.BrainKind == "" {
+			metrics.BrainKind = callerKind
+		}
+		o.learner.IngestBrainMetrics(metrics)
+		return map[string]string{"status": "ok"}, nil
+	})
 }
 
-// waitForSidecar waits for another goroutine to finish starting a sidecar.
-// Returns (resolved, agent, err):
-//   - resolved=true, agent!=nil: sidecar started successfully by another goroutine
-//   - resolved=false: starter failed and removed placeholder, caller should try starting
-//   - err!=nil: context cancelled or timeout
-func (o *Orchestrator) waitForSidecar(ctx context.Context, kind agent.Kind) (bool, agent.Agent, error) {
-	for attempts := 0; attempts < 50; attempts++ { // 50 × 100ms = 5s max
-		time.Sleep(100 * time.Millisecond)
-		if ctx.Err() != nil {
-			return false, nil, ctx.Err()
-		}
-		o.mu.Lock()
-		ag, ok := o.active[kind]
-		o.mu.Unlock()
-		if !ok {
-			// Starter failed and removed placeholder.
-			return false, nil, nil
-		}
-		if ag != nil {
-			// Starter succeeded.
-			return true, ag, nil
-		}
-		// Still nil placeholder — keep waiting.
+// poolRemoveBrain removes a sidecar from the pool (if pool supports it).
+func (o *Orchestrator) poolRemoveBrain(kind agent.Kind) {
+	if o.pool == nil {
+		return
 	}
-	// Timed out waiting.
-	return false, nil, fmt.Errorf("timeout waiting for %s sidecar to start", kind)
-}
-
-// removeSidecar removes a sidecar from the active pool and attempts cleanup.
-func (o *Orchestrator) removeSidecar(kind agent.Kind) {
-	o.mu.Lock()
-	ag, ok := o.active[kind]
-	if ok {
-		delete(o.active, kind)
+	type brainRemover interface {
+		RemoveBrain(kind agent.Kind)
 	}
-	o.mu.Unlock()
-
-	if ok && ag != nil {
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		ag.Shutdown(shutCtx)
-		o.runner.Stop(shutCtx, kind)
+	if rm, ok := o.pool.(brainRemover); ok {
+		rm.RemoveBrain(kind)
 	}
-}
-
-// isAlive checks if a cached sidecar agent is still alive.
-// For processAgent, it checks the underlying process state.
-// For other agents, it does a lightweight RPC ping.
-func (o *Orchestrator) isAlive(ag agent.Agent) bool {
-	if ag == nil {
-		return false
-	}
-	// Check process-based agents by inspecting the cmd.
-	type processChecker interface {
-		ProcessExited() bool
-	}
-	if pc, ok := ag.(processChecker); ok {
-		return !pc.ProcessExited()
-	}
-
-	// For other agent types, assume alive.
-	return true
 }
 
 // Shutdown gracefully stops all running specialist sidecars.
 func (o *Orchestrator) Shutdown(ctx context.Context) error {
-	o.mu.Lock()
-	agents := make(map[agent.Kind]agent.Agent, len(o.active))
-	for k, v := range o.active {
-		agents[k] = v
+	if o.pool != nil {
+		return o.pool.Shutdown(ctx)
 	}
-	o.active = make(map[agent.Kind]agent.Agent)
-	o.mu.Unlock()
-
-	var lastErr error
-	for kind := range agents {
-		if err := o.runner.Stop(ctx, kind); err != nil {
-			lastErr = err
-		}
-	}
-	return lastErr
+	return nil
 }
 
 // DegradationNotice returns a human-readable notice describing which specialist
@@ -719,6 +735,79 @@ func (o *Orchestrator) DegradationNotice() string {
 		"You must handle tasks for these roles yourself.", missing)
 }
 
+// resolveTargetKind 通过 CapabilityMatcher（+可选的 LearningEngine）自动选择最佳 brain。
+func (o *Orchestrator) resolveTargetKind(req *SubtaskRequest) agent.Kind {
+	matchReq := MatchRequest{
+		Required:  req.RequiredCaps,
+		Preferred: req.PreferredCaps,
+	}
+	candidates := o.capMatcher.Match(matchReq)
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	// 只有一个候选或没有 learner，直接取 cap 匹配最高分。
+	if len(candidates) == 1 || o.learner == nil {
+		return candidates[0].BrainKind
+	}
+
+	// 用 learner 排名加权：capScore * 0.7 + learnScore * 0.3
+	taskType := req.TaskType
+	if taskType == "" {
+		taskType = "delegation"
+	}
+	rankings := o.learner.RankBrains(taskType, WeightPolicy{})
+	rankMap := make(map[agent.Kind]float64, len(rankings))
+	for _, r := range rankings {
+		rankMap[r.BrainKind] = r.Score
+	}
+
+	bestKind := candidates[0].BrainKind
+	bestScore := 0.0
+	for _, c := range candidates {
+		learnScore := rankMap[c.BrainKind]
+		combined := c.CombinedScore*0.7 + learnScore*0.3
+		if combined > bestScore {
+			bestScore = combined
+			bestKind = c.BrainKind
+		}
+	}
+	return bestKind
+}
+
+// recordDelegateOutcome 将委派结果反馈给 LearningEngine (L1 EWMA 更新)。
+func (o *Orchestrator) recordDelegateOutcome(req *SubtaskRequest, result *SubtaskResult) {
+	if o.learner == nil || result == nil {
+		return
+	}
+	taskType := req.TaskType
+	if taskType == "" {
+		taskType = "delegation"
+	}
+
+	accuracy := 0.0
+	stability := 0.0
+	if result.Status == "completed" {
+		accuracy = 1.0
+		stability = 1.0
+	}
+
+	speed := 0.0
+	if result.Usage.Duration > 0 && result.Usage.Duration < 30*time.Second {
+		speed = 1.0 - float64(result.Usage.Duration)/float64(30*time.Second)
+		if speed < 0 {
+			speed = 0
+		}
+	}
+
+	cost := 1.0
+	if result.Usage.CostUSD > 0 {
+		cost = 1.0 / (1.0 + result.Usage.CostUSD*10)
+	}
+
+	o.learner.RecordDelegateResult(req.TargetKind, taskType, accuracy, speed, cost, stability)
+}
+
 // HandleSubtaskDelegate returns a protocol.HandlerFunc that can be registered
 // on a central brain's RPC session to handle subtask.delegate requests.
 func (o *Orchestrator) HandleSubtaskDelegate() protocol.HandlerFunc {
@@ -748,9 +837,21 @@ func (o *Orchestrator) HandleSpecialistCallToolFrom(callerKind agent.Kind) proto
 		}
 		if callerKind != "" {
 			o.mu.Lock()
+			sa := o.approver
 			authorizer := o.toolCalls
 			o.mu.Unlock()
-			if authorizer != nil {
+
+			if sa != nil {
+				decision := sa.Approve(ctx, ApprovalRequest{
+					CallerKind: callerKind,
+					TargetKind: req.TargetKind,
+					ToolName:   req.ToolName,
+					Mode:       "delegate",
+				})
+				if !decision.Granted {
+					return nil, fmt.Errorf("semantic approval denied: %s", decision.Reason)
+				}
+			} else if authorizer != nil {
 				if err := authorizer.AuthorizeSpecialistToolCall(ctx, callerKind, req.TargetKind, req.ToolName); err != nil {
 					return nil, err
 				}

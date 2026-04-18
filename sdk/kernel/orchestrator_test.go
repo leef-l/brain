@@ -74,6 +74,85 @@ func newScriptedRunner() *scriptedRunner {
 	}
 }
 
+// testPool wraps a scriptedRunner to implement BrainPool for tests.
+type testPool struct {
+	runner    *scriptedRunner
+	available map[agent.Kind]bool
+	mu        sync.Mutex
+	active    map[agent.Kind]agent.Agent
+}
+
+func newTestPool(runner *scriptedRunner) *testPool {
+	return &testPool{
+		runner:    runner,
+		available: make(map[agent.Kind]bool),
+		active:    make(map[agent.Kind]agent.Agent),
+	}
+}
+
+func (p *testPool) GetBrain(ctx context.Context, kind agent.Kind) (agent.Agent, error) {
+	p.mu.Lock()
+	if ag, ok := p.active[kind]; ok && ag != nil {
+		p.mu.Unlock()
+		return ag, nil
+	}
+	p.mu.Unlock()
+
+	desc := agent.Descriptor{Kind: kind, LLMAccess: agent.LLMAccessProxied}
+	ag, err := p.runner.Start(ctx, kind, desc)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	p.active[kind] = ag
+	p.mu.Unlock()
+	return ag, nil
+}
+
+func (p *testPool) Status() map[agent.Kind]BrainStatus {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	result := make(map[agent.Kind]BrainStatus)
+	for kind := range p.available {
+		result[kind] = BrainStatus{Kind: kind, Running: p.active[kind] != nil}
+	}
+	return result
+}
+
+func (p *testPool) AutoStart(ctx context.Context) {}
+
+func (p *testPool) Shutdown(ctx context.Context) error {
+	p.mu.Lock()
+	agents := make(map[agent.Kind]agent.Agent)
+	for k, v := range p.active {
+		agents[k] = v
+	}
+	p.active = make(map[agent.Kind]agent.Agent)
+	p.mu.Unlock()
+	for kind, ag := range agents {
+		if ag != nil {
+			ag.Shutdown(ctx)
+		}
+		p.runner.Stop(ctx, kind)
+	}
+	return nil
+}
+
+func (p *testPool) RemoveBrain(kind agent.Kind) {
+	p.mu.Lock()
+	ag, ok := p.active[kind]
+	if ok {
+		delete(p.active, kind)
+	}
+	p.mu.Unlock()
+	if ok && ag != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ag.Shutdown(ctx)
+		p.runner.Stop(ctx, kind)
+	}
+}
+
 func (r *scriptedRunner) queue(kind agent.Kind, script *scriptedSidecar) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -185,12 +264,15 @@ func TestOrchestratorCallTool_ForwardsExecution(t *testing.T) {
 	}
 	runner.queue(agent.KindBrowser, script)
 
-	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+	pool := newTestPool(runner)
+	pool.available[agent.KindBrowser] = true
+
+	orch := NewOrchestratorWithPool(pool, runner, nil, func(kind agent.Kind) (string, error) {
 		if kind == agent.KindBrowser {
 			return "/bin/brain-browser", nil
 		}
 		return "", nil
-	})
+	}, OrchestratorConfig{})
 	orch.available[agent.KindBrowser] = true
 
 	allowRead := []string{"docs/**/*.md"}
@@ -258,12 +340,15 @@ func TestHandleSpecialistCallToolFrom_AllowsVerifierBrowserRoute(t *testing.T) {
 	runner := newScriptedRunner()
 	runner.queue(agent.KindBrowser, &scriptedSidecar{})
 
-	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+	pool := newTestPool(runner)
+	pool.available[agent.KindBrowser] = true
+
+	orch := NewOrchestratorWithPool(pool, runner, nil, func(kind agent.Kind) (string, error) {
 		if kind == agent.KindBrowser {
 			return "/bin/brain-browser", nil
 		}
 		return "", nil
-	})
+	}, OrchestratorConfig{})
 	orch.available[agent.KindBrowser] = true
 
 	handler := orch.HandleSpecialistCallToolFrom(agent.KindVerifier)
@@ -388,13 +473,16 @@ func TestOrchestratorHandleSubtaskDelegate_EndToEnd(t *testing.T) {
 	}
 	runner.queue(agent.KindCode, script)
 
+	pool := newTestPool(runner)
+	pool.available[agent.KindCode] = true
+
 	orch := &Orchestrator{
 		runner:   runner,
 		llmProxy: &LLMProxy{ProviderFactory: func(kind agent.Kind) llm.Provider { return provider }},
 		available: map[agent.Kind]bool{
 			agent.KindCode: true,
 		},
-		active: make(map[agent.Kind]agent.Agent),
+		pool: pool,
 	}
 
 	kernelRPC, centralRPC, cleanup, err := newFullDuplexRPC(ctx)
@@ -478,12 +566,15 @@ func TestOrchestratorDelegate_RetriesAfterSidecarCrash(t *testing.T) {
 		},
 	})
 
+	pool := newTestPool(runner)
+	pool.available[agent.KindCode] = true
+
 	orch := &Orchestrator{
 		runner: runner,
 		available: map[agent.Kind]bool{
 			agent.KindCode: true,
 		},
-		active: make(map[agent.Kind]agent.Agent),
+		pool: pool,
 	}
 
 	result, err := orch.Delegate(ctx, &SubtaskRequest{
@@ -558,7 +649,10 @@ func TestOrchestratorRegister_HotPlug(t *testing.T) {
 	runner := newScriptedRunner()
 	runner.queue(agent.KindQuant, &scriptedSidecar{})
 
-	orch := NewOrchestrator(runner, nil, nil)
+	pool := newTestPool(runner)
+	pool.available[agent.KindQuant] = true
+
+	orch := NewOrchestratorWithPool(pool, runner, nil, nil, OrchestratorConfig{})
 
 	// Initially quant is NOT available.
 	if orch.CanDelegate(agent.KindQuant) {
@@ -821,12 +915,15 @@ func TestSpecialistCallTool_QuantToData_EndToEnd(t *testing.T) {
 		},
 	})
 
-	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+	pool := newTestPool(runner)
+	pool.available[agent.KindData] = true
+
+	orch := NewOrchestratorWithPool(pool, runner, nil, func(kind agent.Kind) (string, error) {
 		if kind == agent.KindData {
 			return "/bin/brain-data", nil
 		}
 		return "", fmt.Errorf("not found")
-	})
+	}, OrchestratorConfig{})
 	orch.available[agent.KindData] = true
 
 	// Use HandleSpecialistCallToolFrom as the quant brain would
@@ -866,12 +963,15 @@ func TestSpecialistCallTool_QuantToCentral_ReviewTrade(t *testing.T) {
 		},
 	})
 
-	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+	pool := newTestPool(runner)
+	pool.available[agent.KindCentral] = true
+
+	orch := NewOrchestratorWithPool(pool, runner, nil, func(kind agent.Kind) (string, error) {
 		if kind == agent.KindCentral {
 			return "/bin/brain-central", nil
 		}
 		return "", fmt.Errorf("not found")
-	})
+	}, OrchestratorConfig{})
 	orch.available[agent.KindCentral] = true
 
 	handler := orch.HandleSpecialistCallToolFrom(agent.KindQuant)
@@ -896,12 +996,15 @@ func TestSpecialistCallTool_DataToCentral_DataAlert(t *testing.T) {
 	runner := newScriptedRunner()
 	runner.queue(agent.KindCentral, &scriptedSidecar{})
 
-	orch := NewOrchestrator(runner, nil, func(kind agent.Kind) (string, error) {
+	pool := newTestPool(runner)
+	pool.available[agent.KindCentral] = true
+
+	orch := NewOrchestratorWithPool(pool, runner, nil, func(kind agent.Kind) (string, error) {
 		if kind == agent.KindCentral {
 			return "/bin/brain-central", nil
 		}
 		return "", fmt.Errorf("not found")
-	})
+	}, OrchestratorConfig{})
 	orch.available[agent.KindCentral] = true
 
 	handler := orch.HandleSpecialistCallToolFrom(agent.KindData)

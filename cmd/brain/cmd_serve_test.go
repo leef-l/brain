@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leef-l/brain/cmd/brain/cliruntime"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 )
 
@@ -40,11 +42,11 @@ func TestExecuteRun_CancelledRunStaysCancelled(t *testing.T) {
 	}))
 	defer provider.Close()
 
-	runtime, err := (&fileCLIRuntimeBackend{dataDir: t.TempDir()}).Open("central")
+	runtime, err := (&cliruntime.FileBackend{DataDir: t.TempDir()}).Open("central")
 	if err != nil {
 		t.Fatalf("open runtime: %v", err)
 	}
-	runRec, err := runtime.RunStore.create("central", "sleep", string(modeDefault), t.TempDir())
+	runRec, err := runtime.RunStore.Create("central", "sleep", string(modeDefault), t.TempDir())
 	if err != nil {
 		t.Fatalf("create run record: %v", err)
 	}
@@ -57,6 +59,7 @@ func TestExecuteRun_CancelledRunStaysCancelled(t *testing.T) {
 		Brain:     "central",
 		Prompt:    "sleep",
 		CreatedAt: time.Now().UTC(),
+		taskExec:  kernel.NewTaskExecution(kernel.TaskExecutionConfig{}),
 		cancel:    cancel,
 	}
 	mgr.runs.Store(entry.ID, entry)
@@ -106,7 +109,7 @@ func TestExecuteRun_CancelledRunStaysCancelled(t *testing.T) {
 }
 
 func TestHandleCreateRun_RestrictedRejectDoesNotPersistRun(t *testing.T) {
-	runtime, err := (&fileCLIRuntimeBackend{dataDir: t.TempDir()}).Open("central")
+	runtime, err := (&cliruntime.FileBackend{DataDir: t.TempDir()}).Open("central")
 	if err != nil {
 		t.Fatalf("open runtime: %v", err)
 	}
@@ -121,13 +124,13 @@ func TestHandleCreateRun_RestrictedRejectDoesNotPersistRun(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d, want 400", rec.Code)
 	}
-	if runs := runtime.RunStore.list(0, "all"); len(runs) != 0 {
+	if runs := runtime.RunStore.List(0, "all"); len(runs) != 0 {
 		t.Fatalf("unexpected persisted runs after rejected request: %d", len(runs))
 	}
 }
 
 func TestHandleCreateRun_ConcurrencyRejectDoesNotPersistRun(t *testing.T) {
-	runtime, err := (&fileCLIRuntimeBackend{dataDir: t.TempDir()}).Open("central")
+	runtime, err := (&cliruntime.FileBackend{DataDir: t.TempDir()}).Open("central")
 	if err != nil {
 		t.Fatalf("open runtime: %v", err)
 	}
@@ -164,7 +167,7 @@ func TestHandleCreateRun_ConcurrencyRejectDoesNotPersistRun(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status=%d, want 429", rec.Code)
 	}
-	if runs := runtime.RunStore.list(0, "all"); len(runs) != 0 {
+	if runs := runtime.RunStore.List(0, "all"); len(runs) != 0 {
 		t.Fatalf("unexpected persisted runs after concurrency rejection: %d", len(runs))
 	}
 }

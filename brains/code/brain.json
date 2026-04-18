@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "code",
+  "name": "Code Brain",
+  "brain_version": "0.1.0",
+  "description": "代码专家：文件读写、代码搜索、命令执行",
+  "capabilities": [
+    "file.read",
+    "file.write",
+    "file.delete",
+    "code.search",
+    "code.execute",
+    "domain.development",
+    "resource.filesystem",
+    "mode.interactive"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-code-sidecar"
+  },
+  "policy": {
+    "approval_class": "exec-capable",
+    "approval_mode": "review",
+    "sandbox_profile": "workspace",
+    "tool_scope": "code"
+  },
+  "task_patterns": [
+    "读写源代码文件",
+    "执行构建与测试命令",
+    "代码搜索与重构",
+    "文件系统操作"
+  ],
+  "health": {
+    "startup_timeout_ms": 3000,
+    "heartbeat_timeout_ms": 30000,
+    "expected_methods": ["brain/execute", "brain/tools_list"]
+  }
+}

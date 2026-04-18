@@ -1,0 +1,6 @@
+- [项目真实状态 v1](project_status_v1.md) — Brain SDK 真实版本和进度核定（2026-04-13）
+- [编译和配置铁律](feedback_build_rules.md) — 编译到 GOPATH/bin，配置在 ~/.brain，sidecar 入口不能搞错
+- [配置文件文档铁律](feedback_config_docs.md) — 所有配置字段必须有详细中文注释、默认值、示例，代码与配置同步
+- [正确的编译目标](feedback_build_target.md) — 三个编译目标铁律：brain→kernel, brain-quant-sidecar→quant, brain-data-sidecar→data，绝不能交叉
+- [v3 路线对标分析](project_v3_route_analysis.md) — OpenClaw/Hermes 对比后的 v3 路线调整建议，设计与代码脱节审计（2026-04-16）
+- [brain-v3 分支信息](project_branch_info.md) — brain-v3 从 fix/align-design-architecture 切出，worktree 在 /www/wwwroot/project/brain-v3

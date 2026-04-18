@@ -52,6 +52,13 @@ func (t *ShellExecTool) Schema() Schema {
 }`),
 		OutputSchema: shellExecOutputSchema,
 		Brain:        t.brainKind,
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "code.execute",
+			ResourceKeyTemplate: "shell:{{command}}",
+			AccessMode:          "exclusive-write",
+			Scope:               "turn",
+			ApprovalClass:       "exec-capable",
+		},
 	}
 }
 

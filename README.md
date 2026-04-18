@@ -367,28 +367,27 @@ docs/ 目录下包含多篇 RFC 级规格、架构文档与实施计划，常用
 
 | 编号 | 文档 | 内容 |
 |------|------|------|
-| 02 | [BrainKernel 设计](docs/02-BrainKernel设计.md) | 内核宪法，顶层设计 |
-| 20 | [协议规格](docs/20-协议规格.md) | stdio wire protocol, Content-Length framing, bidir JSON-RPC |
-| 21 | [错误模型](docs/21-错误模型.md) | BrainError, 4 维 Class, Decide 决策矩阵, Fingerprint |
-| 22 | [Agent Loop 规格](docs/22-Agent-Loop规格.md) | Run/Turn/ToolCall, 3 层 Prompt Cache, streaming |
-| 23 | [安全模型](docs/23-安全模型.md) | 5 信任区域, 4 维沙箱, Vault, LLMAccess 三模式 |
-| 24 | [可观测性](docs/24-可观测性.md) | OpenTelemetry metrics/traces/logs |
-| 25 | [测试策略](docs/25-测试策略.md) | 7 层测试金字塔, cassettes, 150 合规测试 |
-| 26 | [持久化与恢复](docs/26-持久化与恢复.md) | 目标架构：SQLite / MySQL 双轨、CAS、Run Resume |
-| 27 | [CLI 命令契约](docs/27-CLI命令契约.md) | 当前 CLI 行为与 v1 契约，含 `chat/run/serve`、restricted、store/layout 快照 |
-| 28 | [SDK 交付规范](docs/28-SDK交付规范.md) | 三级兼容性声明, 150 合规测试总览, 发布流程 |
-| 29 | [第三方专精大脑开发指南](docs/29-第三方专精大脑开发.md) | Sidecar 接入、版本策略、发布与测试建议 |
-| 30 | [付费专精大脑授权方案](docs/30-付费专精大脑授权方案.md) | License 文件、验签、付费 sidecar 商业化路径 |
-| 31 | [Browser Brain 免费版与 Pro 版规划](docs/31-browser-brain-免费版与Pro版规划.md) | 浏览器大脑的免费/付费能力边界与工具规划 |
-| 32 | [v3 Brain 架构](docs/32-v3-Brain架构.md) | Brain / Manifest / Runtime / Package / Capability 的长期架构冻结 |
-| 33 | [Brain Manifest 规格](docs/33-Brain-Manifest规格.md) | v3 Brain 的稳定 schema、runtime/policy/license/health 声明面 |
-| 34 | [Brain Package 与 Marketplace 规范](docs/34-Brain-Package与Marketplace规范.md) | package 布局、安装、签名、marketplace 索引与分发规则 |
+| 02 | [BrainKernel 设计](sdk/docs/02-BrainKernel设计.md) | 内核宪法，顶层设计 |
+| 20 | [协议规格](sdk/docs/20-协议规格.md) | stdio wire protocol, Content-Length framing, bidir JSON-RPC |
+| 21 | [错误模型](sdk/docs/21-错误模型.md) | BrainError, 4 维 Class, Decide 决策矩阵, Fingerprint |
+| 22 | [Agent Loop 规格](sdk/docs/22-Agent-Loop规格.md) | Run/Turn/ToolCall, 3 层 Prompt Cache, streaming |
+| 23 | [安全模型](sdk/docs/23-安全模型.md) | 5 信任区域, 4 维沙箱, Vault, LLMAccess 三模式 |
+| 24 | [可观测性](sdk/docs/24-可观测性.md) | OpenTelemetry metrics/traces/logs |
+| 25 | [测试策略](sdk/docs/25-测试策略.md) | 7 层测试金字塔, cassettes, 150 合规测试 |
+| 26 | [持久化与恢复](sdk/docs/26-持久化与恢复.md) | 目标架构：SQLite / MySQL 双轨、CAS、Run Resume |
+| 27 | [CLI 命令契约](sdk/docs/27-CLI命令契约.md) | 当前 CLI 行为与 v1 契约，含 `chat/run/serve`、restricted、store/layout 快照 |
+| 28 | [SDK 交付规范](sdk/docs/28-SDK交付规范.md) | 三级兼容性声明, 150 合规测试总览, 发布流程 |
+| 29 | [第三方专精大脑开发指南](sdk/docs/29-第三方专精大脑开发.md) | Sidecar 接入、版本策略、发布与测试建议 |
+| 30 | [付费专精大脑授权方案](sdk/docs/30-付费专精大脑授权方案.md) | License 文件、验签、付费 sidecar 商业化路径 |
+| 31 | [Browser Brain 免费版与 Pro 版规划](sdk/docs/31-browser-brain-免费版与Pro版规划.md) | 浏览器大脑的免费/付费能力边界与工具规划 |
+| 32 | [v3 Brain 架构](sdk/docs/32-v3-Brain架构.md) | Brain / Manifest / Runtime / Package / Capability 的长期架构冻结 |
+| 33 | [Brain Manifest 规格](sdk/docs/33-Brain-Manifest规格.md) | v3 Brain 的稳定 schema、runtime/policy/license/health 声明面 |
+| 34 | [Brain Package 与 Marketplace 规范](sdk/docs/34-Brain-Package与Marketplace规范.md) | package 布局、安装、签名、marketplace 索引与分发规则 |
 | 35 | [量化系统三脑架构总览](shared/docs/35-量化系统三脑架构总览.md) | Data/Quant/Central 三脑协作、跨大脑授权、数据流 |
 | 36 | [数据大脑设计](brains/data/docs/36-数据大脑设计.md) | 行情采集、192 维特征向量、Ring Buffer、sidecar 9 tools |
 | 37 | [量化大脑设计](brains/quant/docs/37-量化大脑设计.md) | 策略聚合、风控、交易执行、sidecar 14 tools |
 | 38 | [中央大脑量化职责](central/docs/38-中央大脑量化职责.md) | LLM 复审、日终分析、数据告警 |
 | -- | [三脑系统使用指南](docs/三脑系统使用指南.md) | 部署、配置、运维指南（纸盘/生产模式） |
-| -- | [代码质量修复计划](docs/代码质量修复计划.md) | v0.5.1 审计问题修复，含 2026-04-13 补充回归修复 |
 
 ## 8 项关键设计决策
 

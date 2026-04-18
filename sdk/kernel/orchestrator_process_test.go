@@ -59,14 +59,15 @@ func TestOrchestratorDelegate_ProcessRunner_RealBrainCodeBinary(t *testing.T) {
 		InitTimeout:     10 * time.Second,
 		ShutdownTimeout: 5 * time.Second,
 	}
-	orch := NewOrchestrator(runner, &LLMProxy{
+	pool := NewProcessBrainPool(runner, resolver, OrchestratorConfig{})
+	orch := NewOrchestratorWithPool(pool, runner, &LLMProxy{
 		ProviderFactory: func(kind agent.Kind) llm.Provider {
 			if kind != agent.KindCode {
 				return nil
 			}
 			return provider
 		},
-	}, resolver)
+	}, resolver, OrchestratorConfig{})
 
 	result, err := orch.Delegate(ctx, &SubtaskRequest{
 		TaskID:      "process-1",

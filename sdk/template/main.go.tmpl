@@ -1,0 +1,16 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/leef-l/brain/sdk/sidecar"
+)
+
+func main() {
+	handler := &{{.Kind}}Handler{}
+	if err := sidecar.Run(handler); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-{{.Kind}}: %v\n", err)
+		os.Exit(1)
+	}
+}

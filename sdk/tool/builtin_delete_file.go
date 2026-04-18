@@ -34,6 +34,13 @@ func (t *DeleteFileTool) Schema() Schema {
 }`),
 		OutputSchema: deleteFileOutputSchema,
 		Brain:        t.brainKind,
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "file.delete",
+			ResourceKeyTemplate: "file:{{path}}",
+			AccessMode:          "exclusive-write",
+			Scope:               "turn",
+			ApprovalClass:       "workspace-write",
+		},
 	}
 }
 

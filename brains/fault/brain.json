@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "fault",
+  "name": "Fault Brain",
+  "brain_version": "0.1.0",
+  "description": "混沌测试专家：注入延迟、错误、杀进程、模拟故障",
+  "capabilities": [
+    "chaos.inject_error",
+    "chaos.inject_latency",
+    "chaos.kill_process",
+    "chaos.corrupt_response",
+    "domain.chaos_engineering",
+    "resource.process",
+    "mode.interactive"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-fault-sidecar"
+  },
+  "policy": {
+    "approval_class": "exec-capable",
+    "approval_mode": "explicit",
+    "sandbox_profile": "workspace",
+    "tool_scope": "fault"
+  },
+  "task_patterns": [
+    "错误注入测试",
+    "延迟注入测试",
+    "进程终止测试",
+    "响应篡改测试"
+  ],
+  "health": {
+    "startup_timeout_ms": 3000,
+    "heartbeat_timeout_ms": 30000,
+    "expected_methods": ["brain/execute", "brain/tools_list"]
+  }
+}

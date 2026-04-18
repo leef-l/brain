@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "verifier",
+  "name": "Verifier Brain",
+  "brain_version": "0.1.0",
+  "description": "验证专家：运行测试���检查输出、审查代码质量、浏览器验证",
+  "capabilities": [
+    "verify.read",
+    "verify.test",
+    "verify.check",
+    "verify.browse",
+    "domain.quality_assurance",
+    "resource.filesystem",
+    "mode.interactive"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-verifier-sidecar"
+  },
+  "policy": {
+    "approval_class": "readonly",
+    "approval_mode": "auto",
+    "sandbox_profile": "readonly",
+    "tool_scope": "verifier"
+  },
+  "task_patterns": [
+    "运行单元测试与集成测试",
+    "检查命令输出正确性",
+    "代码审查与验收",
+    "浏览器端 UI 验证"
+  ],
+  "health": {
+    "startup_timeout_ms": 3000,
+    "heartbeat_timeout_ms": 30000,
+    "expected_methods": ["brain/execute", "brain/tools_list"]
+  }
+}
