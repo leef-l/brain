@@ -582,6 +582,121 @@ func TestOrchestratorHandleSubtaskDelegate_EndToEnd(t *testing.T) {
 	}
 }
 
+func TestOrchestratorDelegate_ReusedSidecarDoesNotPanicAcrossBrains(t *testing.T) {
+	for _, kind := range []agent.Kind{
+		agent.KindBrowser,
+		agent.KindCode,
+		agent.KindVerifier,
+		agent.KindFault,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			provider := llm.NewMockProvider("mock")
+			provider.QueueText("delegated once by " + string(kind))
+			provider.QueueText("delegated twice by " + string(kind))
+
+			runner := newScriptedRunner()
+			script := &scriptedSidecar{
+				onExecute: func(ctx context.Context, sidecarRPC protocol.BidirRPC, req sidecar.ExecuteRequest) (interface{}, error) {
+					var resp struct {
+						Content []struct {
+							Type string `json:"type"`
+							Text string `json:"text,omitempty"`
+						} `json:"content"`
+					}
+
+					llmReq := map[string]interface{}{
+						"messages": []llm.Message{
+							{
+								Role: "user",
+								Content: []llm.ContentBlock{
+									{Type: "text", Text: req.Instruction},
+								},
+							},
+						},
+						"max_tokens": 64,
+					}
+					if err := sidecarRPC.Call(ctx, protocol.MethodLLMComplete, llmReq, &resp); err != nil {
+						return nil, err
+					}
+
+					summary := ""
+					if len(resp.Content) > 0 {
+						summary = resp.Content[0].Text
+					}
+					return &sidecar.ExecuteResult{
+						Status:  "completed",
+						Summary: summary,
+						Turns:   1,
+					}, nil
+				},
+			}
+			runner.queue(kind, script)
+
+			pool := newTestPool(runner)
+			pool.available[kind] = true
+
+			orch := &Orchestrator{
+				runner:   runner,
+				llmProxy: &LLMProxy{ProviderFactory: func(agent.Kind) llm.Provider { return provider }},
+				available: map[agent.Kind]bool{
+					kind: true,
+				},
+				pool: pool,
+			}
+
+			first, err := orch.Delegate(ctx, &SubtaskRequest{
+				TaskID:      "reuse-1-" + string(kind),
+				TargetKind:  kind,
+				Instruction: "first delegate for " + string(kind),
+			})
+			if err != nil {
+				t.Fatalf("first Delegate() err = %v", err)
+			}
+			if first.Status != "completed" {
+				t.Fatalf("first status = %q, want completed", first.Status)
+			}
+
+			second, err := orch.Delegate(ctx, &SubtaskRequest{
+				TaskID:      "reuse-2-" + string(kind),
+				TargetKind:  kind,
+				Instruction: "second delegate for " + string(kind),
+			})
+			if err != nil {
+				t.Fatalf("second Delegate() err = %v", err)
+			}
+			if second.Status != "completed" {
+				t.Fatalf("second status = %q, want completed", second.Status)
+			}
+
+			if got := runner.startCount(kind); got != 1 {
+				t.Fatalf("startCount(%s) = %d, want 1 for pooled sidecar reuse", kind, got)
+			}
+			if got := len(orch.reverseHandlersRegistered); got != 1 {
+				t.Fatalf("reverseHandlersRegistered = %d, want 1", got)
+			}
+
+			requests := provider.Requests()
+			if len(requests) != 2 {
+				t.Fatalf("provider requests = %d, want 2", len(requests))
+			}
+			for i, req := range requests {
+				if req.BrainID != string(kind) {
+					t.Fatalf("request[%d].BrainID=%q, want %q", i, req.BrainID, kind)
+				}
+			}
+
+			script.mu.Lock()
+			defer script.mu.Unlock()
+			if len(script.executeCalls) != 2 {
+				t.Fatalf("executeCalls = %d, want 2", len(script.executeCalls))
+			}
+		})
+	}
+}
+
 func TestOrchestratorDelegate_RetriesAfterSidecarCrash(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
