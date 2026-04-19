@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
 )
@@ -123,11 +124,25 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 		Model:     model,
 		MaxTokens: maxTokens,
 	}
+	diaglog.Info("llm", "complete request",
+		"kind", kind,
+		"model", model,
+		"messages", len(req.Messages),
+		"tools", len(req.Tools),
+		"max_tokens", maxTokens,
+	)
 
 	resp, err := provider.Complete(ctx, chatReq)
 	if err != nil {
+		diaglog.Error("llm", "complete failed", "kind", kind, "model", model, "err", err)
 		return nil, fmt.Errorf("LLMProxy: provider.Complete: %w", err)
 	}
+	diaglog.Info("llm", "complete ok",
+		"kind", kind,
+		"model", resp.Model,
+		"stop_reason", resp.StopReason,
+		"output_blocks", len(resp.Content),
+	)
 
 	return &llmCompleteResponse{
 		ID:         resp.ID,

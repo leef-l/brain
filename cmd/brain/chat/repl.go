@@ -41,6 +41,7 @@ func RunChat(args []string) int {
 	}
 
 	cfg, cfgErr := deps.LoadConfig()
+	config.ApplyDiagnosticEnv(cfg)
 	modelInput, err := deps.ParseModelConfigJSON(*modelConfigJSON)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain chat: %v\n", err)

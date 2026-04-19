@@ -9,6 +9,7 @@ import (
 
 	data "github.com/leef-l/brain/brains/data"
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
@@ -106,6 +107,7 @@ func (h *dataHandler) handleExecute(ctx context.Context, params json.RawMessage)
 	start := time.Now()
 	var result *sidecar.ExecuteResult
 	var execErr error
+	diaglog.Logf("brain", "kind=%s instruction=%s execute_start", h.Kind(), req.Instruction)
 
 	switch req.Instruction {
 	case "health":
@@ -128,6 +130,11 @@ func (h *dataHandler) handleExecute(ctx context.Context, params json.RawMessage)
 		Success:  result != nil && result.Status == "completed",
 		Duration: time.Since(start),
 	})
+	if result != nil {
+		diaglog.Logf("brain", "kind=%s instruction=%s status=%s duration=%s err=%v", h.Kind(), req.Instruction, result.Status, time.Since(start), execErr)
+	} else {
+		diaglog.Logf("brain", "kind=%s instruction=%s nil_result duration=%s err=%v", h.Kind(), req.Instruction, time.Since(start), execErr)
+	}
 
 	return result, execErr
 }

@@ -69,4 +69,7 @@ func TestBuildOrchestratorPrompt_PrefersBrowserOverShellExecForWebTasks(t *testi
 	if !strings.Contains(prompt, "Never treat shell_exec HTTP fetches as a substitute for browser delegation") {
 		t.Fatalf("expected explicit curl/wget prohibition, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "report the browser failure clearly instead of retrying the same web task through shell_exec") {
+		t.Fatalf("expected no-shell fallback guidance after browser failure, got %q", prompt)
+	}
 }

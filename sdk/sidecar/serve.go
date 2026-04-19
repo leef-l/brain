@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/protocol"
 )
 
@@ -72,6 +73,7 @@ func ListenAndServe(addr string, handler BrainHandler) error {
 
 	fmt.Fprintf(os.Stderr, "brain-%s sidecar v%s listening on %s (network mode)\n",
 		handler.Kind(), handler.Version(), addr)
+	diaglog.Logf("rpc", "kind=%s listen addr=%s mode=network", handler.Kind(), addr)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()
@@ -84,6 +86,7 @@ func ListenAndServe(addr string, handler BrainHandler) error {
 		return nil
 	case err := <-errCh:
 		if err != nil && err != http.ErrServerClosed {
+			diaglog.Logf("rpc", "kind=%s listen failed err=%v", handler.Kind(), err)
 			return fmt.Errorf("sidecar serve: %w", err)
 		}
 		return nil
@@ -94,6 +97,7 @@ func ListenAndServe(addr string, handler BrainHandler) error {
 func handleHTTPRPC(w http.ResponseWriter, r *http.Request, handler BrainHandler) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 16*1024*1024))
 	if err != nil {
+		diaglog.Logf("rpc", "kind=%s http read_body failed err=%v", handler.Kind(), err)
 		writeRPCError(w, nil, -32700, "parse error")
 		return
 	}
@@ -105,9 +109,11 @@ func handleHTTPRPC(w http.ResponseWriter, r *http.Request, handler BrainHandler)
 		Params  json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
+		diaglog.Logf("rpc", "kind=%s http parse_request failed err=%v", handler.Kind(), err)
 		writeRPCError(w, nil, -32700, "parse error")
 		return
 	}
+	diaglog.Logf("rpc", "kind=%s http method=%s", handler.Kind(), req.Method)
 
 	// 内置方法
 	var result interface{}
@@ -137,15 +143,18 @@ func handleHTTPRPC(w http.ResponseWriter, r *http.Request, handler BrainHandler)
 	default:
 		result, methodErr = handler.HandleMethod(r.Context(), req.Method, req.Params)
 		if methodErr == ErrMethodNotFound {
+			diaglog.Logf("rpc", "kind=%s http method=%s not_found", handler.Kind(), req.Method)
 			writeRPCError(w, req.ID, -32601, "method not found")
 			return
 		}
 	}
 
 	if methodErr != nil {
+		diaglog.Logf("rpc", "kind=%s http method=%s failed err=%v", handler.Kind(), req.Method, methodErr)
 		writeRPCError(w, req.ID, -32000, methodErr.Error())
 		return
 	}
+	diaglog.Logf("rpc", "kind=%s http method=%s ok", handler.Kind(), req.Method)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -172,6 +181,7 @@ func writeRPCError(w http.ResponseWriter, id interface{}, code int, message stri
 func handleWSSession(ctx context.Context, w http.ResponseWriter, r *http.Request, handler BrainHandler) {
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
+		diaglog.Logf("rpc", "kind=%s ws upgrade failed remote=%s err=%v", handler.Kind(), r.RemoteAddr, err)
 		return
 	}
 	defer conn.Close()
@@ -198,12 +208,15 @@ func handleWSSession(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}()
 
 	if err := rpc.Start(sessionCtx); err != nil {
+		diaglog.Logf("rpc", "kind=%s ws start failed remote=%s err=%v", handler.Kind(), r.RemoteAddr, err)
 		return
 	}
 
 	fmt.Fprintf(os.Stderr, "brain-%s: ws session established from %s\n", handler.Kind(), r.RemoteAddr)
+	diaglog.Logf("rpc", "kind=%s ws session established remote=%s", handler.Kind(), r.RemoteAddr)
 
 	<-sessionCtx.Done()
+	diaglog.Logf("rpc", "kind=%s ws session closed remote=%s", handler.Kind(), r.RemoteAddr)
 	rpc.Close()
 }
 

@@ -78,6 +78,7 @@ func newScriptedRunner() *scriptedRunner {
 type testPool struct {
 	runner    *scriptedRunner
 	available map[agent.Kind]bool
+	regs      []BrainRegistration
 	mu        sync.Mutex
 	active    map[agent.Kind]agent.Agent
 }
@@ -120,6 +121,18 @@ func (p *testPool) Status() map[agent.Kind]BrainStatus {
 }
 
 func (p *testPool) AutoStart(ctx context.Context) {}
+
+func (p *testPool) AvailableKinds() []agent.Kind {
+	kinds := make([]agent.Kind, 0, len(p.available))
+	for kind := range p.available {
+		kinds = append(kinds, kind)
+	}
+	return kinds
+}
+
+func (p *testPool) Registrations() []BrainRegistration {
+	return append([]BrainRegistration(nil), p.regs...)
+}
 
 func (p *testPool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
@@ -802,7 +815,6 @@ func TestOrchestratorRegister_HotPlug(t *testing.T) {
 	runner.queue(agent.KindQuant, &scriptedSidecar{})
 
 	pool := newTestPool(runner)
-	pool.available[agent.KindQuant] = true
 
 	orch := NewOrchestratorWithPool(pool, runner, nil, nil, OrchestratorConfig{})
 
@@ -848,6 +860,39 @@ func TestOrchestratorRegister_HotPlug(t *testing.T) {
 	orch.Unregister(agent.KindQuant)
 	if orch.CanDelegate(agent.KindQuant) {
 		t.Fatal("quant should NOT be available after unregister")
+	}
+}
+
+func TestNewOrchestratorWithPool_SyncsPoolCatalog(t *testing.T) {
+	runner := newScriptedRunner()
+	pool := newTestPool(runner)
+	pool.available[agent.KindCode] = true
+	pool.available[agent.KindQuant] = true
+	pool.regs = []BrainRegistration{
+		{Kind: agent.KindCode, Model: "code-model"},
+		{Kind: agent.KindQuant, Model: "quant-model"},
+	}
+
+	llmProxy := &LLMProxy{}
+	orch := NewOrchestratorWithPool(pool, runner, llmProxy, nil, OrchestratorConfig{})
+
+	if !orch.CanDelegate(agent.KindCode) {
+		t.Fatal("code should be available from pool catalog")
+	}
+	if !orch.CanDelegate(agent.KindQuant) {
+		t.Fatal("quant should be available from pool catalog")
+	}
+	if reg := orch.Registration(agent.KindCode); reg == nil || reg.Model != "code-model" {
+		t.Fatalf("code registration=%+v, want model code-model", reg)
+	}
+	if reg := orch.Registration(agent.KindQuant); reg == nil || reg.Model != "quant-model" {
+		t.Fatalf("quant registration=%+v, want model quant-model", reg)
+	}
+	if llmProxy.ModelForKind[agent.KindCode] != "code-model" {
+		t.Fatalf("llm model for code=%q, want code-model", llmProxy.ModelForKind[agent.KindCode])
+	}
+	if llmProxy.ModelForKind[agent.KindQuant] != "quant-model" {
+		t.Fatalf("llm model for quant=%q, want quant-model", llmProxy.ModelForKind[agent.KindQuant])
 	}
 }
 

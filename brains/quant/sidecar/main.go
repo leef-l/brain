@@ -39,7 +39,12 @@ import (
 func Main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	if _, err := license.CheckSidecar("brain-quant", license.VerifyOptions{}); err != nil {
+	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain-quant: license config: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := license.CheckSidecar("brain-quant", verifyOpts); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-quant: license: %v\n", err)
 		os.Exit(1)
 	}
@@ -102,11 +107,11 @@ func Main() {
 		}
 	}
 
-	var err error
+	var runErr error
 	if listenAddr != "" {
-		err = sidecar.ListenAndServe(listenAddr, handler)
+		runErr = sidecar.ListenAndServe(listenAddr, handler)
 	} else {
-		err = sidecar.Run(handler)
+		runErr = sidecar.Run(handler)
 	}
 
 	// sidecar.Run returned — stop quant brain first to prevent new trades.
@@ -124,8 +129,8 @@ func Main() {
 		paperSaver.SaveAll()
 	}
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-quant: %v\n", err)
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "brain-quant: %v\n", runErr)
 		os.Exit(1)
 	}
 }
@@ -165,9 +170,9 @@ func loadConfig(logger *slog.Logger) quant.FullConfig {
 
 // paperStateSaver manages periodic saving of paper exchange state to PG.
 type paperStateSaver struct {
-	store    *tradestore.PaperPGStore
-	papers   map[string]*exchange.PaperExchange // accountID → PaperExchange
-	logger   *slog.Logger
+	store  *tradestore.PaperPGStore
+	papers map[string]*exchange.PaperExchange // accountID → PaperExchange
+	logger *slog.Logger
 }
 
 // Run saves paper state every interval until ctx is cancelled.

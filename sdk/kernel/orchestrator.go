@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/executionpolicy"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
@@ -241,10 +242,29 @@ func WithSemanticApprover(sa SemanticApprover) OrchestratorOption {
 func NewOrchestratorWithPool(pool BrainPool, runner BrainRunner, llmProxy *LLMProxy, binResolver func(agent.Kind) (string, error), cfg OrchestratorConfig, opts ...OrchestratorOption) *Orchestrator {
 	o := NewOrchestratorWithConfig(runner, llmProxy, binResolver, cfg)
 	o.pool = pool
+	o.syncFromPoolCatalog()
 	for _, opt := range opts {
 		opt(o)
 	}
 	return o
+}
+
+func (o *Orchestrator) syncFromPoolCatalog() {
+	if o.pool == nil {
+		return
+	}
+	if regs, ok := o.pool.(brainPoolRegistrationCatalog); ok && len(o.registrations) == 0 {
+		for _, reg := range regs.Registrations() {
+			regCopy := reg
+			o.registrations[reg.Kind] = &regCopy
+		}
+	}
+	if catalog, ok := o.pool.(brainPoolCatalog); ok {
+		for _, kind := range catalog.AvailableKinds() {
+			o.available[kind] = true
+		}
+	}
+	o.syncLLMModels()
 }
 
 // probeRegistration checks if a configured brain's binary exists on disk.
@@ -424,6 +444,11 @@ func (o *Orchestrator) AvailableKinds() []agent.Kind {
 // from the pool, restarts it, and retries once.
 func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*SubtaskResult, error) {
 	start := time.Now()
+	diaglog.Info("delegate", "delegate start",
+		"task_id", req.TaskID,
+		"target_kind", req.TargetKind,
+		"instruction_len", len(req.Instruction),
+	)
 
 	// 如果 TargetKind 为空且有 capMatcher，自动选择最佳 brain。
 	if req.TargetKind == "" && o.capMatcher != nil {
@@ -466,6 +491,12 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 	result, err := o.delegateOnce(attemptCtx, req, start)
 	attemptCancel()
 	if err == nil && result.Status != "failed" {
+		diaglog.Info("delegate", "delegate ok",
+			"task_id", req.TaskID,
+			"target_kind", req.TargetKind,
+			"status", result.Status,
+			"duration", time.Since(start),
+		)
 		o.recordDelegateOutcome(req, result)
 		return result, nil
 	}
@@ -477,6 +508,12 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 
 	// Remove crashed sidecar from pool and retry once with a fresh timeout.
 	fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar failed, retrying: %s\n", req.TargetKind, result.Error)
+	diaglog.Warn("delegate", "delegate retrying",
+		"task_id", req.TaskID,
+		"target_kind", req.TargetKind,
+		"err", result.Error,
+		"retry", true,
+	)
 	o.poolRemoveBrain(req.TargetKind)
 
 	retryCtx := ctx
@@ -490,6 +527,13 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 	if retryErr != nil || retryResult.Status == "failed" {
 		fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar retry failed, marking degraded\n", req.TargetKind)
 	}
+	diaglog.Info("delegate", "delegate retry finished",
+		"task_id", req.TaskID,
+		"target_kind", req.TargetKind,
+		"status", retryResult.Status,
+		"retry_err", retryErr,
+		"duration", time.Since(start),
+	)
 	o.recordDelegateOutcome(req, retryResult)
 	return retryResult, retryErr
 }
@@ -592,6 +636,11 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 	}
 
 	if rpcErr != nil {
+		diaglog.Error("delegate", "rpc call failed",
+			"task_id", req.TaskID,
+			"target_kind", req.TargetKind,
+			"err", rpcErr,
+		)
 		return &SubtaskResult{
 			TaskID: req.TaskID,
 			Status: "failed",
@@ -599,6 +648,11 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 			Usage:  SubtaskUsage{Duration: time.Since(start)},
 		}, nil
 	}
+	diaglog.Info("delegate", "rpc call ok",
+		"task_id", req.TaskID,
+		"target_kind", req.TargetKind,
+		"output_bytes", len(execResult),
+	)
 
 	return &SubtaskResult{
 		TaskID: req.TaskID,

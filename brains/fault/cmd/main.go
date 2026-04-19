@@ -163,20 +163,25 @@ func main() {
 		}
 	}
 
-	if _, err := license.CheckSidecar("brain-fault", license.VerifyOptions{}); err != nil {
+	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain-fault: license config: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := license.CheckSidecar("brain-fault", verifyOpts); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-fault: license: %v\n", err)
 		os.Exit(1)
 	}
 
 	handler := newFaultHandler()
-	var err error
+	var runErr error
 	if listen != "" {
-		err = sidecar.ListenAndServe(listen, handler)
+		runErr = sidecar.ListenAndServe(listen, handler)
 	} else {
-		err = sidecar.Run(handler)
+		runErr = sidecar.Run(handler)
 	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-fault: %v\n", err)
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "brain-fault: %v\n", runErr)
 		os.Exit(1)
 	}
 }

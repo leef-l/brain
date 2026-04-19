@@ -18,6 +18,7 @@ import (
 	"time"
 
 	brain "github.com/leef-l/brain"
+	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/cmd/brain/dashboard"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/cli"
@@ -488,6 +489,7 @@ func runServe(args []string) int {
 	_ = logFile
 
 	cfg, cfgErr := loadConfig()
+	config.ApplyDiagnosticEnv(cfg)
 	mode, err := resolvePermissionMode(*modeFlag, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain serve: %v\n", err)

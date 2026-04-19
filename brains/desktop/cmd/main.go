@@ -21,6 +21,7 @@ import (
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
+	"github.com/leef-l/brain/sdk/toolguard"
 	"github.com/leef-l/brain/sdk/toolpolicy"
 )
 
@@ -48,9 +49,9 @@ func newDesktopHandler() *desktopHandler {
 	}
 }
 
-func (h *desktopHandler) Kind() agent.Kind         { return agent.KindDesktop }
-func (h *desktopHandler) Version() string          { return brain.SDKVersion }
-func (h *desktopHandler) Tools() []string          { return sidecar.RegistryToolNames(h.registry) }
+func (h *desktopHandler) Kind() agent.Kind { return agent.KindDesktop }
+func (h *desktopHandler) Version() string  { return brain.SDKVersion }
+func (h *desktopHandler) Tools() []string  { return sidecar.RegistryToolNames(h.registry) }
 func (h *desktopHandler) ToolSchemas() []tool.Schema {
 	return sidecar.RegistryToolSchemas(h.registry)
 }
@@ -118,8 +119,16 @@ WORKFLOW:
 		maxTurns = req.Budget.MaxTurns
 	}
 
+	registry, err := h.buildRegistry(req.Execution)
+	if err != nil {
+		return &sidecar.ExecuteResult{
+			Status: "failed",
+			Error:  err.Error(),
+		}, nil
+	}
+
 	start := time.Now()
-	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, h.registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "desktop.execute",
 		Success:   result.Status == "completed",
@@ -130,9 +139,27 @@ WORKFLOW:
 }
 
 func (h *desktopHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	return sidecar.DispatchToolCall(ctx, params, h.registry, func(_ *executionpolicy.ExecutionSpec) (tool.Registry, error) {
-		return h.registry, nil
-	})
+	return sidecar.DispatchToolCall(ctx, params, h.registry, h.buildRegistry)
+}
+
+func (h *desktopHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (tool.Registry, error) {
+	bounds, err := toolguard.NewBoundaries(spec)
+	if err != nil {
+		return nil, err
+	}
+
+	var reg tool.Registry = tool.NewMemRegistry()
+	reg.Register(tool.WrapSandbox(tool.NewDesktopOpenPathTool(), bounds.Sandbox))
+	reg.Register(tool.NewDesktopListWindowsTool())
+	reg.Register(tool.NewDesktopSendHotkeyTool())
+	reg.Register(tool.NewNoteTool("desktop"))
+
+	if cfg, err := toolpolicy.Load(""); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-desktop: load tool policy: %v\n", err)
+	} else {
+		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindDesktop))...)
+	}
+	return reg, nil
 }
 
 func main() {
@@ -143,20 +170,25 @@ func main() {
 		}
 	}
 
-	if _, err := license.CheckSidecar("brain-desktop", license.VerifyOptions{}); err != nil {
+	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain-desktop: license config: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := license.CheckSidecar("brain-desktop", verifyOpts); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-desktop: license: %v\n", err)
 		os.Exit(1)
 	}
 
 	handler := newDesktopHandler()
-	var err error
+	var runErr error
 	if listen != "" {
-		err = sidecar.ListenAndServe(listen, handler)
+		runErr = sidecar.ListenAndServe(listen, handler)
 	} else {
-		err = sidecar.Run(handler)
+		runErr = sidecar.Run(handler)
 	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-desktop: %v\n", err)
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "brain-desktop: %v\n", runErr)
 		os.Exit(1)
 	}
 }

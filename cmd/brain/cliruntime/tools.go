@@ -37,7 +37,7 @@ func ManageTool(e *env.Environment, t tool.Tool, class env.ToolClass) tool.Tool 
 	return e.ManageTool(t, class, env.WrapConfirm)
 }
 
-func RegisterManagedRealTools(reg tool.Registry, e *env.Environment) {
+func RegisterManagedRealTools(reg tool.Registry, e *env.Environment, brainKind string) {
 	reg.Register(ManageTool(e, tool.NewReadFileTool("code"), env.ToolClassRead))
 	reg.Register(ManageTool(e, tool.NewWriteFileTool("code"), env.ToolClassEdit))
 	reg.Register(ManageTool(e, tool.NewEditFileTool("code"), env.ToolClassEdit))
@@ -50,7 +50,9 @@ func RegisterManagedRealTools(reg tool.Registry, e *env.Environment) {
 	reg.Register(ManageTool(e, tool.NewVerifierReadFileTool(), env.ToolClassRead))
 	reg.Register(NewManagedRunTestsTool(e))
 	reg.Register(tool.NewCheckOutputTool())
-	reg.Register(NewManagedBrowserActionTool(e))
+	if brainKind == "verifier" {
+		reg.Register(NewManagedBrowserActionTool(e))
+	}
 
 	// Task #16: 人类接管工具,brain 无关,可被所有 brain 调用。
 	reg.Register(tool.NewHumanRequestTakeoverTool())
@@ -59,7 +61,7 @@ func RegisterManagedRealTools(reg tool.Registry, e *env.Environment) {
 // BuildManagedRegistry creates a filtered tool registry for non-interactive runs.
 func BuildManagedRegistry(cfg *toolpolicy.Config, e *env.Environment, brainKind string, registerExtra func(tool.Registry)) tool.Registry {
 	reg := tool.NewMemRegistry()
-	RegisterManagedRealTools(reg, e)
+	RegisterManagedRealTools(reg, e, brainKind)
 	if registerExtra != nil {
 		registerExtra(reg)
 	}

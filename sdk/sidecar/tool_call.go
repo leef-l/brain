@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/executionpolicy"
 	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/tool"
@@ -19,33 +20,41 @@ type RegistryBuilder func(*executionpolicy.ExecutionSpec) (tool.Registry, error)
 func DispatchToolCall(ctx context.Context, params json.RawMessage, fallback tool.Registry, build RegistryBuilder) (interface{}, error) {
 	var req protocol.ToolCallRequest
 	if err := json.Unmarshal(params, &req); err != nil {
+		diaglog.Logf("tool", "dispatch parse_request failed err=%v", err)
 		return toolCallFailure(req.Name, "parse_request", fmt.Sprintf("parse error: %v", err)), nil
 	}
+	diaglog.Logf("tool", "dispatch tool=%s execution_spec=%t", req.Name, req.Execution != nil)
 
 	reg := fallback
 	if req.Execution != nil && build != nil {
 		var err error
 		reg, err = build(req.Execution)
 		if err != nil {
+			diaglog.Logf("tool", "dispatch tool=%s build_registry failed err=%v", req.Name, err)
 			return toolCallFailure(req.Name, "build_registry", fmt.Sprintf("build registry: %v", err)), nil
 		}
 	}
 	if reg == nil {
+		diaglog.Logf("tool", "dispatch tool=%s registry unavailable", req.Name)
 		return toolCallFailure(req.Name, "registry_unavailable", "tool registry unavailable"), nil
 	}
 
 	t, ok := reg.Lookup(req.Name)
 	if !ok {
+		diaglog.Logf("tool", "dispatch tool=%s lookup failed", req.Name)
 		return toolCallFailure(req.Name, "tool_not_found", fmt.Sprintf("tool not found: %s", req.Name)), nil
 	}
 
 	result, err := t.Execute(ctx, req.Arguments)
 	if err != nil {
+		diaglog.Logf("tool", "dispatch tool=%s execute failed err=%v", req.Name, err)
 		return toolCallFailure(req.Name, "tool_execution_failed", fmt.Sprintf("tool error: %v", err)), nil
 	}
 	if result == nil {
+		diaglog.Logf("tool", "dispatch tool=%s execute returned nil", req.Name)
 		return toolCallFailure(req.Name, "tool_execution_failed", fmt.Sprintf("tool %s returned nil result", req.Name)), nil
 	}
+	diaglog.Logf("tool", "dispatch tool=%s execute ok is_error=%t", req.Name, result.IsError)
 
 	return &protocol.ToolCallResult{
 		Tool:    req.Name,

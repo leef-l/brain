@@ -13,6 +13,7 @@ import (
 	"github.com/leef-l/brain/brains/quant/tracer"
 	"github.com/leef-l/brain/brains/quant/tradestore"
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/toolpolicy"
@@ -188,28 +189,41 @@ func (h *quantHandler) handleExecute(ctx context.Context, params json.RawMessage
 			Error:  fmt.Sprintf("parse request: %v", err),
 		}, nil
 	}
+	start := time.Now()
+	diaglog.Logf("brain", "kind=%s instruction=%s execute_start", h.Kind(), req.Instruction)
+
+	var (
+		result *sidecar.ExecuteResult
+		err    error
+	)
 
 	switch req.Instruction {
 	case "global_portfolio":
-		return h.execGlobalPortfolio(ctx)
+		result, err = h.execGlobalPortfolio(ctx)
 	case "daily_pnl":
-		return h.execDailyPnL(ctx)
+		result, err = h.execDailyPnL(ctx)
 	case "strategy_weights":
-		return h.execStrategyWeights()
+		result, err = h.execStrategyWeights()
 	case "pause_trading":
-		return h.execPauseTrading()
+		result, err = h.execPauseTrading()
 	case "resume_trading":
-		return h.execResumeTrading()
+		result, err = h.execResumeTrading()
 	case "trace_query":
-		return h.execTraceQuery(ctx, req.Context)
+		result, err = h.execTraceQuery(ctx, req.Context)
 	case "force_close":
-		return h.execForceClose(ctx, req.Context)
+		result, err = h.execForceClose(ctx, req.Context)
 	default:
-		return &sidecar.ExecuteResult{
+		result = &sidecar.ExecuteResult{
 			Status: "failed",
 			Error:  fmt.Sprintf("unknown instruction: %s", req.Instruction),
-		}, nil
+		}
 	}
+	if result != nil {
+		diaglog.Logf("brain", "kind=%s instruction=%s status=%s duration=%s err=%v", h.Kind(), req.Instruction, result.Status, time.Since(start), err)
+	} else {
+		diaglog.Logf("brain", "kind=%s instruction=%s nil_result duration=%s err=%v", h.Kind(), req.Instruction, time.Since(start), err)
+	}
+	return result, err
 }
 
 // ---------------------------------------------------------------------------

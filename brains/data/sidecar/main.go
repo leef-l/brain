@@ -23,7 +23,12 @@ import (
 func Main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	if _, err := license.CheckSidecar("brain-data", license.VerifyOptions{}); err != nil {
+	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		logger.Error("license config failed", "err", err)
+		os.Exit(1)
+	}
+	if _, err := license.CheckSidecar("brain-data", verifyOpts); err != nil {
 		logger.Error("license check failed", "err", err)
 		os.Exit(1)
 	}

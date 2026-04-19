@@ -10,6 +10,7 @@ import (
 
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/tool"
@@ -258,6 +259,7 @@ func RunAgentLoopWithContext(ctx context.Context, caller KernelCaller, registry 
 
 	result, err := runner.Execute(ctx, run, messages, opts)
 	if err != nil {
+		diaglog.Logf("tool", "run_id=%s runner_execute_failed err=%v", runID, err)
 		_ = tool.FinishRecorder(ctx, "failure")
 		return &ExecuteResult{
 			Status: "failed",
@@ -290,6 +292,7 @@ func RunAgentLoopWithContext(ctx context.Context, caller KernelCaller, registry 
 		Summary: summary,
 		Turns:   result.Run.Budget.UsedTurns,
 	}
+	diaglog.Logf("tool", "run_id=%s status=%s turns=%d error=%s", runID, out.Status, out.Turns, out.Error)
 	// 如果最后一个 Turn 带错误，回填到 Error 字段。
 	if n := len(result.Turns); n > 0 && result.Turns[n-1] != nil && result.Turns[n-1].Error != nil {
 		out.Error = result.Turns[n-1].Error.Error()
@@ -1753,11 +1756,15 @@ type stderrToolObserver struct{}
 
 func (stderrToolObserver) OnToolStart(_ context.Context, _ *loop.Run, _ *loop.Turn, toolName string, _ json.RawMessage) {
 	fmt.Fprintf(os.Stderr, "  [sidecar] executing %s\n", toolName)
+	diaglog.Logf("tool", "tool=%s start", toolName)
 }
 
 func (stderrToolObserver) OnToolEnd(ctx context.Context, _ *loop.Run, _ *loop.Turn, toolName string, ok bool, _ json.RawMessage) {
 	if !ok {
 		fmt.Fprintf(os.Stderr, "  [sidecar] tool %s FAILED\n", toolName)
+		diaglog.Logf("tool", "tool=%s failed", toolName)
+	} else {
+		diaglog.Logf("tool", "tool=%s ok", toolName)
 	}
 	// P3.5:把工具级别的结果也喂给 SequenceRecorder 的 turn 窗口。
 	// pattern_exec 已在自身 Execute 里写过一次;这里补齐其他工具的失败

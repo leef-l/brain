@@ -154,20 +154,25 @@ func main() {
 		}
 	}
 
-	if _, err := license.CheckSidecar("brain-verifier", license.VerifyOptions{}); err != nil {
+	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain-verifier: license config: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := license.CheckSidecar("brain-verifier", verifyOpts); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-verifier: license: %v\n", err)
 		os.Exit(1)
 	}
 
 	handler := newVerifierHandler()
-	var err error
+	var runErr error
 	if listen != "" {
-		err = sidecar.ListenAndServe(listen, handler)
+		runErr = sidecar.ListenAndServe(listen, handler)
 	} else {
-		err = sidecar.Run(handler)
+		runErr = sidecar.Run(handler)
 	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-verifier: %v\n", err)
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "brain-verifier: %v\n", runErr)
 		os.Exit(1)
 	}
 }

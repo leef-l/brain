@@ -14,6 +14,7 @@ import (
 
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/diaglog"
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/protocol"
 )
@@ -63,6 +64,8 @@ type ProcessRunner struct {
 	mu        sync.Mutex
 	processes map[agent.Kind]*processAgent
 }
+
+var sourceBuildMu sync.Mutex
 
 // processAgent is the Kernel-side handle for a running sidecar process.
 // It implements agent.Agent and holds the transport, RPC session, process
@@ -164,18 +167,9 @@ func (a *processAgent) Shutdown(ctx context.Context) error {
 // Start launches a sidecar process, connects stdio pipes, and runs the
 // initialize handshake. On success the returned Agent is ready for work.
 func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.Descriptor) (agent.Agent, error) {
-	binPath := r.BinPath
-	if binPath == "" && r.BinResolver != nil {
-		var err error
-		binPath, err = r.BinResolver(kind)
-		if err != nil {
-			return nil, brainerrors.New(brainerrors.CodeSidecarStartFailed,
-				brainerrors.WithMessage(fmt.Sprintf("resolve binary for %s: %v", kind, err)))
-		}
-	}
-	if binPath == "" {
-		return nil, brainerrors.New(brainerrors.CodeSidecarStartFailed,
-			brainerrors.WithMessage(fmt.Sprintf("no binary path for brain kind %s", kind)))
+	binPath, err := r.resolveExecutablePath(kind)
+	if err != nil {
+		return nil, err
 	}
 
 	initTimeout := r.InitTimeout
@@ -197,6 +191,7 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	// timeout). The handshake still uses the caller ctx via initCtx below.
 	cmd := exec.Command(binPath, r.Args...)
 	cmd.Env = mergeEnvLists(os.Environ(), r.Env)
+	diaglog.Info("process", "starting sidecar", "kind", kind, "argv", binPath, "extra_args", r.Args)
 
 	// Auto-inject sidecar config paths from ~/.brain/<kind>-brain.yaml
 	// if the corresponding env var is not already set.
@@ -225,9 +220,11 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	}
 
 	if err := cmd.Start(); err != nil {
+		diaglog.Error("process", "start failed", "kind", kind, "err", err)
 		return nil, brainerrors.New(brainerrors.CodeSidecarStartFailed,
 			brainerrors.WithMessage(fmt.Sprintf("exec %s: %v", binPath, err)))
 	}
+	diaglog.Info("process", "started", "kind", kind, "pid", cmd.Process.Pid)
 
 	// Wire up transport and RPC.
 	transport := NewStdioTransport(stdoutPipe, stdinPipe)
@@ -239,6 +236,7 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	// after the caller's ctx (which may be a short-lived start request) ends.
 	agentCtx, cancel := context.WithCancel(context.Background())
 	if err := rpc.Start(agentCtx); err != nil {
+		diaglog.Error("process", "rpc start failed", "kind", kind, "err", err)
 		cancel()
 		cmd.Process.Kill()
 		return nil, brainerrors.New(brainerrors.CodeSidecarStartFailed,
@@ -279,12 +277,14 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 
 	var initResp protocol.InitializeResponse
 	if err := rpc.Call(initCtx, protocol.MethodInitialize, initReq, &initResp); err != nil {
+		diaglog.Error("process", "initialize failed", "kind", kind, "err", err)
 		cancel()
 		cmd.Process.Kill()
 		_ = sidecarInst.TransitionTo(protocol.StateDraining)
 		return nil, brainerrors.Wrap(err, brainerrors.CodeSidecarStartFailed,
 			brainerrors.WithMessage(fmt.Sprintf("initialize handshake failed for %s", kind)))
 	}
+	diaglog.Info("process", "initialize ok", "kind", kind, "version", initResp.BrainVersion, "tools", len(initResp.SupportedTools))
 
 	// Transition to running.
 	if err := sidecarInst.TransitionTo(protocol.StateRunning); err != nil {
@@ -316,6 +316,33 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	r.mu.Unlock()
 
 	return pa, nil
+}
+
+func (r *ProcessRunner) resolveExecutablePath(kind agent.Kind) (string, error) {
+	binPath := r.BinPath
+	explicit := strings.TrimSpace(binPath) != ""
+	if binPath == "" && r.BinResolver != nil {
+		var err error
+		binPath, err = r.BinResolver(kind)
+		if err != nil {
+			return "", brainerrors.New(brainerrors.CodeSidecarStartFailed,
+				brainerrors.WithMessage(fmt.Sprintf("resolve binary for %s: %v", kind, err)))
+		}
+	}
+	if binPath == "" {
+		return "", brainerrors.New(brainerrors.CodeSidecarStartFailed,
+			brainerrors.WithMessage(fmt.Sprintf("no binary path for brain kind %s", kind)))
+	}
+	if explicit {
+		diaglog.Info("process", "using explicit sidecar", "kind", kind, "path", binPath)
+		return binPath, nil
+	}
+	if freshPath, err := buildFreshSidecarBinary(kind); err == nil && freshPath != "" {
+		diaglog.Info("process", "using fresh-built sidecar", "kind", kind, "path", freshPath)
+		return freshPath, nil
+	}
+	diaglog.Info("process", "using resolved sidecar", "kind", kind, "path", binPath)
+	return binPath, nil
 }
 
 // Stop gracefully shuts down the sidecar of the given kind.
@@ -411,6 +438,80 @@ func (a *pipeAgent) Shutdown(ctx context.Context) error {
 		a.cancelFunc()
 	}
 	return nil
+}
+
+func buildFreshSidecarBinary(kind agent.Kind) (string, error) {
+	projectRoot, err := findModuleRoot()
+	if err != nil || projectRoot == "" {
+		return "", err
+	}
+
+	pkgPath, binName, ok := sourcePackageForKind(kind)
+	if !ok {
+		return "", fmt.Errorf("no source package for kind %s", kind)
+	}
+
+	absPkg := filepath.Join(projectRoot, pkgPath)
+	if fi, err := os.Stat(absPkg); err != nil || !fi.IsDir() {
+		return "", fmt.Errorf("source package missing for kind %s", kind)
+	}
+
+	outDir := filepath.Join(projectRoot, ".brain", "bin")
+	outPath := filepath.Join(outDir, binName)
+
+	sourceBuildMu.Lock()
+	defer sourceBuildMu.Unlock()
+
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("go", "build", "-o", outPath, "./"+pkgPath)
+	cmd.Dir = projectRoot
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("build %s: %v: %s", kind, err, strings.TrimSpace(string(out)))
+	}
+	return outPath, nil
+}
+
+func findModuleRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("go.mod not found")
+		}
+		dir = parent
+	}
+}
+
+func sourcePackageForKind(kind agent.Kind) (pkgPath string, binName string, ok bool) {
+	switch kind {
+	case agent.KindBrowser:
+		return "brains/browser/cmd", "brain-browser", true
+	case agent.KindCode:
+		return "brains/code/cmd", "brain-code", true
+	case agent.KindData:
+		return "brains/data/cmd/brain-data-sidecar", "brain-data-sidecar", true
+	case agent.KindFault:
+		return "brains/fault/cmd", "brain-fault", true
+	case agent.KindQuant:
+		return "brains/quant/cmd/brain-quant-sidecar", "brain-quant-sidecar", true
+	case agent.KindVerifier:
+		return "brains/verifier/cmd", "brain-verifier", true
+	case agent.KindDesktop:
+		return "brains/desktop/cmd", "brain-desktop", true
+	case agent.KindCentral:
+		return "cmd/brain", "brain", true
+	default:
+		return "", "", false
+	}
 }
 
 // Start connects to the pre-wired streams and runs the initialize

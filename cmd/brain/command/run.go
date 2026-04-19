@@ -101,6 +101,7 @@ func RunRun(args []string, deps RunDeps) int {
 	}
 
 	cfg, cfgErr := deps.LoadConfig()
+	config.ApplyDiagnosticEnv(cfg)
 	modelInput, err := deps.ParseModelConfigJSON(*modelConfigJSON)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)

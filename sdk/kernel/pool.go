@@ -34,6 +34,14 @@ type BrainPool interface {
 	Shutdown(ctx context.Context) error
 }
 
+type brainPoolCatalog interface {
+	AvailableKinds() []agent.Kind
+}
+
+type brainPoolRegistrationCatalog interface {
+	Registrations() []BrainRegistration
+}
+
 // ProcessBrainPool 基于进程的 BrainPool 实现。
 // 逻辑从 orchestrator.go 的 getOrStartSidecar / waitForSidecar / removeSidecar /
 // AutoStartBrains / ListBrains / Shutdown 中提取而来。
@@ -199,7 +207,12 @@ func (p *ProcessBrainPool) startWithRegistration(ctx context.Context, kind agent
 			KernelVersion:   runner.KernelVersion,
 		}
 		if reg.Binary != "" {
-			cfgRunner.BinPath = reg.Binary
+			if _, err := os.Stat(reg.Binary); err == nil {
+				cfgRunner.BinPath = reg.Binary
+			}
+		}
+		if cfgRunner.BinPath == "" {
+			cfgRunner.BinResolver = runner.BinResolver
 		}
 		if len(reg.Args) > 0 {
 			cfgRunner.Args = append([]string(nil), reg.Args...)
@@ -326,6 +339,18 @@ func (p *ProcessBrainPool) AvailableKinds() []agent.Kind {
 		kinds = append(kinds, k)
 	}
 	return kinds
+}
+
+// Registrations returns the configured brain registrations known to the pool.
+func (p *ProcessBrainPool) Registrations() []BrainRegistration {
+	out := make([]BrainRegistration, 0, len(p.registrations))
+	for _, reg := range p.registrations {
+		if reg == nil {
+			continue
+		}
+		out = append(out, *reg)
+	}
+	return out
 }
 
 // RemoveBrain 从活跃池中移除一个 sidecar 并尝试清理。

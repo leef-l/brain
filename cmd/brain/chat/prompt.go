@@ -26,7 +26,8 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 	base += "Do NOT use shell_exec with curl, wget, lynx, python requests, or similar command-line HTTP fetches " +
 		"to browse/search/read normal web pages when a browser specialist is available. " +
 		"For opening websites, searching the web, reading page content, clicking web UI, or collecting web results, " +
-		"use the browser specialist via `central.delegate` instead.\n"
+		"use the browser specialist via `central.delegate` instead. " +
+		"If browser delegation fails, report that browser failure directly; do NOT fall back to shell_exec HTTP fetches, and do NOT substitute verifier.browser_action for normal user web tasks.\n"
 
 	switch mode {
 	case env.ModePlan:
@@ -148,6 +149,7 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	prompt += "3. After code changes, delegate verification to the verifier brain\n"
 	prompt += "4. Summarize the results to the user\n\n"
 	prompt += "Never treat shell_exec HTTP fetches as a substitute for browser delegation on normal web tasks.\n"
+	prompt += "If browser delegation fails, report the browser failure clearly instead of retrying the same web task through shell_exec, curl, wget, or verifier.browser_action.\n"
 	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n"
 
 	if notice := orch.DegradationNotice(); notice != "" {

@@ -209,6 +209,13 @@ const ConfigReferenceExample = `# ==============================================
 # mode             运行模式："solo"（单机）
 # default_brain    默认大脑："central"
 # log_level        日志级别："debug" | "info" | "warn" | "error"
+# diagnostics      诊断日志开关（默认关闭）
+# diagnostics.enabled      true/false
+# diagnostics.categories   ["process","delegate","llm","tool"] 或 ["all"]
+# diagnostics.file         诊断日志文件路径；默认 ~/.brain/logs/diagnostics.log
+# diagnostics.stderr       是否同时输出到 stderr
+# diagnostics.level        debug/info/warn/error
+# diagnostics.format       text/json
 # timeout          每轮对话超时："30m"，"0" 禁用超时
 #
 # chat_mode        chat/run 权限模式

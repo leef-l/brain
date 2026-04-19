@@ -17,21 +17,22 @@ import (
 // Config is the on-disk configuration structure.
 // JSON format, file: ~/.brain/config.json
 type Config struct {
-	Mode               string        `json:"mode,omitempty"`
-	Endpoint           string        `json:"endpoint,omitempty"`
-	DefaultBrain       string        `json:"default_brain,omitempty"`
-	DefaultModel       string        `json:"default_model,omitempty"`
-	Output             string        `json:"output,omitempty"`
-	LogLevel           string        `json:"log_level,omitempty"`
-	NoColor            bool          `json:"no_color,omitempty"`
-	Timeout            string        `json:"timeout,omitempty"`
-	Budget             *BudgetConfig `json:"default_budget,omitempty"`
-	ChatMode           string        `json:"chat_mode,omitempty"`
-	PermissionMode     string        `json:"permission_mode,omitempty"`
-	ServeWorkdirPolicy string        `json:"serve_workdir_policy,omitempty"`
-	APIKey             string        `json:"api_key,omitempty"`
-	BaseURL            string        `json:"base_url,omitempty"`
-	Model              string        `json:"model,omitempty"`
+	Mode               string             `json:"mode,omitempty"`
+	Endpoint           string             `json:"endpoint,omitempty"`
+	DefaultBrain       string             `json:"default_brain,omitempty"`
+	DefaultModel       string             `json:"default_model,omitempty"`
+	Output             string             `json:"output,omitempty"`
+	LogLevel           string             `json:"log_level,omitempty"`
+	Diagnostics        *DiagnosticsConfig `json:"diagnostics,omitempty"`
+	NoColor            bool               `json:"no_color,omitempty"`
+	Timeout            string             `json:"timeout,omitempty"`
+	Budget             *BudgetConfig      `json:"default_budget,omitempty"`
+	ChatMode           string             `json:"chat_mode,omitempty"`
+	PermissionMode     string             `json:"permission_mode,omitempty"`
+	ServeWorkdirPolicy string             `json:"serve_workdir_policy,omitempty"`
+	APIKey             string             `json:"api_key,omitempty"`
+	BaseURL            string             `json:"base_url,omitempty"`
+	Model              string             `json:"model,omitempty"`
 
 	Providers      map[string]*ProviderConfig `json:"providers,omitempty"`
 	ActiveProvider string                     `json:"active_provider,omitempty"`
@@ -40,10 +41,19 @@ type Config struct {
 	FilePolicy *FilePolicyInput `json:"file_policy,omitempty"`
 
 	Brains       []kernel.BrainRegistration `json:"brains,omitempty"`
-	RemoteBrains []RemoteBrainEntry        `json:"remote_brains,omitempty"`
+	RemoteBrains []RemoteBrainEntry         `json:"remote_brains,omitempty"`
 
 	ToolProfiles map[string]*ToolProfileConfig `json:"tool_profiles,omitempty"`
 	ActiveTools  map[string]string             `json:"active_tools,omitempty"`
+}
+
+type DiagnosticsConfig struct {
+	Enabled    bool     `json:"enabled,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+	File       string   `json:"file,omitempty"`
+	Stderr     bool     `json:"stderr,omitempty"`
+	Level      string   `json:"level,omitempty"`
+	Format     string   `json:"format,omitempty"`
 }
 
 type SandboxCfg struct {
@@ -684,4 +694,3 @@ func SortedKeys(m map[string]string) []string {
 	sort.Strings(keys)
 	return keys
 }
-
