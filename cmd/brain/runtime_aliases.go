@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/leef-l/brain/cmd/brain/cliruntime"
+	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/persistence"
 )
@@ -31,6 +32,10 @@ func loadPersistedRun(id string) (*cliRuntime, *persistedRunRecord, *persistence
 
 func saveRunCheckpoint(ctx context.Context, k *cliRuntime, rec *persistedRunRecord, state string, turnIndex int, turnUUID string) error {
 	return cliruntime.SaveRunCheckpoint(ctx, k, rec, state, turnIndex, turnUUID)
+}
+
+func saveRunCheckpointWithMessages(ctx context.Context, k *cliRuntime, rec *persistedRunRecord, state string, turnIndex int, turnUUID string, messages []llm.Message, system []llm.SystemBlock, tools ...llm.ToolSchema) error {
+	return cliruntime.SaveRunCheckpointWithMessages(ctx, k, rec, state, turnIndex, turnUUID, messages, system, tools...)
 }
 
 func saveRunUsage(ctx context.Context, k *cliRuntime, rec *persistedRunRecord, provider, model string, result *loop.RunResult) error {

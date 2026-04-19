@@ -25,13 +25,13 @@ const (
 // actual version from the build script's <version> argument.
 var (
 	// KernelVersion is the Kernel behavior contract version (semver).
-	KernelVersion = "0.7.0"
+	KernelVersion = "1.0.0"
 
 	// SDKVersion is this Go SDK's semver.
-	SDKVersion = "0.7.0"
+	SDKVersion = "1.0.0"
 
 	// CLIVersion is the user-facing `brain` CLI version (tracks SDKVersion in Go SDK).
-	CLIVersion = "0.7.0"
+	CLIVersion = "1.0.0"
 )
 
 // BuildInfo is filled in at link time via -ldflags.

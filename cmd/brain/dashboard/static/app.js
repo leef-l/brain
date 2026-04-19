@@ -152,7 +152,48 @@
             });
     }
 
-    // --- SSE Events ---
+    // --- WebSocket / SSE Events (WS preferred, SSE fallback) ---
+
+    var wsConn = null;
+
+    function connectWS() {
+        var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        var wsUrl = proto + '//' + location.host + '/v1/dashboard/ws';
+        try {
+            wsConn = new WebSocket(wsUrl);
+        } catch (e) {
+            connectSSE();
+            return;
+        }
+
+        wsConn.onopen = function () {
+            setConnectionStatus('Connected (WS)');
+        };
+
+        wsConn.onmessage = function (e) {
+            try {
+                var msg = JSON.parse(e.data);
+                if (msg.type === 'event' && msg.data) {
+                    var ev = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+                    addEvent(ev);
+                }
+            } catch (err) {
+                addEvent({ type: 'raw', detail: e.data, timestamp: new Date().toISOString() });
+            }
+        };
+
+        wsConn.onerror = function () {
+            wsConn.close();
+            wsConn = null;
+            connectSSE();
+        };
+
+        wsConn.onclose = function () {
+            setConnectionStatus('Disconnected');
+            wsConn = null;
+            setTimeout(connectWS, SSE_RECONNECT_DELAY);
+        };
+    }
 
     function connectSSE() {
         if (sseSource) {
@@ -162,7 +203,7 @@
         sseSource = new EventSource('/v1/dashboard/events');
 
         sseSource.onopen = function () {
-            setConnectionStatus('Connected');
+            setConnectionStatus('Connected (SSE)');
         };
 
         sseSource.onmessage = function (e) {
@@ -178,7 +219,6 @@
             setConnectionStatus('Disconnected');
             sseSource.close();
             sseSource = null;
-            // Auto reconnect
             setTimeout(connectSSE, SSE_RECONNECT_DELAY);
         };
     }
@@ -235,8 +275,8 @@
         loadBrains();
         loadExecutions();
 
-        // SSE connection
-        connectSSE();
+        // Event connection (WebSocket preferred, SSE fallback)
+        connectWS();
 
         // Periodic polling
         setInterval(function () {

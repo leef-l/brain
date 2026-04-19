@@ -54,7 +54,7 @@ func Validate(m *Manifest) []ValidationError {
 	if !validRuntimeTypes[m.Runtime.Type] {
 		errs = append(errs, ValidationError{
 			Field:   "runtime.type",
-			Message: fmt.Sprintf("无效的运行时类型: %q，有效值: native, mcp-backed, wasm, docker, remote", m.Runtime.Type),
+			Message: fmt.Sprintf("无效的运行时类型: %q，有效值: native, mcp-backed, hybrid, wasm, docker, remote", m.Runtime.Type),
 		})
 	}
 
@@ -72,6 +72,13 @@ func Validate(m *Manifest) []ValidationError {
 			errs = append(errs, ValidationError{
 				Field:   "runtime.entrypoint",
 				Message: "native 类型必须指定 entrypoint",
+			})
+		}
+	case RuntimeHybrid:
+		if m.Runtime.Entrypoint == "" {
+			errs = append(errs, ValidationError{
+				Field:   "runtime.entrypoint",
+				Message: "hybrid 类型必须指定 entrypoint（native 部分）",
 			})
 		}
 	case RuntimeRemote:

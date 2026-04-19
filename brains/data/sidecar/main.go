@@ -35,8 +35,23 @@ func Main() {
 	handler := NewHandler(db, logger)
 	logger.Info("data brain sidecar starting", "tools", len(handler.Tools()))
 
-	if err := sidecar.Run(handler); err != nil {
-		logger.Error("sidecar run failed", "err", err)
+	listen := os.Getenv("BRAIN_LISTEN")
+	if listen == "" {
+		for i, arg := range os.Args[1:] {
+			if arg == "--listen" && i+1 < len(os.Args[1:]) {
+				listen = os.Args[i+2]
+			}
+		}
+	}
+
+	var runErr error
+	if listen != "" {
+		runErr = sidecar.ListenAndServe(listen, handler)
+	} else {
+		runErr = sidecar.Run(handler)
+	}
+	if runErr != nil {
+		logger.Error("sidecar run failed", "err", runErr)
 		os.Exit(1)
 	}
 }

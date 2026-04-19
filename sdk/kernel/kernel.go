@@ -42,6 +42,21 @@ type Kernel struct {
 	// Resume coordinates cross-tier resume semantics (26 §7).
 	Resume persistence.ResumeCoordinator
 
+	// RunStore persists run metadata and lifecycle events (E-2).
+	RunStore persistence.RunStore
+
+	// PersistentAudit persists audit trail events to durable storage (E-9).
+	PersistentAudit persistence.AuditLogger
+
+	// LearningStore persists L1-L3 learning data (E-3).
+	LearningStore persistence.LearningStore
+
+	// SharedMessageStore persists cross-brain context transfers (E-7).
+	SharedMessageStore persistence.SharedMessageStore
+
+	// TaskScheduler 是任务级调度引擎 (B-2)。
+	TaskScheduler TaskScheduler
+
 	// ToolRegistry is the tool catalog used by brain sidecars (02 §6).
 	ToolRegistry tool.Registry
 
@@ -185,6 +200,18 @@ func WithPersistence(s persistence.Stores) Option {
 		}
 		if s.ResumeCoordinator != nil {
 			k.Resume = s.ResumeCoordinator
+		}
+		if s.RunStore != nil {
+			k.RunStore = s.RunStore
+		}
+		if s.AuditLogger != nil {
+			k.PersistentAudit = s.AuditLogger
+		}
+		if s.LearningStore != nil {
+			k.LearningStore = s.LearningStore
+		}
+		if s.SharedMessageStore != nil {
+			k.SharedMessageStore = s.SharedMessageStore
 		}
 	}
 }

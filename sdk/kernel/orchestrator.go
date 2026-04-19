@@ -696,6 +696,35 @@ func (o *Orchestrator) poolRemoveBrain(kind agent.Kind) {
 	}
 }
 
+// CollectMetrics 主动从所有运行中的 sidecar 拉取 brain/metrics 指标。
+func (o *Orchestrator) CollectMetrics(ctx context.Context) {
+	if o.learner == nil || o.pool == nil {
+		return
+	}
+	for _, kind := range o.AvailableKinds() {
+		ag, err := o.pool.GetBrain(ctx, kind)
+		if err != nil {
+			continue
+		}
+		rpcAgent, ok := ag.(agent.RPCAgent)
+		if !ok {
+			continue
+		}
+		bidir, ok := rpcAgent.RPC().(protocol.BidirRPC)
+		if !ok {
+			continue
+		}
+		var metrics BrainMetrics
+		if err := bidir.Call(ctx, "brain/metrics", nil, &metrics); err != nil {
+			continue
+		}
+		if metrics.BrainKind == "" {
+			metrics.BrainKind = kind
+		}
+		o.learner.IngestBrainMetrics(metrics)
+	}
+}
+
 // Shutdown gracefully stops all running specialist sidecars.
 func (o *Orchestrator) Shutdown(ctx context.Context) error {
 	if o.pool != nil {
@@ -806,6 +835,19 @@ func (o *Orchestrator) recordDelegateOutcome(req *SubtaskRequest, result *Subtas
 	}
 
 	o.learner.RecordDelegateResult(req.TargetKind, taskType, accuracy, speed, cost, stability)
+
+	// L2: 记录单步序列（单次委派作为一个 step，由调用方聚合多步序列）
+	o.learner.RecordSequence(TaskSequenceRecord{
+		SequenceID: req.TaskID,
+		TotalScore: accuracy,
+		RecordedAt: time.Now(),
+		Steps: []TaskStep{{
+			BrainKind: req.TargetKind,
+			TaskType:  taskType,
+			Duration:  result.Usage.Duration,
+			Score:     accuracy,
+		}},
+	})
 }
 
 // HandleSubtaskDelegate returns a protocol.HandlerFunc that can be registered

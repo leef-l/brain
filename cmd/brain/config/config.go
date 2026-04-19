@@ -39,7 +39,8 @@ type Config struct {
 	Sandbox    *SandboxCfg      `json:"sandbox,omitempty"`
 	FilePolicy *FilePolicyInput `json:"file_policy,omitempty"`
 
-	Brains []kernel.BrainRegistration `json:"brains,omitempty"`
+	Brains       []kernel.BrainRegistration `json:"brains,omitempty"`
+	RemoteBrains []RemoteBrainEntry        `json:"remote_brains,omitempty"`
 
 	ToolProfiles map[string]*ToolProfileConfig `json:"tool_profiles,omitempty"`
 	ActiveTools  map[string]string             `json:"active_tools,omitempty"`
@@ -59,6 +60,15 @@ type ProviderConfig struct {
 	Model    string            `json:"model,omitempty"`
 	Models   map[string]string `json:"models,omitempty"`
 	Protocol string            `json:"protocol,omitempty"`
+}
+
+// RemoteBrainEntry 配置一个远程 brain 连接。
+type RemoteBrainEntry struct {
+	Kind      string `json:"kind"`
+	Endpoint  string `json:"endpoint"`
+	APIKey    string `json:"api_key,omitempty"`
+	Timeout   string `json:"timeout,omitempty"`
+	AutoStart bool   `json:"auto_start,omitempty"`
 }
 
 type BudgetConfig struct {

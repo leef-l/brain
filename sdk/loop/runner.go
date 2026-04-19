@@ -54,6 +54,16 @@ type Runner struct {
 	// When nil, no CachePoints are added to ChatRequests.
 	CacheBuilder CacheBuilder
 
+	// MessageCompressor 在构建 ChatRequest 前压缩消息列表。
+	// 当非 nil 且消息 token 数超过 TokenBudget 时被调用。
+	// 典型实现委托给 kernel.ContextEngine.Compress()。
+	// 通过回调注入避免 loop → kernel 循环依赖。
+	MessageCompressor func(ctx context.Context, messages []llm.Message, budget int) ([]llm.Message, error)
+
+	// TokenBudget 是消息列表的 token 预算上限。
+	// 当 > 0 且 MessageCompressor 非 nil 时，超预算的消息会被自动压缩。
+	TokenBudget int
+
 	// Now returns the current time. Defaults to time.Now().UTC when nil.
 	Now func() time.Time
 }
@@ -296,12 +306,21 @@ done:
 // buildChatRequest constructs a ChatRequest from the current Run state,
 // message history, and RunOptions.
 func (r *Runner) buildChatRequest(run *Run, messages []llm.Message, opts RunOptions) *llm.ChatRequest {
+	// 消息压缩：当超过 token 预算时自动 Compress
+	finalMessages := messages
+	if r.MessageCompressor != nil && r.TokenBudget > 0 {
+		compressed, err := r.MessageCompressor(context.Background(), messages, r.TokenBudget)
+		if err == nil && len(compressed) > 0 {
+			finalMessages = compressed
+		}
+	}
+
 	req := &llm.ChatRequest{
 		RunID:           run.ID,
 		TurnIndex:       run.CurrentTurn,
 		BrainID:         run.BrainID,
 		System:          opts.System,
-		Messages:        messages,
+		Messages:        finalMessages,
 		Tools:           opts.Tools,
 		ToolChoice:      opts.ToolChoice,
 		Model:           opts.Model,

@@ -114,6 +114,8 @@ type runManager struct {
 	learner      *kernel.LearningEngine    // 全局自适应学习引擎（L1-L3）
 	ctxEngine    kernel.ContextEngine      // 全局上下文装配引擎
 	orgEnforcer  kernel.OrgPolicyEnforcer // 组织级授权策略执行器（可为 nil）
+	scheduler    kernel.TaskScheduler     // 任务级调度引擎（B-2）
+	remotePool   *kernel.RemoteBrainPool  // 远程 brain 连接池（D-3，可为 nil）
 	rootCtx  context.Context
 	wg       sync.WaitGroup
 	launchMu sync.Mutex // guards concurrent slot reservations
@@ -300,7 +302,11 @@ func runServe(args []string) int {
 	fmt.Fprintf(os.Stderr, "  mode:      %s\n", mode)
 	fmt.Fprintf(os.Stderr, "  workdir:   %s\n", env.Workdir)
 	fmt.Fprintf(os.Stderr, "  run_wd:    %s\n", runWorkdirPolicy)
-	fmt.Fprintf(os.Stderr, "  store:     %s\n\n", runtime.FileStore.Path())
+	storeLabel := "sqlite"
+	if runtime.FileStore != nil {
+		storeLabel = runtime.FileStore.Path()
+	}
+	fmt.Fprintf(os.Stderr, "  store:     %s\n\n", storeLabel)
 
 	if cfgErr != nil {
 		fmt.Fprintf(os.Stderr, "brain serve: warning: config load: %v\n", cfgErr)
@@ -308,6 +314,9 @@ func runServe(args []string) int {
 	// 创建全局事件总线，供 SSE 端点和运行时事件推送使用
 	globalEventBus := events.NewMemEventBus()
 	leaseManager := kernel.NewMemLeaseManager()
+	// 初始化自适应工具策略（B-5）
+	initAdaptiveToolPolicy(cfg)
+
 	capIndex := kernel.NewCapabilityIndex()
 
 	// 从 brain.json manifest 加载能力标签并注册到 CapabilityIndex。
@@ -317,17 +326,82 @@ func runServe(args []string) int {
 	loadManifestCapabilities(capIndex, pool, env.Workdir)
 
 	capMatcher := kernel.NewCapabilityMatcher(capIndex)
-	learner := kernel.NewLearningEngine()
+
+	// 自适应学习引擎：注入 SQLite 持久化，启动时恢复历史数据
+	var learner *kernel.LearningEngine
+	if runtime.Stores != nil && runtime.Stores.LearningStore != nil {
+		learner = kernel.NewLearningEngineWithStore(runtime.Stores.LearningStore)
+		if err := learner.Load(serveCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "brain serve: warning: load learning data: %v\n", err)
+		}
+	} else {
+		learner = kernel.NewLearningEngine()
+	}
+
+	// 上下文引擎：注入 LLM Summarizer + SharedStore 持久化
 	ctxEngine := kernel.NewDefaultContextEngine()
+	if cfg != nil {
+		if session, err := openConfiguredProvider(cfg, "central", nil, "", "", "", ""); err == nil {
+			ctxEngine.Summarizer = session.Provider
+			ctxEngine.SummaryModel = session.Model
+		}
+	}
+	if runtime.Stores != nil && runtime.Stores.SharedMessageStore != nil {
+		ctxEngine.SharedStore = runtime.Stores.SharedMessageStore
+	}
 
 	// 加载组织级授权策略（如果 ~/.brain/org-policy.json 存在）
+	// 优先尝试 EnterpriseEnforcer（包含权限矩阵 + 吊销检查），回退到 FileOrgPolicyEnforcer。
 	var orgEnforcer kernel.OrgPolicyEnforcer
 	if enforcer, err := kernel.LoadOrgPolicyIfExists(); err != nil {
 		fmt.Fprintf(os.Stderr, "brain serve: warning: org policy load: %v\n", err)
 	} else if enforcer != nil {
-		orgEnforcer = enforcer
-		p := enforcer.Policy()
-		fmt.Fprintf(os.Stderr, "  org:       %s (audit: %s)\n", p.OrgID, p.AuditLevel)
+		// 尝试升级为 EnterpriseEnforcer
+		orgPolicyPath := kernel.DefaultOrgPolicyPath()
+		ee, eeErr := kernel.NewEnterpriseEnforcer(kernel.EnterpriseConfig{
+			OrgPolicyPath: orgPolicyPath,
+		})
+		if eeErr == nil {
+			orgEnforcer = ee
+		} else {
+			orgEnforcer = enforcer
+		}
+		if p := orgEnforcer.Policy(); p != nil {
+			fmt.Fprintf(os.Stderr, "  org:       %s (audit: %s)\n", p.OrgID, p.AuditLevel)
+		}
+	}
+
+	// 任务级调度器：基于 L1 学习排名选择 brain
+	scheduler := kernel.NewDefaultTaskScheduler(learner, func() []agent.Kind {
+		return pool.AvailableKinds()
+	})
+
+	// 远程 brain 连接池（D-3）：从配置 remote_brains 初始化
+	var remotePool *kernel.RemoteBrainPool
+	if cfg != nil && len(cfg.RemoteBrains) > 0 {
+		var remoteCfgs []*kernel.RemoteBrainConfig
+		for _, rb := range cfg.RemoteBrains {
+			timeout := 30 * time.Second
+			if rb.Timeout != "" {
+				if d, err := time.ParseDuration(rb.Timeout); err == nil {
+					timeout = d
+				}
+			}
+			remoteCfgs = append(remoteCfgs, &kernel.RemoteBrainConfig{
+				Kind:      agent.Kind(rb.Kind),
+				Endpoint:  rb.Endpoint,
+				APIKey:    rb.APIKey,
+				Timeout:   timeout,
+				AutoStart: rb.AutoStart,
+			})
+		}
+		if rp, err := kernel.NewRemoteBrainPool(remoteCfgs); err != nil {
+			fmt.Fprintf(os.Stderr, "brain serve: warning: remote pool: %v\n", err)
+		} else {
+			remotePool = rp
+			fmt.Fprintf(os.Stderr, "  remote:    %d brain(s) configured\n", len(remoteCfgs))
+			remotePool.AutoStart(serveCtx)
+		}
 	}
 
 	mgr := &runManager{
@@ -339,6 +413,8 @@ func runServe(args []string) int {
 		learner:      learner,
 		ctxEngine:    ctxEngine,
 		orgEnforcer:  orgEnforcer,
+		scheduler:    scheduler,
+		remotePool:   remotePool,
 		rootCtx:      serveCtx,
 	}
 
@@ -467,7 +543,10 @@ func runServe(args []string) int {
 
 	// Dashboard API 路由
 	serverStart := time.Now().UTC()
-	registerDashboardRoutes(mux, mgr, pool, globalEventBus, cfg, serverStart, leaseManager)
+	wsHub := registerDashboardRoutes(mux, mgr, pool, globalEventBus, cfg, serverStart, leaseManager)
+	if wsHub != nil {
+		wsHub.Start(context.Background())
+	}
 
 	// Dashboard 静态文件服务（嵌入式 SPA）
 	staticFS, _ := iofs.Sub(dashboard.StaticFS, "static")
@@ -517,6 +596,16 @@ func runServe(args []string) int {
 		mgr.cancelAll("server shutdown")
 		if err := mgr.wait(shutCtx); err != nil {
 			fmt.Fprintf(os.Stderr, "brain serve: drain: %v\n", err)
+		}
+		// 保存学习数据到 SQLite
+		if err := learner.Save(shutCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "brain serve: save learning data: %v\n", err)
+		}
+		if mgr.remotePool != nil {
+			mgr.remotePool.Shutdown(shutCtx)
+		}
+		if runtime.Stores != nil {
+			runtime.Stores.Close()
 		}
 		fmt.Fprintln(os.Stderr, "Kernel stopped.")
 		if sig == syscall.SIGTERM {
@@ -773,6 +862,13 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			SystemPrompt:  systemPrompt,
 			EventBus:      mgr.eventBus,
 			BatchPlanner:  batchPlanner,
+			MessageCompressor: func(compCtx context.Context, msgs []llm.Message, budget int) ([]llm.Message, error) {
+				if mgr.ctxEngine == nil {
+					return msgs, nil
+				}
+				return mgr.ctxEngine.Compress(compCtx, msgs, budget)
+			},
+			TokenBudget: 100000,
 		})
 	}
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/leef-l/brain/cmd/brain/cliruntime"
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/cmd/brain/provider"
 	"github.com/leef-l/brain/sdk/cli"
@@ -42,8 +43,20 @@ func RunResume(args []string, loadRun RunLoader, loadCfg ConfigLoader) int {
 		return cli.ExitNotFound
 	}
 
+	// 通过 ResumeCoordinator 验证并记录 resume 尝试次数
+	if runtime.Kernel != nil && runtime.Kernel.Resume != nil {
+		resumeCtx, resumeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer resumeCancel()
+		coordCP, coordErr := runtime.Kernel.Resume.Resume(resumeCtx, cp.RunID)
+		if coordErr != nil {
+			fmt.Fprintf(os.Stderr, "brain resume: %v\n", coordErr)
+			return cli.ExitInvalidState
+		}
+		cp = coordCP
+	}
+
 	switch cp.State {
-	case "paused", "crashed":
+	case "paused", "crashed", "running":
 	case "completed":
 		fmt.Fprintf(os.Stderr, "brain resume: run %s is already completed\n", runID)
 		return cli.ExitInvalidState
@@ -91,14 +104,38 @@ func RunResume(args []string, loadRun RunLoader, loadCfg ConfigLoader) int {
 		CacheBuilder: loop.NewMemCacheBuilder(),
 	}
 
-	messages := []llm.Message{
-		{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "Resume execution"}}},
+	// 从 CAS 恢复对话历史（如果有 MessagesRef）
+	casCtx := context.Background()
+	messages, loadErr := cliruntime.LoadCheckpointMessages(casCtx, runtime, cp)
+	if loadErr != nil || len(messages) == 0 {
+		fmt.Fprintf(os.Stderr, "brain resume: no saved messages, starting with placeholder\n")
+		messages = []llm.Message{
+			{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "Resume execution from checkpoint"}}},
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "brain resume: restored %d messages from checkpoint\n", len(messages))
 	}
+
+	// 从 CAS 恢复 system prompt（如果有 SystemRef）
+	system, _ := cliruntime.LoadCheckpointSystem(casCtx, runtime, cp)
+	if len(system) == 0 {
+		system = []llm.SystemBlock{{Text: "You are resuming a paused run. Continue from where you left off."}}
+	} else {
+		fmt.Fprintf(os.Stderr, "brain resume: restored system prompt from checkpoint\n")
+	}
+
 	opts := loop.RunOptions{
-		System:    []llm.SystemBlock{{Text: "You are resuming a paused run."}},
+		System:    system,
 		MaxTokens: 4096,
 		Model:     providerModel,
 		Stream:    *follow,
+	}
+
+	// 从 CAS 恢复 tools（如果有 ToolsRef）
+	tools, _ := cliruntime.LoadCheckpointTools(casCtx, runtime, cp)
+	if len(tools) > 0 {
+		opts.Tools = tools
+		fmt.Fprintf(os.Stderr, "brain resume: restored %d tool schemas from checkpoint\n", len(tools))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -110,8 +147,15 @@ func RunResume(args []string, loadRun RunLoader, loadCfg ConfigLoader) int {
 		return cli.ExitSoftware
 	}
 
-	cp.State = string(result.Run.State)
-	_ = runtime.Kernel.RunCheckpoint.Save(ctx, cp)
+	finalTurnIndex := cp.TurnIndex
+	finalTurnUUID := cp.TurnUUID + "-resumed"
+	if n := len(result.Turns); n > 0 && result.Turns[n-1] != nil && result.Turns[n-1].Turn != nil {
+		finalTurnIndex = result.Turns[n-1].Turn.Index
+		if result.Turns[n-1].Turn.UUID != "" {
+			finalTurnUUID = result.Turns[n-1].Turn.UUID
+		}
+	}
+	_ = cliruntime.SaveRunCheckpointWithMessages(ctx, runtime, rec, string(result.Run.State), finalTurnIndex, finalTurnUUID, result.FinalMessages, opts.System, opts.Tools...)
 	_, _ = runtime.RunStore.Finish(rec.ID, string(result.Run.State), rec.Result, "")
 
 	replyText := ExtractText(result.FinalMessages)

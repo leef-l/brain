@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/persistence"
 )
@@ -31,6 +32,11 @@ func LoadPersistedRun(id, dataDir string) (*Runtime, *RunRecord, *persistence.Ch
 }
 
 func SaveRunCheckpoint(ctx context.Context, k *Runtime, rec *RunRecord, state string, turnIndex int, turnUUID string) error {
+	return SaveRunCheckpointWithMessages(ctx, k, rec, state, turnIndex, turnUUID, nil, nil)
+}
+
+// SaveRunCheckpointWithMessages 保存 checkpoint 并将 messages、system prompt 和 tools 存入 CAS。
+func SaveRunCheckpointWithMessages(ctx context.Context, k *Runtime, rec *RunRecord, state string, turnIndex int, turnUUID string, messages []llm.Message, system []llm.SystemBlock, tools ...llm.ToolSchema) error {
 	if k == nil || k.Kernel == nil || k.Kernel.RunCheckpoint == nil || rec == nil {
 		return nil
 	}
@@ -44,10 +50,110 @@ func SaveRunCheckpoint(ctx context.Context, k *Runtime, rec *RunRecord, state st
 		State:     state,
 		TurnUUID:  turnUUID,
 	}
+
+	// 将 messages 存入 CAS（如果 ArtifactStore 可用）
+	if k.Kernel.ArtifactStore != nil && len(messages) > 0 {
+		data, err := json.Marshal(messages)
+		if err == nil {
+			ref, err := k.Kernel.ArtifactStore.Put(ctx, rec.StoreRunID, persistence.Artifact{
+				Kind:    "messages",
+				Content: data,
+				Caption: fmt.Sprintf("turn-%d messages", turnIndex),
+			})
+			if err == nil {
+				cp.MessagesRef = ref
+			}
+		}
+	}
+
+	// 将 system prompt 存入 CAS
+	if k.Kernel.ArtifactStore != nil && len(system) > 0 {
+		data, err := json.Marshal(system)
+		if err == nil {
+			ref, err := k.Kernel.ArtifactStore.Put(ctx, rec.StoreRunID, persistence.Artifact{
+				Kind:    "system",
+				Content: data,
+				Caption: fmt.Sprintf("turn-%d system", turnIndex),
+			})
+			if err == nil {
+				cp.SystemRef = ref
+			}
+		}
+	}
+
+	// 将 tools 存入 CAS
+	if k.Kernel.ArtifactStore != nil && len(tools) > 0 {
+		data, err := json.Marshal(tools)
+		if err == nil {
+			ref, err := k.Kernel.ArtifactStore.Put(ctx, rec.StoreRunID, persistence.Artifact{
+				Kind:    "tools",
+				Content: data,
+				Caption: fmt.Sprintf("turn-%d tools", turnIndex),
+			})
+			if err == nil {
+				cp.ToolsRef = ref
+			}
+		}
+	}
+
 	if err := k.Kernel.RunCheckpoint.Save(ctx, cp); err != nil {
 		return err
 	}
 	return k.RunStore.SetCheckpoint(rec.ID, turnUUID)
+}
+
+// LoadCheckpointMessages 从 CAS 恢复 checkpoint 中的 messages。
+func LoadCheckpointMessages(ctx context.Context, k *Runtime, cp *persistence.Checkpoint) ([]llm.Message, error) {
+	if k == nil || k.Kernel == nil || k.Kernel.ArtifactStore == nil || cp == nil || cp.MessagesRef == "" {
+		return nil, nil
+	}
+	reader, err := k.Kernel.ArtifactStore.Get(ctx, cp.MessagesRef)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	var messages []llm.Message
+	if err := json.NewDecoder(reader).Decode(&messages); err != nil {
+		return nil, fmt.Errorf("decode checkpoint messages: %w", err)
+	}
+	return messages, nil
+}
+
+// LoadCheckpointSystem 从 CAS 恢复 checkpoint 中的 system prompt。
+func LoadCheckpointSystem(ctx context.Context, k *Runtime, cp *persistence.Checkpoint) ([]llm.SystemBlock, error) {
+	if k == nil || k.Kernel == nil || k.Kernel.ArtifactStore == nil || cp == nil || cp.SystemRef == "" {
+		return nil, nil
+	}
+	reader, err := k.Kernel.ArtifactStore.Get(ctx, cp.SystemRef)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	var system []llm.SystemBlock
+	if err := json.NewDecoder(reader).Decode(&system); err != nil {
+		return nil, fmt.Errorf("decode checkpoint system: %w", err)
+	}
+	return system, nil
+}
+
+// LoadCheckpointTools 从 CAS 恢复 checkpoint 中的 tool schemas。
+func LoadCheckpointTools(ctx context.Context, k *Runtime, cp *persistence.Checkpoint) ([]llm.ToolSchema, error) {
+	if k == nil || k.Kernel == nil || k.Kernel.ArtifactStore == nil || cp == nil || cp.ToolsRef == "" {
+		return nil, nil
+	}
+	reader, err := k.Kernel.ArtifactStore.Get(ctx, cp.ToolsRef)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	var tools []llm.ToolSchema
+	if err := json.NewDecoder(reader).Decode(&tools); err != nil {
+		return nil, fmt.Errorf("decode checkpoint tools: %w", err)
+	}
+	return tools, nil
 }
 
 func SaveRunUsage(ctx context.Context, k *Runtime, rec *RunRecord, provider, model string, result *loop.RunResult) error {

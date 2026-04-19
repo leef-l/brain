@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	data "github.com/leef-l/brain/brains/data"
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
 
@@ -20,6 +22,7 @@ type dataHandler struct {
 	db       *data.DataBrain
 	registry tool.Registry
 	logger   *slog.Logger
+	learner  *data.DataBrainLearner
 }
 
 // NewHandler creates a data sidecar handler.
@@ -45,6 +48,7 @@ func NewHandler(db *data.DataBrain, logger *slog.Logger) *dataHandler {
 		db:       db,
 		registry: reg,
 		logger:   logger,
+		learner:  data.NewDataBrainLearner(db),
 	}
 }
 
@@ -74,6 +78,8 @@ func (h *dataHandler) HandleMethod(ctx context.Context, method string, params js
 		return sidecar.DispatchToolCall(ctx, params, h.registry, nil)
 	case "brain/execute":
 		return h.handleExecute(ctx, params)
+	case "brain/metrics":
+		return h.learner.ExportMetrics(), nil
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
@@ -89,21 +95,33 @@ func (h *dataHandler) handleExecute(ctx context.Context, params json.RawMessage)
 		}, nil
 	}
 
+	start := time.Now()
+	var result *sidecar.ExecuteResult
+	var execErr error
+
 	switch req.Instruction {
 	case "health":
-		return h.execHealth()
+		result, execErr = h.execHealth()
 	case "active_instruments":
-		return h.execActiveInstruments()
+		result, execErr = h.execActiveInstruments()
 	case "snapshot":
-		return h.execSnapshot(req.Context)
+		result, execErr = h.execSnapshot(req.Context)
 	case "feature_vector":
-		return h.execFeatureVector(req.Context)
+		result, execErr = h.execFeatureVector(req.Context)
 	default:
-		return &sidecar.ExecuteResult{
+		result = &sidecar.ExecuteResult{
 			Status: "failed",
 			Error:  fmt.Sprintf("unknown instruction: %s", req.Instruction),
-		}, nil
+		}
 	}
+
+	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType: "data." + req.Instruction,
+		Success:  result != nil && result.Status == "completed",
+		Duration: time.Since(start),
+	})
+
+	return result, execErr
 }
 
 // ---------------------------------------------------------------------------

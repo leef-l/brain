@@ -14,11 +14,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/protocol"
 )
 
 // RemoteBrainConfig 描述一个远程 brain 的连接配置。
@@ -112,13 +115,24 @@ func (p *RemoteBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent.
 		return nil, fmt.Errorf("remote pool: health check failed for %s at %s: %w", kind, cfg.Endpoint, err)
 	}
 
+	// 建立 WebSocket 双向 RPC 会话。
+	rpc, wsConn, err := conn.EstablishBidirRPC(ctx)
+	if err != nil {
+		// WebSocket 不可用时退化为纯 HTTP 模式（无反向 RPC）
+		fmt.Printf("remote pool: %s ws unavailable (%v), falling back to HTTP-only\n", kind, err)
+		rpc = nil
+		wsConn = nil
+	}
+
 	ag := &remoteAgent{
 		kind: kind,
 		desc: agent.Descriptor{
 			Kind:      kind,
 			LLMAccess: agent.LLMAccessProxied,
 		},
-		conn: conn,
+		conn:   conn,
+		rpc:    rpc,
+		wsConn: wsConn,
 	}
 
 	p.conns[kind] = conn
@@ -302,13 +316,54 @@ func (c *remoteConn) Close() {
 	c.client.CloseIdleConnections()
 }
 
+// DialWebSocket 将 HTTP 端点升级为 WebSocket 连接，返回 BidirRPC 会话。
+// WebSocket URL 为 endpoint + "/ws"（将 http(s) 转为 ws(s)）。
+func (c *remoteConn) DialWebSocket(ctx context.Context) (*websocket.Conn, error) {
+	wsURL := c.endpoint + "/ws"
+	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
+	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: c.timeout,
+	}
+	header := http.Header{}
+	if c.apiKey != "" {
+		header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	conn, _, err := dialer.DialContext(ctx, wsURL, header)
+	if err != nil {
+		return nil, fmt.Errorf("ws dial %s: %w", wsURL, err)
+	}
+	return conn, nil
+}
+
+// EstablishBidirRPC 创建完整的双向 RPC 会话。
+// 1. 通过 WebSocket 连接到远程 brain
+// 2. 用 WSFrameReader/Writer 包装
+// 3. 返回 BidirRPC（可注册 handler、可双向调用）
+func (c *remoteConn) EstablishBidirRPC(ctx context.Context) (protocol.BidirRPC, *websocket.Conn, error) {
+	wsConn, err := c.DialWebSocket(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	rpc := NewWSBidirRPC(wsConn, protocol.RoleKernel)
+	if err := rpc.Start(ctx); err != nil {
+		wsConn.Close()
+		return nil, nil, fmt.Errorf("start bidir rpc: %w", err)
+	}
+	return rpc, wsConn, nil
+}
+
 // ---------- remoteAgent: 实现 agent.Agent 接口 ----------
 
 // remoteAgent 是远程 brain 的 Agent 句柄。
+// 实现 agent.Agent + agent.RPCAgent 接口。
 type remoteAgent struct {
-	kind agent.Kind
-	desc agent.Descriptor
-	conn *remoteConn
+	kind   agent.Kind
+	desc   agent.Descriptor
+	conn   *remoteConn
+	rpc    protocol.BidirRPC   // 双向 RPC 会话（WebSocket）
+	wsConn *websocket.Conn     // 底层 WebSocket 连接
 }
 
 // Kind 返回 brain 角色。
@@ -326,8 +381,22 @@ func (a *remoteAgent) Ready(ctx context.Context) error {
 	return a.conn.HealthCheck(ctx)
 }
 
+// RPC 返回双向 RPC 会话，实现 agent.RPCAgent 接口。
+func (a *remoteAgent) RPC() interface{} {
+	return a.rpc
+}
+
 // Shutdown 关闭远程连接（远程 brain 进程本身不受影响）。
 func (a *remoteAgent) Shutdown(ctx context.Context) error {
+	if a.rpc != nil {
+		a.rpc.Close()
+	}
+	if a.wsConn != nil {
+		a.wsConn.Close()
+	}
 	a.conn.Close()
 	return nil
 }
+
+// compile-time check
+var _ agent.RPCAgent = (*remoteAgent)(nil)

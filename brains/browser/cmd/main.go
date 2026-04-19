@@ -20,9 +20,12 @@ import (
 	"fmt"
 	"os"
 
+	"time"
+
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
@@ -34,6 +37,7 @@ type browserHandler struct {
 	registry     tool.Registry
 	caller       sidecar.KernelCaller
 	browserTools []tool.Tool
+	learner      *kernel.DefaultBrainLearner
 }
 
 func newBrowserHandler() *browserHandler {
@@ -51,6 +55,7 @@ func newBrowserHandler() *browserHandler {
 	return &browserHandler{
 		registry:     reg,
 		browserTools: browserTools,
+		learner:      kernel.NewDefaultBrainLearner(agent.KindBrowser),
 	}
 }
 
@@ -72,6 +77,8 @@ func (h *browserHandler) HandleMethod(ctx context.Context, method string, params
 		return h.handleToolsCall(ctx, params)
 	case "brain/execute":
 		return h.handleExecute(ctx, params)
+	case "brain/metrics":
+		return h.learner.ExportMetrics(), nil
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
@@ -153,7 +160,15 @@ When done, summarize what you observed and did.`
 		}, nil
 	}
 
+	start := time.Now()
 	result := sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns)
+
+	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType:  "browser.execute",
+		Success:   result.Status == "completed",
+		Duration:  time.Since(start),
+		ToolCalls: result.Turns,
+	})
 
 	// Clean up browser when task completes.
 	tool.CloseBrowserSession(h.browserTools)
@@ -166,11 +181,26 @@ func (h *browserHandler) handleToolsCall(ctx context.Context, params json.RawMes
 }
 
 func main() {
+	listen := ""
+	for i, arg := range os.Args[1:] {
+		if arg == "--listen" && i+1 < len(os.Args[1:]) {
+			listen = os.Args[i+2]
+		}
+	}
+
 	if _, err := license.CheckSidecar("brain-browser", license.VerifyOptions{}); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-browser: license: %v\n", err)
 		os.Exit(1)
 	}
-	if err := sidecar.Run(newBrowserHandler()); err != nil {
+
+	handler := newBrowserHandler()
+	var err error
+	if listen != "" {
+		err = sidecar.ListenAndServe(listen, handler)
+	} else {
+		err = sidecar.Run(handler)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain-browser: %v\n", err)
 		os.Exit(1)
 	}

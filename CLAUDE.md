@@ -20,50 +20,62 @@ go test ./... -count=1
 - 核心架构：`sdk/docs/32-v3-Brain架构.md`
 - 重构计划：`sdk/docs/35-v3重构路径与开发计划.md`
 - 目录结构：`sdk/docs/36-目录结构层次化重构设计.md`
+- 第三方开发：`sdk/docs/29-第三方专精大脑开发.md`（含双模式、L0、签名）
+- 远程调用：`sdk/docs/37-远程专精大脑调用说明.md`（HTTP/WebSocket/BidirRPC）
 
 ## v3 架构实施状态（2026-04-18 核查）
 
-### Phase A（资源层）✅ 基本完成
+### Phase A（资源层）✅ 完成
 - A-1 BrainPool：✅ ProcessBrainPool 全局注入，修复 per-run fork 缺陷
 - A-2 Lease Model：✅ MemLeaseManager AcquireSet 原子租约
 - A-3 TaskExecution：✅ 12 状态机 + Mode×Lifecycle×Restart
 - A-4 Orchestrator 瘦身：✅ active map 下沉到 pool
-- A-5 Dashboard：⚠️ SSE 实时推送可用，但非 WebSocket（文档要求 WS）
+- A-5 Dashboard：✅ SSE + WebSocket（E-12 补全 WSHub + /v1/dashboard/ws）
 - A-6 EventBus：✅ Pub/Sub + SSE 端点
 - A-7 HTTP API：✅ /v1/executions + /v1/runs 别名
 
-### Phase B（调度层）⚠️ 骨架完成，5 个缺口
+### Phase B（调度层）✅ 完成
 - B-1 BatchPlanner：✅ Welsh-Powell 着色 + AcquireSet 执行路径打通
-- B-2 Scheduler：❌ 无任务级调度引擎（只有工具级 BatchPlanner）
+- B-2 Scheduler：✅ TaskScheduler 拓扑排序 + L1 brain 选择 + 优先级批次
 - B-3 语义审批：✅ 5 级 ApprovalClass + DefaultSemanticApprover
-- B-4 Context Engine：⚠️ Assemble/Compress 可用但无 LLM 摘要路径，Share 仅内存无持久化
-- B-5 自适应工具策略：⚠️ 静态配置驱动，非运行时动态调整
-- B-6 四层学习：⚠️ L0 仅 quant 实现（5 脑缺），L1-L3 接口完整但未接入执行路径
+- B-4 Context Engine：✅ LLM 摘要（E-6）+ SharedMessages 持久化（E-7）
+- B-5 自适应工具策略：✅ AdaptiveToolPolicy 运行时动态筛选 + Override + 自动禁用低成功率工具
+- B-6 四层学习：✅ 5 脑 L0（E-4）+ L1-L3 接入执行路径（E-5）+ 持久化（E-3）
 - B-7 MCP Runtime：✅ MCPBrainPool 完整
 
-### Phase C（编排层）⚠️ 主体完成，2 个缺口
-- C-1 Workflow：⚠️ materialized edge 完整，streaming edge 未打通到 WorkflowEngine
+### Phase C（编排层）✅ 完成
+- C-1 Workflow：✅ materialized + streaming edge 完整（E-8 竞态修复）
 - C-2 Background Job：✅ daemon/watch/restart 已实现
 - C-3 Manifest 驱动：✅ 替代硬编码注册
-- C-4 Brain CLI：⚠️ upgrade/rollback 是 stub（"not implemented yet"）
+- C-4 Brain CLI：✅ upgrade/rollback 完整实现（E-10）
 - C-5 第三方接入：✅ 模板 + 150 项合规测试
 
-### Phase D（分发与远程）⚠️ 骨架完成，均为简化实现
-- D-1 Package：⚠️ 打包/安装可用，签名校验未做
-- D-2 Marketplace：⚠️ 本地 JSON 查询可用，无远程 marketplace 服务
-- D-3 Remote Runtime：⚠️ HTTP JSON-RPC 可用，无 gRPC/服务发现
-- D-4 组织级授权：⚠️ 文件策略可用，无 enterprise license/edition 管理
+### Phase D（分发与远程）✅ 完成
+- D-1 Package：✅ 打包/安装 + Ed25519 签名校验（E-11）
+- D-2 Marketplace：✅ RemoteMarketplace HTTP 客户端 + 本地缓存 + Sync
+- D-3 Remote Runtime：✅ HTTP JSON-RPC + ServiceDiscovery（DNS SRV / Static）+ CircuitBreaker + DiscoverableBrainPool
+- D-4 组织级授权：✅ EnterpriseEnforcer（OrgPolicy + PermissionMatrix + RevocationList 三层检查）
 
-### 已知缺口清单（按优先级）
-1. **5 脑 L0 学习缺失**（code/browser/data/verifier/fault 无 BrainLearner）
-2. **L1-L3 学习未接入执行路径**（RecordDelegateResult 无人调用）
-3. **Context Engine 无 LLM 摘要**（纯截断，无 Provider.Complete 调用）
-4. **Streaming Edge 未打通**（sdk/flow/stream.go 存在但 WorkflowEngine 未使用）
-5. **B-2 任务级 Scheduler 缺失**（文档定义但无实现）
-6. **Dashboard 非 WebSocket**（SSE 功能等价但不符文档描述）
-7. **upgrade/rollback stub**
-8. **Package 无签名校验**
-9. **D-2/D-3/D-4 均为简化本地实现**
+### Phase E（统一持久化 + 缺口补全）✅ 完成
+持久化统一为 SQLite WAL（`~/.brain/brain.db`），替代 JSON 全量重写 + 纯内存。
+
+Sprint E-1（并行，无依赖）：✅ 全部完成
+- E-1: ✅ SQLite 驱动实现（sdk/persistence/driver_sqlite.go）
+- E-8: ✅ Streaming Edge 打通到 WorkflowEngine（竞态修复）
+- E-10: ✅ upgrade/rollback 命令
+- E-11: ✅ Package 签名校验（Ed25519）
+
+Sprint E-2（依赖 E-1）：✅ 全部完成
+- E-2: ✅ RunStore 迁移到 SQLite + SQLiteBackend
+- E-3: ✅ LearningEngine L1/L2/L3 持久化（自动 Save/Load）
+- E-9: ✅ AuditLog 持久化（AuditLogger 接口 + SQLite + Purge）
+- E-12: ✅ Dashboard WebSocket（WSHub 广播 + /v1/dashboard/ws 端点）
+
+Sprint E-3（依赖 E-2/E-3）：✅ 全部完成
+- E-4: ✅ 5 脑 L0 BrainLearner（data 特化 + code/browser/verifier DefaultBrainLearner + central 特化）
+- E-5: ✅ L1-L3 接入执行路径（L2 RecordSequence 接入 Delegate + CollectMetrics 主动拉取）
+- E-6: ✅ Context Engine LLM 摘要（Compress 策略 2.5 LLM summarize + NewContextEngineWithLLM）
+- E-7: ✅ Context SharedMessages 持久化（shared_messages 表 + 异步写入）
 
 ## 目录结构（cmd/brain/ 子包）
 ```

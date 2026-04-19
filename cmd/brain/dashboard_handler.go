@@ -39,6 +39,6 @@ func (a *leaseProviderAdapter) ActiveLeases() []dashboard.LeaseSnapshot {
 	return out
 }
 
-func registerDashboardRoutes(mux *http.ServeMux, mgr *runManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *brainConfig, startTime time.Time, leaseManager *kernel.MemLeaseManager) {
-	dashboard.RegisterRoutes(mux, &runManagerAdapter{mgr: mgr}, pool, bus, cfg, startTime, &leaseProviderAdapter{lm: leaseManager})
+func registerDashboardRoutes(mux *http.ServeMux, mgr *runManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *brainConfig, startTime time.Time, leaseManager *kernel.MemLeaseManager) *dashboard.WSHub {
+	return dashboard.RegisterRoutes(mux, &runManagerAdapter{mgr: mgr}, pool, bus, cfg, startTime, &leaseProviderAdapter{lm: leaseManager})
 }

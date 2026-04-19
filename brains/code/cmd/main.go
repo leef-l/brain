@@ -12,9 +12,12 @@ import (
 	"fmt"
 	"os"
 
+	"time"
+
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
@@ -25,6 +28,7 @@ import (
 type codeHandler struct {
 	registry tool.Registry
 	caller   sidecar.KernelCaller
+	learner  *kernel.DefaultBrainLearner
 }
 
 func newCodeHandler() *codeHandler {
@@ -40,7 +44,10 @@ func newCodeHandler() *codeHandler {
 	} else {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindCode))...)
 	}
-	return &codeHandler{registry: reg}
+	return &codeHandler{
+		registry: reg,
+		learner:  kernel.NewDefaultBrainLearner(agent.KindCode),
+	}
 }
 
 func (h *codeHandler) Kind() agent.Kind { return agent.KindCode }
@@ -61,6 +68,8 @@ func (h *codeHandler) HandleMethod(ctx context.Context, method string, params js
 		return h.handleToolsCall(ctx, params)
 	case "brain/execute":
 		return h.handleExecute(ctx, params)
+	case "brain/metrics":
+		return h.learner.ExportMetrics(), nil
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
@@ -104,7 +113,15 @@ func (h *codeHandler) handleExecute(ctx context.Context, params json.RawMessage)
 		}, nil
 	}
 
-	return sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns), nil
+	start := time.Now()
+	result := sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns)
+	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType:  "code.execute",
+		Success:   result.Status == "completed",
+		Duration:  time.Since(start),
+		ToolCalls: result.Turns,
+	})
+	return result, nil
 }
 
 func (h *codeHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -112,11 +129,26 @@ func (h *codeHandler) handleToolsCall(ctx context.Context, params json.RawMessag
 }
 
 func main() {
+	listen := ""
+	for i, arg := range os.Args[1:] {
+		if arg == "--listen" && i+1 < len(os.Args[1:]) {
+			listen = os.Args[i+2]
+		}
+	}
+
 	if _, err := license.CheckSidecar("brain-code", license.VerifyOptions{}); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-code: license: %v\n", err)
 		os.Exit(1)
 	}
-	if err := sidecar.Run(newCodeHandler()); err != nil {
+
+	handler := newCodeHandler()
+	var err error
+	if listen != "" {
+		err = sidecar.ListenAndServe(listen, handler)
+	} else {
+		err = sidecar.Run(handler)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain-code: %v\n", err)
 		os.Exit(1)
 	}

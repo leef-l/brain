@@ -1,9 +1,9 @@
 # 32. v3 Brain 架构
 
-> **状态**：v7 · 2026-04-17
+> **状态**：v8 · 2026-04-18
 > **上位规格**：[02-BrainKernel设计.md](./02-BrainKernel设计.md)
 > **下位规格**：[33-Brain-Manifest规格.md](./33-Brain-Manifest规格.md) / [34-Brain-Package与Marketplace规范.md](./34-Brain-Package与Marketplace规范.md)
-> **变更记录**：v1（2026-04-13）初版，v2（2026-04-16）行业对标后重排优先级，将多脑协作运行时提升为主轴，v3（2026-04-16）新增四层自适应学习体系，v4（2026-04-16）多任务架构重设计：三层分离，v5（2026-04-16）收敛为 TaskExecution + Capability Lease + Dispatch Policy + Flow Edge 四正交概念，引入 AcquireSet 死锁防护、ToolConcurrencySpec、LeaseScope，v6（2026-04-17）全面细化 8 大核心子系统设计（§13），新增独立规格文档 35 系列，v7（2026-04-17）补充 P0 差距：Brain Capability 标签体系、跨脑通信协议、LeaseManager 独立文档、端到端时序与模块依赖图
+> **变更记录**：v1（2026-04-13）初版，v2（2026-04-16）行业对标后重排优先级，将多脑协作运行时提升为主轴，v3（2026-04-16）新增四层自适应学习体系，v4（2026-04-16）多任务架构重设计：三层分离，v5（2026-04-16）收敛为 TaskExecution + Capability Lease + Dispatch Policy + Flow Edge 四正交概念，引入 AcquireSet 死锁防护、ToolConcurrencySpec、LeaseScope，v6（2026-04-17）全面细化 8 大核心子系统设计（§13），新增独立规格文档 35 系列，v7（2026-04-17）补充 P0 差距：Brain Capability 标签体系、跨脑通信协议、LeaseManager 独立文档、端到端时序与模块依赖图，v8（2026-04-18）新增 §15 上层产品接入边界（runtime vs domain 职责划分、四条接入铁律）
 
 ---
 
@@ -1593,3 +1593,220 @@ Step 11-13: Context Engine / MCP Runtime / 语义审批（Phase B 入口）
 | 35-13 | [BrainCapability标签与匹配算法](./35-BrainCapability标签与匹配算法.md) | §3.6 / §13.14 | A |
 | 35-14 | [跨脑通信协议设计](./35-跨脑通信协议设计.md) | §5.2-§5.3 / §13.15 | A-D |
 | 35-15 | [端到端时序与模块依赖图](./35-端到端时序与模块依赖图.md) | §7.12 / §13.16 | — |
+
+---
+
+## 15. Phase E：统一持久化 + 缺口补全（v3.4，2026-04-18 新增）
+
+### 15.1 背景
+
+Phase A-D 完成后的核查发现 9 个缺口，其中**持久化碎片化**是根因：
+
+| 当前方案 | 问题 |
+|---------|------|
+| JSON 全量重写（RunStore/PlanStore） | 每次写 O(N)，run 多了严重卡顿 |
+| 纯内存（LearningEngine/Context/AuditLog） | 进程重启全丢，L1-L3 学习无效 |
+| 无搜索能力 | 无法语义检索历史上下文 |
+
+竞品对标（2026-04）：
+
+| 产品 | 持久化核心 | 记忆层 | 学习机制 |
+|------|----------|--------|---------|
+| **Codex** | SQLite + .jsonl.zst | LLM 自动提取结构化记忆 | 结构化记忆提取 |
+| **Claude Code** | Markdown 文件 | CLAUDE.md 三层 + compaction | 无 |
+| **OpenClaw** | **SQLite + Markdown 混合** | FTS5 + 向量搜索 + LCM DAG 摘要 | 无 |
+| **Hermes Agent** | **SQLite FTS5** | 10ms/10K+ 文档检索 | Skill 文档自动生成（40% 加速） |
+
+**共识：SQLite WAL 做结构化存储，Markdown 做人类可读层。**
+
+### 15.2 统一持久化方案
+
+```
+~/.brain/
+├── config.json              # 保持 JSON（人工编辑，低频）
+├── brain.db                 # SQLite WAL（统一持久化）
+│   ├── runs                 # Run 记录
+│   ├── run_events           # 事件流（替代全量重写）
+│   ├── plans                # Plan 记录
+│   ├── plan_deltas          # Plan 增量
+│   ├── checkpoints          # Checkpoint
+│   ├── usage_records        # 用量计费
+│   ├── brain_scores         # L1 协作级学习（EWMA + Wilson）
+│   ├── task_sequences       # L2 序列学习
+│   ├── user_prefs           # L3 用户偏好
+│   ├── shared_context       # 跨脑上下文传递
+│   ├── audit_events         # 安全审计链（append-only）
+│   └── memory_fts           # FTS5 全文搜索索引
+├── memory/                  # Markdown 记忆层
+│   ├── MEMORY.md            # 核心记忆（启动时加载）
+│   └── skills/              # 自动生成的技能文档
+├── artifacts/               # CAS 大二进制（保持文件系统）
+├── logs/                    # sidecar 日志（保持 O_APPEND）
+└── brains/                  # manifest + binary（保持目录结构）
+```
+
+### 15.3 Phase E 工作项
+
+| 编号 | 工作项 | 优先级 | 依赖 |
+|------|--------|--------|------|
+| E-1 | SQLite 驱动实现（`sdk/persistence/driver_sqlite.go`） | P0 | 无 |
+| E-2 | RunStore/PlanStore 迁移到 SQLite | P0 | E-1 |
+| E-3 | LearningEngine 持久化（Save/Load brain_scores） | P0 | E-1 |
+| E-4 | 5 脑 L0 BrainLearner 实现 | P0 | E-3 |
+| E-5 | L1-L3 接入 delegate 执行路径 | P0 | E-3 |
+| E-6 | Context Engine LLM 摘要路径 | P1 | E-1 |
+| E-7 | Context SharedMessages 持久化 | P1 | E-1 |
+| E-8 | Streaming Edge 打通到 WorkflowEngine | P1 | 无 |
+| E-9 | AuditLog 持久化 | P1 | E-1 |
+| E-10 | upgrade/rollback 命令实现 | P2 | 无 |
+| E-11 | Package 签名校验 | P2 | 无 |
+| E-12 | Dashboard WebSocket 推送 | P2 | 无 |
+
+### 15.4 并行执行矩阵
+
+```
+Sprint E-1（并行，无依赖）：
+  [E-1]  SQLite 驱动
+  [E-8]  Streaming Edge 打通
+  [E-10] upgrade/rollback
+  [E-11] Package 签名
+
+Sprint E-2（依赖 E-1）：
+  [E-2]  RunStore/PlanStore 迁移
+  [E-3]  LearningEngine 持久化
+  [E-9]  AuditLog 持久化
+  [E-12] Dashboard WebSocket
+
+Sprint E-3（依赖 E-2/E-3）：
+  [E-4]  5 脑 L0 BrainLearner
+  [E-5]  L1-L3 接入执行路径
+  [E-6]  Context Engine LLM 摘要
+  [E-7]  Context SharedMessages 持久化
+```
+
+---
+
+## 15. 上层产品接入边界
+
+> **v8 新增** · 2026-04-18
+> 
+> 本节定义 Brain v3 作为运行时底座被上层产品（如 EasyMVP、IDE 插件、CI/CD 系统等）接入时的职责边界。
+
+### 15.1 核心原则
+
+Brain v3 是 **runtime source of truth**，上层产品是 **domain/product source of truth**。两者通过 `run_id` / `execution_id` 做关联，不共库、不共 UI、不混合生命周期。
+
+```
+┌────────────────────────────────────────────┐
+│  上层产品（EasyMVP / IDE / CI）              │
+│  ├─ 自有数据库（project/plan/acceptance）    │
+│  ├─ 自有前端（工作台/审计/验收）              │
+│  ├─ 领域投影层                               │
+│  │   └─ 消费 runtime 事件 → 投影为领域对象    │
+│  └─ 关联键：run_id / execution_id            │
+│                                              │
+│       引用，不复制 ↕                          │
+│                                              │
+│  Brain v3（运行时底座）                       │
+│  ├─ brain.db（run/execution/event/artifact）  │
+│  ├─ brain serve API                          │
+│  ├─ EventBus + SSE + WebSocket               │
+│  └─ replay / audit 原始产物                   │
+└────────────────────────────────────────────┘
+```
+
+### 15.2 Brain v3 负责
+
+| 领域 | 具体内容 |
+|------|---------|
+| **TaskExecution 生命周期** | 12 状态机、Mode×Lifecycle×Restart |
+| **runtime 事件源** | EventBus、SSE、WebSocket 推送 |
+| **execution/runs API** | `/v1/runs`、`/v1/executions` |
+| **原始产物** | logs、replay、audit trail、artifact |
+| **多脑调度** | Orchestrator、TaskScheduler、L0-L3 学习 |
+| **运行时策略** | tool policy、sandbox、file policy、approval |
+| **runtime observability** | Dashboard、brain/provider/lease 状态 |
+
+### 15.3 上层产品负责
+
+| 领域 | 具体内容 |
+|------|---------|
+| **领域对象** | project、plan、task、acceptance 等业务实体 |
+| **工作流状态机** | 方案审核 → 编译 → 执行 → 验收的业务流程 |
+| **领域投影** | 把 runtime 事件映射为项目进度、风险、待处理 |
+| **UI 聚合** | 工作台、ActionInbox、WorkspaceSnapshot |
+| **领域索引** | replay index、evidence linkage、project projection |
+
+### 15.4 四条接入铁律
+
+**1. 独立数据库，按引用关联**
+
+上层产品不应把业务表建在 `brain.db` 中。Brain v3 的库是 runtime persistence（关注 run/execution/event），上层产品的库是 domain persistence（关注 project/plan/acceptance）。两者迁移频率、回滚策略、兼容约束完全不同。
+
+```
+brain.db          ←  brain-v3 独占
+product.db        ←  上层产品独占
+关联方式：run_id / execution_id 外键引用
+```
+
+**2. 不自建底层源，但必须做领域投影**
+
+上层产品**不应**重新发明：
+- runtime 状态机（用 Brain v3 的 TaskExecution）
+- 通用事件总线（用 Brain v3 的 EventBus）
+- 通用任务调度器（用 Brain v3 的 TaskScheduler/Orchestrator）
+- 底层 run persistence 协议
+
+上层产品**必须**自建：
+- run binding（哪个 run 属于哪个项目/任务）
+- domain event projection（runtime 事件 → 项目进度）
+- workspace aggregate（聚合视图）
+- evidence linkage（证据与 run 的关联）
+
+**3. 后端消费 runtime 事件，前端只接产品聚合接口**
+
+上层产品前端不应直接连 Brain v3 的 Dashboard WebSocket。正确做法：
+
+```
+Brain v3 EventBus → 上层产品后端（消费+投影）→ 上层产品前端
+```
+
+Brain v3 Dashboard 是 runtime control plane，上层产品 UI 是 product workflow cockpit，关注点不同。
+
+**4. 原始产物复用，领域索引自建**
+
+- raw replay/log/audit artifact → 由 Brain v3 产出和存储
+- 项目级 replay 索引、领域关联、decision trail → 由上层产品维护
+
+上层产品不复制底层全量 runtime 数据，只做必要的索引和投影。
+
+### 15.5 接入 API 契约
+
+上层产品通过以下 API 与 Brain v3 交互：
+
+| API | 用途 | 数据方向 |
+|-----|------|---------|
+| `POST /v1/runs` | 创建 run | 产品 → runtime |
+| `GET /v1/runs/{id}` | 查询 run 状态 | 产品 ← runtime |
+| `POST /v1/runs/{id}/cancel` | 取消 run | 产品 → runtime |
+| `GET /v1/dashboard/events` | SSE 事件流 | 产品 ← runtime（实时） |
+| `GET /v1/dashboard/ws` | WebSocket 事件流 | 产品 ← runtime（实时） |
+| `GET /v1/dashboard/overview` | 全局状态 | 产品 ← runtime |
+
+上层产品后端订阅事件流，将 runtime 事件投影为自己的领域对象后，再通过自己的 API 提供给前端。
+
+### 15.6 数据生命周期
+
+```
+runtime 事件产生
+  ↓
+Brain v3 持久化到 brain.db（audit_logs / run_events）
+  ↓
+上层产品后端通过 API/SSE/WS 消费事件
+  ↓
+投影为领域对象写入 product.db（binding / projection / aggregate）
+  ↓
+上层产品前端从 product.db 聚合展示
+```
+
+两个数据库独立迁移、独立备份、独立生命周期管理。Brain v3 升级不影响上层产品的领域数据，反之亦然。

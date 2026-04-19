@@ -188,7 +188,9 @@ func handleProviders(w http.ResponseWriter, _ *http.Request, cfg *config.Config)
 }
 
 // RegisterRoutes registers all /v1/dashboard/* routes.
-func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *config.Config, startTime time.Time, lp LeaseProvider) {
+// Returns the WSHub so callers can start it with hub.Start(ctx).
+func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *config.Config, startTime time.Time, lp LeaseProvider) *WSHub {
+	wsHub := NewWSHub(bus)
 	mux.HandleFunc("/v1/dashboard/overview", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -236,4 +238,10 @@ func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrai
 		}
 		handleProviders(w, r, cfg)
 	})
+
+	mux.HandleFunc("/v1/dashboard/ws", func(w http.ResponseWriter, r *http.Request) {
+		wsHub.HandleWS(w, r)
+	})
+
+	return wsHub
 }

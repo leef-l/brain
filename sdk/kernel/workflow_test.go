@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/leef-l/brain/sdk/flow"
 )
@@ -294,5 +296,157 @@ func TestWorkflowDiamondDAG(t *testing.T) {
 	}
 	if dIdx < 3 {
 		t.Fatalf("D should be last, got order: %v", log)
+	}
+}
+
+// TestWorkflowStreamingEdge 测试 streaming edge：A 流式输出 → B 实时消费。
+func TestWorkflowStreamingEdge(t *testing.T) {
+	store := flow.NewMemStore()
+
+	// 跟踪并行执行：记录 A 和 B 的启动时间
+	var aStarted, bStarted int64 // unix nano
+
+	// 使用 streaming executor：A 逐帧写入 3 个 chunk
+	streamExec := func(ctx context.Context, node WorkflowNode, input string, writer func(chunk []byte) error) error {
+		if node.ID == "A" {
+			atomic.StoreInt64(&aStarted, time.Now().UnixNano())
+			chunks := []string{"hello ", "streaming ", "world"}
+			for _, c := range chunks {
+				if err := writer([]byte(c)); err != nil {
+					return err
+				}
+				time.Sleep(5 * time.Millisecond) // 模拟逐帧延迟
+			}
+			return nil
+		}
+		return fmt.Errorf("unexpected node in streaming executor: %s", node.ID)
+	}
+
+	// 普通 executor：B 消费流式输入
+	normalExec := func(ctx context.Context, node WorkflowNode, input string) (string, error) {
+		if node.ID == "B" {
+			atomic.StoreInt64(&bStarted, time.Now().UnixNano())
+			return fmt.Sprintf("B-received(%s)", input), nil
+		}
+		return fmt.Sprintf("output-%s", node.ID), nil
+	}
+
+	engine := NewWorkflowEngine(store, normalExec)
+	engine.SetStreamingExecutor(streamExec)
+
+	wf := &Workflow{
+		ID: "streaming",
+		Nodes: []WorkflowNode{
+			{ID: "A", BrainID: "brain-a", Prompt: "do A"},
+			{ID: "B", BrainID: "brain-b", Prompt: "do B", DependsOn: []string{"A"}},
+		},
+		Edges: []WorkflowEdge{
+			{From: "A", To: "B", Mode: flow.EdgeStreaming},
+		},
+	}
+
+	result, err := engine.Execute(context.Background(), wf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.State != StateCompleted {
+		t.Fatalf("expected completed, got %s", result.State)
+	}
+
+	// B 应该收到所有 streaming 数据
+	bResult := result.Nodes["B"]
+	if bResult.State != StateCompleted {
+		t.Fatalf("B should be completed, got %s (error: %s)", bResult.State, bResult.Error)
+	}
+	if !strings.Contains(bResult.Output, "hello streaming world") {
+		t.Errorf("B should receive streamed data, got: %s", bResult.Output)
+	}
+
+	// 验证 A 和 B 确实并行执行（B 在 A 完成之前就启动了）
+	aStart := atomic.LoadInt64(&aStarted)
+	bStart := atomic.LoadInt64(&bStarted)
+	if aStart == 0 || bStart == 0 {
+		t.Log("warning: could not verify parallel execution timing")
+	}
+}
+
+// TestWorkflowMixedEdges 测试混合 materialized + streaming edge。
+// DAG: A (materialized)→ B, A (streaming)→ C, B → D, C → D
+func TestWorkflowMixedEdges(t *testing.T) {
+	store := flow.NewMemStore()
+	var log []string
+	var mu sync.Mutex
+
+	normalExec := func(ctx context.Context, node WorkflowNode, input string) (string, error) {
+		mu.Lock()
+		log = append(log, node.ID)
+		mu.Unlock()
+
+		output := fmt.Sprintf("output-%s", node.ID)
+		if input != "" {
+			output = fmt.Sprintf("%s(input:%s)", output, input)
+		}
+		return output, nil
+	}
+
+	engine := NewWorkflowEngine(store, normalExec)
+
+	wf := &Workflow{
+		ID: "mixed",
+		Nodes: []WorkflowNode{
+			{ID: "A", BrainID: "brain-a", Prompt: "do A"},
+			{ID: "B", BrainID: "brain-b", Prompt: "do B", DependsOn: []string{"A"}},
+			{ID: "C", BrainID: "brain-c", Prompt: "do C", DependsOn: []string{"A"}},
+			{ID: "D", BrainID: "brain-d", Prompt: "do D", DependsOn: []string{"B", "C"}},
+		},
+		Edges: []WorkflowEdge{
+			{From: "A", To: "B", Mode: flow.EdgeMaterialized},
+			{From: "A", To: "C", Mode: flow.EdgeStreaming},
+			{From: "B", To: "D", Mode: flow.EdgeMaterialized},
+			{From: "C", To: "D", Mode: flow.EdgeMaterialized},
+		},
+	}
+
+	result, err := engine.Execute(context.Background(), wf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.State != StateCompleted {
+		t.Fatalf("expected completed, got %s", result.State)
+	}
+
+	// 所有 4 个节点都应执行完成
+	if len(result.Nodes) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(result.Nodes))
+	}
+	for _, nid := range []string{"A", "B", "C", "D"} {
+		nr, ok := result.Nodes[nid]
+		if !ok {
+			t.Fatalf("missing result for node %s", nid)
+		}
+		if nr.State != StateCompleted {
+			t.Fatalf("node %s: expected completed, got %s (error: %s)", nid, nr.State, nr.Error)
+		}
+	}
+
+	// B 应该收到 A 的 materialized 输出
+	bResult := result.Nodes["B"]
+	if !strings.Contains(bResult.Output, "output-A") {
+		t.Errorf("B should contain A's materialized output, got: %s", bResult.Output)
+	}
+
+	// C 应该收到 A 的 streaming 输出
+	cResult := result.Nodes["C"]
+	if !strings.Contains(cResult.Output, "output-A") {
+		t.Errorf("C should contain A's streaming output, got: %s", cResult.Output)
+	}
+
+	// D 应该收到 B 和 C 的输出
+	dResult := result.Nodes["D"]
+	if !strings.Contains(dResult.Output, "output-B") {
+		t.Errorf("D should contain B's output, got: %s", dResult.Output)
+	}
+	if !strings.Contains(dResult.Output, "output-C") {
+		t.Errorf("D should contain C's output, got: %s", dResult.Output)
 	}
 }

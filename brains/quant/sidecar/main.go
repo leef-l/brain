@@ -94,9 +94,20 @@ func Main() {
 		go webServer.Start(ctx)
 	}
 
-	// sidecar.Run blocks until stdin closes (kernel exits) or signal.
-	// Do NOT register our own SIGINT/SIGTERM — sidecar.Run handles it internally.
-	err := sidecar.Run(handler)
+	// 检查 --listen 参数决定运行模式
+	listenAddr := ""
+	for i, arg := range os.Args[1:] {
+		if arg == "--listen" && i+1 < len(os.Args[1:]) {
+			listenAddr = os.Args[i+2]
+		}
+	}
+
+	var err error
+	if listenAddr != "" {
+		err = sidecar.ListenAndServe(listenAddr, handler)
+	} else {
+		err = sidecar.Run(handler)
+	}
 
 	// sidecar.Run returned — stop quant brain first to prevent new trades.
 	cancel()

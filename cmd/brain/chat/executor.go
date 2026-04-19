@@ -53,7 +53,7 @@ func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns 
 		result, err := runChatTurn(ctx, provider, registry, opts, brainID, maxTurns,
 			turnIndex, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, progressCh)
 		if runtime != nil && runRec != nil {
-			persistChatTurn(ctx, runtime, runRec, provider.Name(), input, state.Mode, state.Sandbox.Primary(), result, err)
+			persistChatTurn(ctx, runtime, runRec, provider.Name(), input, state.Mode, state.Sandbox.Primary(), opts.System, result, err)
 		}
 		rr := RunResult{
 			Result:   result,
@@ -103,7 +103,7 @@ func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Regis
 	return runner.Execute(ctx, run, messages, opts)
 }
 
-func persistChatTurn(ctx context.Context, runtime *cliruntime.Runtime, runRec *cliruntime.RunRecord, providerName, input string, mode env.PermissionMode, workdir string, result *loop.RunResult, err error) {
+func persistChatTurn(ctx context.Context, runtime *cliruntime.Runtime, runRec *cliruntime.RunRecord, providerName, input string, mode env.PermissionMode, workdir string, system []llm.SystemBlock, result *loop.RunResult, err error) {
 	if runtime == nil || runRec == nil {
 		return
 	}
@@ -111,8 +111,9 @@ func persistChatTurn(ctx context.Context, runtime *cliruntime.Runtime, runRec *c
 		errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
 		status := "failed"
 		if ctx.Err() == context.Canceled {
-			status = "cancelled"
+			status = "canceled"
 		}
+		_ = cliruntime.SaveRunCheckpointWithMessages(ctx, runtime, runRec, status, 0, runRec.ID+"-"+status, nil, system)
 		_, _ = runtime.RunStore.Finish(runRec.ID, status, errJSON, err.Error())
 		return
 	}
@@ -125,7 +126,7 @@ func persistChatTurn(ctx context.Context, runtime *cliruntime.Runtime, runRec *c
 			finalTurnUUID = result.Turns[n-1].Turn.UUID
 		}
 	}
-	_ = deps.SaveRunCheckpoint(ctx, runtime, runRec, string(result.Run.State), finalTurnIndex, finalTurnUUID)
+	_ = cliruntime.SaveRunCheckpointWithMessages(ctx, runtime, runRec, string(result.Run.State), finalTurnIndex, finalTurnUUID, result.FinalMessages, system)
 	_ = deps.SaveRunUsage(ctx, runtime, runRec, providerName, "", result)
 
 	replyText := extractAssistantReply(result.FinalMessages)

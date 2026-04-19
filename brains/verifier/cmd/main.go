@@ -12,9 +12,12 @@ import (
 	"fmt"
 	"os"
 
+	"time"
+
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
@@ -25,6 +28,7 @@ import (
 type verifierHandler struct {
 	registry tool.Registry
 	caller   sidecar.KernelCaller
+	learner  *kernel.DefaultBrainLearner
 }
 
 func newVerifierHandler() *verifierHandler {
@@ -42,7 +46,10 @@ func newVerifierHandler() *verifierHandler {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindVerifier))...)
 	}
 
-	return &verifierHandler{registry: reg}
+	return &verifierHandler{
+		registry: reg,
+		learner:  kernel.NewDefaultBrainLearner(agent.KindVerifier),
+	}
 }
 
 func (h *verifierHandler) Kind() agent.Kind { return agent.KindVerifier }
@@ -63,6 +70,8 @@ func (h *verifierHandler) HandleMethod(ctx context.Context, method string, param
 		return h.handleToolsCall(ctx, params)
 	case "brain/execute", "brain/verify":
 		return h.handleVerify(ctx, params)
+	case "brain/metrics":
+		return h.learner.ExportMetrics(), nil
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
@@ -121,7 +130,15 @@ func (h *verifierHandler) handleVerify(ctx context.Context, params json.RawMessa
 		}, nil
 	}
 
-	return sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns), nil
+	start := time.Now()
+	result := sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns)
+	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType:  "verifier.verify",
+		Success:   result.Status == "completed",
+		Duration:  time.Since(start),
+		ToolCalls: result.Turns,
+	})
+	return result, nil
 }
 
 func (h *verifierHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -129,11 +146,26 @@ func (h *verifierHandler) handleToolsCall(ctx context.Context, params json.RawMe
 }
 
 func main() {
+	listen := ""
+	for i, arg := range os.Args[1:] {
+		if arg == "--listen" && i+1 < len(os.Args[1:]) {
+			listen = os.Args[i+2]
+		}
+	}
+
 	if _, err := license.CheckSidecar("brain-verifier", license.VerifyOptions{}); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-verifier: license: %v\n", err)
 		os.Exit(1)
 	}
-	if err := sidecar.Run(newVerifierHandler()); err != nil {
+
+	handler := newVerifierHandler()
+	var err error
+	if listen != "" {
+		err = sidecar.ListenAndServe(listen, handler)
+	} else {
+		err = sidecar.Run(handler)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain-verifier: %v\n", err)
 		os.Exit(1)
 	}

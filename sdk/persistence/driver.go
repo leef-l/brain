@@ -36,6 +36,10 @@ type Stores struct {
 	RunCheckpointStore RunCheckpointStore
 	UsageLedger        UsageLedger
 	ResumeCoordinator  ResumeCoordinator
+	RunStore           RunStore
+	AuditLogger        AuditLogger
+	LearningStore      LearningStore
+	SharedMessageStore SharedMessageStore
 
 	// CloseFunc is an optional callback that releases resources held by the
 	// driver (DB connections, file handles). If non-nil, persistence.Open

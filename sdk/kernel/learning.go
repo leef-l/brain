@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/persistence"
 )
 
 // ---------------------------------------------------------------------------
@@ -261,6 +262,7 @@ type LearningEngine struct {
 	profiles  map[agent.Kind]*BrainCapabilityProfile // L1
 	sequences *SequenceLearner                        // L2
 	prefs     *PreferenceLearner                      // L3
+	store     persistence.LearningStore               // 可选持久化后端
 	mu        sync.RWMutex
 }
 
@@ -273,6 +275,136 @@ func NewLearningEngine() *LearningEngine {
 			preferences: make(map[string]*UserPreference),
 		},
 	}
+}
+
+// NewLearningEngineWithStore 创建带持久化的学习引擎
+func NewLearningEngineWithStore(store persistence.LearningStore) *LearningEngine {
+	le := NewLearningEngine()
+	le.store = store
+	return le
+}
+
+// Load 从持久化后端恢复全部学习数据到内存
+func (le *LearningEngine) Load(ctx context.Context) error {
+	if le.store == nil {
+		return nil
+	}
+	le.mu.Lock()
+	defer le.mu.Unlock()
+
+	// L1: profiles + task scores
+	profiles, err := le.store.ListProfiles(ctx)
+	if err != nil {
+		return fmt.Errorf("load profiles: %w", err)
+	}
+	for _, p := range profiles {
+		kind := agent.Kind(p.BrainKind)
+		profile := &BrainCapabilityProfile{
+			BrainKind:  kind,
+			ColdStart:  p.ColdStart,
+			UpdatedAt:  p.UpdatedAt,
+			TaskScores: make(map[string]*TaskTypeScore),
+		}
+		scores, _ := le.store.ListTaskScores(ctx, p.BrainKind)
+		for _, s := range scores {
+			profile.TaskScores[s.TaskType] = &TaskTypeScore{
+				TaskType:    s.TaskType,
+				SampleCount: s.SampleCount,
+				Accuracy:    EWMAScore{Value: s.AccuracyValue, Alpha: s.AccuracyAlpha},
+				Speed:       EWMAScore{Value: s.SpeedValue, Alpha: s.SpeedAlpha},
+				Cost:        EWMAScore{Value: s.CostValue, Alpha: s.CostAlpha},
+				Stability:   EWMAScore{Value: s.StabilityValue, Alpha: s.StabilityAlpha},
+			}
+		}
+		le.profiles[kind] = profile
+	}
+
+	// L2: sequences
+	seqs, err := le.store.ListSequences(ctx, 0)
+	if err != nil {
+		return fmt.Errorf("load sequences: %w", err)
+	}
+	for _, seq := range seqs {
+		rec := TaskSequenceRecord{
+			SequenceID: seq.SequenceID,
+			TotalScore: seq.TotalScore,
+			RecordedAt: seq.RecordedAt,
+		}
+		for _, step := range seq.Steps {
+			rec.Steps = append(rec.Steps, TaskStep{
+				BrainKind: agent.Kind(step.BrainKind),
+				TaskType:  step.TaskType,
+				Duration:  time.Duration(step.DurationMs) * time.Millisecond,
+				Score:     step.Score,
+			})
+		}
+		le.sequences.records = append(le.sequences.records, rec)
+	}
+
+	// L3: preferences
+	prefs, err := le.store.ListPreferences(ctx)
+	if err != nil {
+		return fmt.Errorf("load preferences: %w", err)
+	}
+	for _, p := range prefs {
+		le.prefs.preferences[p.Category] = &UserPreference{
+			Category:  p.Category,
+			Value:     p.Value,
+			Weight:    p.Weight,
+			UpdatedAt: p.UpdatedAt,
+		}
+	}
+	return nil
+}
+
+// Save 将当前内存中的全部学习数据持久化
+func (le *LearningEngine) Save(ctx context.Context) error {
+	if le.store == nil {
+		return nil
+	}
+	le.mu.RLock()
+	defer le.mu.RUnlock()
+
+	// L1
+	for _, profile := range le.profiles {
+		if err := le.store.SaveProfile(ctx, &persistence.LearningProfile{
+			BrainKind: string(profile.BrainKind),
+			ColdStart: profile.ColdStart,
+			UpdatedAt: profile.UpdatedAt,
+		}); err != nil {
+			return err
+		}
+		for _, ts := range profile.TaskScores {
+			if err := le.store.SaveTaskScore(ctx, &persistence.LearningTaskScore{
+				BrainKind:      string(profile.BrainKind),
+				TaskType:       ts.TaskType,
+				SampleCount:    ts.SampleCount,
+				AccuracyValue:  ts.Accuracy.Value,
+				AccuracyAlpha:  ts.Accuracy.Alpha,
+				SpeedValue:     ts.Speed.Value,
+				SpeedAlpha:     ts.Speed.Alpha,
+				CostValue:      ts.Cost.Value,
+				CostAlpha:      ts.Cost.Alpha,
+				StabilityValue: ts.Stability.Value,
+				StabilityAlpha: ts.Stability.Alpha,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	// L3
+	for _, pref := range le.prefs.preferences {
+		if err := le.store.SavePreference(ctx, &persistence.LearningPreference{
+			Category:  pref.Category,
+			Value:     pref.Value,
+			Weight:    pref.Weight,
+			UpdatedAt: pref.UpdatedAt,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RecordDelegateResult 记录一次委派结果，更新 Brain 能力画像 (L1 反馈)
@@ -314,6 +446,34 @@ func (le *LearningEngine) RecordDelegateResult(
 
 	profile.ColdStart = ts.SampleCount < coldStartThreshold
 	profile.UpdatedAt = time.Now()
+
+	// 异步持久化（best-effort，不阻塞调用��）
+	// 在锁内拷贝所有值，避免 goroutine 与后续写操作 data race
+	if le.store != nil {
+		profileSnap := persistence.LearningProfile{
+			BrainKind: string(profile.BrainKind),
+			ColdStart: profile.ColdStart,
+			UpdatedAt: profile.UpdatedAt,
+		}
+		scoreSnap := persistence.LearningTaskScore{
+			BrainKind:      string(brainKind),
+			TaskType:       taskType,
+			SampleCount:    ts.SampleCount,
+			AccuracyValue:  ts.Accuracy.Value,
+			AccuracyAlpha:  ts.Accuracy.Alpha,
+			SpeedValue:     ts.Speed.Value,
+			SpeedAlpha:     ts.Speed.Alpha,
+			CostValue:      ts.Cost.Value,
+			CostAlpha:      ts.Cost.Alpha,
+			StabilityValue: ts.Stability.Value,
+			StabilityAlpha: ts.Stability.Alpha,
+		}
+		go func() {
+			ctx := context.Background()
+			le.store.SaveProfile(ctx, &profileSnap)
+			le.store.SaveTaskScore(ctx, &scoreSnap)
+		}()
+	}
 }
 
 // RankBrains 对所有已知 brain 按 taskType 排名 (L1 入口)
@@ -358,6 +518,24 @@ func (le *LearningEngine) RankBrains(taskType string, policy WeightPolicy) []Bra
 // RecordSequence 记录任务序列 (L2 入口)
 func (le *LearningEngine) RecordSequence(record TaskSequenceRecord) {
 	le.sequences.RecordSequence(record)
+	if le.store != nil {
+		go func() {
+			seq := &persistence.LearningSequence{
+				SequenceID: record.SequenceID,
+				TotalScore: record.TotalScore,
+				RecordedAt: record.RecordedAt,
+			}
+			for _, s := range record.Steps {
+				seq.Steps = append(seq.Steps, persistence.LearningSeqStep{
+					BrainKind:  string(s.BrainKind),
+					TaskType:   s.TaskType,
+					DurationMs: s.Duration.Milliseconds(),
+					Score:      s.Score,
+				})
+			}
+			le.store.SaveSequence(context.Background(), seq)
+		}()
+	}
 }
 
 // RecommendOrder 推荐任务执行顺序 (L2 查询)
@@ -368,6 +546,19 @@ func (le *LearningEngine) RecommendOrder(steps []TaskStep) []TaskStep {
 // RecordUserFeedback 记录用户反馈 (L3 入口)
 func (le *LearningEngine) RecordUserFeedback(category, value string, weight float64) {
 	le.prefs.RecordFeedback(category, value, weight)
+	if le.store != nil {
+		go func() {
+			pref := le.prefs.GetPreference(category)
+			if pref != nil {
+				le.store.SavePreference(context.Background(), &persistence.LearningPreference{
+					Category:  pref.Category,
+					Value:     pref.Value,
+					Weight:    pref.Weight,
+					UpdatedAt: pref.UpdatedAt,
+				})
+			}
+		}()
+	}
 }
 
 // GetPreference 获取用户偏好 (L3 查询)

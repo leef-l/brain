@@ -5,6 +5,8 @@ package kernel
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -48,7 +50,11 @@ type PackageMetadata struct {
 }
 
 // PackageInstaller 负责 Brain Package 的打包、校验、安装与卸载。
-type PackageInstaller struct{}
+type PackageInstaller struct {
+	// PublicKey 可选的 Ed25519 公钥（32 字节）。
+	// 如果设置，Verify 时会自动检查 .brainpkg.sig 签名。
+	PublicKey []byte
+}
 
 // NewPackageInstaller 创建一个 PackageInstaller 实例。
 func NewPackageInstaller() *PackageInstaller {
@@ -349,6 +355,18 @@ func (pi *PackageInstaller) Verify(pkgPath string) (*BrainPackage, error) {
 		}
 	}
 
+	// 签名校验：如果配置了公钥且签名文件存在，自动验证签名
+	if len(pi.PublicKey) > 0 {
+		sigPath := pkgPath + ".sig"
+		if _, sigErr := os.Stat(sigPath); sigErr == nil {
+			// 签名文件存在，执行验证
+			if verifyErr := VerifyPackageSignature(pkgPath, pi.PublicKey); verifyErr != nil {
+				return nil, fmt.Errorf("package verify: %w", verifyErr)
+			}
+		}
+		// 签名文件不存在时跳过（向后兼容）
+	}
+
 	return &BrainPackage{
 		PackageID:      meta.PackageID,
 		PackageVersion: meta.PackageVersion,
@@ -518,4 +536,79 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// ---------------------------------------------------------------------------
+// Ed25519 签名校验
+// ---------------------------------------------------------------------------
+
+// GenerateKeyPair 生成 Ed25519 密钥对，返回 (publicKey, privateKey)。
+// publicKey 长度 32 字节，privateKey 长度 64 字节。
+func GenerateKeyPair() (publicKey, privateKey []byte, err error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate key pair: %w", err)
+	}
+	return []byte(pub), []byte(priv), nil
+}
+
+// SignPackage 对 .brainpkg 文件进行 Ed25519 签名，签名写入 <pkgPath>.sig 文件。
+// privateKey 必须是 64 字节的 Ed25519 私钥。
+func SignPackage(pkgPath string, privateKey []byte) error {
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return fmt.Errorf("sign: 私钥长度无效，期望 %d 字节，实际 %d 字节", ed25519.PrivateKeySize, len(privateKey))
+	}
+
+	pkgPath, err := filepath.Abs(pkgPath)
+	if err != nil {
+		return fmt.Errorf("sign: %w", err)
+	}
+
+	data, err := os.ReadFile(pkgPath)
+	if err != nil {
+		return fmt.Errorf("sign: 读取包文件失败: %w", err)
+	}
+
+	sig := ed25519.Sign(ed25519.PrivateKey(privateKey), data)
+
+	sigPath := pkgPath + ".sig"
+	if err := os.WriteFile(sigPath, sig, 0o644); err != nil {
+		return fmt.Errorf("sign: 写入签名文件失败: %w", err)
+	}
+
+	return nil
+}
+
+// VerifyPackageSignature 验证 .brainpkg 文件的 Ed25519 签名。
+// 签名文件应位于 <pkgPath>.sig。publicKey 必须是 32 字节的 Ed25519 公钥。
+func VerifyPackageSignature(pkgPath string, publicKey []byte) error {
+	if len(publicKey) != ed25519.PublicKeySize {
+		return fmt.Errorf("verify signature: 公钥长度无效，期望 %d 字节，实际 %d 字节", ed25519.PublicKeySize, len(publicKey))
+	}
+
+	pkgPath, err := filepath.Abs(pkgPath)
+	if err != nil {
+		return fmt.Errorf("verify signature: %w", err)
+	}
+
+	sigPath := pkgPath + ".sig"
+	sig, err := os.ReadFile(sigPath)
+	if err != nil {
+		return fmt.Errorf("verify signature: 读取签名文件失败: %w", err)
+	}
+
+	if len(sig) != ed25519.SignatureSize {
+		return fmt.Errorf("verify signature: 签名长度无效，期望 %d 字节，实际 %d 字节", ed25519.SignatureSize, len(sig))
+	}
+
+	data, err := os.ReadFile(pkgPath)
+	if err != nil {
+		return fmt.Errorf("verify signature: 读取包文件失败: %w", err)
+	}
+
+	if !ed25519.Verify(ed25519.PublicKey(publicKey), data, sig) {
+		return fmt.Errorf("verify signature: 签名验证失败，包可能已被篡改")
+	}
+
+	return nil
 }

@@ -7,6 +7,33 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-19
+
+### Added
+
+- **v3 架构四阶段全部完成** — Phase A（资源层）/ B（调度层）/ C（编排层）/ D（分发与远程）共 21 项交付。
+- **Phase A 资源层**: BrainPool 全局注入 + per-run fork、MemLeaseManager 原子租约、TaskExecution 12 状态机、Orchestrator 瘦身、Dashboard SSE + WebSocket、EventBus Pub/Sub、HTTP API /v1/executions + /v1/runs。
+- **Phase B 调度层**: BatchPlanner Welsh-Powell 着色、TaskScheduler 拓扑排序 + 优先级批次、语义审批 5 级 ApprovalClass、Context Engine LLM 摘要 + SharedMessages 持久化、AdaptiveToolPolicy 运行时动态工具筛选、四层学习（L0-L3）、MCP Runtime 完整。
+- **Phase C 编排层**: Workflow materialized + streaming edge、daemon/watch/restart 后台任务、Manifest 驱动替代硬编码注册、Brain CLI upgrade/rollback、第三方接入模板 + 150 项合规测试。
+- **Phase D 分发与远程**: Package 打包/安装 + Ed25519 签名校验、RemoteMarketplace HTTP 客户端 + 本地缓存 + Sync、HTTP JSON-RPC + ServiceDiscovery (DNS SRV / Static) + CircuitBreaker、EnterpriseEnforcer（OrgPolicy + PermissionMatrix + RevocationList）。
+- **Phase E 统一持久化**: SQLite WAL 替代 JSON 全量重写 + 纯内存，含 RunStore/LearningStore/AuditLogger/SharedMessageStore 迁移。
+- **Sprint E-1**: SQLite 驱动实现、Streaming Edge 竞态修复、upgrade/rollback 命令、Package Ed25519 签名校验。
+- **Sprint E-2**: RunStore 迁移到 SQLite、LearningEngine L1/L2/L3 持久化、AuditLogger 接口 + SQLite + Purge、Dashboard WebSocket Hub 广播。
+- **Sprint E-3**: 5 脑 L0 BrainLearner、L1-L3 接入执行路径、Context Engine LLM 摘要、SharedMessages 持久化。
+- **Resume 对话上下文恢复**: Checkpoint 存入 messages/system/tools 到 CAS，resume 从 CAS 恢复完整对话历史、system prompt 和 tool schemas。
+- **README 全面重写**: 面向用户的安装→配置→使用完整指南，预编译二进制为推荐安装方式，新增 FAQ。
+
+### Fixed
+
+- `CanResume` 状态字符串大小写错误（`"Completed"/"Failed"/"Cancelled"` → `"completed"/"failed"/"canceled"`），修复终态 Run 被错误允许 resume。
+- `resume` 命令接入 `ResumeCoordinator`，启用 `MarkResumeAttempt` 3 次上限保护（此前完全失效）。
+- `resume` 完成后将 FinalMessages 存入 CAS（此前仅更新 state 字段，下次 resume 仍用旧快照）。
+- `chat/executor.go` 错误路径保存 crash checkpoint（此前 crash 后无 checkpoint anchor 可 resume）。
+- `chat/executor.go` 正确传递 system prompt 到 checkpoint（此前传 nil 导致 SystemRef 永远为空）。
+- `chat/executor.go` 错误路径状态拼写 `"cancelled"` → `"canceled"` 与 `loop.State` 一致。
+- `LoadCheckpointSystem` / `LoadCheckpointTools` 补全（此前 SystemRef/ToolsRef 有存无取）。
+- `SaveRunCheckpointWithMessages` 支持 ToolsRef 存入 CAS（此前 tools_ref 列永远为空）。
+
 ## [0.7.0] - 2026-04-15
 
 ### Added
@@ -79,7 +106,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Cross-platform build issues on Darwin, FreeBSD, and Windows caused by raw terminal and signal handling differences.
 - Windows sidecar discovery now checks same-directory `.exe` binaries, matching the packaged release layout.
 
-[unreleased]: https://github.com/leef-l/brain/compare/v0.7.0...HEAD
+[unreleased]: https://github.com/leef-l/brain/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/leef-l/brain/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/leef-l/brain/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/leef-l/brain/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/leef-l/brain/compare/v0.5.0...v0.5.1

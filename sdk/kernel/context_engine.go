@@ -10,11 +10,13 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/persistence"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,11 +64,29 @@ type DefaultContextEngine struct {
 	// SharedMessages 存放最近一次 Share() 调用投递的消息，
 	// 仅用于测试和调试，生产环境应替换为 BrainChannel 投递。
 	SharedMessages []llm.Message
+
+	// Summarizer 是可选的 LLM provider，用于 Compress 阶段 2.5 的智能摘要。
+	// 当为 nil 时，Compress 退化为纯截断策略。
+	Summarizer llm.Provider
+
+	// SummaryModel 指定摘要使用的模型。为空时使用 provider 默认模型。
+	SummaryModel string
+
+	// SharedStore 是可选的持久化后端，用于保存 Share() 的跨脑消息。
+	SharedStore persistence.SharedMessageStore
 }
 
 // NewDefaultContextEngine 创建默认的 ContextEngine。
 func NewDefaultContextEngine() *DefaultContextEngine {
 	return &DefaultContextEngine{}
+}
+
+// NewContextEngineWithLLM 创建带 LLM 摘要能力的 ContextEngine。
+func NewContextEngineWithLLM(provider llm.Provider, model string) *DefaultContextEngine {
+	return &DefaultContextEngine{
+		Summarizer:   provider,
+		SummaryModel: model,
+	}
 }
 
 // estimateTokens 粗略估算消息列表的 token 数。
@@ -180,6 +200,17 @@ func (e *DefaultContextEngine) Compress(ctx context.Context, messages []llm.Mess
 		return combined, nil
 	}
 
+	// --- 策略 2.5：LLM 摘要（当有 Summarizer 时） ---
+	if e.Summarizer != nil {
+		summarized, err := e.summarizeMessages(ctx, truncated, remainingBudget)
+		if err == nil {
+			combined = append(systemMsgs, summarized...)
+			if estimateTokens(combined) <= budget {
+				return combined, nil
+			}
+		}
+	}
+
 	// --- 策略 3：硬截断兜底 ---
 	hardResult := hardTruncate(nonSystemMsgs, remainingBudget)
 	return append(systemMsgs, hardResult...), nil
@@ -277,6 +308,71 @@ func hardTruncate(msgs []llm.Message, budget int) []llm.Message {
 	return result
 }
 
+// summarizeMessages 使用 LLM 将多条消息压缩为一条摘要消息。
+// 保留最新的 keepRecent 条消息原样，其余消息由 LLM 摘要。
+func (e *DefaultContextEngine) summarizeMessages(ctx context.Context, msgs []llm.Message, budget int) ([]llm.Message, error) {
+	if len(msgs) <= 2 {
+		return msgs, nil
+	}
+
+	// 保留最新 2 条原样，其余喂给 LLM 做摘要
+	keepRecent := 2
+	if keepRecent > len(msgs) {
+		keepRecent = len(msgs)
+	}
+	toSummarize := msgs[:len(msgs)-keepRecent]
+	recent := msgs[len(msgs)-keepRecent:]
+
+	// 拼接要摘要的消息文本
+	var sb strings.Builder
+	for _, m := range toSummarize {
+		sb.WriteString("[")
+		sb.WriteString(m.Role)
+		sb.WriteString("] ")
+		sb.WriteString(messageText(m))
+		sb.WriteString("\n")
+	}
+
+	summaryPrompt := "请将以下对话历史压缩为一段简洁的摘要，保留关键信息、决策和结论。" +
+		"用中文输出，不超过 500 字。\n\n" + sb.String()
+
+	model := e.SummaryModel
+	if model == "" {
+		model = "claude-haiku-4-5-20251001"
+	}
+
+	resp, err := e.Summarizer.Complete(ctx, &llm.ChatRequest{
+		Model:     model,
+		MaxTokens: 1024,
+		Messages: []llm.Message{{
+			Role:    "user",
+			Content: []llm.ContentBlock{{Type: "text", Text: summaryPrompt}},
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	summaryText := ""
+	if resp != nil && len(resp.Content) > 0 {
+		summaryText = resp.Content[0].Text
+	}
+	if summaryText == "" {
+		return msgs, nil
+	}
+
+	summaryMsg := llm.Message{
+		Role: "assistant",
+		Content: []llm.ContentBlock{{
+			Type: "text",
+			Text: "[上下文摘要] " + summaryText,
+		}},
+	}
+
+	result := append([]llm.Message{summaryMsg}, recent...)
+	return result, nil
+}
+
 // ---------------------------------------------------------------------------
 // Share — 跨脑上下文传递
 // ---------------------------------------------------------------------------
@@ -310,6 +406,22 @@ func (e *DefaultContextEngine) Share(ctx context.Context, from, to agent.Kind, m
 	}
 
 	e.SharedMessages = filtered
+
+	// 异步持久化
+	if e.SharedStore != nil && len(filtered) > 0 {
+		go func() {
+			data, err := json.Marshal(filtered)
+			if err != nil {
+				return
+			}
+			e.SharedStore.Save(context.Background(), &persistence.SharedMessage{
+				FromBrain: string(from),
+				ToBrain:   string(to),
+				Messages:  data,
+				Count:     len(filtered),
+			})
+		}()
+	}
 	return nil
 }
 

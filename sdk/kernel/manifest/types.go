@@ -6,8 +6,9 @@ type RuntimeType string
 const (
 	RuntimeNative    RuntimeType = "native"     // 原生 Go sidecar
 	RuntimeMCPBacked RuntimeType = "mcp-backed" // MCP server 驱动
+	RuntimeHybrid    RuntimeType = "hybrid"     // native + MCP-backed 混合模��
 	RuntimeWasm      RuntimeType = "wasm"       // WASM 模块
-	RuntimeDocker    RuntimeType = "docker"     // 容器化
+	RuntimeDocker    RuntimeType = "docker"     // 容��化
 	RuntimeRemote    RuntimeType = "remote"     // 远程 HTTP JSON-RPC
 )
 
@@ -15,6 +16,7 @@ const (
 var validRuntimeTypes = map[RuntimeType]bool{
 	RuntimeNative:    true,
 	RuntimeMCPBacked: true,
+	RuntimeHybrid:    true,
 	RuntimeWasm:      true,
 	RuntimeDocker:    true,
 	RuntimeRemote:    true,

@@ -138,11 +138,26 @@ func (h *faultHandler) handleToolsCall(ctx context.Context, params json.RawMessa
 }
 
 func main() {
+	listen := ""
+	for i, arg := range os.Args[1:] {
+		if arg == "--listen" && i+1 < len(os.Args[1:]) {
+			listen = os.Args[i+2]
+		}
+	}
+
 	if _, err := license.CheckSidecar("brain-fault", license.VerifyOptions{}); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-fault: license: %v\n", err)
 		os.Exit(1)
 	}
-	if err := sidecar.Run(newFaultHandler()); err != nil {
+
+	handler := newFaultHandler()
+	var err error
+	if listen != "" {
+		err = sidecar.ListenAndServe(listen, handler)
+	} else {
+		err = sidecar.Run(handler)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain-fault: %v\n", err)
 		os.Exit(1)
 	}

@@ -107,7 +107,7 @@ func (c *MemResumeCoordinator) CanResume(ctx context.Context, runID int64) (bool
 		return false, nil
 	}
 	switch cp.State {
-	case "Completed", "Failed", "Cancelled":
+	case "completed", "failed", "canceled":
 		return false, nil
 	}
 	return true, nil

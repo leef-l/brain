@@ -1,7 +1,9 @@
 package command
 
 import (
+	"context"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -60,6 +62,8 @@ func RunBrainManage(args []string, deps BrainManageDeps) int {
 		return runBrainSearch(rest, MarketplaceDeps{})
 	case "info":
 		return runBrainInfo(rest, MarketplaceDeps{})
+	case "sync":
+		return runMarketplaceSync(rest)
 	case "-h", "--help", "help":
 		printBrainManageUsage()
 		return cli.ExitOK
@@ -81,8 +85,8 @@ func printBrainManageUsage() {
 	fmt.Fprintln(os.Stderr, "  activate     Activate an installed brain")
 	fmt.Fprintln(os.Stderr, "  deactivate   Deactivate an installed brain")
 	fmt.Fprintln(os.Stderr, "  uninstall    Uninstall an installed brain")
-	fmt.Fprintln(os.Stderr, "  upgrade      Upgrade an installed brain (not implemented yet)")
-	fmt.Fprintln(os.Stderr, "  rollback     Rollback an installed brain (not implemented yet)")
+	fmt.Fprintln(os.Stderr, "  upgrade      Upgrade an installed brain to a new version")
+	fmt.Fprintln(os.Stderr, "  rollback     Rollback an installed brain to previous version")
 	fmt.Fprintln(os.Stderr, "  search       Search marketplace for available brains")
 	fmt.Fprintln(os.Stderr, "  info         Show detailed info for a marketplace package")
 }
@@ -382,13 +386,210 @@ func runBrainDeactivate(args []string, deps BrainManageDeps) int {
 	return cli.ExitOK
 }
 
-func runBrainUpgrade(_ []string, _ BrainManageDeps) int {
-	fmt.Fprintln(os.Stderr, "brain brain upgrade: not implemented yet")
+// runBrainUpgrade 升级已安装的 brain。
+// 用法: brain brain upgrade <kind> <path-or-pkg>
+// 流程: 备份当前版本 → 安装新版本 → 验证 → 成功删除备份 / 失败则回滚
+func runBrainUpgrade(args []string, deps BrainManageDeps) int {
+	fs := flag.NewFlagSet("brain brain upgrade", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+	if fs.NArg() != 2 {
+		fmt.Fprintln(os.Stderr, "Usage: brain brain upgrade <kind> <path-or-pkg>")
+		return cli.ExitUsage
+	}
+
+	kind := fs.Arg(0)
+	srcPath := fs.Arg(1)
+
+	if err := validateBrainKind(kind); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain upgrade: %v\n", err)
+		return cli.ExitUsage
+	}
+
+	brainsDir := deps.BrainsDir()
+	brainDir := filepath.Join(brainsDir, kind)
+	bakDir := filepath.Join(brainsDir, kind+".bak")
+
+	// 1. 检查当前版本是否存在
+	if _, err := os.Stat(brainDir); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "brain brain upgrade: brain %q 未安装，请使用 install 命令\n", kind)
+		return cli.ExitNotFound
+	}
+
+	// 读取旧版本号
+	oldVersion := "unknown"
+	if oldM, err := manifest.LoadFromDir(brainDir); err == nil {
+		oldVersion = oldM.BrainVersion
+	}
+
+	// 2. 备份当前版本到 .bak
+	// 若已有旧备份则先删除
+	if _, err := os.Stat(bakDir); err == nil {
+		if err := os.RemoveAll(bakDir); err != nil {
+			fmt.Fprintf(os.Stderr, "brain brain upgrade: 清理旧备份失败: %v\n", err)
+			return cli.ExitSoftware
+		}
+	}
+	if err := os.Rename(brainDir, bakDir); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain upgrade: 备份当前版本失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+	fmt.Printf("Backed up %s -> %s\n", brainDir, bakDir)
+
+	// 3. 安装新版本
+	installErr := upgradeInstall(srcPath, kind, brainsDir)
+
+	// 4. 验证新版本的 brain.json
+	if installErr == nil {
+		newM, err := manifest.LoadFromDir(brainDir)
+		if err != nil {
+			installErr = fmt.Errorf("新版本 brain.json 加载失败: %w", err)
+		} else {
+			errs := manifest.Validate(newM)
+			if len(errs) > 0 {
+				installErr = fmt.Errorf("新版本 manifest 校验失败: %v", errs[0])
+			}
+		}
+	}
+
+	// 5. 根据结果决定是否回滚
+	if installErr != nil {
+		fmt.Fprintf(os.Stderr, "brain brain upgrade: 安装失败: %v\n", installErr)
+		fmt.Fprintln(os.Stderr, "正在从备份恢复...")
+		// 清理可能残留的不完整安装
+		_ = os.RemoveAll(brainDir)
+		if err := os.Rename(bakDir, brainDir); err != nil {
+			fmt.Fprintf(os.Stderr, "brain brain upgrade: 恢复备份失败: %v (备份仍在 %s)\n", err, bakDir)
+		} else {
+			fmt.Println("已从备份恢复。")
+		}
+		return cli.ExitSoftware
+	}
+
+	// 读取新版本号
+	newVersion := "unknown"
+	if newM, err := manifest.LoadFromDir(brainDir); err == nil {
+		newVersion = newM.BrainVersion
+	}
+
+	// 成功，删除备份
+	if err := os.RemoveAll(bakDir); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain upgrade: 警告: 删除备份失败: %v\n", err)
+	}
+
+	fmt.Printf("Upgraded brain %q: %s → %s\n", kind, oldVersion, newVersion)
 	return cli.ExitOK
 }
 
-func runBrainRollback(_ []string, _ BrainManageDeps) int {
-	fmt.Fprintln(os.Stderr, "brain brain rollback: not implemented yet")
+// upgradeInstall 根据源路径类型（.brainpkg 或目录）安装 brain。
+func upgradeInstall(srcPath, kind, brainsDir string) error {
+	// 如果是 .brainpkg 文件
+	if strings.HasSuffix(srcPath, ".brainpkg") {
+		if _, err := os.Stat(srcPath); err != nil {
+			return fmt.Errorf("包文件 %q 不存在: %w", srcPath, err)
+		}
+		installer := kernel.NewPackageInstaller()
+		return installer.Install(srcPath, brainsDir)
+	}
+
+	// 否则当作目录处理
+	info, err := os.Stat(srcPath)
+	if err != nil || !info.IsDir() {
+		// 尝试在 brains/<srcPath> 下查找
+		alt := filepath.Join("brains", srcPath)
+		if fi, ferr := os.Stat(alt); ferr == nil && fi.IsDir() {
+			srcPath = alt
+		} else {
+			return fmt.Errorf("%q 不是有效的目录或 .brainpkg 文件", srcPath)
+		}
+	}
+
+	// 加载并验证源 manifest
+	m, err := manifest.LoadFromDir(srcPath)
+	if err != nil {
+		return fmt.Errorf("加载源 manifest 失败: %w", err)
+	}
+	errs := manifest.Validate(m)
+	if len(errs) > 0 {
+		return fmt.Errorf("源 manifest 校验失败: %v", errs[0])
+	}
+
+	// 校验 kind 一致性
+	if m.Kind != kind {
+		return fmt.Errorf("源 brain kind %q 与目标 %q 不匹配", m.Kind, kind)
+	}
+
+	destDir := filepath.Join(brainsDir, kind)
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
+	}
+	if err := copyDirRecursive(srcPath, destDir); err != nil {
+		return fmt.Errorf("复制文件失败: %w", err)
+	}
+
+	// 保留 .active 标记
+	_ = os.WriteFile(filepath.Join(destDir, ".active"), []byte(""), 0o644)
+	return nil
+}
+
+// runBrainRollback 将 brain 回滚到上一个备份版本。
+// 用法: brain brain rollback <kind>
+func runBrainRollback(args []string, deps BrainManageDeps) int {
+	fs := flag.NewFlagSet("brain brain rollback", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Usage: brain brain rollback <kind>")
+		return cli.ExitUsage
+	}
+
+	kind := fs.Arg(0)
+	if err := validateBrainKind(kind); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain rollback: %v\n", err)
+		return cli.ExitUsage
+	}
+
+	brainsDir := deps.BrainsDir()
+	brainDir := filepath.Join(brainsDir, kind)
+	bakDir := filepath.Join(brainsDir, kind+".bak")
+
+	// 检查备份是否存在
+	if _, err := os.Stat(bakDir); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "brain brain rollback: brain %q 没有可用的备份 (%s 不存在)\n", kind, bakDir)
+		return cli.ExitNotFound
+	}
+
+	// 读取当前版本号（如果存在）
+	currentVersion := "unknown"
+	if curM, err := manifest.LoadFromDir(brainDir); err == nil {
+		currentVersion = curM.BrainVersion
+	}
+
+	// 读取备份版本号
+	bakVersion := "unknown"
+	if bakM, err := manifest.LoadFromDir(bakDir); err == nil {
+		bakVersion = bakM.BrainVersion
+	}
+
+	// 删除当前版本
+	if _, err := os.Stat(brainDir); err == nil {
+		if err := os.RemoveAll(brainDir); err != nil {
+			fmt.Fprintf(os.Stderr, "brain brain rollback: 删除当前版本失败: %v\n", err)
+			return cli.ExitSoftware
+		}
+	}
+
+	// 恢复备份
+	if err := os.Rename(bakDir, brainDir); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain rollback: 恢复备份失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	fmt.Printf("Rolled back brain %q: %s → %s\n", kind, currentVersion, bakVersion)
 	return cli.ExitOK
 }
 
@@ -546,4 +747,166 @@ func BrainManageDir() string {
 		return filepath.Join(".", ".brain", "brains")
 	}
 	return filepath.Join(home, ".brain", "brains")
+}
+
+// ---------------------------------------------------------------------------
+// sign / verify / keygen 子命令
+// ---------------------------------------------------------------------------
+
+// runBrainSign 对 .brainpkg 文件进行 Ed25519 签名。
+func runBrainSign(args []string) int {
+	fs := flag.NewFlagSet("brain brain sign", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	keyFile := fs.String("key", "", "Ed25519 private key file (hex encoded)")
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+	if fs.NArg() != 1 || *keyFile == "" {
+		fmt.Fprintln(os.Stderr, "Usage: brain brain sign --key <private-key-file> <pkg-path>")
+		return cli.ExitUsage
+	}
+
+	pkgPath := fs.Arg(0)
+
+	keyData, err := os.ReadFile(*keyFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain sign: 读取私钥文件失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	privateKey, err := hex.DecodeString(strings.TrimSpace(string(keyData)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain sign: 私钥格式无效 (需要 hex 编码): %v\n", err)
+		return cli.ExitDataErr
+	}
+
+	if err := kernel.SignPackage(pkgPath, privateKey); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain sign: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	fmt.Printf("Signed %s -> %s.sig\n", pkgPath, pkgPath)
+	return cli.ExitOK
+}
+
+// runBrainVerify 验证 .brainpkg 文件的 Ed25519 签名。
+func runBrainVerify(args []string) int {
+	fs := flag.NewFlagSet("brain brain verify", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	pubkeyFile := fs.String("pubkey", "", "Ed25519 public key file (hex encoded)")
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+	if fs.NArg() != 1 || *pubkeyFile == "" {
+		fmt.Fprintln(os.Stderr, "Usage: brain brain verify --pubkey <public-key-file> <pkg-path>")
+		return cli.ExitUsage
+	}
+
+	pkgPath := fs.Arg(0)
+
+	keyData, err := os.ReadFile(*pubkeyFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain verify: 读取公钥文件失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	publicKey, err := hex.DecodeString(strings.TrimSpace(string(keyData)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain verify: 公钥格式无效 (需要 hex 编码): %v\n", err)
+		return cli.ExitDataErr
+	}
+
+	if err := kernel.VerifyPackageSignature(pkgPath, publicKey); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain verify: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	fmt.Printf("Signature verified OK: %s\n", pkgPath)
+	return cli.ExitOK
+}
+
+// runBrainKeygen 生成 Ed25519 密钥对到 ~/.brain/signing.key 和 ~/.brain/signing.pub。
+func runBrainKeygen(args []string) int {
+	fs := flag.NewFlagSet("brain brain keygen", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain keygen: 获取 HOME 目录失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	brainDir := filepath.Join(home, ".brain")
+	if err := os.MkdirAll(brainDir, 0o700); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain keygen: 创建目录失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	keyFile := filepath.Join(brainDir, "signing.key")
+	pubFile := filepath.Join(brainDir, "signing.pub")
+
+	// 检查是否已存在
+	if _, err := os.Stat(keyFile); err == nil {
+		fmt.Fprintf(os.Stderr, "brain brain keygen: %s 已存在，跳过生成。如需重新生成请先删除。\n", keyFile)
+		return cli.ExitSoftware
+	}
+
+	publicKey, privateKey, err := kernel.GenerateKeyPair()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain keygen: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	// 写入私钥（hex 编码，权限 0600）
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(privateKey)+"\n"), 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain keygen: 写入私钥失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	// 写入公钥（hex 编码，权限 0644）
+	if err := os.WriteFile(pubFile, []byte(hex.EncodeToString(publicKey)+"\n"), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain keygen: 写入公钥失败: %v\n", err)
+		return cli.ExitSoftware
+	}
+
+	fmt.Printf("Generated Ed25519 key pair:\n")
+	fmt.Printf("  Private key: %s\n", keyFile)
+	fmt.Printf("  Public key:  %s\n", pubFile)
+	return cli.ExitOK
+}
+
+func runMarketplaceSync(args []string) int {
+	fs := flag.NewFlagSet("brain brain sync", flag.ContinueOnError)
+	remote := fs.String("remote", "", "remote marketplace API endpoint")
+	apiKey := fs.String("api-key", "", "API key for remote marketplace")
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+
+	endpoint := *remote
+	if endpoint == "" {
+		endpoint = os.Getenv("BRAIN_MARKETPLACE_URL")
+	}
+	if endpoint == "" {
+		fmt.Fprintln(os.Stderr, "brain brain sync: --remote or BRAIN_MARKETPLACE_URL required")
+		return cli.ExitUsage
+	}
+
+	rm := kernel.NewRemoteMarketplace(kernel.RemoteMarketplaceConfig{
+		Endpoint: endpoint,
+		APIKey:   *apiKey,
+	})
+
+	fmt.Fprintf(os.Stderr, "Syncing marketplace index from %s...\n", endpoint)
+	ctx := context.Background()
+	count, err := rm.Sync(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain brain sync: %v\n", err)
+		return cli.ExitSoftware
+	}
+	fmt.Fprintf(os.Stderr, "Synced %d packages.\n", count)
+	return cli.ExitOK
 }

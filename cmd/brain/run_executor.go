@@ -27,6 +27,8 @@ type managedRunExecution struct {
 	SystemPrompt  string
 	EventBus      *events.MemEventBus // 可选，非 nil 时双写事件到 EventBus
 	BatchPlanner  loop.ToolBatchPlanner // 可选，非 nil 时启用并行工具分组
+	MessageCompressor func(ctx context.Context, messages []llm.Message, budget int) ([]llm.Message, error) // 可选，消息压缩
+	TokenBudget       int // 消息 token 预算
 }
 
 type managedRunOutcome struct {
@@ -71,10 +73,12 @@ func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRu
 			runtime: req.Runtime,
 			runID:   req.Record.ID,
 		},
-		Sanitizer:    loop.NewMemSanitizer(),
-		LoopDetector: loop.NewMemLoopDetector(),
-		CacheBuilder: loop.NewMemCacheBuilder(),
-		BatchPlanner: req.BatchPlanner,
+		Sanitizer:         loop.NewMemSanitizer(),
+		LoopDetector:      loop.NewMemLoopDetector(),
+		CacheBuilder:      loop.NewMemCacheBuilder(),
+		BatchPlanner:      req.BatchPlanner,
+		MessageCompressor: req.MessageCompressor,
+		TokenBudget:       req.TokenBudget,
 	}
 
 	opts := loop.RunOptions{
@@ -112,7 +116,7 @@ func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRu
 	}
 
 	finalStatus := string(result.Run.State)
-	if err := saveRunCheckpoint(ctx, req.Runtime, req.Record, finalStatus, finalTurnIndex, finalTurnUUID); err != nil {
+	if err := saveRunCheckpointWithMessages(ctx, req.Runtime, req.Record, finalStatus, finalTurnIndex, finalTurnUUID, result.FinalMessages, opts.System); err != nil {
 		return nil, err
 	}
 	if err := saveRunUsage(ctx, req.Runtime, req.Record, req.ProviderName, req.ProviderModel, result); err != nil {
