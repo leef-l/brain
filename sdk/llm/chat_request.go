@@ -20,29 +20,29 @@ import (
 // See 22-Agent-Loop规格.md §6 for the frozen v1 field schema.
 type ChatRequest struct {
 	// --- Identity ---
-	RunID     string // see 22-Agent-Loop规格.md §6.2 run_id
-	TurnIndex int    // current Turn index (0-based), §6.2
-	BrainID   string // which brain issued this request, §6.2
+	RunID     string `json:"run_id,omitempty"`     // see 22-Agent-Loop规格.md §6.2 run_id
+	TurnIndex int    `json:"turn_index,omitempty"` // current Turn index (0-based), §6.2
+	BrainID   string `json:"brain_id,omitempty"`   // which brain issued this request, §6.2
 
 	// --- Layered prompt (L1/L2 system, L3 history) ---
-	System   []SystemBlock // §6.2 system — L1 + L2
-	Messages []Message     // §6.2 messages — L3
+	System   []SystemBlock `json:"system,omitempty"`   // §6.2 system — L1 + L2
+	Messages []Message     `json:"messages,omitempty"` // §6.2 messages — L3
 
 	// --- Tool definitions (frozen within a Run, §3.3) ---
-	Tools      []ToolSchema // available tools, lightweight copy, §5.2 note
-	ToolChoice string       // "auto" | "required" | "none" | tool name, §6.4
+	Tools      []ToolSchema `json:"tools,omitempty"`       // available tools, lightweight copy, §5.2 note
+	ToolChoice string       `json:"tool_choice,omitempty"` // "auto" | "required" | "none" | tool name, §6.4
 
 	// --- Model config ---
-	Model     string // §6.2 model
-	MaxTokens int    // §6.2 max_tokens
-	Stream    bool   // §6.2 stream
+	Model     string `json:"model,omitempty"`      // §6.2 model
+	MaxTokens int    `json:"max_tokens,omitempty"` // §6.2 max_tokens
+	Stream    bool   `json:"stream,omitempty"`     // §6.2 stream
 
 	// --- Prompt Cache control ---
-	CacheControl []CachePoint // three-layer cache_control, §3 + §5.2
+	CacheControl []CachePoint `json:"cache_control,omitempty"` // three-layer cache_control, §3 + §5.2
 
 	// --- Budget snapshot (aligned with Run Budget) ---
-	TurnTimeout     time.Duration  // §6.2 turn_timeout
-	RemainingBudget BudgetSnapshot // §6.2 remaining_budget, real-time snapshot
+	TurnTimeout     time.Duration  `json:"turn_timeout,omitempty"`     // §6.2 turn_timeout
+	RemainingBudget BudgetSnapshot `json:"remaining_budget,omitempty"` // §6.2 remaining_budget, real-time snapshot
 }
 
 // SystemBlock is a single system-prompt block, representing one layer (L1
@@ -50,19 +50,19 @@ type ChatRequest struct {
 // 22-Agent-Loop规格.md §3.
 type SystemBlock struct {
 	// Text is the rendered prompt text for this block.
-	Text string
+	Text string `json:"text"`
 	// Cache indicates whether this block should be marked cache_control:
 	// ephemeral by the provider adapter. See 22-Agent-Loop规格.md §3.
-	Cache bool
+	Cache bool `json:"cache,omitempty"`
 }
 
 // Message is a single conversational message (user / assistant / tool) in
 // the L3 history layer. See 22-Agent-Loop规格.md §6.2.
 type Message struct {
 	// Role is one of "user", "assistant", or "tool".
-	Role string
+	Role string `json:"role"`
 	// Content is the ordered list of content blocks for this message.
-	Content []ContentBlock
+	Content []ContentBlock `json:"content"`
 }
 
 // ContentBlock is a single piece of content inside a Message. It models
@@ -90,9 +90,9 @@ type ContentBlock struct {
 type CachePoint struct {
 	// Layer identifies which layer this point belongs to: "L1_system",
 	// "L2_task", or "L3_history".
-	Layer string
+	Layer string `json:"layer"`
 	// Index is the zero-based position of the cache point within its layer.
-	Index int
+	Index int `json:"index"`
 }
 
 // BudgetSnapshot is the real-time snapshot of the remaining Run-level
@@ -100,11 +100,11 @@ type CachePoint struct {
 // ("MUST NOT be cached").
 type BudgetSnapshot struct {
 	// TurnsRemaining is the number of Turns still available in the Run.
-	TurnsRemaining int
+	TurnsRemaining int `json:"turns_remaining,omitempty"`
 	// CostUSDRemaining is the remaining cost budget in USD.
-	CostUSDRemaining float64
+	CostUSDRemaining float64 `json:"cost_usd_remaining,omitempty"`
 	// TokensRemaining is the remaining token budget.
-	TokensRemaining int
+	TokensRemaining int `json:"tokens_remaining,omitempty"`
 }
 
 // ToolSchema is a lightweight description of a tool exposed to the LLM.
@@ -113,9 +113,9 @@ type BudgetSnapshot struct {
 // See 骨架实施计划.md §5.2 note and 22-Agent-Loop规格.md §6.2 tools.
 type ToolSchema struct {
 	// Name is the tool's stable identifier (e.g. "code.run_tests").
-	Name string
+	Name string `json:"name"`
 	// Description is the natural-language description shown to the LLM.
-	Description string
+	Description string `json:"description,omitempty"`
 	// InputSchema is the JSON Schema for the tool's input arguments.
-	InputSchema json.RawMessage
+	InputSchema json.RawMessage `json:"input_schema"`
 }

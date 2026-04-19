@@ -3,7 +3,9 @@ package llm
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 )
@@ -51,6 +53,52 @@ func TestContentBlock_JSONUsesWireToolFieldNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(raw) != `{"type":"tool_use","tool_use_id":"tu-1","tool_name":"browser.open","input":{"url":"https://example.com"}}` {
+		t.Fatalf("json=%s", raw)
+	}
+}
+
+func TestMessage_JSONUsesWireFieldNames(t *testing.T) {
+	raw, err := json.Marshal(Message{
+		Role: "assistant",
+		Content: []ContentBlock{
+			{
+				Type:      "tool_use",
+				ToolUseID: "tu-2",
+				ToolName:  "browser.open",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"role":"assistant","content":[{"type":"tool_use","tool_use_id":"tu-2","tool_name":"browser.open"}]}` {
+		t.Fatalf("json=%s", raw)
+	}
+}
+
+func TestChatResponse_JSONUsesWireFieldNames(t *testing.T) {
+	raw, err := json.Marshal(ChatResponse{
+		ID:         "msg-1",
+		Model:      "glm-5",
+		StopReason: "tool_use",
+		Content: []ContentBlock{
+			{
+				Type:      "tool_use",
+				ToolUseID: "tu-3",
+				ToolName:  "browser.open",
+			},
+		},
+		Usage:      Usage{InputTokens: 1, OutputTokens: 2},
+		FinishedAt: time.Date(2026, 4, 20, 7, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	if !strings.Contains(got, `"stop_reason":"tool_use"`) ||
+		!strings.Contains(got, `"tool_use_id":"tu-3"`) ||
+		!strings.Contains(got, `"tool_name":"browser.open"`) ||
+		!strings.Contains(got, `"finished_at":"2026-04-20T07:00:00Z"`) {
 		t.Fatalf("json=%s", raw)
 	}
 }
