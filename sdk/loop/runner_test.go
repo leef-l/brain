@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/tool"
 )
@@ -159,6 +160,37 @@ func TestRunner_ToolCallThenText(t *testing.T) {
 	// FinalMessages: [user, assistant(tool_use), user(tool_result), assistant(text)]
 	if len(result.FinalMessages) != 4 {
 		t.Errorf("FinalMessages len = %d, want 4", len(result.FinalMessages))
+	}
+}
+
+func TestRunner_FailsMalformedToolUseResponse(t *testing.T) {
+	mp := llm.NewMockProvider("test-model")
+	mp.Queue(&llm.ChatResponse{
+		ID:         "bad-tool-use",
+		Model:      "test-model",
+		StopReason: "tool_use",
+		Content: []llm.ContentBlock{
+			{Type: "tool_use", ToolUseID: "tu-1"},
+		},
+	})
+
+	runner := newTestRunner(mp, tool.NewMemRegistry())
+	run := NewRun("run-bad-tool", "test-brain", defaultBudget())
+
+	result, err := runner.Execute(context.Background(), run, []llm.Message{
+		userMessage("broken tool response"),
+	}, defaultOpts())
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Run.State != StateFailed {
+		t.Fatalf("State=%q, want %q", result.Run.State, StateFailed)
+	}
+	if len(result.Turns) != 1 {
+		t.Fatalf("Turns len=%d, want 1", len(result.Turns))
+	}
+	if result.Turns[0].Error == nil || result.Turns[0].Error.ErrorCode != brainerrors.CodeLLMUpstream5xx {
+		t.Fatalf("error=%+v, want %s", result.Turns[0].Error, brainerrors.CodeLLMUpstream5xx)
 	}
 }
 
@@ -582,5 +614,31 @@ func TestRunner_PreTurnStateHookOverridesDispatchRegistry(t *testing.T) {
 	}
 	if turnCalls != 1 {
 		t.Fatalf("turn registry tool executed %d times, want 1", turnCalls)
+	}
+}
+
+func TestRunner_PreTurnStateHookOverridesToolChoice(t *testing.T) {
+	mp := llm.NewMockProvider("test-model")
+	mp.QueueText("done")
+
+	reg := tool.NewMemRegistry()
+	runner := newTestRunner(mp, reg)
+	runner.PreTurnStateHook = func(_ context.Context, _ *Run, _ int) (*PreTurnState, error) {
+		return &PreTurnState{ToolChoice: "required"}, nil
+	}
+
+	run := NewRun("run-preturn-toolchoice", "test-brain", defaultBudget())
+	_, err := runner.Execute(context.Background(), run, []llm.Message{
+		userMessage("call the tool"),
+	}, defaultOpts())
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	reqs := mp.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("request count=%d, want 1", len(reqs))
+	}
+	if reqs[0].ToolChoice != "required" {
+		t.Fatalf("tool_choice=%q, want required", reqs[0].ToolChoice)
 	}
 }

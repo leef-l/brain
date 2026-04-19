@@ -90,6 +90,8 @@ type PreTurnState struct {
 	Tools []llm.ToolSchema
 	// Registry 是本轮工具调度使用的 registry。nil 表示沿用 Runner.ToolRegistry。
 	Registry tool.Registry
+	// ToolChoice 覆盖本轮 tool_choice。空字符串表示沿用 opts.ToolChoice。
+	ToolChoice string
 }
 
 // RunOptions configures a single Run execution.
@@ -221,6 +223,9 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 				if state.Registry != nil {
 					turnRegistry = state.Registry
 				}
+				if state.ToolChoice != "" {
+					turnOpts.ToolChoice = state.ToolChoice
+				}
 			}
 		}
 		if r.PreTurnHook != nil {
@@ -269,6 +274,19 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			turns = append(turns, &TurnResult{
 				Turn:      turn,
 				NextState: nextState,
+				Error:     be,
+			})
+			break
+		}
+
+		if err := llm.ValidateToolUseResponse(r.Provider.Name(), resp); err != nil {
+			turn.End(r.now())
+			be := toBrainError(err)
+			run.Fail(r.now())
+			turns = append(turns, &TurnResult{
+				Turn:      turn,
+				Response:  resp,
+				NextState: StateFailed,
 				Error:     be,
 			})
 			break

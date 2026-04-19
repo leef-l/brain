@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leef-l/brain/sdk/diaglog"
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/executionpolicy"
-	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/tool"
@@ -1819,7 +1819,7 @@ func newBrowserStageHook(registry tool.Registry) func(ctx context.Context, run *
 	// 绑定(即 run.browser.new_page → browser_new_page profile)。
 	lastStage := ""
 
-	return func(ctx context.Context, _ *loop.Run, _ int) (*loop.PreTurnState, error) {
+	return func(ctx context.Context, _ *loop.Run, turnIndex int) (*loop.PreTurnState, error) {
 		in := toolpolicy.DecisionInput{
 			RecentPatternScores: tool.RecentPatternScores(ctx),
 			RecentTurnOutcomes:  tool.RecentTurnOutcomes(ctx),
@@ -1856,8 +1856,16 @@ func newBrowserStageHook(registry tool.Registry) func(ctx context.Context, run *
 			})
 		}
 		return &loop.PreTurnState{
-			Tools:    tools,
-			Registry: filtered,
+			Tools:      tools,
+			Registry:   filtered,
+			ToolChoice: browserStageToolChoice(stage, turnIndex),
 		}, nil
 	}
+}
+
+func browserStageToolChoice(stage string, turnIndex int) string {
+	if stage == toolpolicy.BrowserStageNewPage && turnIndex == 1 {
+		return "browser.open"
+	}
+	return ""
 }

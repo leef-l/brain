@@ -89,7 +89,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *ChatRequest) (*ChatR
 		return nil, fmt.Errorf("openai: decode response: %w", err)
 	}
 
-	return p.toResponse(&apiResp), nil
+	return p.toResponse(&apiResp)
 }
 
 // ---------------------------------------------------------------------------
@@ -128,20 +128,20 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *ChatRequest) (StreamRe
 // ---------------------------------------------------------------------------
 
 type openaiRequest struct {
-	Model       string             `json:"model"`
-	Messages    []openaiMessage    `json:"messages"`
-	MaxTokens   int                `json:"max_tokens,omitempty"`
-	Tools       []openaiToolDef    `json:"tools,omitempty"`
-	ToolChoice  interface{}        `json:"tool_choice,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
-	Temperature *float64           `json:"temperature,omitempty"`
+	Model       string          `json:"model"`
+	Messages    []openaiMessage `json:"messages"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+	Tools       []openaiToolDef `json:"tools,omitempty"`
+	ToolChoice  interface{}     `json:"tool_choice,omitempty"`
+	Stream      bool            `json:"stream,omitempty"`
+	Temperature *float64        `json:"temperature,omitempty"`
 }
 
 type openaiMessage struct {
-	Role       string              `json:"role"`
-	Content    interface{}         `json:"content,omitempty"`
-	ToolCalls  []openaiToolCall    `json:"tool_calls,omitempty"`
-	ToolCallID string              `json:"tool_call_id,omitempty"`
+	Role       string           `json:"role"`
+	Content    interface{}      `json:"content,omitempty"`
+	ToolCalls  []openaiToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
 
 type openaiToolCall struct {
@@ -386,7 +386,7 @@ type openaiChoice struct {
 	ToolCalls        []openaiToolCall `json:"tool_calls,omitempty"`
 }
 
-func (p *OpenAIProvider) toResponse(ar *openaiResponse) *ChatResponse {
+func (p *OpenAIProvider) toResponse(ar *openaiResponse) (*ChatResponse, error) {
 	resp := &ChatResponse{
 		ID:    ar.ID,
 		Model: ar.Model,
@@ -439,7 +439,10 @@ func (p *OpenAIProvider) toResponse(ar *openaiResponse) *ChatResponse {
 		}
 	}
 
-	return resp
+	if err := ValidateToolUseResponse("openai", resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -458,10 +461,9 @@ func (p *OpenAIProvider) readAPIError(resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var apiErr openaiAPIError
 	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != "" {
-		return fmt.Errorf("openai: HTTP %d: %s: %s",
-			resp.StatusCode, apiErr.Error.Type, apiErr.Error.Message)
+		return classifyHTTPError("openai", resp.StatusCode, apiErr.Error.Type, apiErr.Error.Message)
 	}
-	return fmt.Errorf("openai: HTTP %d: %s", resp.StatusCode, string(body))
+	return classifyHTTPError("openai", resp.StatusCode, "", string(body))
 }
 
 func (p *OpenAIProvider) setHeaders(req *http.Request) {

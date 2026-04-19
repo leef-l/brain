@@ -72,6 +72,23 @@ func TestDispatchToolCall_ReturnsStructuredError(t *testing.T) {
 	}
 }
 
+func TestDispatchToolCall_RejectsEmptyToolName(t *testing.T) {
+	resp, err := DispatchToolCall(context.Background(), json.RawMessage(`{"name":"   "}`), tool.NewMemRegistry(), nil)
+	if err != nil {
+		t.Fatalf("DispatchToolCall: %v", err)
+	}
+	result, ok := resp.(*protocol.ToolCallResult)
+	if !ok {
+		t.Fatalf("response type=%T, want *protocol.ToolCallResult", resp)
+	}
+	if !result.IsError {
+		t.Fatal("expected error result")
+	}
+	if result.Error == nil || result.Error.Code != "invalid_params" {
+		t.Fatalf("result.Error=%+v, want code invalid_params", result.Error)
+	}
+}
+
 func TestDispatchToolCall_DefendsNilResult(t *testing.T) {
 	reg := tool.NewMemRegistry()
 	if err := reg.Register(&testTool{name: "test.nil", nilRes: true}); err != nil {

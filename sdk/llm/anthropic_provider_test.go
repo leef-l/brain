@@ -271,7 +271,7 @@ func TestAnthropicProvider_Complete_ToolChoice(t *testing.T) {
 		{"auto", "auto", ""},
 		{"none", "none", ""},
 		{"required", "any", ""},
-		{"code.read_file", "tool", "code.read_file"},
+		{"code.read_file", "tool", "code__read_file"},
 	}
 
 	for _, tc := range cases {
@@ -310,6 +310,63 @@ func TestAnthropicProvider_Complete_ToolChoice(t *testing.T) {
 				t.Errorf("tool_choice.name=%q, want %q", toolChoice["name"], tc.wantName)
 			}
 		})
+	}
+}
+
+func TestAnthropicProvider_Complete_ToolUseAliasToolName(t *testing.T) {
+	ic := newInlineCassette().addComplete(200, map[string]interface{}{
+		"id":          "msg_alias_001",
+		"type":        "message",
+		"model":       "claude-test",
+		"role":        "assistant",
+		"stop_reason": "tool_use",
+		"content": []map[string]interface{}{
+			{"type": "tool_use", "id": "tu1", "tool_name": "code__read_file", "input": map[string]string{"path": "a.go"}},
+		},
+		"usage": map[string]int{"input_tokens": 10, "output_tokens": 20},
+	})
+
+	p := NewAnthropicProvider("http://fake", "sk-test", "claude-test",
+		WithHTTPClient(ic.client()))
+
+	resp, err := p.Complete(context.Background(), &ChatRequest{
+		Messages: []Message{{Role: "user", Content: []ContentBlock{{Type: "text", Text: "read a.go"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Content) != 1 {
+		t.Fatalf("Content len=%d, want 1", len(resp.Content))
+	}
+	if resp.Content[0].ToolName != "code.read_file" {
+		t.Fatalf("ToolName=%q, want code.read_file", resp.Content[0].ToolName)
+	}
+}
+
+func TestAnthropicProvider_Complete_RejectsMalformedToolUse(t *testing.T) {
+	ic := newInlineCassette().addComplete(200, map[string]interface{}{
+		"id":          "msg_bad_001",
+		"type":        "message",
+		"model":       "claude-test",
+		"role":        "assistant",
+		"stop_reason": "tool_use",
+		"content": []map[string]interface{}{
+			{"type": "tool_use", "id": "tu1", "input": map[string]string{"path": "a.go"}},
+		},
+		"usage": map[string]int{"input_tokens": 10, "output_tokens": 20},
+	})
+
+	p := NewAnthropicProvider("http://fake", "sk-test", "claude-test",
+		WithHTTPClient(ic.client()))
+
+	_, err := p.Complete(context.Background(), &ChatRequest{
+		Messages: []Message{{Role: "user", Content: []ContentBlock{{Type: "text", Text: "read a.go"}}}},
+	})
+	if err == nil {
+		t.Fatal("want malformed tool_use error")
+	}
+	if !strings.Contains(err.Error(), "malformed tool_use response") {
+		t.Fatalf("err=%v, want malformed tool_use response", err)
 	}
 }
 
@@ -570,8 +627,8 @@ func TestAnthropicProvider_Complete_ToolResultMessage(t *testing.T) {
 	// Verify the request body contains all 3 messages with correct structure.
 	var req struct {
 		Messages []struct {
-			Role    string            `json:"role"`
-			Content json.RawMessage   `json:"content"`
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(capturedBody, &req); err != nil {

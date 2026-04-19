@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/leef-l/brain/sdk/diaglog"
+	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/executionpolicy"
 	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/tool"
@@ -22,6 +24,10 @@ func DispatchToolCall(ctx context.Context, params json.RawMessage, fallback tool
 	if err := json.Unmarshal(params, &req); err != nil {
 		diaglog.Logf("tool", "dispatch parse_request failed err=%v", err)
 		return toolCallFailure(req.Name, "parse_request", fmt.Sprintf("parse error: %v", err)), nil
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		diaglog.Logf("tool", "dispatch invalid empty tool name")
+		return toolCallFailure(req.Name, brainerrors.CodeInvalidParams, "tool name is required"), nil
 	}
 	diaglog.Logf("tool", "dispatch tool=%s execution_spec=%t", req.Name, req.Execution != nil)
 

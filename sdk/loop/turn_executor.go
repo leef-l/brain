@@ -79,6 +79,17 @@ func (e *TurnExecutor) Execute(ctx context.Context, run *Run, req *llm.ChatReque
 		}, nil
 	}
 
+	if err := llm.ValidateToolUseResponse(e.Provider.Name(), resp); err != nil {
+		turn.End(e.now())
+		be := toBrainError(err)
+		return &TurnResult{
+			Turn:      turn,
+			Response:  resp,
+			NextState: StateFailed,
+			Error:     be,
+		}, nil
+	}
+
 	// Determine next state from response.
 	toolUseBlocks := extractToolUseBlocks(resp.Content)
 
@@ -237,6 +248,10 @@ done:
 
 	if resp.FinishedAt.IsZero() {
 		resp.FinishedAt = time.Now().UTC()
+	}
+
+	if err := llm.ValidateToolUseResponse("stream", resp); err != nil {
+		return nil, err
 	}
 
 	return resp, nil

@@ -70,19 +70,19 @@ type Message struct {
 // 22-Agent-Loop规格.md §6.2 and §7.
 type ContentBlock struct {
 	// Type is one of "text", "thinking", "tool_use", or "tool_result".
-	Type string
+	Type string `json:"type"`
 	// Text carries the text payload for type == "text" or "thinking".
-	Text string `json:",omitempty"`
+	Text string `json:"text,omitempty"`
 	// ToolUseID correlates a tool_result with its originating tool_use.
-	ToolUseID string `json:",omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
 	// ToolName is the tool name for tool_use blocks.
-	ToolName string `json:",omitempty"`
+	ToolName string `json:"tool_name,omitempty"`
 	// Input is the JSON argument payload for tool_use blocks.
-	Input json.RawMessage `json:",omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
 	// Output is the JSON result payload for tool_result blocks.
-	Output json.RawMessage `json:",omitempty"`
+	Output json.RawMessage `json:"output,omitempty"`
 	// IsError marks a tool_result as an error result.
-	IsError bool `json:",omitempty"`
+	IsError bool `json:"is_error,omitempty"`
 }
 
 // CachePoint marks a cache boundary in the three-layer Prompt Cache model.

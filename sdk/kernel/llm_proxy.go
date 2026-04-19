@@ -8,10 +8,13 @@ package kernel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/diaglog"
+	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
 )
@@ -132,9 +135,8 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 		"max_tokens", maxTokens,
 	)
 
-	resp, err := provider.Complete(ctx, chatReq)
+	resp, err := p.completeWithRetry(ctx, provider, kind, model, chatReq)
 	if err != nil {
-		diaglog.Error("llm", "complete failed", "kind", kind, "model", model, "err", err)
 		return nil, fmt.Errorf("LLMProxy: provider.Complete: %w", err)
 	}
 	diaglog.Info("llm", "complete ok",
@@ -157,4 +159,40 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 			CostUSD:             resp.Usage.CostUSD,
 		},
 	}, nil
+}
+
+func (p *LLMProxy) completeWithRetry(ctx context.Context, provider llm.Provider, kind agent.Kind, model string, chatReq *llm.ChatRequest) (*llm.ChatResponse, error) {
+	resp, err := provider.Complete(ctx, chatReq)
+	if err == nil {
+		return resp, nil
+	}
+	diaglog.Error("llm", "complete failed", "kind", kind, "model", model, "err", err)
+	if !shouldRetryLLMError(err) {
+		return nil, err
+	}
+
+	diaglog.Warn("llm", "complete retrying", "kind", kind, "model", model, "backoff_ms", 300)
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+	}
+
+	resp, retryErr := provider.Complete(ctx, chatReq)
+	if retryErr != nil {
+		diaglog.Error("llm", "complete retry failed", "kind", kind, "model", model, "err", retryErr)
+		return nil, retryErr
+	}
+	diaglog.Info("llm", "complete retry ok", "kind", kind, "model", model)
+	return resp, nil
+}
+
+func shouldRetryLLMError(err error) bool {
+	var be *brainerrors.BrainError
+	if errors.As(err, &be) {
+		return be.Retryable && (be.ErrorCode == brainerrors.CodeLLMUpstream5xx || be.ErrorCode == brainerrors.CodeLLMRateLimitedShortterm)
+	}
+	return false
 }

@@ -989,6 +989,99 @@ func TestLLMProxy_ModelResolutionPriority(t *testing.T) {
 	}
 }
 
+type flakyProvider struct {
+	mu       sync.Mutex
+	requests []*llm.ChatRequest
+	errors   []error
+	resp     *llm.ChatResponse
+}
+
+func (p *flakyProvider) Name() string { return "flaky" }
+
+func (p *flakyProvider) Complete(_ context.Context, req *llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.requests = append(p.requests, req)
+	if len(p.errors) > 0 {
+		err := p.errors[0]
+		p.errors = p.errors[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	return p.resp, nil
+}
+
+func (p *flakyProvider) Stream(context.Context, *llm.ChatRequest) (llm.StreamReader, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func TestLLMProxy_RetriesTransientProviderErrorOnce(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	provider := &flakyProvider{
+		errors: []error{
+			brainerrors.New(brainerrors.CodeLLMUpstream5xx, brainerrors.WithMessage("upstream 500")),
+			nil,
+		},
+		resp: &llm.ChatResponse{
+			ID:         "retry-ok",
+			Model:      "mock-model",
+			StopReason: "end_turn",
+			Content:    []llm.ContentBlock{{Type: "text", Text: "ok"}},
+		},
+	}
+	proxy := &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider { return provider },
+	}
+
+	reqParams, _ := json.Marshal(llmCompleteRequest{
+		Messages:  []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "hello"}}}},
+		MaxTokens: 64,
+	})
+	out, err := proxy.handleComplete(ctx, agent.KindBrowser, reqParams)
+	if err != nil {
+		t.Fatalf("handleComplete: %v", err)
+	}
+	resp, ok := out.(*llmCompleteResponse)
+	if !ok {
+		t.Fatalf("response type=%T, want *llmCompleteResponse", out)
+	}
+	if resp.ID != "retry-ok" {
+		t.Fatalf("id=%q, want retry-ok", resp.ID)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("provider request count=%d, want 2", len(provider.requests))
+	}
+}
+
+func TestLLMProxy_DoesNotRetryPermanentProviderError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	provider := &flakyProvider{
+		errors: []error{
+			brainerrors.New(brainerrors.CodeLLMAuthFailed, brainerrors.WithMessage("bad auth")),
+		},
+	}
+	proxy := &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider { return provider },
+	}
+
+	reqParams, _ := json.Marshal(llmCompleteRequest{
+		Messages:  []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "hello"}}}},
+		MaxTokens: 64,
+	})
+	_, err := proxy.handleComplete(ctx, agent.KindBrowser, reqParams)
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	if len(provider.requests) != 1 {
+		t.Fatalf("provider request count=%d, want 1", len(provider.requests))
+	}
+}
+
 func TestOrchestratorConfig_SyncsModelsToLLMProxy(t *testing.T) {
 	provider := llm.NewMockProvider("mock")
 	proxy := &LLMProxy{

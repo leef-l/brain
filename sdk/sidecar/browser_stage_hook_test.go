@@ -61,12 +61,19 @@ func hookNameSet(t *testing.T, ctx context.Context, reg tool.Registry) map[strin
 func TestBrowserStageHookFirstTurnNewPage(t *testing.T) {
 	// No recorder bound → no signals → new_page stage.
 	reg := buildStubBrowserRegistry()
-	names := hookNameSet(t, context.Background(), reg)
+	state := hookState(t, context.Background(), reg)
+	names := map[string]bool{}
+	for _, tl := range state.Tools {
+		names[tl.Name] = true
+	}
 	if !names["browser.snapshot"] {
 		t.Errorf("new_page should include browser.snapshot; got %v", names)
 	}
 	if names["browser.visual_inspect"] {
 		t.Errorf("new_page should NOT include browser.visual_inspect; got %v", names)
+	}
+	if state.ToolChoice != "browser.open" {
+		t.Fatalf("first browser turn tool_choice=%q, want browser.open", state.ToolChoice)
 	}
 }
 
@@ -160,6 +167,9 @@ func TestBrowserStageHookStickyOnEmptyDecision(t *testing.T) {
 		if !firstSet[name] {
 			t.Errorf("sticky stage produced new tool %q not present on turn 1", name)
 		}
+	}
+	if second.ToolChoice != "" {
+		t.Fatalf("second browser turn tool_choice=%q, want empty", second.ToolChoice)
 	}
 }
 

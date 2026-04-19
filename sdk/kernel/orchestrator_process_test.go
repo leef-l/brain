@@ -188,3 +188,179 @@ func TestOrchestratorDelegate_ProcessRunner_RealBrainBrowserBinary(t *testing.T)
 		t.Fatalf("expected at least one llm request from browser subprocess sidecar")
 	}
 }
+
+func TestOrchestratorDelegate_ProcessRunner_RealBrainVerifierBinary(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	tmp := t.TempDir()
+	binPath := filepath.Join(tmp, "brain-verifier")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binPath, "./brains/verifier/cmd")
+	build.Dir = filepath.Clean(filepath.Join("..", ".."))
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build brain-verifier: %v\n%s", err, out)
+	}
+
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfgJSON := `{
+  "tool_profiles": {
+    "delegated_verifier": {
+      "include": ["verifier.*"]
+    }
+  },
+  "active_tools": {
+    "delegate.verifier": "delegated_verifier"
+  }
+}`
+	if err := os.WriteFile(cfgPath, []byte(cfgJSON), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	resolver := func(kind agent.Kind) (string, error) {
+		return binPath, nil
+	}
+	provider := llm.NewMockProvider("mock")
+	provider.QueueText("verifier subprocess delegate ok")
+
+	runner := &ProcessRunner{
+		BinResolver: resolver,
+		Env: append(os.Environ(),
+			"BRAIN_CONFIG="+cfgPath,
+			"BRAIN_LICENSE_REQUIRED=0",
+		),
+		InitTimeout:     10 * time.Second,
+		ShutdownTimeout: 5 * time.Second,
+	}
+	pool := NewProcessBrainPool(runner, resolver, OrchestratorConfig{})
+	orch := NewOrchestratorWithPool(pool, runner, &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider {
+			if kind != agent.KindVerifier {
+				return nil
+			}
+			return provider
+		},
+	}, resolver, OrchestratorConfig{})
+
+	result, err := orch.Delegate(ctx, &SubtaskRequest{
+		TaskID:      "process-verifier-1",
+		TargetKind:  agent.KindVerifier,
+		Instruction: "briefly confirm the verifier brain delegate path is alive",
+		Budget: &SubtaskBudget{
+			MaxTurns: 2,
+			Timeout:  20 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Delegate: %v", err)
+	}
+	defer func() {
+		_ = orch.Shutdown(context.Background())
+	}()
+
+	if result.Status != "completed" {
+		t.Fatalf("status=%q, want completed (error=%s)", result.Status, result.Error)
+	}
+
+	var output sidecar.ExecuteResult
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if output.Summary != "verifier subprocess delegate ok" {
+		t.Fatalf("summary=%q, want verifier subprocess delegate ok", output.Summary)
+	}
+	if len(provider.Requests()) == 0 {
+		t.Fatalf("expected at least one llm request from verifier subprocess sidecar")
+	}
+}
+
+func TestOrchestratorDelegate_ProcessRunner_RealBrainFaultBinary(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping subprocess integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	tmp := t.TempDir()
+	binPath := filepath.Join(tmp, "brain-fault")
+	build := exec.CommandContext(ctx, "go", "build", "-o", binPath, "./brains/fault/cmd")
+	build.Dir = filepath.Clean(filepath.Join("..", ".."))
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build brain-fault: %v\n%s", err, out)
+	}
+
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfgJSON := `{
+  "tool_profiles": {
+    "delegated_fault": {
+      "include": ["fault.*"]
+    }
+  },
+  "active_tools": {
+    "delegate.fault": "delegated_fault"
+  }
+}`
+	if err := os.WriteFile(cfgPath, []byte(cfgJSON), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	resolver := func(kind agent.Kind) (string, error) {
+		return binPath, nil
+	}
+	provider := llm.NewMockProvider("mock")
+	provider.QueueText("fault subprocess delegate ok")
+
+	runner := &ProcessRunner{
+		BinResolver: resolver,
+		Env: append(os.Environ(),
+			"BRAIN_CONFIG="+cfgPath,
+			"BRAIN_LICENSE_REQUIRED=0",
+		),
+		InitTimeout:     10 * time.Second,
+		ShutdownTimeout: 5 * time.Second,
+	}
+	pool := NewProcessBrainPool(runner, resolver, OrchestratorConfig{})
+	orch := NewOrchestratorWithPool(pool, runner, &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider {
+			if kind != agent.KindFault {
+				return nil
+			}
+			return provider
+		},
+	}, resolver, OrchestratorConfig{})
+
+	result, err := orch.Delegate(ctx, &SubtaskRequest{
+		TaskID:      "process-fault-1",
+		TargetKind:  agent.KindFault,
+		Instruction: "briefly confirm the fault brain delegate path is alive",
+		Budget: &SubtaskBudget{
+			MaxTurns: 2,
+			Timeout:  20 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Delegate: %v", err)
+	}
+	defer func() {
+		_ = orch.Shutdown(context.Background())
+	}()
+
+	if result.Status != "completed" {
+		t.Fatalf("status=%q, want completed (error=%s)", result.Status, result.Error)
+	}
+
+	var output sidecar.ExecuteResult
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if output.Summary != "fault subprocess delegate ok" {
+		t.Fatalf("summary=%q, want fault subprocess delegate ok", output.Summary)
+	}
+	if len(provider.Requests()) == 0 {
+		t.Fatalf("expected at least one llm request from fault subprocess sidecar")
+	}
+}

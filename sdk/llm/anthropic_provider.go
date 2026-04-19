@@ -85,12 +85,21 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req *ChatRequest) (*Ch
 		return nil, p.readAPIError(resp)
 	}
 
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic: read response: %w", err)
+	}
+
 	var apiResp anthropicResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("anthropic: decode response: %w", err)
 	}
 
-	return p.toResponse(&apiResp), nil
+	respOut, err := p.toResponse(&apiResp, respBody)
+	if err != nil {
+		return nil, err
+	}
+	return respOut, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +218,7 @@ func (p *AnthropicProvider) buildAPIRequest(req *ChatRequest, stream bool) *anth
 			}
 			ar.ToolChoice, _ = json.Marshal(tc)
 		default:
-			tc := map[string]string{"type": "tool", "name": req.ToolChoice}
+			tc := map[string]string{"type": "tool", "name": sanitizeToolName(req.ToolChoice)}
 			ar.ToolChoice, _ = json.Marshal(tc)
 		}
 	}
@@ -277,7 +286,7 @@ type anthropicResponse struct {
 	} `json:"usage"`
 }
 
-func (p *AnthropicProvider) toResponse(ar *anthropicResponse) *ChatResponse {
+func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*ChatResponse, error) {
 	resp := &ChatResponse{
 		ID:         ar.ID,
 		Model:      ar.Model,
@@ -292,11 +301,12 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse) *ChatResponse {
 	}
 
 	var rawBlocks []struct {
-		Type  string          `json:"type"`
-		Text  string          `json:"text"`
-		ID    string          `json:"id"`
-		Name  string          `json:"name"`
-		Input json.RawMessage `json:"input"`
+		Type     string          `json:"type"`
+		Text     string          `json:"text"`
+		ID       string          `json:"id"`
+		Name     string          `json:"name"`
+		ToolName string          `json:"tool_name"`
+		Input    json.RawMessage `json:"input"`
 	}
 	if err := json.Unmarshal(ar.Content, &rawBlocks); err == nil {
 		for _, rb := range rawBlocks {
@@ -305,15 +315,22 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse) *ChatResponse {
 			case "text":
 				cb.Text = rb.Text
 			case "tool_use":
+				toolName := rb.Name
+				if strings.TrimSpace(toolName) == "" {
+					toolName = rb.ToolName
+				}
 				cb.ToolUseID = rb.ID
-				cb.ToolName = restoreToolName(rb.Name)
+				cb.ToolName = restoreToolName(toolName)
 				cb.Input = rb.Input
 			}
 			resp.Content = append(resp.Content, cb)
 		}
 	}
+	if err := ValidateToolUseResponse("anthropic", resp); err != nil {
+		return nil, fmt.Errorf("%w; body=%s", err, string(rawBody))
+	}
 
-	return resp
+	return resp, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -332,10 +349,9 @@ func (p *AnthropicProvider) readAPIError(resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var apiErr anthropicAPIError
 	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error.Message != "" {
-		return fmt.Errorf("anthropic: HTTP %d: %s: %s",
-			resp.StatusCode, apiErr.Error.Type, apiErr.Error.Message)
+		return classifyHTTPError("anthropic", resp.StatusCode, apiErr.Error.Type, apiErr.Error.Message)
 	}
-	return fmt.Errorf("anthropic: HTTP %d: %s", resp.StatusCode, string(body))
+	return classifyHTTPError("anthropic", resp.StatusCode, "", string(body))
 }
 
 func (p *AnthropicProvider) setHeaders(req *http.Request) {
@@ -461,11 +477,12 @@ func (r *sseReader) mapSSEEvent(eventType string, data json.RawMessage) (StreamE
 		var start struct {
 			Index        int `json:"index"`
 			ContentBlock struct {
-				Type  string          `json:"type"`
-				Text  string          `json:"text"`
-				ID    string          `json:"id"`
-				Name  string          `json:"name"`
-				Input json.RawMessage `json:"input"`
+				Type     string          `json:"type"`
+				Text     string          `json:"text"`
+				ID       string          `json:"id"`
+				Name     string          `json:"name"`
+				ToolName string          `json:"tool_name"`
+				Input    json.RawMessage `json:"input"`
 			} `json:"content_block"`
 		}
 		if json.Unmarshal(data, &start) != nil {
@@ -481,9 +498,13 @@ func (r *sseReader) mapSSEEvent(eventType string, data json.RawMessage) (StreamE
 				Data: marshalRaw(map[string]string{"text": start.ContentBlock.Text}),
 			}, true
 		case "tool_use":
+			toolName := start.ContentBlock.Name
+			if strings.TrimSpace(toolName) == "" {
+				toolName = start.ContentBlock.ToolName
+			}
 			block := &streamToolUse{
 				toolUseID: start.ContentBlock.ID,
-				toolName:  restoreToolName(start.ContentBlock.Name),
+				toolName:  restoreToolName(toolName),
 			}
 			input := strings.TrimSpace(string(start.ContentBlock.Input))
 			if input != "" && input != "null" {
