@@ -1,9 +1,9 @@
 {
-  "sdk_version": "0.7.0",
+  "sdk_version": "1.0.0",
   "sdk_language": "go",
-  "kernel_version": "0.7.0",
+  "kernel_version": "1.0.0",
   "protocol_version": "1.0",
-  "cli_version": "0.7.0",
+  "cli_version": "1.0.0",
   "compatibility": {
     "protocol": true,
     "kernel": true,
@@ -15,9 +15,9 @@
     "passed": 150,
     "skipped": 0,
     "failed": 0,
-    "last_run_at": "2026-04-15",
+    "last_run_at": "2026-04-19",
     "last_run_commit": null,
-    "note": "v0.7.0 — specialist brain sidecar architecture: quant/data bridge tools, cross-brain authorization, dynamic prompt generation, chat/CLI full specialist access"
+    "note": "v1.0.0 — v3 architecture: Phase A/B/C/D + Phase E unified persistence, resume context recovery, enterprise enforcer"
   },
   "runnable_commands": [
     "version", "doctor", "run", "chat", "status", "resume",
