@@ -316,6 +316,43 @@ func TestOrchestratorCallTool_ForwardsExecution(t *testing.T) {
 	}
 }
 
+func TestOrchestratorGetOrStartSidecar_RegistersReverseHandlersOnlyOncePerRPCSession(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	runner := newScriptedRunner()
+	runner.queue(agent.KindBrowser, &scriptedSidecar{})
+
+	pool := newTestPool(runner)
+	pool.available[agent.KindBrowser] = true
+
+	orch := NewOrchestratorWithPool(pool, runner, &LLMProxy{}, func(kind agent.Kind) (string, error) {
+		if kind == agent.KindBrowser {
+			return "/bin/brain-browser", nil
+		}
+		return "", nil
+	}, OrchestratorConfig{})
+	orch.available[agent.KindBrowser] = true
+
+	ag1, err := orch.getOrStartSidecar(ctx, agent.KindBrowser)
+	if err != nil {
+		t.Fatalf("first getOrStartSidecar() err = %v", err)
+	}
+	ag2, err := orch.getOrStartSidecar(ctx, agent.KindBrowser)
+	if err != nil {
+		t.Fatalf("second getOrStartSidecar() err = %v", err)
+	}
+	if ag1 != ag2 {
+		t.Fatal("expected pooled sidecar instance to be reused")
+	}
+	if got := runner.starts[agent.KindBrowser]; got != 1 {
+		t.Fatalf("runner starts = %d, want 1", got)
+	}
+	if got := len(orch.reverseHandlersRegistered); got != 1 {
+		t.Fatalf("reverseHandlersRegistered = %d, want 1", got)
+	}
+}
+
 func TestHandleSpecialistCallToolFrom_DeniesUnauthorizedCaller(t *testing.T) {
 	orch := NewOrchestrator(nil, nil, nil)
 	handler := orch.HandleSpecialistCallToolFrom(agent.KindCode)
@@ -703,7 +740,7 @@ func TestOrchestratorDegradationNotice_ConfigDriven(t *testing.T) {
 	cfg := OrchestratorConfig{
 		Brains: []BrainRegistration{
 			{Kind: agent.KindCode, Binary: "/bin/sh"},    // exists
-			{Kind: agent.KindQuant, Binary: "/no/exist"},  // does not exist
+			{Kind: agent.KindQuant, Binary: "/no/exist"}, // does not exist
 		},
 	}
 

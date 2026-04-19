@@ -145,6 +145,12 @@ type Orchestrator struct {
 	// registrations stores BrainRegistration for config-driven brains.
 	registrations map[agent.Kind]*BrainRegistration
 
+	// reverseHandlersRegistered tracks which RPC sessions have already had
+	// reverse-RPC handlers installed. BrainPool may return the same live
+	// sidecar process on repeated delegation, so registration must be
+	// per-session and idempotent.
+	reverseHandlersRegistered map[protocol.BidirRPC]struct{}
+
 	mu sync.Mutex
 }
 
@@ -163,12 +169,13 @@ func NewOrchestrator(runner BrainRunner, llmProxy *LLMProxy, binResolver func(ag
 // hot-pluggable brain management.
 func NewOrchestratorWithConfig(runner BrainRunner, llmProxy *LLMProxy, binResolver func(agent.Kind) (string, error), cfg OrchestratorConfig) *Orchestrator {
 	o := &Orchestrator{
-		runner:        runner,
-		llmProxy:      llmProxy,
-		binResolver:   binResolver,
-		toolCalls:     DefaultSpecialistToolCallAuthorizer(),
-		available:     make(map[agent.Kind]bool),
-		registrations: make(map[agent.Kind]*BrainRegistration),
+		runner:                    runner,
+		llmProxy:                  llmProxy,
+		binResolver:               binResolver,
+		toolCalls:                 DefaultSpecialistToolCallAuthorizer(),
+		available:                 make(map[agent.Kind]bool),
+		registrations:             make(map[agent.Kind]*BrainRegistration),
+		reverseHandlersRegistered: make(map[protocol.BidirRPC]struct{}),
 	}
 
 	if len(cfg.Brains) > 0 {
@@ -669,6 +676,17 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 	if rpc == nil {
 		return
 	}
+	o.mu.Lock()
+	if o.reverseHandlersRegistered == nil {
+		o.reverseHandlersRegistered = make(map[protocol.BidirRPC]struct{})
+	}
+	if _, ok := o.reverseHandlersRegistered[rpc]; ok {
+		o.mu.Unlock()
+		return
+	}
+	o.reverseHandlersRegistered[rpc] = struct{}{}
+	o.mu.Unlock()
+
 	if o.llmProxy != nil {
 		o.llmProxy.RegisterHandlers(rpc, callerKind)
 	}
