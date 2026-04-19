@@ -2410,6 +2410,77 @@ func TestExecuteResultJSON_OmitsEmptyStructuredFields(t *testing.T) {
 	}
 }
 
+func TestFailedExecuteResult_BackfillsErrorFromFaultSummary(t *testing.T) {
+	out := &ExecuteResult{
+		Status: "failed",
+	}
+	runResult := &loop.RunResult{
+		Run: &loop.Run{
+			State: loop.StateFailed,
+			Budget: loop.Budget{
+				UsedTurns: 15,
+			},
+		},
+		FinalMessages: []llm.Message{
+			{
+				Role: "assistant",
+				Content: []llm.ContentBlock{
+					{Type: "tool_use", ToolUseID: "tool-1", ToolName: "browser.pattern_exec"},
+				},
+			},
+			{
+				Role: "user",
+				Content: []llm.ContentBlock{
+					{
+						Type:      "tool_result",
+						ToolUseID: "tool-1",
+						IsError:   true,
+						Output:    json.RawMessage(`{"error":"retry exhausted (max=2) on anomaly captcha"}`),
+					},
+				},
+			},
+		},
+	}
+
+	applyStructuredOutputs(out, runResult)
+	if out.FaultSummary == nil {
+		t.Fatal("FaultSummary=nil, want populated")
+	}
+	if out.Error != "" {
+		t.Fatalf("precondition failed: Error=%q, want empty before fallback", out.Error)
+	}
+	if out.Error == "" && out.Status != "completed" {
+		switch {
+		case out.FaultSummary != nil && strings.TrimSpace(out.FaultSummary.Message) != "":
+			out.Error = strings.TrimSpace(out.FaultSummary.Message)
+		case strings.TrimSpace(out.Summary) != "":
+			out.Error = strings.TrimSpace(out.Summary)
+		default:
+			out.Error = "sidecar execution failed"
+		}
+	}
+	if out.Error != "retry exhausted (max=2) on anomaly captcha" {
+		t.Fatalf("Error=%q, want fault summary fallback", out.Error)
+	}
+}
+
+func TestFailedExecuteResult_BackfillsGenericErrorWhenNoSignalExists(t *testing.T) {
+	out := &ExecuteResult{Status: "failed"}
+	if out.Error == "" && out.Status != "completed" {
+		switch {
+		case out.FaultSummary != nil && strings.TrimSpace(out.FaultSummary.Message) != "":
+			out.Error = strings.TrimSpace(out.FaultSummary.Message)
+		case strings.TrimSpace(out.Summary) != "":
+			out.Error = strings.TrimSpace(out.Summary)
+		default:
+			out.Error = "sidecar execution failed"
+		}
+	}
+	if out.Error != "sidecar execution failed" {
+		t.Fatalf("Error=%q, want generic fallback", out.Error)
+	}
+}
+
 func hasArtifact(artifacts []ArtifactRef, kind, toolName, locator string) bool {
 	for _, artifact := range artifacts {
 		if artifact.Kind == kind && artifact.Tool == toolName && artifact.Locator == locator {

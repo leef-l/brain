@@ -490,8 +490,12 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 	// Try with automatic retry on crash.
 	result, err := o.delegateOnce(attemptCtx, req, start)
 	attemptCancel()
-	if err == nil && result.Status != "failed" {
-		diaglog.Info("delegate", "delegate ok",
+	if err == nil {
+		logMsg := "delegate ok"
+		if result.Status != "completed" {
+			logMsg = "delegate finished"
+		}
+		diaglog.Info("delegate", logMsg,
 			"task_id", req.TaskID,
 			"target_kind", req.TargetKind,
 			"status", result.Status,
@@ -646,7 +650,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 			Status: "failed",
 			Error:  fmt.Sprintf("brain/execute: %v", rpcErr),
 			Usage:  SubtaskUsage{Duration: time.Since(start)},
-		}, nil
+		}, rpcErr
 	}
 	diaglog.Info("delegate", "rpc call ok",
 		"task_id", req.TaskID,
@@ -654,12 +658,35 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 		"output_bytes", len(execResult),
 	)
 
+	status, execErrMsg := normalizeExecuteResult(execResult)
 	return &SubtaskResult{
 		TaskID: req.TaskID,
-		Status: "completed",
+		Status: status,
 		Output: execResult,
+		Error:  execErrMsg,
 		Usage:  SubtaskUsage{Duration: time.Since(start)},
 	}, nil
+}
+
+func normalizeExecuteResult(execResult json.RawMessage) (status, errMsg string) {
+	status = "completed"
+	if len(execResult) == 0 {
+		return status, ""
+	}
+	var result struct {
+		Status string `json:"status"`
+		Error  string `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(execResult, &result); err != nil {
+		return status, ""
+	}
+	switch result.Status {
+	case "completed", "failed", "canceled":
+		status = result.Status
+	default:
+		status = "completed"
+	}
+	return status, result.Error
 }
 
 // CallTool invokes a specific tool on a specialist sidecar without running

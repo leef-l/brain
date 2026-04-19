@@ -770,6 +770,61 @@ func TestOrchestratorDelegate_RetriesAfterSidecarCrash(t *testing.T) {
 	}
 }
 
+func TestOrchestratorDelegate_PropagatesSidecarFailedStatusWithoutRetry(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	runner := newScriptedRunner()
+	script := &scriptedSidecar{
+		onExecute: func(context.Context, protocol.BidirRPC, sidecar.ExecuteRequest) (interface{}, error) {
+			return &sidecar.ExecuteResult{
+				Status:  "failed",
+				Summary: "search did not converge",
+				Error:   "budget_turns_exhausted",
+				Turns:   15,
+			}, nil
+		},
+	}
+	runner.queue(agent.KindBrowser, script)
+
+	pool := newTestPool(runner)
+	pool.available[agent.KindBrowser] = true
+
+	orch := &Orchestrator{
+		runner: runner,
+		available: map[agent.Kind]bool{
+			agent.KindBrowser: true,
+		},
+		pool: pool,
+	}
+
+	result, err := orch.Delegate(ctx, &SubtaskRequest{
+		TaskID:      "failed-status-1",
+		TargetKind:  agent.KindBrowser,
+		Instruction: "search today gold price",
+	})
+	if err != nil {
+		t.Fatalf("Delegate: %v", err)
+	}
+	if result.Status != "failed" {
+		t.Fatalf("status=%q, want failed", result.Status)
+	}
+	if result.Error != "budget_turns_exhausted" {
+		t.Fatalf("error=%q, want budget_turns_exhausted", result.Error)
+	}
+	if got := runner.startCount(agent.KindBrowser); got != 1 {
+		t.Fatalf("startCount=%d, want 1", got)
+	}
+
+	var output sidecar.ExecuteResult
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if output.Status != "failed" {
+		t.Fatalf("output status=%q, want failed", output.Status)
+	}
+}
+
 func TestNewOrchestratorWithConfig_OnlyConfiguredBrains(t *testing.T) {
 	runner := newScriptedRunner()
 

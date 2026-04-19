@@ -292,12 +292,22 @@ func RunAgentLoopWithContext(ctx context.Context, caller KernelCaller, registry 
 		Summary: summary,
 		Turns:   result.Run.Budget.UsedTurns,
 	}
-	diaglog.Logf("tool", "run_id=%s status=%s turns=%d error=%s", runID, out.Status, out.Turns, out.Error)
 	// 如果最后一个 Turn 带错误，回填到 Error 字段。
 	if n := len(result.Turns); n > 0 && result.Turns[n-1] != nil && result.Turns[n-1].Error != nil {
 		out.Error = result.Turns[n-1].Error.Error()
 	}
 	applyStructuredOutputs(out, result)
+	if out.Error == "" && out.Status != "completed" {
+		switch {
+		case out.FaultSummary != nil && strings.TrimSpace(out.FaultSummary.Message) != "":
+			out.Error = strings.TrimSpace(out.FaultSummary.Message)
+		case strings.TrimSpace(out.Summary) != "":
+			out.Error = strings.TrimSpace(out.Summary)
+		default:
+			out.Error = "sidecar execution failed"
+		}
+	}
+	diaglog.Logf("tool", "run_id=%s status=%s turns=%d error=%s", runID, out.Status, out.Turns, out.Error)
 	return out
 }
 
