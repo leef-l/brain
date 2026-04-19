@@ -23,6 +23,10 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 			"File operations are sandboxed to this directory. " +
 			"If you need files outside it, tell the user and they can authorize the directory.\n"
 	}
+	base += "Do NOT use shell_exec with curl, wget, lynx, python requests, or similar command-line HTTP fetches " +
+		"to browse/search/read normal web pages when a browser specialist is available. " +
+		"For opening websites, searching the web, reading page content, clicking web UI, or collecting web results, " +
+		"use the browser specialist via `central.delegate` instead.\n"
 
 	switch mode {
 	case env.ModePlan:
@@ -140,9 +144,10 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 
 	prompt += "\nWhen you receive a task:\n"
 	prompt += "1. For trading/data queries, use the specialist tools directly\n"
-	prompt += "2. For complex multi-step tasks, use `central.delegate` to delegate to specialists\n"
+	prompt += "2. For any website opening, web search, page reading, or browser interaction task, delegate to the browser brain instead of using shell_exec + curl/wget\n"
 	prompt += "3. After code changes, delegate verification to the verifier brain\n"
 	prompt += "4. Summarize the results to the user\n\n"
+	prompt += "Never treat shell_exec HTTP fetches as a substitute for browser delegation on normal web tasks.\n"
 	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n"
 
 	if notice := orch.DegradationNotice(); notice != "" {
