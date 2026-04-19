@@ -35,18 +35,18 @@ import (
 
 // UIPattern is the core structure. JSON-serialized for storage.
 type UIPattern struct {
-	ID              string                      `json:"id"`
-	Category        string                      `json:"category"` // auth / search / commerce / admin / form / nav
-	Description     string                      `json:"description,omitempty"`
-	AppliesWhen     MatchCondition              `json:"applies_when"`
-	ElementRoles    map[string]ElementDescriptor `json:"element_roles"`
-	ActionSequence  []ActionStep                `json:"action_sequence"`
-	PostConditions  []PostCondition             `json:"post_conditions,omitempty"`
-	OnAnomaly       map[string]AnomalyHandler   `json:"on_anomaly,omitempty"`
-	Stats           PatternStats                `json:"stats"`
-	Source          string                      `json:"source"` // "seed" / "learned" / "user"
-	CreatedAt       time.Time                   `json:"created_at"`
-	UpdatedAt       time.Time                   `json:"updated_at"`
+	ID             string                       `json:"id"`
+	Category       string                       `json:"category"` // auth / search / commerce / admin / form / nav
+	Description    string                       `json:"description,omitempty"`
+	AppliesWhen    MatchCondition               `json:"applies_when"`
+	ElementRoles   map[string]ElementDescriptor `json:"element_roles"`
+	ActionSequence []ActionStep                 `json:"action_sequence"`
+	PostConditions []PostCondition              `json:"post_conditions,omitempty"`
+	OnAnomaly      map[string]AnomalyHandler    `json:"on_anomaly,omitempty"`
+	Stats          PatternStats                 `json:"stats"`
+	Source         string                       `json:"source"` // "seed" / "learned" / "user"
+	CreatedAt      time.Time                    `json:"created_at"`
+	UpdatedAt      time.Time                    `json:"updated_at"`
 
 	// Enabled 控制模式是否对外生效。默认 true。
 	// M3 自动停用:RecordExecution 检测到 FailureCount≥5 且 SuccessRate<0.3
@@ -56,7 +56,7 @@ type UIPattern struct {
 	//
 	// 旧数据库 row 没有这个字段时,SQLite 列的 DEFAULT 1 保证加载后为 true;
 	// JSON body 里缺失 enabled 字段时,load() 会以列值为准覆盖。
-	Enabled         bool                        `json:"enabled"`
+	Enabled bool `json:"enabled"`
 
 	// Pending 标识模式处于"试用期"。P3.2 自分裂生成的变种默认 Pending=true:
 	// 仍然可被匹配和执行(Enabled=true),但 ops 面板用它和正式模式区分展示,
@@ -67,76 +67,77 @@ type UIPattern struct {
 	//
 	// 旧数据库 row 没有这个字段时,SQLite 列的 DEFAULT 0 保证加载后为 false
 	// (已入库的老模式视为正式模式)。
-	Pending         bool                        `json:"pending,omitempty"`
+	Pending bool `json:"pending,omitempty"`
 }
 
 // MatchCondition — cheap pre-filter. All conditions AND together.
 type MatchCondition struct {
-	URLPattern   string   `json:"url_pattern,omitempty"` // regex or ":id"-style pattern
-	Has          []string `json:"has,omitempty"`         // CSS selectors that must exist
-	HasNot       []string `json:"has_not,omitempty"`     // selectors that must NOT exist
+	URLPattern    string   `json:"url_pattern,omitempty"` // regex or ":id"-style pattern
+	SiteHost      string   `json:"site_host,omitempty"`   // exact host match, mainly for P3.2 site-specific variants
+	Has           []string `json:"has,omitempty"`         // CSS selectors that must exist
+	HasNot        []string `json:"has_not,omitempty"`     // selectors that must NOT exist
 	TitleContains []string `json:"title_contains,omitempty"`
-	TextContains []string `json:"text_contains,omitempty"` // substrings anywhere in body
+	TextContains  []string `json:"text_contains,omitempty"` // substrings anywhere in body
 }
 
 // ElementDescriptor — multi-signal self-healing locator (RPA Object
 // Repository pattern). Matches are attempted in priority order:
-//   1. Exact match on role+name
-//   2. Role + name fuzzy match
-//   3. CSS selector
-//   4. XPath
-//   5. (future) screenshot_hash
+//  1. Exact match on role+name
+//  2. Role + name fuzzy match
+//  3. CSS selector
+//  4. XPath
+//  5. (future) screenshot_hash
 type ElementDescriptor struct {
-	Role         string   `json:"role,omitempty"`
-	Name         string   `json:"name,omitempty"`          // exact or regex (prefix "~" for regex)
-	AnchorText   string   `json:"anchor_text,omitempty"`   // text of a nearby landmark
-	CSS          string   `json:"css,omitempty"`
-	XPath        string   `json:"xpath,omitempty"`
-	Tag          string   `json:"tag,omitempty"`           // input / button / a
-	Type         string   `json:"type,omitempty"`          // input type: text/password/...
-	ScreenshotHash string `json:"screenshot_hash,omitempty"` // reserved; Stage 2 doesn't capture yet
-	Fallback     []ElementDescriptor `json:"fallback,omitempty"` // alternative descriptors to try
+	Role           string              `json:"role,omitempty"`
+	Name           string              `json:"name,omitempty"`        // exact or regex (prefix "~" for regex)
+	AnchorText     string              `json:"anchor_text,omitempty"` // text of a nearby landmark
+	CSS            string              `json:"css,omitempty"`
+	XPath          string              `json:"xpath,omitempty"`
+	Tag            string              `json:"tag,omitempty"`             // input / button / a
+	Type           string              `json:"type,omitempty"`            // input type: text/password/...
+	ScreenshotHash string              `json:"screenshot_hash,omitempty"` // reserved; Stage 2 doesn't capture yet
+	Fallback       []ElementDescriptor `json:"fallback,omitempty"`        // alternative descriptors to try
 }
 
 // ActionStep is one tool invocation in a sequence.
 type ActionStep struct {
-	Tool       string                 `json:"tool"`        // "browser.click" / "browser.type" / ...
+	Tool       string                 `json:"tool"`                  // "browser.click" / "browser.type" / ...
 	TargetRole string                 `json:"target_role,omitempty"` // refers to ElementRoles key
 	Params     map[string]interface{} `json:"params,omitempty"`      // literal params (placeholders "$credentials.email" resolved at runtime)
 	WaitAfter  string                 `json:"wait_after,omitempty"`  // "network_idle" | "response:<url_pattern>" | ""
 	TimeoutMS  int                    `json:"timeout_ms,omitempty"`
-	Optional   bool                   `json:"optional,omitempty"`    // skip on failure instead of aborting
+	Optional   bool                   `json:"optional,omitempty"` // skip on failure instead of aborting
 }
 
 // PostCondition validates the pattern's success after ActionSequence.
 // All conditions AND together (success = all true).
 type PostCondition struct {
-	Type          string `json:"type"` // url_changed / url_matches / dom_contains / cookie_set / response_ok / title_contains / any_of
-	URLPattern    string `json:"url_pattern,omitempty"`
-	Selector      string `json:"selector,omitempty"`
-	CookieName    string `json:"cookie_name,omitempty"`
-	TitleContains string `json:"title_contains,omitempty"`
+	Type          string          `json:"type"` // url_changed / url_matches / dom_contains / cookie_set / response_ok / title_contains / any_of
+	URLPattern    string          `json:"url_pattern,omitempty"`
+	Selector      string          `json:"selector,omitempty"`
+	CookieName    string          `json:"cookie_name,omitempty"`
+	TitleContains string          `json:"title_contains,omitempty"`
 	Any           []PostCondition `json:"any,omitempty"` // for type=any_of
 }
 
 // AnomalyHandler is the response to a detected anomaly type during pattern execution.
 type AnomalyHandler struct {
-	Action      string `json:"action"`     // abort / retry / fallback_pattern / human_intervention
-	FallbackID  string `json:"fallback_id,omitempty"`
-	MaxRetries  int    `json:"max_retries,omitempty"`
-	BackoffMS   int    `json:"backoff_ms,omitempty"`
-	Reason      string `json:"reason,omitempty"`
+	Action     string `json:"action"` // abort / retry / fallback_pattern / human_intervention
+	FallbackID string `json:"fallback_id,omitempty"`
+	MaxRetries int    `json:"max_retries,omitempty"`
+	BackoffMS  int    `json:"backoff_ms,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // PatternStats tracks execution outcomes.
 type PatternStats struct {
-	HitCount       int       `json:"hit_count"`     // Times this pattern was considered
-	MatchCount     int       `json:"match_count"`   // Times AppliesWhen passed
-	SuccessCount   int       `json:"success_count"` // PostConditions all true
-	FailureCount   int       `json:"failure_count"`
-	LastHitAt      time.Time `json:"last_hit_at"`
-	LastSuccessAt  time.Time `json:"last_success_at"`
-	AvgDurationMS  float64   `json:"avg_duration_ms"`
+	HitCount      int       `json:"hit_count"`     // Times this pattern was considered
+	MatchCount    int       `json:"match_count"`   // Times AppliesWhen passed
+	SuccessCount  int       `json:"success_count"` // PostConditions all true
+	FailureCount  int       `json:"failure_count"`
+	LastHitAt     time.Time `json:"last_hit_at"`
+	LastSuccessAt time.Time `json:"last_success_at"`
+	AvgDurationMS float64   `json:"avg_duration_ms"`
 }
 
 // SuccessRate is a convenience accessor.
@@ -191,9 +192,18 @@ type PatternLibrary struct {
 	dsn   string
 	mu    sync.RWMutex
 	cache map[string]*UIPattern // id -> pattern
+
+	lastReloadCheck time.Time
+	lastSyncToken   string
+	reloadInterval  time.Duration
 }
 
+const envUIPatternDBPath = "BRAIN_UI_PATTERN_DB_PATH"
+
 func defaultPatternDSN() string {
+	if override := strings.TrimSpace(os.Getenv(envUIPatternDBPath)); override != "" {
+		return filepath.Clean(override)
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = os.TempDir()
@@ -232,7 +242,12 @@ func NewPatternLibrary(dsn string) (*PatternLibrary, error) {
 		return nil, fmt.Errorf("migrate pending column: %w", err)
 	}
 
-	lib := &PatternLibrary{db: db, dsn: dsn, cache: make(map[string]*UIPattern)}
+	lib := &PatternLibrary{
+		db:             db,
+		dsn:            dsn,
+		cache:          make(map[string]*UIPattern),
+		reloadInterval: time.Second,
+	}
 	if err := lib.load(context.Background()); err != nil {
 		db.Close()
 		return nil, err
@@ -258,11 +273,26 @@ func (lib *PatternLibrary) Close() error {
 
 // load hydrates the in-memory cache from the DB.
 func (lib *PatternLibrary) load(ctx context.Context) error {
-	rows, err := lib.db.QueryContext(ctx, `SELECT id, body, hit_count, match_count, success_count, failure_count, last_hit_at, last_success_at, avg_duration_ms, enabled, pending FROM ui_patterns`)
+	cache, err := lib.loadSnapshot(ctx)
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
+	lib.mu.Lock()
+	lib.cache = cache
+	lib.lastSyncToken = patternCacheSyncToken(cache)
+	lib.lastReloadCheck = now
+	lib.mu.Unlock()
+	return nil
+}
+
+func (lib *PatternLibrary) loadSnapshot(ctx context.Context) (map[string]*UIPattern, error) {
+	rows, err := lib.db.QueryContext(ctx, `SELECT id, body, hit_count, match_count, success_count, failure_count, last_hit_at, last_success_at, avg_duration_ms, enabled, pending FROM ui_patterns`)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
+	cache := make(map[string]*UIPattern)
 	for rows.Next() {
 		var id string
 		var body []byte
@@ -271,7 +301,7 @@ func (lib *PatternLibrary) load(ctx context.Context) error {
 		var avgDur float64
 		var enabled, pending int
 		if err := rows.Scan(&id, &body, &hit, &match, &succ, &fail, &lastHit, &lastSucc, &avgDur, &enabled, &pending); err != nil {
-			return err
+			return nil, err
 		}
 		var p UIPattern
 		if err := json.Unmarshal(body, &p); err != nil {
@@ -288,9 +318,88 @@ func (lib *PatternLibrary) load(ctx context.Context) error {
 		// 列 DEFAULT 1 保证加载后仍为 true。Pending 同理,列 DEFAULT 0。
 		p.Enabled = enabled != 0
 		p.Pending = pending != 0
-		lib.cache[p.ID] = &p
+		cache[p.ID] = &p
 	}
+	return cache, rows.Err()
+}
+
+// Reload refreshes the in-memory cache from SQLite so long-running sidecars
+// can observe patterns inserted or updated by other processes.
+func (lib *PatternLibrary) Reload(ctx context.Context) error {
+	if lib == nil {
+		return nil
+	}
+	cache, err := lib.loadSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	lib.mu.Lock()
+	lib.cache = cache
+	lib.lastSyncToken = patternCacheSyncToken(cache)
+	lib.lastReloadCheck = now
+	lib.mu.Unlock()
 	return nil
+}
+
+func patternCacheSyncToken(cache map[string]*UIPattern) string {
+	maxUpdated := ""
+	for _, p := range cache {
+		if p == nil {
+			continue
+		}
+		updated := formatTime(p.UpdatedAt)
+		if updated > maxUpdated {
+			maxUpdated = updated
+		}
+	}
+	return fmt.Sprintf("%d|%s", len(cache), maxUpdated)
+}
+
+func (lib *PatternLibrary) storageSyncToken(ctx context.Context) (string, error) {
+	if lib == nil || lib.db == nil {
+		return "", nil
+	}
+	var count int
+	var maxUpdated string
+	if err := lib.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(updated_at), '') FROM ui_patterns`).Scan(&count, &maxUpdated); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d|%s", count, maxUpdated), nil
+}
+
+// ReloadIfChanged refreshes the in-memory cache only when the backing SQLite
+// rows have changed since the last observed sync token.
+func (lib *PatternLibrary) ReloadIfChanged(ctx context.Context) error {
+	if lib == nil {
+		return nil
+	}
+	lib.mu.RLock()
+	interval := lib.reloadInterval
+	lastCheck := lib.lastReloadCheck
+	lib.mu.RUnlock()
+	now := time.Now().UTC()
+	if interval > 0 && !lastCheck.IsZero() && now.Sub(lastCheck) < interval {
+		return nil
+	}
+
+	token, err := lib.storageSyncToken(ctx)
+	if err != nil {
+		return err
+	}
+
+	lib.mu.Lock()
+	if interval > 0 && !lib.lastReloadCheck.IsZero() && now.Sub(lib.lastReloadCheck) < interval {
+		lib.mu.Unlock()
+		return nil
+	}
+	if token == lib.lastSyncToken {
+		lib.lastReloadCheck = now
+		lib.mu.Unlock()
+		return nil
+	}
+	lib.mu.Unlock()
+	return lib.Reload(ctx)
 }
 
 // List returns all enabled patterns, optionally filtered by category.
@@ -298,11 +407,13 @@ func (lib *PatternLibrary) load(ctx context.Context) error {
 // skipped — pattern_match / pattern_exec 因此看不到它们。
 // 需要看全部(含禁用)用 ListAll。
 func (lib *PatternLibrary) List(category string) []*UIPattern {
+	_ = lib.ReloadIfChanged(context.Background())
 	return lib.listFiltered(category, false)
 }
 
 // ListAll 返回全部模式(含禁用),用于 ops 管理面板 / 调试。
 func (lib *PatternLibrary) ListAll(category string) []*UIPattern {
+	_ = lib.ReloadIfChanged(context.Background())
 	return lib.listFiltered(category, true)
 }
 
@@ -334,6 +445,7 @@ func (lib *PatternLibrary) listFiltered(category string, includeDisabled bool) [
 // Get returns one enabled pattern by ID, nil if not found or disabled.
 // 用 GetAny(id) 可拿到含禁用的(ops 用)。
 func (lib *PatternLibrary) Get(id string) *UIPattern {
+	_ = lib.ReloadIfChanged(context.Background())
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	p, ok := lib.cache[id]
@@ -346,6 +458,7 @@ func (lib *PatternLibrary) Get(id string) *UIPattern {
 
 // GetAny 返回包括禁用在内的模式(ops / SetEnabled 用)。
 func (lib *PatternLibrary) GetAny(id string) *UIPattern {
+	_ = lib.ReloadIfChanged(context.Background())
 	lib.mu.RLock()
 	defer lib.mu.RUnlock()
 	p, ok := lib.cache[id]
@@ -402,6 +515,8 @@ ON CONFLICT(id) DO UPDATE SET
 		return err
 	}
 	lib.cache[p.ID] = p
+	lib.lastSyncToken = patternCacheSyncToken(lib.cache)
+	lib.lastReloadCheck = now
 	bumpPatternIndex() // P3.4: pattern set changed → invalidate URL / category index
 	return nil
 }
@@ -463,6 +578,8 @@ func (lib *PatternLibrary) RecordExecution(ctx context.Context, id string, succe
 		formatTime(p.Stats.LastHitAt), formatTime(p.Stats.LastSuccessAt),
 		p.Stats.AvgDurationMS, boolToInt(p.Enabled), boolToInt(p.Pending), formatTime(now), id)
 	// 仅当 Enabled 翻转时重建索引:纯 stats 递增不影响候选集合。
+	lib.lastSyncToken = patternCacheSyncToken(lib.cache)
+	lib.lastReloadCheck = now
 	if flipped {
 		bumpPatternIndex()
 	}
@@ -484,6 +601,8 @@ func (lib *PatternLibrary) SetEnabled(ctx context.Context, id string, enabled bo
 	_, err := lib.db.ExecContext(ctx, `UPDATE ui_patterns SET enabled = ?, updated_at = ? WHERE id = ?`,
 		boolToInt(enabled), formatTime(now), id)
 	if err == nil {
+		lib.lastSyncToken = patternCacheSyncToken(lib.cache)
+		lib.lastReloadCheck = now
 		bumpPatternIndex()
 	}
 	return err
@@ -497,6 +616,8 @@ func (lib *PatternLibrary) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	delete(lib.cache, id)
+	lib.lastSyncToken = patternCacheSyncToken(lib.cache)
+	lib.lastReloadCheck = time.Now().UTC()
 	bumpPatternIndex()
 	return nil
 }
@@ -526,19 +647,19 @@ func (lib *PatternLibrary) Seed(ctx context.Context) error {
 func seedPatterns() []*UIPattern {
 	base := []*UIPattern{
 		{
-			ID: "login_username_password",
-			Category: "auth",
-			Source: "seed",
+			ID:          "login_username_password",
+			Category:    "auth",
+			Source:      "seed",
 			Description: "Standard username/email + password login form",
 			AppliesWhen: MatchCondition{
 				URLPattern: `(?i)/(login|signin|sign-in|auth|account/login)\b`,
-				Has: []string{`input[type="password"]`},
+				Has:        []string{`input[type="password"]`},
 			},
 			ElementRoles: map[string]ElementDescriptor{
 				"email_field": {
-					Tag: "input",
+					Tag:  "input",
 					Name: "~(?i)(email|user|account|用户名|邮箱)",
-					CSS: `input[type="email"], input[name*="email" i], input[name*="user" i], input[type="text"]`,
+					CSS:  `input[type="email"], input[name*="email" i], input[name*="user" i], input[type="text"]`,
 				},
 				"password_field": {
 					Tag: "input", Type: "password",
@@ -547,7 +668,7 @@ func seedPatterns() []*UIPattern {
 				"submit_button": {
 					Role: "button",
 					Name: "~(?i)(sign\\s*in|log\\s*in|login|submit|登录|登陆)",
-					CSS: `button[type="submit"], input[type="submit"]`,
+					CSS:  `button[type="submit"], input[type="submit"]`,
 				},
 			},
 			ActionSequence: []ActionStep{
@@ -570,9 +691,9 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "search_query",
-			Category: "search",
-			Source: "seed",
+			ID:          "search_query",
+			Category:    "search",
+			Source:      "seed",
 			Description: "Enter a query in a search box and submit",
 			AppliesWhen: MatchCondition{
 				Has: []string{`input[type="search"], input[name*="search" i], input[name="q"], input[placeholder*="search" i]`},
@@ -585,7 +706,7 @@ func seedPatterns() []*UIPattern {
 				"search_button": {
 					Role: "button",
 					Name: "~(?i)(search|搜索|查询)",
-					CSS: `button[type="submit"], button[aria-label*="search" i]`,
+					CSS:  `button[type="submit"], button[aria-label*="search" i]`,
 				},
 			},
 			ActionSequence: []ActionStep{
@@ -602,12 +723,12 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "add_to_cart",
-			Category: "commerce",
-			Source: "seed",
+			ID:          "add_to_cart",
+			Category:    "commerce",
+			Source:      "seed",
 			Description: "Add current product to cart",
 			AppliesWhen: MatchCondition{
-				Has: []string{`[class*="product" i], [itemtype*="Product" i]`},
+				Has:          []string{`[class*="product" i], [itemtype*="Product" i]`},
 				TextContains: []string{"add to cart", "加入购物车", "add to bag"},
 			},
 			ElementRoles: map[string]ElementDescriptor{
@@ -631,9 +752,9 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "close_modal",
-			Category: "nav",
-			Source: "seed",
+			ID:          "close_modal",
+			Category:    "nav",
+			Source:      "seed",
 			Description: "Dismiss a dialog/modal by clicking its close button",
 			AppliesWhen: MatchCondition{
 				Has: []string{`[role="dialog"], [role="alertdialog"], .modal.show, .modal.open`},
@@ -642,7 +763,7 @@ func seedPatterns() []*UIPattern {
 				"close_button": {
 					Role: "button",
 					Name: "~(?i)(close|dismiss|×|取消|关闭)",
-					CSS: `[aria-label*="close" i], [aria-label*="dismiss" i], .modal-close, .close, button.btn-close`,
+					CSS:  `[aria-label*="close" i], [aria-label*="dismiss" i], .modal-close, .close, button.btn-close`,
 				},
 			},
 			ActionSequence: []ActionStep{
@@ -653,13 +774,13 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "accept_cookies",
-			Category: "nav",
-			Source: "seed",
+			ID:          "accept_cookies",
+			Category:    "nav",
+			Source:      "seed",
 			Description: "Accept cookie consent banner",
 			AppliesWhen: MatchCondition{
 				TextContains: []string{"cookie", "Cookie"},
-				Has: []string{`[role="dialog"], [class*="cookie" i], [id*="cookie" i], [class*="consent" i]`},
+				Has:          []string{`[role="dialog"], [class*="cookie" i], [id*="cookie" i], [class*="consent" i]`},
 			},
 			ElementRoles: map[string]ElementDescriptor{
 				"accept_button": {
@@ -675,9 +796,9 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "pagination_next",
-			Category: "nav",
-			Source: "seed",
+			ID:          "pagination_next",
+			Category:    "nav",
+			Source:      "seed",
 			Description: "Advance to next page of results",
 			AppliesWhen: MatchCondition{
 				Has: []string{`a[rel="next"], .pagination, .pager, nav[aria-label*="pag" i]`},
@@ -685,7 +806,7 @@ func seedPatterns() []*UIPattern {
 			ElementRoles: map[string]ElementDescriptor{
 				"next_button": {
 					Name: "~(?i)^(next|下一页|»|>)$",
-					CSS: `a[rel="next"], .pagination .next, .pager-next`,
+					CSS:  `a[rel="next"], .pagination .next, .pager-next`,
 				},
 			},
 			ActionSequence: []ActionStep{
@@ -697,9 +818,9 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "filter_by_facet",
-			Category: "search",
-			Source: "seed",
+			ID:          "filter_by_facet",
+			Category:    "search",
+			Source:      "seed",
 			Description: "Toggle a faceted search checkbox (brand/category/price)",
 			AppliesWhen: MatchCondition{
 				Has: []string{`input[type="checkbox"]`, `[class*="facet" i], [class*="filter" i]`},
@@ -718,19 +839,19 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "submit_generic_form",
-			Category: "form",
-			Source: "seed",
+			ID:          "submit_generic_form",
+			Category:    "form",
+			Source:      "seed",
 			Description: "Submit a form after filling any required fields",
 			AppliesWhen: MatchCondition{
-				Has: []string{`form`, `button[type="submit"], input[type="submit"]`},
+				Has:    []string{`form`, `button[type="submit"], input[type="submit"]`},
 				HasNot: []string{`input[type="password"]`}, // distinct from login
 			},
 			ElementRoles: map[string]ElementDescriptor{
 				"submit_button": {
 					Role: "button",
 					Name: "~(?i)(submit|send|proceed|continue|confirm|提交|继续)",
-					CSS: `button[type="submit"], input[type="submit"]`,
+					CSS:  `button[type="submit"], input[type="submit"]`,
 				},
 			},
 			ActionSequence: []ActionStep{
@@ -745,9 +866,9 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "logout",
-			Category: "auth",
-			Source: "seed",
+			ID:          "logout",
+			Category:    "auth",
+			Source:      "seed",
 			Description: "Log out of current session",
 			AppliesWhen: MatchCondition{
 				Has: []string{`a[href*="logout" i], button[aria-label*="logout" i]`},
@@ -755,7 +876,7 @@ func seedPatterns() []*UIPattern {
 			ElementRoles: map[string]ElementDescriptor{
 				"logout_link": {
 					Name: "~(?i)(log\\s*out|sign\\s*out|注销|退出)",
-					CSS: `a[href*="logout" i], button[aria-label*="logout" i]`,
+					CSS:  `a[href*="logout" i], button[aria-label*="logout" i]`,
 				},
 			},
 			ActionSequence: []ActionStep{
@@ -770,12 +891,12 @@ func seedPatterns() []*UIPattern {
 			},
 		},
 		{
-			ID: "skip_login_already_authed",
-			Category: "auth",
-			Source: "seed",
+			ID:          "skip_login_already_authed",
+			Category:    "auth",
+			Source:      "seed",
 			Description: "Recognize that a session is already active and skip the login step",
 			AppliesWhen: MatchCondition{
-				Has: []string{`[data-user-profile], .user-menu, a[href*="logout" i]`},
+				Has:    []string{`[data-user-profile], .user-menu, a[href*="logout" i]`},
 				HasNot: []string{`input[type="password"]`},
 			},
 			ElementRoles:   map[string]ElementDescriptor{},

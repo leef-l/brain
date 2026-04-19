@@ -521,3 +521,66 @@ func TestRunner_SanitizerIntegration(t *testing.T) {
 		t.Error("sanitized block should have non-empty Text (envelope)")
 	}
 }
+
+type countTool struct {
+	name  string
+	calls *int
+}
+
+func (t *countTool) Name() string { return t.name }
+func (t *countTool) Schema() tool.Schema {
+	return tool.Schema{
+		Name:        t.name,
+		Description: "counting tool",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Brain:       "test",
+	}
+}
+func (t *countTool) Risk() tool.Risk { return tool.RiskSafe }
+func (t *countTool) Execute(_ context.Context, _ json.RawMessage) (*tool.Result, error) {
+	(*t.calls)++
+	return &tool.Result{Output: json.RawMessage(`"ok"`)}, nil
+}
+
+func TestRunner_PreTurnStateHookOverridesDispatchRegistry(t *testing.T) {
+	mp := llm.NewMockProvider("test-model")
+	mp.QueueToolUse("test.echo", json.RawMessage(`{}`))
+	mp.QueueText("done")
+
+	baseReg := tool.NewMemRegistry()
+	baseCalls := 0
+	baseReg.Register(&countTool{name: "test.echo", calls: &baseCalls})
+
+	turnReg := tool.NewMemRegistry()
+	turnCalls := 0
+	turnReg.Register(&countTool{name: "test.echo", calls: &turnCalls})
+
+	runner := newTestRunner(mp, baseReg)
+	runner.PreTurnStateHook = func(_ context.Context, _ *Run, _ int) (*PreTurnState, error) {
+		return &PreTurnState{
+			Tools: []llm.ToolSchema{{
+				Name:        "test.echo",
+				Description: "counting tool",
+				InputSchema: json.RawMessage(`{"type":"object"}`),
+			}},
+			Registry: turnReg,
+		}, nil
+	}
+
+	run := NewRun("run-preturn-state", "test-brain", defaultBudget())
+	result, err := runner.Execute(context.Background(), run, []llm.Message{
+		userMessage("call the tool"),
+	}, defaultOpts())
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Run.State != StateCompleted {
+		t.Fatalf("State = %q, want %q", result.Run.State, StateCompleted)
+	}
+	if baseCalls != 0 {
+		t.Fatalf("base registry tool executed %d times, want 0", baseCalls)
+	}
+	if turnCalls != 1 {
+		t.Fatalf("turn registry tool executed %d times, want 1", turnCalls)
+	}
+}

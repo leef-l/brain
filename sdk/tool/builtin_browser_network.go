@@ -55,8 +55,8 @@ type netEntry struct {
 type netBuf struct {
 	mu       sync.RWMutex
 	capacity int
-	entries  []*netEntry        // ring, capacity fixed
-	index    int                // next write slot
+	entries  []*netEntry // ring, capacity fixed
+	index    int         // next write slot
 	byID     map[string]*netEntry
 	inflight int
 	cond     *sync.Cond
@@ -86,9 +86,9 @@ func (b *netBuf) attach(client *cdp.Client) {
 				Headers  map[string]string `json:"headers"`
 				PostData string            `json:"postData"`
 			} `json:"request"`
-			Type        string  `json:"type"`
-			Timestamp   float64 `json:"timestamp"`
-			WallTime    float64 `json:"wallTime"`
+			Type      string  `json:"type"`
+			Timestamp float64 `json:"timestamp"`
+			WallTime  float64 `json:"wallTime"`
 		}
 		if json.Unmarshal(raw, &p) != nil {
 			return
@@ -137,9 +137,9 @@ func (b *netBuf) attach(client *cdp.Client) {
 
 	client.On("Network.loadingFinished", func(raw json.RawMessage) {
 		var p struct {
-			RequestID        string  `json:"requestId"`
-			Timestamp        float64 `json:"timestamp"`
-			EncodedDataLen   int64   `json:"encodedDataLength"`
+			RequestID      string  `json:"requestId"`
+			Timestamp      float64 `json:"timestamp"`
+			EncodedDataLen int64   `json:"encodedDataLength"`
 		}
 		if json.Unmarshal(raw, &p) != nil {
 			return
@@ -221,9 +221,23 @@ func (b *netBuf) snapshot() []*netEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	out := make([]*netEntry, 0, len(b.entries))
-	for i := len(b.entries) - 1; i >= 0; i-- {
+	if len(b.entries) == 0 {
+		return out
+	}
+	// When the ring has wrapped, b.index points at the oldest slot / next write
+	// position. Iterate backward from the newest written slot so callers really
+	// observe newest-first ordering.
+	start := len(b.entries) - 1
+	if len(b.entries) == b.capacity {
+		start = (b.index - 1 + len(b.entries)) % len(b.entries)
+	}
+	for seen, i := 0, start; seen < len(b.entries); seen++ {
 		e := *b.entries[i]
 		out = append(out, &e)
+		i--
+		if i < 0 {
+			i = len(b.entries) - 1
+		}
 	}
 	return out
 }

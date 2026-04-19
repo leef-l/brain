@@ -41,8 +41,10 @@ type Manifest struct {
 
 // RuntimeSpec 运行时配置
 type RuntimeSpec struct {
-	Type       RuntimeType      `json:"type"                    yaml:"type"`
-	Entrypoint string           `json:"entrypoint,omitempty"    yaml:"entrypoint,omitempty"`
+	Type       RuntimeType        `json:"type"                    yaml:"type"`
+	Entrypoint string             `json:"entrypoint,omitempty"    yaml:"entrypoint,omitempty"`
+	Args       []string           `json:"args,omitempty"          yaml:"args,omitempty"`
+	Env        map[string]string  `json:"env,omitempty"           yaml:"env,omitempty"`
 	MCPServers []MCPServerBinding `json:"mcp_servers,omitempty" yaml:"mcp_servers,omitempty"`
 
 	// Endpoint 是远程 brain 的 HTTP/gRPC 地址（仅 remote 类型使用）。
@@ -81,10 +83,10 @@ type CompatSpec struct {
 
 // HealthSpec 健康检查配置
 type HealthSpec struct {
-	PingIntervalSeconds   int      `json:"ping_interval_seconds,omitempty"   yaml:"ping_interval_seconds,omitempty"`
-	PingTimeoutSeconds    int      `json:"ping_timeout_seconds,omitempty"    yaml:"ping_timeout_seconds,omitempty"`
-	MaxMissedPings        int      `json:"max_missed_pings,omitempty"        yaml:"max_missed_pings,omitempty"`
-	StartupTimeoutMs      int      `json:"startup_timeout_ms,omitempty"      yaml:"startup_timeout_ms,omitempty"`
-	HeartbeatTimeoutMs    int      `json:"heartbeat_timeout_ms,omitempty"    yaml:"heartbeat_timeout_ms,omitempty"`
-	ExpectedMethods       []string `json:"expected_methods,omitempty"        yaml:"expected_methods,omitempty"`
+	PingIntervalSeconds int      `json:"ping_interval_seconds,omitempty"   yaml:"ping_interval_seconds,omitempty"`
+	PingTimeoutSeconds  int      `json:"ping_timeout_seconds,omitempty"    yaml:"ping_timeout_seconds,omitempty"`
+	MaxMissedPings      int      `json:"max_missed_pings,omitempty"        yaml:"max_missed_pings,omitempty"`
+	StartupTimeoutMs    int      `json:"startup_timeout_ms,omitempty"      yaml:"startup_timeout_ms,omitempty"`
+	HeartbeatTimeoutMs  int      `json:"heartbeat_timeout_ms,omitempty"    yaml:"heartbeat_timeout_ms,omitempty"`
+	ExpectedMethods     []string `json:"expected_methods,omitempty"        yaml:"expected_methods,omitempty"`
 }

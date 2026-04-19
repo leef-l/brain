@@ -140,15 +140,7 @@ func (c *hostHumanTakeoverCoordinator) publishHumanEvent(eventType string, req t
 	if c.bus == nil {
 		return
 	}
-	payload, _ := json.Marshal(map[string]interface{}{
-		"run_id":      req.RunID,
-		"brain_id":    req.BrainKind,
-		"reason":      req.Reason,
-		"guidance":    req.Guidance,
-		"url":         req.URL,
-		"timeout_sec": req.TimeoutSec,
-		"note":        note,
-	})
+	payload, _ := json.Marshal(newHumanTakeoverEventEnvelope(eventType, req, note))
 	c.bus.Publish(context.Background(), events.Event{
 		ExecutionID: req.RunID,
 		Type:        eventType,

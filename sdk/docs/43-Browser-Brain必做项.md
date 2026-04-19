@@ -4,6 +4,34 @@
 >
 > 本文除了列出每项的必要性和交付,还包含**并行实施计划 + Agent Team 编排**(§9-11),压缩总工期从 3-4 周到约 2 周。
 
+## 0. 2026-04-20 状态快照
+
+> 本节是对当前代码状态的核查回写,用于给 [44](./44-Browser-Brain开发计划.md) 的 P1/P3/P4 前置条件提供统一口径。
+> 口径说明:
+> - `[x]` = 代码主路径已具备基础能力
+> - `[~]` = 代码已实现,但仍有主路径接线/生产化边界
+> - `[ ]` = 尚未完成
+
+- `[ ]` M1 阶段 0 真人实验
+  - `sdk/docs/41-语义理解阶段0实验设计.md` 需要的人工标注 / `report.md` 仍是方法论前置,不是当前仓库代码能自动补齐的项。
+- `[x]` M2 confidence 降级
+  - `browser.pattern_match / pattern_exec` 已消费 semantic confidence,并会输出 `_degrade_reason` 或拒绝执行。
+- `[x]` M3 模式自动停用
+  - `PatternLibrary.RecordExecution` 已支持 `FailureCount >= 5 && SuccessRate < 0.3` 自动停用。
+- `[x]` M4 UI injection 检测
+  - anomaly v2 已有 `ui_injection` 类型与高严重度路由。
+- `[x]` M5 on_anomaly 路由实际执行
+  - `abort / retry / fallback_pattern / human_intervention` 四分支已进入 pattern 执行链。
+- `[x]` M6 学习闭环
+  - 工具执行结果已能回灌到 `AdaptiveToolPolicy.RecordOutcome(...)`。
+- `[x]` M7 JS error 订阅真实启用
+  - browser session 初始化时已挂 `Runtime.consoleAPICalled / Runtime.exceptionThrown` 监听并进入 anomaly history。
+
+**当前结论**:
+
+- P0“必做项代码闭环”除 M1 人工实验外,其余 M2-M7 已基本落地。
+- 因 M1 仍未完成,`44` 文档里“P1/P2/P3 正式准入”仍不能视为全部满足。
+
 ---
 
 ## 1. 优先级与并行分组(总览)

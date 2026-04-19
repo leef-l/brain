@@ -112,7 +112,7 @@ func withCoordinator(c HumanTakeoverCoordinator) func() {
 }
 
 // driveSequence 跑 runActionSequence 返回 (res, terminal, switchTo)。
-func driveSequence(t *testing.T, p *UIPattern, reg Registry, getter patternLibGetter) (*ExecutionResult, bool, string) {
+func driveSequence(t *testing.T, p *UIPattern, reg Registry, getter patternExecGetter) (*ExecutionResult, bool, string) {
 	t.Helper()
 	res := &ExecutionResult{PatternID: p.ID}
 	terminal, switchTo := runActionSequence(context.Background(), nil, reg, p, nil, res, time.Now(), getter)
@@ -361,6 +361,100 @@ func TestOnAnomalySubtypePriority(t *testing.T) {
 	}
 }
 
+func TestOnAnomalyTemplateOverridesPatternHandler(t *testing.T) {
+	tool := &countingTool{
+		name: "mock.click", anomalyT: "session_expired", anomalySub: "", stopAnomalyAt: 2,
+	}
+	reg := newMockRegistry(tool)
+	p := &UIPattern{
+		ID: "test-template-retry",
+		ActionSequence: []ActionStep{
+			{Tool: "mock.click"},
+		},
+		OnAnomaly: map[string]AnomalyHandler{
+			"session_expired": {Action: "abort", Reason: "pattern says abort"},
+		},
+	}
+	getter := patternExecDeps{
+		patterns: nil,
+		templates: &fakeTemplateSource{tpl: &AnomalyTemplate{
+			ID: 99,
+			Signature: AnomalyTemplateSignature{
+				Type:     "session_expired",
+				Severity: "high",
+			},
+			Recovery: []AnomalyTemplateRecoveryAction{
+				{Kind: "retry", MaxRetries: 2, BackoffMS: 1, Reason: "template retry"},
+			},
+		}},
+	}
+
+	res, terminal, switchTo := driveSequence(t, p, reg, getter)
+	if terminal {
+		t.Fatalf("template retry should not terminate, got Error=%q", res.Error)
+	}
+	if switchTo != "" {
+		t.Errorf("template retry should not switch, got %q", switchTo)
+	}
+	if got := tool.count(); got != 2 {
+		t.Errorf("tool calls = %d, want 2 (1 initial + 1 retry from template)", got)
+	}
+	if res.AbortedByAnomaly != "" {
+		t.Errorf("template retry should not abort, got %q", res.AbortedByAnomaly)
+	}
+}
+
+func TestProductionPatternExecGetterUsesSharedAnomalyTemplateLibrary(t *testing.T) {
+	prev := SharedAnomalyTemplateLibrary()
+	lib := NewAnomalyTemplateLibrary()
+	SetSharedAnomalyTemplateLibrary(lib)
+	defer SetSharedAnomalyTemplateLibrary(prev)
+
+	lib.Upsert(&AnomalyTemplate{
+		ID: 101,
+		Signature: AnomalyTemplateSignature{
+			Type:     "session_expired",
+			Severity: "high",
+		},
+		Recovery: []AnomalyTemplateRecoveryAction{
+			{Kind: "retry", MaxRetries: 2, BackoffMS: 1, Reason: "shared template retry"},
+		},
+	})
+
+	tool := &countingTool{
+		name: "mock.click", anomalyT: "session_expired", stopAnomalyAt: 2,
+	}
+	reg := newMockRegistry(tool)
+	p := &UIPattern{
+		ID: "test-prod-getter-template",
+		ActionSequence: []ActionStep{
+			{Tool: "mock.click"},
+		},
+		OnAnomaly: map[string]AnomalyHandler{
+			"session_expired": {Action: "abort", Reason: "pattern says abort"},
+		},
+	}
+
+	getter := sharedPatternExecGetter()
+	if getter.AnomalyTemplates() != lib {
+		t.Fatalf("sharedPatternExecGetter() did not expose shared anomaly template library")
+	}
+
+	res, terminal, switchTo := driveSequence(t, p, reg, getter)
+	if terminal {
+		t.Fatalf("shared template retry should not terminate, got Error=%q", res.Error)
+	}
+	if switchTo != "" {
+		t.Errorf("shared template retry should not switch, got %q", switchTo)
+	}
+	if got := tool.count(); got != 2 {
+		t.Errorf("tool calls = %d, want 2 (1 initial + 1 retry from shared template)", got)
+	}
+	if res.AbortedByAnomaly != "" {
+		t.Errorf("shared template retry should not abort, got %q", res.AbortedByAnomaly)
+	}
+}
+
 // ---------- 用例 6:fallback_pattern 端到端经 executePatternWithLib ----------
 
 func TestPatternFallbackChainSwitches(t *testing.T) {
@@ -441,22 +535,22 @@ func TestDetectAnomalyInOutputSubtype(t *testing.T) {
 		"ok": true,
 		"_anomalies": map[string]interface{}{
 			"anomalies": []map[string]interface{}{
-				{"type": "captcha", "subtype": "hcaptcha"},
+				{"type": "captcha", "subtype": "hcaptcha", "severity": "high"},
 			},
 		},
 	}
 	raw, _ := json.Marshal(body)
-	atype, sub := detectAnomalyInOutput(raw)
-	if atype != "captcha" || sub != "hcaptcha" {
-		t.Errorf("got (%q,%q), want (captcha, hcaptcha)", atype, sub)
+	atype, sub, sev := detectAnomalyInOutput(raw)
+	if atype != "captcha" || sub != "hcaptcha" || sev != "high" {
+		t.Errorf("got (%q,%q,%q), want (captcha, hcaptcha, high)", atype, sub, sev)
 	}
 	// 空 body
-	if a, s := detectAnomalyInOutput(nil); a != "" || s != "" {
-		t.Errorf("nil body should return empty, got (%q,%q)", a, s)
+	if a, s, sev := detectAnomalyInOutput(nil); a != "" || s != "" || sev != "" {
+		t.Errorf("nil body should return empty, got (%q,%q,%q)", a, s, sev)
 	}
 	// 无 _anomalies
-	if a, s := detectAnomalyInOutput([]byte(`{"ok":true}`)); a != "" || s != "" {
-		t.Errorf("no _anomalies should return empty, got (%q,%q)", a, s)
+	if a, s, sev := detectAnomalyInOutput([]byte(`{"ok":true}`)); a != "" || s != "" || sev != "" {
+		t.Errorf("no _anomalies should return empty, got (%q,%q,%q)", a, s, sev)
 	}
 }
 

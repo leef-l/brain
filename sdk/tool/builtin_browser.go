@@ -28,7 +28,7 @@ type browserSessionHolder struct {
 	// 在 incremental=true 且 MutationObserver 已注入时读取,和本次采集到的
 	// dirty 元素合并。pageKey 用 URL 做边界 —— 跨页导航后必须全扫,避免上
 	// 个页面的 data-brain-id 映射污染新页面。
-	snapshotCache       []brainElement
+	snapshotCache        []brainElement
 	snapshotCachePageKey string
 	// observerInstalled 表示已经 Exec 过 brainInstallObserverJS,且 URL
 	// 未变化(URL 变化时自然会被 MutationObserver 本身 reset,但本侧也清零)。
@@ -42,9 +42,56 @@ func newBrowserSessionHolder() *browserSessionHolder {
 	}
 }
 
+var (
+	sharedBrowserSessionMu       sync.RWMutex
+	sharedBrowserSessionOwner    *browserSessionHolder
+	sharedBrowserSessionAccessor func() (*cdp.BrowserSession, bool)
+)
+
+func registerSharedBrowserSessionAccessor(holder *browserSessionHolder) {
+	sharedBrowserSessionMu.Lock()
+	defer sharedBrowserSessionMu.Unlock()
+	sharedBrowserSessionOwner = holder
+	sharedBrowserSessionAccessor = holder.current
+}
+
+func unregisterSharedBrowserSessionAccessor(holder *browserSessionHolder) {
+	sharedBrowserSessionMu.Lock()
+	defer sharedBrowserSessionMu.Unlock()
+	if sharedBrowserSessionOwner != holder {
+		return
+	}
+	sharedBrowserSessionOwner = nil
+	sharedBrowserSessionAccessor = nil
+}
+
+// CurrentSharedBrowserSession returns the already-created shared browser
+// session, if one exists. It never creates a new session and is intended for
+// host-side consumers that need read-only access to the live browser session.
+func CurrentSharedBrowserSession() (*cdp.BrowserSession, bool) {
+	sharedBrowserSessionMu.RLock()
+	accessor := sharedBrowserSessionAccessor
+	sharedBrowserSessionMu.RUnlock()
+	if accessor == nil {
+		return nil, false
+	}
+	return accessor()
+}
+
 // anomalyHistory exposes the per-session history for v2 tools.
 func (h *browserSessionHolder) anomalyHistory() *anomalyHistory {
 	return h.history
+}
+
+// current returns the active session only if it has already been created.
+// Unlike get, it never launches a new browser session.
+func (h *browserSessionHolder) current() (*cdp.BrowserSession, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.session == nil {
+		return nil, false
+	}
+	return h.session, true
 }
 
 // get returns the current session, creating one if needed.
@@ -78,6 +125,7 @@ func (h *browserSessionHolder) close() {
 		h.session.Close()
 		h.session = nil
 	}
+	unregisterSharedBrowserSessionAccessor(h)
 }
 
 // ---------------------------------------------------------------------------
@@ -91,26 +139,29 @@ func (h *browserSessionHolder) close() {
 // appended to the tool_result under `_anomalies`. Read-only tools and the
 // anomaly tool itself are returned unwrapped to avoid recursion.
 func NewBrowserTools() []Tool {
+	applyBrowserFeatureGateEnvDefaults()
+
 	holder := newBrowserSessionHolder()
+	registerSharedBrowserSessionAccessor(holder)
 	patternExec := &browserPatternExecTool{holder: holder}
 	raw := []Tool{
 		&browserOpenTool{holder: holder},
 		&browserNavigateTool{holder: holder},
-		&browserSnapshotTool{holder: holder},          // P0-1 — semantic+interactive snapshot
-		&browserNetworkTool{holder: holder},           // P0-2 — observed request buffer
-		&browserWaitNetworkIdleTool{holder: holder},   // P0-2 — true networkIdle
-		&browserCheckAnomalyTool{holder: holder},      // P0-3 — anomaly perception MVP
-		&browserUnderstandTool{holder: holder},        // Phase 1 — L4-L7 semantic annotation + cache
-		&browserSitemapTool{holder: holder},           // P0-3 — whole-site BFS + route patterns
-		&browserPatternMatchTool{holder: holder},      // Phase 2 — UI pattern match
-		patternExec,                                    // Phase 2 — UI pattern exec
-		&browserPatternListTool{},                     // Phase 2 — UI pattern list
-		&browserIframeTool{holder: holder},            // P1 — iframe punch-through
-		&browserDownloadsTool{holder: holder},         // P1 — downloads dir watcher
-		&browserStorageTool{holder: holder},           // P1 — cookies + localStorage export/import
-		&browserFillFormTool{holder: holder},          // P1 — batch form fill
-		&browserChangesTool{holder: holder},           // P1 — DOM diff since last call
-		&browserCheckAnomalyV2Tool{holder: holder},    // Task #10 — full anomaly perception
+		&browserSnapshotTool{holder: holder},        // P0-1 — semantic+interactive snapshot
+		&browserNetworkTool{holder: holder},         // P0-2 — observed request buffer
+		&browserWaitNetworkIdleTool{holder: holder}, // P0-2 — true networkIdle
+		&browserCheckAnomalyTool{holder: holder},    // P0-3 — anomaly perception MVP
+		&browserUnderstandTool{holder: holder},      // Phase 1 — L4-L7 semantic annotation + cache
+		&browserSitemapTool{holder: holder},         // P0-3 — whole-site BFS + route patterns
+		&browserPatternMatchTool{holder: holder},    // Phase 2 — UI pattern match
+		patternExec,                                 // Phase 2 — UI pattern exec
+		&browserPatternListTool{},                   // Phase 2 — UI pattern list
+		&browserIframeTool{holder: holder},          // P1 — iframe punch-through
+		&browserDownloadsTool{holder: holder},       // P1 — downloads dir watcher
+		&browserStorageTool{holder: holder},         // P1 — cookies + localStorage export/import
+		&browserFillFormTool{holder: holder},        // P1 — batch form fill
+		&browserChangesTool{holder: holder},         // P1 — DOM diff since last call
+		&browserCheckAnomalyV2Tool{holder: holder},  // Task #10 — full anomaly perception
 		&browserClickTool{holder: holder},
 		&browserDoubleClickTool{holder: holder},
 		&browserRightClickTool{holder: holder},
@@ -122,7 +173,7 @@ func NewBrowserTools() []Tool {
 		&browserSelectTool{holder: holder},
 		&browserUploadFileTool{holder: holder},
 		&browserScreenshotTool{holder: holder},
-		&browserVisualInspectTool{holder: holder},   // Phase 3 — multimodal fallback
+		&browserVisualInspectTool{holder: holder}, // Phase 3 — multimodal fallback
 		&browserEvalTool{holder: holder},
 		&browserWaitTool{holder: holder},
 	}
@@ -134,6 +185,9 @@ func NewBrowserTools() []Tool {
 		}
 		if retryTools[t.Name()] {
 			wrapped = WithRetry(wrapped)
+		}
+		if feature := browserFeatureForTool(t.Name()); feature != "" {
+			wrapped = &browserFeatureGatedTool{inner: wrapped, feature: feature}
 		}
 		out[i] = wrapped
 	}

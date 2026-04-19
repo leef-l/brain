@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 
@@ -106,10 +105,11 @@ func TestSpawnVariantFieldsAccurate(t *testing.T) {
 	if v.Source != "learned" {
 		t.Errorf("Source = %q, want learned", v.Source)
 	}
-	// URLPattern must now mention the host.
-	if !strings.Contains(v.AppliesWhen.URLPattern, "demo.gitea.com") &&
-		!strings.Contains(v.AppliesWhen.URLPattern, `demo\.gitea\.com`) {
-		t.Errorf("AppliesWhen.URLPattern missing site host: %s", v.AppliesWhen.URLPattern)
+	if v.AppliesWhen.SiteHost != "demo.gitea.com" {
+		t.Errorf("AppliesWhen.SiteHost = %q, want demo.gitea.com", v.AppliesWhen.SiteHost)
+	}
+	if v.AppliesWhen.URLPattern != parent.AppliesWhen.URLPattern {
+		t.Errorf("AppliesWhen.URLPattern = %q, want parent URLPattern %q", v.AppliesWhen.URLPattern, parent.AppliesWhen.URLPattern)
 	}
 	// OnAnomaly has a captcha handler.
 	h, ok := v.OnAnomaly["captcha"]
@@ -133,6 +133,34 @@ func TestSpawnVariantPreservesParentOnAnomaly(t *testing.T) {
 	// Parent's handler must survive — we don't downgrade manual to retry.
 	if got := v.OnAnomaly["captcha"].Action; got != "human_intervention" {
 		t.Errorf("OnAnomaly[captcha].Action = %q, want human_intervention", got)
+	}
+}
+
+func TestSpawnVariantSpecializesSiteWithoutOvermatchingOtherHosts(t *testing.T) {
+	parent := &UIPattern{
+		ID:       "p1",
+		Category: "auth",
+		Source:   "learned",
+		AppliesWhen: MatchCondition{
+			URLPattern: `(?i)/login$`,
+		},
+		Enabled: true,
+	}
+	v := SpawnVariant(parent, "https://demo.gitea.com", "captcha")
+	if v == nil {
+		t.Fatal("SpawnVariant returned nil")
+	}
+
+	ok, _ := evaluateMatch(context.Background(), nil, &v.AppliesWhen,
+		"https://demo.gitea.com/login", "", "")
+	if !ok {
+		t.Fatal("variant should match its target site")
+	}
+
+	ok, _ = evaluateMatch(context.Background(), nil, &v.AppliesWhen,
+		"https://example.com/login", "", "")
+	if ok {
+		t.Fatal("variant should not match a different host")
 	}
 }
 

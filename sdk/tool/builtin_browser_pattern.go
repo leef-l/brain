@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 )
@@ -109,19 +110,48 @@ var checkPageSemanticConfidence = func(ctx context.Context, holder *browserSessi
 // via a process-wide singleton.
 
 var (
-	patternLibOnce sync.Once
-	patternLib     *PatternLibrary
-	patternLibErr  error
+	patternLibMu        sync.Mutex
+	patternLib          *PatternLibrary
+	patternLibErr       error
+	patternLibDSN       string
+	patternLibCheckedAt time.Time
 )
 
 func sharedPatternLib() (*PatternLibrary, error) {
-	patternLibOnce.Do(func() {
-		patternLib, patternLibErr = NewPatternLibrary("")
+	_ = RefreshSharedPatternLibraryIfChanged()
+	return patternLib, patternLibErr
+}
+
+const patternLibraryRefreshInterval = time.Second
+
+// RefreshSharedPatternLibraryIfChanged refreshes the process-wide pattern
+// library when the configured DB path changes or backing rows change.
+func RefreshSharedPatternLibraryIfChanged() error {
+	patternLibMu.Lock()
+	defer patternLibMu.Unlock()
+
+	now := time.Now()
+	dsn := defaultPatternDSN()
+	if patternLib != nil && patternLibDSN == dsn && now.Sub(patternLibCheckedAt) < patternLibraryRefreshInterval {
+		return patternLibErr
+	}
+	patternLibCheckedAt = now
+
+	switch {
+	case patternLib == nil || patternLibDSN != dsn:
+		patternLib, patternLibErr = NewPatternLibrary(dsn)
+		patternLibDSN = dsn
 		if patternLibErr != nil {
 			fmt.Fprintf(os.Stderr, "  [pattern] library unavailable: %v\n", patternLibErr)
 		}
-	})
-	return patternLib, patternLibErr
+	default:
+		patternLibErr = patternLib.ReloadIfChanged(context.Background())
+		if patternLibErr != nil {
+			fmt.Fprintf(os.Stderr, "  [pattern] library reload failed: %v\n", patternLibErr)
+		}
+	}
+
+	return patternLibErr
 }
 
 // SharedPatternLibrary 暴露进程级单例给 dashboard / cli。首次调用会打开
@@ -223,13 +253,13 @@ func (t *browserPatternMatchTool) Execute(ctx context.Context, args json.RawMess
 	out := make([]map[string]interface{}, 0, len(matches))
 	for _, m := range matches {
 		item := map[string]interface{}{
-			"pattern_id":    m.Pattern.ID,
-			"category":      m.Pattern.Category,
-			"description":   m.Pattern.Description,
-			"score":         m.Score,
-			"matched_via":   m.MatchedVia,
-			"success_rate":  m.Pattern.Stats.SuccessRate(),
-			"match_count":   m.Pattern.Stats.MatchCount,
+			"pattern_id":   m.Pattern.ID,
+			"category":     m.Pattern.Category,
+			"description":  m.Pattern.Description,
+			"score":        m.Score,
+			"matched_via":  m.MatchedVia,
+			"success_rate": m.Pattern.Stats.SuccessRate(),
+			"match_count":  m.Pattern.Stats.MatchCount,
 		}
 		if degrade != nil {
 			item["_degrade_reason"] = degrade.Reason
@@ -256,10 +286,10 @@ type patternExecRegistry struct {
 	tools map[string]Tool
 }
 
-func (r *patternExecRegistry) Register(_ Tool) error            { return nil }
-func (r *patternExecRegistry) Lookup(name string) (Tool, bool)  { t, ok := r.tools[name]; return t, ok }
-func (r *patternExecRegistry) List() []Tool                     { return nil }
-func (r *patternExecRegistry) ListByBrain(_ string) []Tool      { return nil }
+func (r *patternExecRegistry) Register(_ Tool) error           { return nil }
+func (r *patternExecRegistry) Lookup(name string) (Tool, bool) { t, ok := r.tools[name]; return t, ok }
+func (r *patternExecRegistry) List() []Tool                    { return nil }
+func (r *patternExecRegistry) ListByBrain(_ string) []Tool     { return nil }
 
 type browserPatternExecTool struct {
 	holder *browserSessionHolder
@@ -399,7 +429,7 @@ func (t *browserPatternListTool) Risk() Risk   { return RiskSafe }
 
 func (t *browserPatternListTool) Schema() Schema {
 	return Schema{
-		Name: t.Name(),
+		Name:        t.Name(),
 		Description: `List UI patterns in the library (for browsing / debugging / WebUI).`,
 		InputSchema: json.RawMessage(`{
   "type": "object",

@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -188,10 +187,13 @@ func clusterFailureSamples(samples []*persistence.PatternFailureSample) map[fail
 }
 
 // variantPatternID 按任务描述 §3 的命名约定拼 ID:
-//   <parent_id>__<site>__<anomaly_subtype>
+//
+//	<parent_id>__<site>__<anomaly_subtype>
+//
 // site 里的 . / : 等特殊字符会被 normalizeForID 转成下划线,避免和
 // IO 层的文件名 / 查询参数冲突。示例:
-//   login_username_password__demo_gitea_com__captcha
+//
+//	login_username_password__demo_gitea_com__captcha
 func variantPatternID(parentID, siteOrigin, subtype string) string {
 	return fmt.Sprintf("%s__%s__%s",
 		parentID,
@@ -267,15 +269,16 @@ func SpawnVariant(parent *UIPattern, siteOrigin, anomalySubtype string) *UIPatte
 
 // specializeAppliesWhen 在父 MatchCondition 基础上追加 site 和 anomaly 的判别条件。
 //   - URLPattern:若父已有 pattern,合并成"父 AND host 要命中 site 的 host";
-//                若父无 pattern,直接写一个只匹配 host 的正则。
+//     若父无 pattern,直接写一个只匹配 host 的正则。
 //   - TextContains:追加 anomaly subtype 字符串(松散线索,命中率不高也不要紧,
-//                   真正的筛选靠 URLPattern)。
+//     真正的筛选靠 URLPattern)。
 //
 // 合并成 AND 条件的做法是加一个额外字段会更优雅,但会影响 pattern_match 主路径;
 // 这里用"在现有 URLPattern 后面拼 site"这一最小改动路径。
 func specializeAppliesWhen(parent MatchCondition, siteOrigin, anomalySubtype string) MatchCondition {
 	out := MatchCondition{
 		URLPattern:    parent.URLPattern,
+		SiteHost:      parent.SiteHost,
 		Has:           append([]string(nil), parent.Has...),
 		HasNot:        append([]string(nil), parent.HasNot...),
 		TitleContains: append([]string(nil), parent.TitleContains...),
@@ -284,15 +287,9 @@ func specializeAppliesWhen(parent MatchCondition, siteOrigin, anomalySubtype str
 
 	host := extractHost(siteOrigin)
 	if host != "" {
-		// 正则表达里要转义 host 的点,避免 a.b 误命中 axb。
-		hostRE := regexp.QuoteMeta(host)
+		out.SiteHost = host
 		if out.URLPattern == "" {
-			out.URLPattern = `(?i)https?://` + hostRE
-		} else {
-			// 用 lookahead 合并:要求同时满足父 pattern 和 host。lookahead 在
-			// Go regexp 里没支持(RE2),所以退化成"(?i)host.*父pattern | 父pattern.*host"
-			// 的松散组合——match_patterns 只用 regexp.MatchString,不需要严格 AND。
-			out.URLPattern = `(?i)(?:` + hostRE + `).*|.*(?:` + out.URLPattern + `)`
+			out.URLPattern = `(?i)^https?://`
 		}
 	}
 	// 不无脑叠 anomalySubtype 到 TextContains ——纯 subtype 字符串(如 "captcha")

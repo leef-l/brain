@@ -22,6 +22,11 @@ import (
 	"time"
 )
 
+var (
+	sharedAnomalyTemplateLibMu sync.RWMutex
+	sharedAnomalyTemplateLib   *AnomalyTemplateLibrary
+)
+
 // AnomalyTemplateRecoveryAction 是模板 Recovery 序列里的一步。
 // Kind 复用 OnAnomaly 的分类语义,多出一个 "custom_steps" —— 模板可以
 // 直接描述一个小 ActionSequence(重选元素 + 点击 + 等待 idle)。
@@ -30,7 +35,7 @@ type AnomalyTemplateRecoveryAction struct {
 	MaxRetries int                    `json:"max_retries,omitempty"`
 	BackoffMS  int                    `json:"backoff_ms,omitempty"`
 	FallbackID string                 `json:"fallback_id,omitempty"` // kind=fallback_pattern
-	Steps      []AnomalyTemplateStep  `json:"steps,omitempty"`        // kind=custom_steps
+	Steps      []AnomalyTemplateStep  `json:"steps,omitempty"`       // kind=custom_steps
 	Reason     string                 `json:"reason,omitempty"`
 	Params     map[string]interface{} `json:"params,omitempty"`
 }
@@ -48,10 +53,10 @@ type AnomalyTemplateStep struct {
 // SitePattern 是正则(空 = 任意站点);Severity 为空表示任意;Subtype 为空
 // 表示只按 Type 匹配(粗模板)。
 type AnomalyTemplateSignature struct {
-	Type        string `json:"type"`         // 对应 AnomalyType("session_expired" 等)
+	Type        string `json:"type"` // 对应 AnomalyType("session_expired" 等)
 	Subtype     string `json:"subtype,omitempty"`
 	SitePattern string `json:"site_pattern,omitempty"` // 正则,空=任意
-	Severity    string `json:"severity,omitempty"`      // info/low/medium/high/blocker,空=任意
+	Severity    string `json:"severity,omitempty"`     // info/low/medium/high/blocker,空=任意
 }
 
 // AnomalyTemplateStats 命中与执行结果的累积计数。Disabled 由阈值自动翻。
@@ -174,6 +179,40 @@ func NewAnomalyTemplateLibrary() *AnomalyTemplateLibrary {
 		autoDisableThreshold: 5,
 		autoDisableRate:      0.3,
 	}
+}
+
+func sharedAnomalyLibrary() *AnomalyTemplateLibrary {
+	sharedAnomalyTemplateLibMu.RLock()
+	lib := sharedAnomalyTemplateLib
+	sharedAnomalyTemplateLibMu.RUnlock()
+	if lib != nil {
+		return lib
+	}
+
+	sharedAnomalyTemplateLibMu.Lock()
+	defer sharedAnomalyTemplateLibMu.Unlock()
+	if sharedAnomalyTemplateLib == nil {
+		sharedAnomalyTemplateLib = NewAnomalyTemplateLibrary()
+	}
+	return sharedAnomalyTemplateLib
+}
+
+// SharedAnomalyTemplateLibrary exposes the process-wide anomaly template
+// library used by browser.pattern_exec. Host-side loaders can populate it on
+// startup, and runtime recovery paths can reuse the same live library.
+func SharedAnomalyTemplateLibrary() *AnomalyTemplateLibrary {
+	return sharedAnomalyLibrary()
+}
+
+// SetSharedAnomalyTemplateLibrary swaps the process-wide anomaly template
+// library. Passing nil resets it to a fresh empty library.
+func SetSharedAnomalyTemplateLibrary(lib *AnomalyTemplateLibrary) {
+	if lib == nil {
+		lib = NewAnomalyTemplateLibrary()
+	}
+	sharedAnomalyTemplateLibMu.Lock()
+	sharedAnomalyTemplateLib = lib
+	sharedAnomalyTemplateLibMu.Unlock()
 }
 
 // Upsert 加入 / 覆盖一条模板。ID=0 分配临时负 ID(持久化时回填)。

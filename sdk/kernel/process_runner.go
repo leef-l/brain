@@ -41,6 +41,9 @@ type ProcessRunner struct {
 	// If nil, the current process environment is inherited.
 	Env []string
 
+	// Args are optional extra argv entries passed to the sidecar process.
+	Args []string
+
 	// InitTimeout is the deadline for the initialize handshake.
 	// Defaults to 30s per 20-协议规格.md §6.4.
 	InitTimeout time.Duration
@@ -192,15 +195,13 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	// Create the process. Use a background context so the sidecar lifetime
 	// is NOT tied to the caller's request context (which may have a short
 	// timeout). The handshake still uses the caller ctx via initCtx below.
-	cmd := exec.Command(binPath)
-	cmd.Env = r.Env
-	if cmd.Env == nil {
-		cmd.Env = os.Environ()
-	}
+	cmd := exec.Command(binPath, r.Args...)
+	cmd.Env = mergeEnvLists(os.Environ(), r.Env)
 
 	// Auto-inject sidecar config paths from ~/.brain/<kind>-brain.yaml
 	// if the corresponding env var is not already set.
 	cmd.Env = injectSidecarConfigEnv(cmd.Env, kind)
+	cmd.Env = injectSidecarPersistenceEnv(cmd.Env)
 
 	// On Linux, ask the kernel to send SIGTERM to the child when the
 	// parent process dies. This prevents orphan sidecar processes when
@@ -593,6 +594,32 @@ var sidecarConfigEnvMap = map[agent.Kind]struct {
 	agent.KindCentral: {"CENTRAL_CONFIG", "central-brain.yaml"},
 }
 
+const (
+	envBrainDBPath         = "BRAIN_DB_PATH"
+	envUIPatternDBPath     = "BRAIN_UI_PATTERN_DB_PATH"
+	envPersistenceDriver   = "BRAIN_PERSISTENCE_DRIVER"
+	envPersistenceDSN      = "BRAIN_PERSISTENCE_DSN"
+	sidecarPersistenceType = "sqlite"
+)
+
+func mergeEnvLists(base, extra []string) []string {
+	out := append([]string{}, base...)
+	out = append(out, extra...)
+	return out
+}
+
+func sidecarPersistenceEnvEntries(runtimeDataDir string) []string {
+	projection := BrowserRuntimeProjectionForDataDir(runtimeDataDir, false, nil)
+	return projection.Env()
+}
+
+// SidecarPersistenceEnvForDataDir returns the canonical host→child runtime
+// env entries for the given runtime data directory. Empty input falls back to
+// the default host config directory.
+func SidecarPersistenceEnvForDataDir(runtimeDataDir string) []string {
+	return sidecarPersistenceEnvEntries(runtimeDataDir)
+}
+
 // injectSidecarConfigEnv auto-discovers config files under ~/.brain/ and
 // injects the corresponding *_CONFIG env var if not already set.
 func injectSidecarConfigEnv(env []string, kind agent.Kind) []string {
@@ -620,4 +647,57 @@ func injectSidecarConfigEnv(env []string, kind agent.Kind) []string {
 	}
 
 	return append(env, entry.envVar+"="+configPath)
+}
+
+// injectSidecarPersistenceEnv mirrors the host-side runtime backend location
+// so child sidecars can open the same persistence database. The host runtime
+// currently derives its SQLite DSN from filepath.Dir(configPath())/brain.db;
+// this helper exports that decision via env without overriding explicit values.
+func injectSidecarPersistenceEnv(env []string) []string {
+	var (
+		hasDBPath    bool
+		hasPatternDB bool
+		hasDriver    bool
+		hasDSN       bool
+	)
+	for _, entry := range env {
+		switch {
+		case strings.HasPrefix(entry, envBrainDBPath+"="):
+			hasDBPath = true
+		case strings.HasPrefix(entry, envUIPatternDBPath+"="):
+			hasPatternDB = true
+		case strings.HasPrefix(entry, envPersistenceDriver+"="):
+			hasDriver = true
+		case strings.HasPrefix(entry, envPersistenceDSN+"="):
+			hasDSN = true
+		}
+	}
+	hasSyncFile := false
+	for _, entry := range env {
+		if strings.HasPrefix(entry, envBrowserRuntimeSync+"=") {
+			hasSyncFile = true
+			break
+		}
+	}
+	if hasDBPath && hasPatternDB && hasDriver && hasDSN && hasSyncFile {
+		return env
+	}
+
+	entries := sidecarPersistenceEnvEntries("")
+	if !hasDBPath {
+		env = append(env, entries[0])
+	}
+	if !hasPatternDB {
+		env = append(env, entries[1])
+	}
+	if !hasDriver {
+		env = append(env, entries[2])
+	}
+	if !hasDSN {
+		env = append(env, entries[3])
+	}
+	if !hasSyncFile && len(entries) > 4 {
+		env = append(env, entries[4])
+	}
+	return env
 }

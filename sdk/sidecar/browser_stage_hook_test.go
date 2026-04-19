@@ -35,15 +35,24 @@ func buildStubBrowserRegistry() tool.Registry {
 	return reg
 }
 
-func hookNameSet(t *testing.T, ctx context.Context, reg tool.Registry) map[string]bool {
+func hookState(t *testing.T, ctx context.Context, reg tool.Registry) *loop.PreTurnState {
 	t.Helper()
 	hook := newBrowserStageHook(reg)
-	tools, err := hook(ctx, &loop.Run{}, 1)
+	state, err := hook(ctx, &loop.Run{}, 1)
 	if err != nil {
 		t.Fatalf("hook err: %v", err)
 	}
+	if state == nil {
+		t.Fatal("hook returned nil state")
+	}
+	return state
+}
+
+func hookNameSet(t *testing.T, ctx context.Context, reg tool.Registry) map[string]bool {
+	t.Helper()
+	state := hookState(t, ctx, reg)
 	names := map[string]bool{}
-	for _, tl := range tools {
+	for _, tl := range state.Tools {
 		names[tl.Name] = true
 	}
 	return names
@@ -92,6 +101,28 @@ func TestBrowserStageHookConsecutiveErrorsFallback(t *testing.T) {
 	}
 }
 
+func TestBrowserStageHookRebuildsTurnRegistry(t *testing.T) {
+	reg := buildStubBrowserRegistry()
+	ctx := context.Background()
+	tool.BindRecorder(ctx, "r4", "browser", "demo")
+	defer func() { _ = tool.FinishRecorder(ctx, "success") }()
+	tool.RecordPatternMatchScore(ctx, 0.9)
+
+	state := hookState(t, ctx, reg)
+	if state.Registry == nil {
+		t.Fatal("expected turn registry override")
+	}
+	if _, ok := state.Registry.Lookup("browser.pattern_exec"); !ok {
+		t.Fatalf("known_flow turn registry should keep browser.pattern_exec")
+	}
+	if _, ok := state.Registry.Lookup("browser.sitemap"); ok {
+		t.Fatalf("known_flow turn registry should drop browser.sitemap")
+	}
+	if len(state.Registry.List()) != len(state.Tools) {
+		t.Fatalf("turn registry/schema mismatch: registry=%d tools=%d", len(state.Registry.List()), len(state.Tools))
+	}
+}
+
 func TestBrowserStageHookStickyOnEmptyDecision(t *testing.T) {
 	reg := buildStubBrowserRegistry()
 	ctx := context.Background()
@@ -104,7 +135,7 @@ func TestBrowserStageHookStickyOnEmptyDecision(t *testing.T) {
 	tool.RecordPatternMatchScore(ctx, 0.9)
 	first, _ := hook(ctx, &loop.Run{}, 1)
 	firstSet := map[string]bool{}
-	for _, tl := range first {
+	for _, tl := range first.Tools {
 		firstSet[tl.Name] = true
 	}
 	if !firstSet["browser.pattern_match"] {
@@ -117,7 +148,7 @@ func TestBrowserStageHookStickyOnEmptyDecision(t *testing.T) {
 	tool.RecordTurnOutcome(ctx, "ok")
 	second, _ := hook(ctx, &loop.Run{}, 2)
 	secondSet := map[string]bool{}
-	for _, tl := range second {
+	for _, tl := range second.Tools {
 		secondSet[tl.Name] = true
 	}
 	for name := range firstSet {
@@ -135,5 +166,5 @@ func TestBrowserStageHookStickyOnEmptyDecision(t *testing.T) {
 // Compile-time check: hook signature matches Runner.PreTurnHook.
 var _ = func() {
 	var r loop.Runner
-	r.PreTurnHook = newBrowserStageHook(buildStubBrowserRegistry())
+	r.PreTurnStateHook = newBrowserStageHook(buildStubBrowserRegistry())
 }

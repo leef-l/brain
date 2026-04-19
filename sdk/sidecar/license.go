@@ -4,6 +4,12 @@ import (
 	"fmt"
 
 	brainlicense "github.com/leef-l/brain/sdk/license"
+	"github.com/leef-l/brain/sdk/tool"
+)
+
+var (
+	verifyForBrain = brainlicense.VerifyForBrain
+	runSidecar     = Run
 )
 
 // LicensedConfig wires paid-brain license verification into the shared
@@ -23,7 +29,7 @@ func RunLicensed(cfg LicensedConfig) error {
 	if cfg.NewHandler == nil {
 		return fmt.Errorf("sidecar: licensed brain %q missing handler factory", cfg.Brain)
 	}
-	res, err := brainlicense.VerifyForBrain(cfg.Brain, brainlicense.VerifyOptions{
+	res, err := verifyForBrain(cfg.Brain, brainlicense.VerifyOptions{
 		LicensePath:  cfg.LicensePath,
 		PublicKey:    cfg.PublicKey,
 		PublicKeyPEM: cfg.PublicKeyPEM,
@@ -31,5 +37,6 @@ func RunLicensed(cfg LicensedConfig) error {
 	if err != nil {
 		return err
 	}
-	return Run(cfg.NewHandler(res))
+	tool.ConfigureBrowserFeatureGate(res)
+	return runSidecar(cfg.NewHandler(res))
 }

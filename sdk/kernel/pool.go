@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -160,7 +161,7 @@ func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent
 		LLMAccess: agent.LLMAccessProxied,
 	}
 
-	ag, err := p.runner.Start(ctx, kind, desc)
+	ag, err := p.startWithRegistration(ctx, kind, desc)
 	if err != nil {
 		// 启动失败——移除 placeholder。
 		p.mu.Lock()
@@ -177,6 +178,77 @@ func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent
 	p.mu.Unlock()
 
 	return ag, nil
+}
+
+func (p *ProcessBrainPool) startWithRegistration(ctx context.Context, kind agent.Kind, desc agent.Descriptor) (agent.Agent, error) {
+	reg := p.registrations[kind]
+	if reg == nil {
+		return p.runner.Start(ctx, kind, desc)
+	}
+
+	switch runner := p.runner.(type) {
+	case *ProcessRunner:
+		cfgRunner := &ProcessRunner{
+			BinPath:         runner.BinPath,
+			BinResolver:     runner.BinResolver,
+			Env:             append([]string(nil), runner.Env...),
+			Args:            append([]string(nil), runner.Args...),
+			InitTimeout:     runner.InitTimeout,
+			ShutdownTimeout: runner.ShutdownTimeout,
+			ProtocolVersion: runner.ProtocolVersion,
+			KernelVersion:   runner.KernelVersion,
+		}
+		if reg.Binary != "" {
+			cfgRunner.BinPath = reg.Binary
+		}
+		if len(reg.Args) > 0 {
+			cfgRunner.Args = append([]string(nil), reg.Args...)
+		}
+		cfgRunner.Env = mergeProcessEnv(runner.Env, reg.Env)
+		return cfgRunner.Start(ctx, kind, desc)
+	default:
+		return p.runner.Start(ctx, kind, desc)
+	}
+}
+
+func mergeProcessEnv(base []string, extra []string) []string {
+	if len(extra) == 0 {
+		if base == nil {
+			return nil
+		}
+		return append([]string(nil), base...)
+	}
+
+	out := append([]string(nil), base...)
+	if out == nil {
+		out = os.Environ()
+	}
+	index := make(map[string]int, len(out))
+	for i, entry := range out {
+		key, ok := envKey(entry)
+		if !ok {
+			continue
+		}
+		index[key] = i
+	}
+	for _, entry := range extra {
+		key, ok := envKey(entry)
+		if !ok {
+			continue
+		}
+		if i, exists := index[key]; exists {
+			out[i] = entry
+			continue
+		}
+		index[key] = len(out)
+		out = append(out, entry)
+	}
+	return out
+}
+
+func envKey(entry string) (string, bool) {
+	key, _, ok := strings.Cut(entry, "=")
+	return key, ok && key != ""
 }
 
 // Status 返回所有可用 brain 的状态快照。

@@ -69,13 +69,27 @@ type Runner struct {
 	// 自动切换——每 turn 依据 recorder 信号决定本轮工具 allow-list。
 	//
 	// 返回 nil 切片表示"沿用 opts.Tools"。返回空切片表示"本轮不开放任何工具"。
-	// Runner.ToolRegistry 不会被 hook 改动——dispatchTools 仍按原 registry 查找,
-	// 这样即便 hook 误裁,LLM 若非要调也能被正确执行;只是 schema 不再外泄。
+	// 仅重写 schema,不改 dispatch registry。旧调用方继续使用它即可。
 	// hook 返回非 nil error 时视为失败并终止 run(与其他硬失败一致)。
 	PreTurnHook func(ctx context.Context, run *Run, turnIndex int) ([]llm.ToolSchema, error)
 
+	// PreTurnStateHook 是 PreTurnHook 的扩展版本:除 schema 外,还可为本轮
+	// 替换实际 dispatch 用的 ToolRegistry。适用于动态 Registry/Runtime 重建:
+	// LLM 这一轮看到的工具集合,必须和 Runner 真正允许执行的集合一致。
+	//
+	// 返回 nil 表示沿用 opts.Tools + Runner.ToolRegistry。
+	PreTurnStateHook func(ctx context.Context, run *Run, turnIndex int) (*PreTurnState, error)
+
 	// Now returns the current time. Defaults to time.Now().UTC when nil.
 	Now func() time.Time
+}
+
+// PreTurnState 描述某一轮的动态工具视图。
+type PreTurnState struct {
+	// Tools 是本轮暴露给 LLM 的 schema 列表。nil 表示沿用 opts.Tools。
+	Tools []llm.ToolSchema
+	// Registry 是本轮工具调度使用的 registry。nil 表示沿用 Runner.ToolRegistry。
+	Registry tool.Registry
 }
 
 // RunOptions configures a single Run execution.
@@ -183,9 +197,32 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		run.CurrentTurn++
 		turn := NewTurn(run.ID, run.CurrentTurn, now)
 
-		// PreTurnHook: 让集成方按 turn 重写曝露给 LLM 的工具 schema 列表。
-		// 只影响本轮 buildChatRequest 看到的 tools,ToolRegistry 不动。
+		// PreTurnHook/PreTurnStateHook: 让集成方按 turn 重写本轮 tools schema
+		// 和可选的 dispatch registry。
 		turnOpts := opts
+		turnRegistry := r.ToolRegistry
+		if r.PreTurnStateHook != nil {
+			state, hookErr := r.PreTurnStateHook(ctx, run, run.CurrentTurn)
+			if hookErr != nil {
+				turn.End(r.now())
+				be := toBrainError(hookErr)
+				run.Fail(r.now())
+				turns = append(turns, &TurnResult{
+					Turn:      turn,
+					NextState: StateFailed,
+					Error:     be,
+				})
+				break
+			}
+			if state != nil {
+				if state.Tools != nil {
+					turnOpts.Tools = state.Tools
+				}
+				if state.Registry != nil {
+					turnRegistry = state.Registry
+				}
+			}
+		}
 		if r.PreTurnHook != nil {
 			newTools, hookErr := r.PreTurnHook(ctx, run, run.CurrentTurn)
 			if hookErr != nil {
@@ -275,7 +312,7 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 
 		// Tool dispatch phase.
 		run.State = StateWaitingTool
-		toolResultBlocks, toolCallCount := r.dispatchTools(ctx, run, turn, toolUseBlocks)
+		toolResultBlocks, toolCallCount := r.dispatchTools(ctx, run, turn, turnRegistry, toolUseBlocks)
 		turn.ToolCalls += toolCallCount
 		run.Budget.UsedToolCalls += toolCallCount
 
@@ -391,21 +428,21 @@ func (r *Runner) consumeStream(ctx context.Context, run *Run, turn *Turn, req *l
 // 当 Runner.BatchPlanner 非 nil 时，先调用 Plan() 将 tool_calls 按资源冲突
 // 分组为 batch，同一 batch 内的工具并行执行，batch 之间串行执行。
 // 当 BatchPlanner 为 nil 时保持原有串行逻辑（向后兼容）。
-func (r *Runner) dispatchTools(ctx context.Context, run *Run, turn *Turn, toolUseBlocks []llm.ContentBlock) ([]llm.ContentBlock, int) {
+func (r *Runner) dispatchTools(ctx context.Context, run *Run, turn *Turn, registry tool.Registry, toolUseBlocks []llm.ContentBlock) ([]llm.ContentBlock, int) {
 	if r.BatchPlanner != nil {
-		return r.dispatchToolsBatched(ctx, run, turn, toolUseBlocks)
+		return r.dispatchToolsBatched(ctx, run, turn, registry, toolUseBlocks)
 	}
-	return r.dispatchToolsSerial(ctx, run, turn, toolUseBlocks)
+	return r.dispatchToolsSerial(ctx, run, turn, registry, toolUseBlocks)
 }
 
 // dispatchToolsSerial 是原始的串行工具执行路径。
-func (r *Runner) dispatchToolsSerial(ctx context.Context, run *Run, turn *Turn, toolUseBlocks []llm.ContentBlock) ([]llm.ContentBlock, int) {
+func (r *Runner) dispatchToolsSerial(ctx context.Context, run *Run, turn *Turn, registry tool.Registry, toolUseBlocks []llm.ContentBlock) ([]llm.ContentBlock, int) {
 	var results []llm.ContentBlock
 	count := 0
 
 	for _, tb := range toolUseBlocks {
 		count++
-		results = append(results, r.executeSingleTool(ctx, run, turn, tb))
+		results = append(results, r.executeSingleTool(ctx, run, turn, registry, tb))
 	}
 
 	return results, count
@@ -414,12 +451,16 @@ func (r *Runner) dispatchToolsSerial(ctx context.Context, run *Run, turn *Turn, 
 // dispatchToolsBatched 使用 BatchPlanner 将 tool_calls 分组后按 batch 并行执行。
 // 当 BatchPlanner 关联了 ResourceLocker 时，在每个 batch 执行前通过
 // AcquireSet 获取资源租约，batch 完成后 Release 释放，确保资源互斥保护。
-func (r *Runner) dispatchToolsBatched(ctx context.Context, run *Run, turn *Turn, toolUseBlocks []llm.ContentBlock) ([]llm.ContentBlock, int) {
+func (r *Runner) dispatchToolsBatched(ctx context.Context, run *Run, turn *Turn, registry tool.Registry, toolUseBlocks []llm.ContentBlock) ([]llm.ContentBlock, int) {
 	// 构建 ToolCallNode 列表，附带 ToolConcurrencySpec。
 	nodes := make([]ToolCallNode, len(toolUseBlocks))
 	for i, tb := range toolUseBlocks {
 		var spec *tool.ToolConcurrencySpec
-		if t, found := r.ToolRegistry.Lookup(tb.ToolName); found {
+		if registry != nil {
+			if t, found := registry.Lookup(tb.ToolName); found {
+				spec = t.Schema().Concurrency
+			}
+		} else if t, found := r.ToolRegistry.Lookup(tb.ToolName); found {
 			spec = t.Schema().Concurrency
 		}
 		nodes[i] = ToolCallNode{
@@ -434,7 +475,7 @@ func (r *Runner) dispatchToolsBatched(ctx context.Context, run *Run, turn *Turn,
 	plan, err := r.BatchPlanner.Plan(nodes)
 	if err != nil {
 		// Plan 失败时回退到串行执行。
-		return r.dispatchToolsSerial(ctx, run, turn, toolUseBlocks)
+		return r.dispatchToolsSerial(ctx, run, turn, registry, toolUseBlocks)
 	}
 
 	// 获取 ResourceLocker（可能为 nil）。
@@ -473,7 +514,7 @@ func (r *Runner) dispatchToolsBatched(ctx context.Context, run *Run, turn *Turn,
 			// 单个工具无需并行开销。
 			node := batch.Calls[0]
 			count++
-			results[node.Index] = r.executeSingleTool(ctx, run, turn, toolUseBlocks[node.Index])
+			results[node.Index] = r.executeSingleTool(ctx, run, turn, registry, toolUseBlocks[node.Index])
 		} else {
 			// 并行执行 batch 内的多个工具。
 			var wg sync.WaitGroup
@@ -482,7 +523,7 @@ func (r *Runner) dispatchToolsBatched(ctx context.Context, run *Run, turn *Turn,
 				wg.Add(1)
 				go func(n ToolCallNode) {
 					defer wg.Done()
-					results[n.Index] = r.executeSingleTool(ctx, run, turn, toolUseBlocks[n.Index])
+					results[n.Index] = r.executeSingleTool(ctx, run, turn, registry, toolUseBlocks[n.Index])
 				}(node)
 			}
 			wg.Wait()
@@ -507,13 +548,16 @@ func (r *Runner) dispatchToolsBatched(ctx context.Context, run *Run, turn *Turn,
 
 // executeSingleTool 执行单个工具调用，包含 lookup → execute → sanitize 全流程。
 // 返回对应的 tool_result ContentBlock。
-func (r *Runner) executeSingleTool(ctx context.Context, run *Run, turn *Turn, tb llm.ContentBlock) llm.ContentBlock {
+func (r *Runner) executeSingleTool(ctx context.Context, run *Run, turn *Turn, registry tool.Registry, tb llm.ContentBlock) llm.ContentBlock {
 	if r.ToolObserver != nil {
 		r.ToolObserver.OnToolStart(ctx, run, turn, tb.ToolName, tb.Input)
 	}
 
 	// Lookup tool in registry.
-	t, found := r.ToolRegistry.Lookup(tb.ToolName)
+	if registry == nil {
+		registry = r.ToolRegistry
+	}
+	t, found := registry.Lookup(tb.ToolName)
 	if !found {
 		if r.ToolObserver != nil {
 			r.ToolObserver.OnToolEnd(ctx, run, turn, tb.ToolName, false, json.RawMessage(`"tool not found"`))

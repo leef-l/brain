@@ -26,6 +26,25 @@
 
 没有以上任一条,不开工后续批次。
 
+### 1.1 状态口径
+
+为避免把“helper 已存在”误写成“生产路径已通电”,本文统一使用三档状态:
+
+- **已完成**:代码存在,且已进入当前 browser sidecar / serve 主路径
+- **部分完成**:核心实现已存在,但仍缺少 host→sidecar 接线、进程间同步或运行时热更新
+- **未完成**:需求仍主要停留在文档、测试或局部 helper 层
+
+### 1.2 当前前置条件核查(2026-04-20)
+
+- `[ ]` M1 阶段 0 报告给出 Go 决策
+- `[~]` M6 学习闭环已接代码主路,但真实成功率数据是否已稳定产出,取决于线上运行量
+- `[ ]` 至少一周量 InteractionSequence 数据
+
+**结论**:
+
+- P1/P2/P3 的方法论前置条件还没有全部满足。
+- 下面的 P3/P4 状态回写,表示“代码实现到哪一步”,不代表这些批次已具备正式开工/退出条件。
+
 ---
 
 ## 2. 批次 P1 — 场景化深耕(2-3 周)
@@ -91,15 +110,75 @@
 - **跨站异常模式识别**:学"站 A 的风控"vs"站 B 的风控"的差异
 - **LLM 辅助自动修复**:异常发生时 LLM 生成修复 action 序列,成功率 ≥ 60% 时自动执行
 
+**当前状态**:部分完成
+
+- `sdk/tool/anomaly_template*.go`、`sdk/tool/anomaly_template_route.go` 已实现异常模板库、模板优先路由和 outcome 统计。
+- `cmd/brain/cmd_serve.go` 会把持久化 anomaly templates 读进**宿主进程**的共享库。
+- `brains/browser/cmd/main.go` 现已在 sidecar 进程启动时直接打开默认持久化库,把 anomaly templates 装载进 child process 自己的运行时模板库。
+
+**当前边界**:
+
+- browser sidecar 启动时已支持两种持久化来源:
+  - 默认 `~/.brain/brain.db`
+  - 直接通过 `BRAIN_DB_PATH` 指向的自定义 SQLite 库
+- 当前 child 侧 anomaly template 刷新不是“文件变化才重载”,而是 `browserRuntimeReloader.MaybeRefresh()` 在 1s 节流后按调用重装一次 `LearningStore` 视图。
+- 仍未完成的是“宿主 runtime 配置/DSN 自动投影到 child”这层统一下发协议,以及更显式的 host→child 主动同步协议。
+
+**执行 checklist**:
+
+- `[x]` 模板结构、匹配逻辑、模板优先级已实现
+- `[x]` 宿主可从 `LearningStore` 读取模板
+- `[x]` browser sidecar 启动时会从默认库或 `BRAIN_DB_PATH` 指向的持久化库装载 anomaly template 运行时视图
+- `[x]` 已运行的 browser sidecar 支持按文件变更触发 anomaly template 重载
+
 ### 4.2 模式自分裂(文档 42 §5.2)
 
-- 当"登录模式"在某站连续失败且检测到特定异常组合(如 captcha 频现),自动分裂出"登录模式-带 captcha 版"
-- 需要 #8 聚类算法扩展
-- 目标:模式库在 3 个月内从 20 → 50,其中 > 30 是自学
+**当前状态**:部分完成
+
+**已完成部分**:
+
+- `sdk/tool/pattern_split.go` —— 失败样本聚类 + 变种生成
+  - `pattern_exec` 失败时把 `(pattern_id, site_origin, anomaly_subtype, failure_step, page_fingerprint)` 落到 `pattern_failure_samples`
+  - `ScanForSplit(...)` 按 `(pattern_id, site_origin, anomaly_subtype)` 聚类,样本数 ≥ 5 时生成站点/异常特化变种
+  - 只对 `source="learned"` 且 `Enabled=true` 的父模式分裂,避免 seed 模式污染和坏模式继续派生
+- `sdk/tool/ui_pattern.go` + `sdk/tool/ui_pattern_match.go`
+  - 新增 `MatchCondition.SiteHost`,变种不再把 host 混进 `URLPattern`,而是显式 host 精确约束
+  - 修复了早期实现里“site-specific 变种可能跨站误命中”的缺口
+- `cmd/brain/cmd_serve.go`
+  - `SetPatternFailureStore(runtime.Stores.LearningStore)` 已接线
+  - `brain serve` 启动后会后台定期跑 split 扫描,让失败样本真实长出变种,不再停留在库函数层
+- `sdk/tool/ui_pattern.go`
+  - `BRAIN_UI_PATTERN_DB_PATH` 已可覆盖 child 侧 `PatternLibrary` 默认路径
+- 毕业/淘汰规则已接主路:
+  - `Pending=true` 变种累计成功 ≥ 3 自动转正
+  - 失败 ≥ 5 且成功率 < 0.3 自动停用(M3)
+
+**当前边界**:
+
+- host 进程里的 split 扫描会把新变种写入 SQLite PatternLibrary。
+- browser specialist 虽然仍是独立 sidecar 进程,但其 `PatternLibrary` 已不再是“只启动加载一次”的静态缓存:
+  - `sdk/tool/ui_pattern.go` 已有 `ReloadIfChanged`
+  - `sdk/tool/builtin_browser_pattern.go` 已有 `RefreshSharedPatternLibraryIfChanged`
+  - `brains/browser/cmd/main.go` 会在启动、每次请求分发前和 registry 构建时触发刷新
+- 因此当前真实状态更准确地说是:
+  - “失败样本 → 站点特化变种 → 持久化库可见 → 已运行 browser sidecar 在后续请求中可刷新看到”
+- 剩余边界不是“child 完全不热更新”,而是刷新机制当前仍以文件变更检测 + 调用时机触发为主,不是 host 主动推送协议。
+
+**执行 checklist**:
+
+- `[x]` 失败样本记录到 `pattern_failure_samples`
+- `[x]` split 聚类与变种生成逻辑已实现
+- `[x]` `SiteHost` 约束已进入匹配逻辑
+- `[x]` `Pending -> 正式` 与低成功率自动停用规则已持久化
+- `[x]` `brain serve` 已启动后台 split 扫描
+- `[x]` 已运行 browser sidecar 会在后续请求中按文件变更刷新新变种
+- `[x]` host 扫描结果无需重启 child process 即可进入后续匹配/执行主路
 
 ### 4.3 真人接管期间的 DOM 操作录制 ✅ P3.3
 
-**已交付**(2026-04-19):
+**当前状态**:部分完成
+
+**已完成部分**:
 
 - `sdk/tool/cdp/human_events.go` —— CDP 事件源抽象 + 两种实现
   - `CDPEventSource`:页面注入 `addScriptToEvaluateOnNewDocument` hook(click/input/change/submit),通过 `Runtime.addBinding` + `Runtime.bindingCalled` 回传 `HumanEvent`
@@ -119,6 +198,20 @@
 - CDP listener 用 `stopped` 标志防写已关 channel
 - `Approved = false` 默认,ops 审批后才能进模式库
 
+**当前边界**:
+
+- `cmd/brain serve` 确实会在**宿主进程**调用 `SetHumanEventSourceFactory(...)`。
+- `brains/browser/cmd/main.go` 现已在 child process 内装配 `HumanEventSourceFactory`,直接绑定该 sidecar 自己的共享 browser session。
+- 因此在真实 delegated browser 路径里,只要 session 已存在,`human.request_takeover` 已不再必然退化到 marker-only。
+
+**执行 checklist**:
+
+- `[x]` DOM 事件源抽象和 memory/CDP 两类实现已存在
+- `[x]` takeover 期间的动作聚合、录制、落库逻辑已实现
+- `[x]` host `serve` 进程已装配 `SetHumanEventSourceFactory`
+- `[x]` browser sidecar 子进程启动时已装配 `HumanEventSourceFactory`
+- `[~]` delegated browser 执行链在 session 已创建时能真实拿到 CDP DOM 事件;若 takeover 早于 session 初始化,仍会安全退化为 marker-only
+
 ### 4.4 性能工程化
 
 - **Snapshot 增量更新**:MutationObserver diff 驱动,不再每次全扫
@@ -128,9 +221,22 @@
 
 ### 4.5 BrowserStage 自动切换
 
-- 当前 `BrowserStage`(new_page/known_flow/destructive/fallback)靠 LLM 自己判断
-- 改为:模式库匹配度 > 0.8 自动进入 known_flow,低于阈值降到 new_page,连续 3 turn 无进展降到 fallback
-- 减少 LLM token 消耗,稳定性提升
+**已交付**(2026-04-20):
+
+- `sdk/toolpolicy/browser_stage_decider.go`
+  - 规则已固化成纯函数:高匹配度 → `known_flow`,低匹配度/无数据 → `new_page`,连续错误窗口 → `fallback`
+  - destructive approval class 仍保留硬约束优先级
+- `sdk/tool/sequence_recorder.go` + `sdk/tool/builtin_browser_pattern.go`
+  - `pattern_match` top score 会写入 recorder
+  - `pattern_exec` / 工具失败会写入 recent turn outcome,给 stage 决策器消费
+- `sdk/loop/runner.go` + `sdk/sidecar/loop.go`
+  - 已从“只改发给 LLM 的 tools schema”升级为“每 turn 同时重建 schema + dispatch registry”
+  - 本轮实际执行工具集合和暴露给 LLM 的工具集合保持一致,不再出现 schema 已切换但 dispatch 仍走基础 registry 的偏差
+
+**结果**:
+
+- BrowserStage 已不再依赖 LLM 自己判断
+- 该能力已进入 browser sidecar 主路径,属于真实运行时行为,不是实验性 helper
 
 ---
 
@@ -142,9 +248,21 @@
 
 ### 5.1 License gate
 
-- sdk/license 已有 sidecar 校验基础
-- 在 understand / pattern_match / visual_inspect 三个"重工具"前加 feature gate
-- 免费版只给 snapshot + 基础动作,Pro 版开放语义层
+**当前状态**:部分完成
+
+- `sdk/tool/browser_feature_gate.go` 已对 `browser.understand / browser.pattern_match / browser.visual_inspect` 加了运行时 feature gate。
+- `cmd/brain serve` 已支持通过 `BRAIN_BROWSER_FEATURES` 注入 feature 集。
+- `sdk/sidecar/RunLicensed(...)` 也能把真实 `brainlicense.Result.Features` 投影到 `tool.SetBrowserFeatureGate(...)`。
+- `brains/browser/cmd/main.go` 现已把 `license.CheckSidecar("brain-browser", ...)` 返回的 `*license.Result` 投影到 `tool.ConfigureBrowserFeatureGateFromLicense(...)`。
+- 因此“真实 license 结果 → browser runtime gate”在 browser 正式启动入口上已闭环;当前剩余工作是统一更多宿主/runtime 的下发口径,不是补 browser 单点缺口。
+
+**执行 checklist**:
+
+- `[x]` 三个重工具的 gate wrapper 已实现
+- `[x]` env → `BrowserFeatureGate` 已打通
+- `[x]` `RunLicensed(...)` helper 已支持真实 license result 投影
+- `[x]` `brains/browser/cmd/main.go` 已使用真实 `license.Result` 下发 gate
+- `[ ]` 更多 browser runtime/host 统一使用同一套 license→feature gate 注入口径
 
 ### 5.2 Pro 版核心卖点
 
@@ -224,7 +342,7 @@
 
 ---
 
-## 9. easymvp-brain 消费接口预留
+## 9. easymvp-brain 消费接口现状
 
 > 依据 `/www/wwwroot/project/easymvp/docs/钱学森总纲设计/easymvp-brain-职责与边界定义.md` 和 `EasyMVP-中央大脑与四专精大脑IO合同及升级规则.md`。
 
@@ -238,25 +356,96 @@ brain-v3 central + (code/browser/verifier/fault)
 EasyMVP 领域层 → easymvp-brain(审核/编译/裁决/返工/验收规则)
 ```
 
-### 9.2 brain-v3 侧需要预留的接口
+### 9.2 brain-v3 侧已提供/仍需扩展的接口
 
 Browser Brain 作为被消费者,需要让 runtime adapter 能取到:
 
-1. **RunResult 归一化**:sidecar ExecuteResult 已有 `status / summary / error / turns`,满足 EasyMVP `RunResult` 的映射需求。**无需改动**。
+1. **RunResult 归一化**:sidecar `ExecuteResult` 已有 `status / summary / error / turns`,满足 EasyMVP `RunResult` 的映射需求。**已落地**。
 
-2. **DeliveryResult 结构化**:当前 `ExecuteResult.Summary` 是自然语言文本,EasyMVP 需要结构化的 `DeliveryResult`(产物清单 + 变更摘要)。**需要新增**:`ExecuteResult.Artifacts []ArtifactRef` 字段(可选)。
+2. **DeliveryResult 结构化**:`ExecuteResult.Artifacts []ArtifactRef` 已实现,sidecar 会从真实 `tool_result` 中提取结构化产物引用,避免 EasyMVP 解析自然语言 `Summary`。当前已覆盖:
 
-3. **VerificationResult**:Browser Brain 的 `check_anomaly` / `pattern_exec PostConditions` 结果需要以结构化方式传到 EasyMVP 的 `VerificationResult`。**需要新增**:PostConditions 检查结果作为 `ExecuteResult.Verification` 字段。
+   - browser: `screenshot / snapshot / semantic_annotations / download / storage_state / upload_file / frame_snapshot / response_body / anomaly_report / route_patterns / pattern_catalog / network_trace / network_entry / tab_catalog / frame_catalog / form_fill_results / page_ref`
+   - verifier proxy: `screenshot / page_ref / tab_catalog / upload_file`(`verifier.browser_action`)
+   - verifier/code: `diff / file / file_list / search_matches`
 
-4. **FaultSummary**:Browser Brain 失败时的 anomaly 分类 + 异常模板命中 + on_anomaly 路由决策。**需要新增**:`ExecuteResult.FaultSummary *FaultSummary` 字段。
+   **已落地**,且已不再局限于纯 browser 截图类产物;后续仍可继续扩到更多“可持久化/可复核”的 artifact 类型。
 
-5. **RuntimeEscalation**:当 Browser Brain 调 `human.request_takeover` 时,EasyMVP 需要知道这是一次 escalation。**已有**:EventBus 的 `task.human.requested` 事件包含足够信息。**无需改动**。
+3. **VerificationResult**:`ExecuteResult.Verification` 已实现,当前会把多个真实验收来源聚合到同一结构:
 
-### 9.3 实施时机
+   - `browser.pattern_exec` → `pattern_id / post_conditions / success`
+   - `browser.check_anomaly / browser.check_anomaly_v2` → `page_health / anomalies`
+   - `wait.network_idle` → `status / idle_ms / forced`
+   - `browser.upload_file` → `status / files_attached`
+   - `browser.select` → `status / value / text / index`
+   - `verifier.browser_action(wait|upload_file|select)` → 复用 browser 侧真实验收 schema
+   - `verifier.check_output` → `match`
+   - `verifier.run_tests` → `passed / timed_out / exit_code`
 
-这些接口预留属于 **P4 批次(商业化)**的前置工作。不在 P3 scope,但在 P4 准入条件里加一项:
+   聚合规则是按实际 `tool_result` 出现顺序收集 checks,整体 `Passed` 取 AND。**已落地**,但仍主要覆盖 browser + verifier 两侧,其他工具的验收信号还没统一并入。
 
-> P4 准入:ExecuteResult 扩展 Artifacts / Verification / FaultSummary 三个可选字段,让 EasyMVP runtime adapter 能零转换消费。
+4. **FaultSummary**:`ExecuteResult.FaultSummary *FaultSummary` 已实现,当前会从失败 `tool_result`、`_anomalies` 以及终态 `TurnResult.Error` 归一化提取 `code / message / route / anomalies`。当前已覆盖:
+
+   - `browser.pattern_exec` 的 `abort / retry / fallback / human_intervention`
+   - `browser.check_anomaly(_v2)` 的 `page_health / anomalies`
+   - `verifier.check_output` 的 `verification_failed`
+   - `verifier.run_tests` 与命令类工具的 `non-zero exit / timeout`
+   - license / budget / policy / loop 类结构化错误的稳定 `route`
+
+   **已落地**,但仍是 best-effort 归一化,还没有做到所有工具统一 fault schema。
+
+5. **RuntimeEscalation**:当 Browser Brain 调 `human.request_takeover` 时,EasyMVP 需要知道这是一次 escalation。当前 `task.human.requested / resumed / aborted` 已发布稳定 envelope:`schema / schema_version / event_name / escalation`,同时保留旧顶层字段兼容旧消费者。**已落地**。
+
+6. **HumanEventSourceFactory**:工具层 recorder 和 host/child 两侧装配都已存在。`browser sidecar` 启动时会在 child process 内装配基于共享 session 的 `HumanEventSourceFactory`;若 session 尚未初始化则安全退化为 marker-only。**已进入主路径**。
+
+7. **Serve 侧相关 runtime 接线**:`cmd/brain` 已真实注入 `SetSitemapCache / SetHumanDemoSink / SetPatternFailureStore / SetHumanEventSourceFactory`;`brains/browser/cmd/main.go` 也已在 child process 内打开默认 `brain.db` 或 `BRAIN_DB_PATH` 指向的库,并装配对应的 `LearningStore` 适配器,使 `SitemapCache / HumanDemoSink / PatternFailureStore / anomaly templates` 在 browser sidecar 主路径生效。host 侧还会周期发布 `browser-runtime.sync.json` 投影文件,已运行 child 会按 `Version` 刷新 feature gate / anomaly templates / PatternLibrary。**已进入主路径**。
+
+### 9.3 当前状态与后续边界
+
+上述接口里,`Artifacts / Verification / FaultSummary` 和 RuntimeEscalation 稳定 envelope 都已进入当前 sidecar 代码主路径。
+
+当前代码主路径已具备:
+
+- anomaly template / sitemap cache / pattern failure / human demo 可在默认持久化路径或 `BRAIN_DB_PATH` 指向的库下由 browser child process 自行装载或写回
+- pattern library 与 anomaly templates 具备 child 进程内刷新路径
+- `BRAIN_UI_PATTERN_DB_PATH` 可覆盖默认 `ui_patterns.db`
+- host 会把 persistence + feature gate 统一投影到 `browser-runtime.sync.json`,已运行 child 通过 `Version` 进行热刷新
+
+当前仍保留的后续工作主要是**商业化/扩面**,不是主路径缺失:
+
+> 后续扩展:继续补齐更多 artifact 类型、把更多工具的 verification 结果统一收敛、逐步收紧 fault schema 的一致性,让 EasyMVP runtime adapter 的映射更完整。
+
+建议作为下一批明确计划进入文档:
+
+- **P4 接口扩面 1 / Artifacts**:继续只收“产物语义”明确的结果,优先补更多可持久化文件/报告类输出,避免把普通查询结果误判成 artifact。
+- **P4 接口扩面 2 / Verification**:把更多非 browser / verifier 的显式 pass-fail 信号统一并入 `ExecuteResult.Verification`,继续保持“只基于真实 schema,不猜字段”。
+- **P4 接口扩面 3 / Fault Schema**:继续把 fault code / route / message 的归一化从 best-effort 收紧成更稳定的跨工具契约。
+- **P4 商业化扩展 / License gate**:当前 `serve`、`RunLicensed`、browser 正式启动入口、host→child runtime projection 已共用同一套 browser feature gate 投影;后续只剩更多商业版 feature、额度和计量能力的扩展。
+
+### 9.4 当前未完成项与优先级
+
+> 下面只列**截至当前代码状态仍未完成**的事项,不再重复列已经接线完成的历史项。
+
+| 优先级 | 项 | 类型 | 当前状态 | 说明 |
+|---|---|---|---|---|
+| **P0** | M1 阶段 0 真人实验 | 人工 | 未启动 | `41-语义理解阶段0实验设计.md` 定义的 10 样本人工标注与 Go/No-Go 报告,不是代码任务,但仍是方法论准入项。 |
+| **P4** | Artifacts / Verification / FaultSchema 继续扩面 | 代码 | 后续优化 | 当前主路径已落地并进入 sidecar 输出合同;后续只做覆盖面扩展,不再是“缺功能”。 |
+| **P4** | 商业化能力落地 | 代码 | 未完成 | License gate 主路径已统一,但 Pro feature、额度池、计量与审计仍属于下一商业化批次。 |
+
+### 9.5 代码一致性 checklist
+
+> 用于后续每次更新本文时快速核对“文档说已完成”的项,是否真的进入了生产路径。
+
+- `[x]` `Artifacts / Verification / FaultSummary` 已进入 `sdk/sidecar/loop.go` 主路径
+- `[x]` `RuntimeEscalation` 事件 envelope 已发布
+- `[x]` `PatternFailureStore` 与 split 扫描已在 host `serve` 里装配
+- `[x]` split 扫描结果能被**已运行** browser sidecar 在后续请求中刷新看到
+- `[x]` host 能从 `LearningStore` 读取 anomaly templates
+- `[x]` browser sidecar 启动时自动装载同一份 anomaly template 运行时库
+- `[x]` host `serve` 已装配 `HumanEventSourceFactory`
+- `[x]` delegated browser sidecar 已真实消费 `HumanEventSourceFactory`
+- `[x]` env → browser feature gate 已打通
+- `[x]` `RunLicensed(...)` helper → browser feature gate 已打通
+- `[x]` browser 正式启动入口已消费真实 `license.Result` 并下发 gate
 
 ---
 

@@ -165,6 +165,32 @@ func TestReloadPreservesEnabled(t *testing.T) {
 	}
 }
 
+func TestPatternLibraryReloadIfChangedObservesExternalWrites(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "shared.db")
+
+	lib1, err := NewPatternLibrary(dsn)
+	if err != nil {
+		t.Fatalf("open lib1: %v", err)
+	}
+	defer lib1.Close()
+	lib1.reloadInterval = 0
+
+	lib2, err := NewPatternLibrary(dsn)
+	if err != nil {
+		t.Fatalf("open lib2: %v", err)
+	}
+	defer lib2.Close()
+
+	p := &UIPattern{ID: "external-write", Category: "auth", Source: "learned"}
+	if err := lib2.Upsert(context.Background(), p); err != nil {
+		t.Fatalf("lib2.Upsert: %v", err)
+	}
+
+	if got := lib1.GetAny("external-write"); got == nil {
+		t.Fatal("ReloadIfChanged-backed GetAny should observe external write")
+	}
+}
+
 func TestEnsureEnabledColumnIdempotent(t *testing.T) {
 	// 第二次调用不应报错(已有列)。addColumnIfMissing 在 NewPatternLibrary
 	// 里已经执行过一次,直接再跑一次验证幂等(P3.2 把 ensureEnabledColumn

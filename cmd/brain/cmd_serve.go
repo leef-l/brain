@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,10 +23,157 @@ import (
 	"github.com/leef-l/brain/sdk/cli"
 	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
+	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/tool"
+	"github.com/leef-l/brain/sdk/tool/cdp"
 )
+
+const patternSplitScanInterval = 30 * time.Second
+
+var (
+	patternSplitSharedLibrary = tool.SharedPatternLibrary
+	patternSplitScan          = func(ctx context.Context, lib *tool.PatternLibrary, store tool.PatternFailureStore) ([]string, error) {
+		return tool.ScanForSplit(ctx, lib, store)
+	}
+	browserLicenseVerifyOptionsFromEnv = license.VerifyOptionsFromEnv
+	browserLicenseCheckSidecar         = license.CheckSidecar
+)
+
+func configureBrowserFeatureGate() error {
+	verifyOpts, err := browserLicenseVerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		tool.ConfigureBrowserFeatureGate(nil)
+		return err
+	}
+
+	res, err := browserLicenseCheckSidecar("brain-browser", verifyOpts)
+	if err != nil {
+		tool.ConfigureBrowserFeatureGate(nil)
+		return err
+	}
+
+	tool.ConfigureBrowserFeatureGate(res)
+	return nil
+}
+
+func publishBrowserRuntimeProjection(runtimeDataDir string) error {
+	if strings.TrimSpace(runtimeDataDir) == "" {
+		return nil
+	}
+	gate := tool.CurrentBrowserFeatureGateConfig()
+	projection := kernel.BrowserRuntimeProjectionForDataDir(runtimeDataDir, gate.Enabled, gate.Features)
+	return kernel.WriteBrowserRuntimeProjectionFile(projection.SyncFile, projection)
+}
+
+func startBrowserRuntimeProjectionPublisher(ctx context.Context, runtimeDataDir string) {
+	if strings.TrimSpace(runtimeDataDir) == "" {
+		return
+	}
+	if err := publishBrowserRuntimeProjection(runtimeDataDir); err != nil {
+		fmt.Fprintf(os.Stderr, "brain serve: warning: browser runtime projection: %v\n", err)
+	}
+
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+
+		var (
+			lastDBMod      time.Time
+			lastPatternMod time.Time
+			lastGateKey    string
+			lastGateOn     bool
+		)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				gate := tool.CurrentBrowserFeatureGateConfig()
+				dbMod := fileModTime(filepath.Join(runtimeDataDir, "brain.db"))
+				patternMod := fileModTime(filepath.Join(runtimeDataDir, "ui_patterns.db"))
+				gateKey := strings.Join(sortedEnabledFeatureNames(gate.Features), ",")
+				if dbMod.Equal(lastDBMod) && patternMod.Equal(lastPatternMod) && gateKey == lastGateKey && gate.Enabled == lastGateOn {
+					continue
+				}
+				if err := publishBrowserRuntimeProjection(runtimeDataDir); err != nil {
+					fmt.Fprintf(os.Stderr, "brain serve: warning: browser runtime projection: %v\n", err)
+					continue
+				}
+				lastDBMod = dbMod
+				lastPatternMod = patternMod
+				lastGateKey = gateKey
+				lastGateOn = gate.Enabled
+			}
+		}
+	}()
+}
+
+func fileModTime(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime().UTC()
+}
+
+func sortedEnabledFeatureNames(features map[string]bool) []string {
+	names := make([]string, 0, len(features))
+	for name, enabled := range features {
+		if enabled && strings.TrimSpace(name) != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func loadSharedAnomalyTemplateLibrary(ctx context.Context, learner *kernel.LearningEngine) error {
+	lib := tool.NewAnomalyTemplateLibrary()
+	if learner == nil {
+		tool.SetSharedAnomalyTemplateLibrary(lib)
+		return nil
+	}
+
+	templates, err := learner.ListAnomalyTemplates(ctx)
+	if err != nil {
+		return err
+	}
+	for _, tpl := range templates {
+		if tpl == nil {
+			continue
+		}
+		recovery, err := tool.DecodeRecoveryActions(tpl.RecoveryActions)
+		if err != nil {
+			return fmt.Errorf("decode anomaly template %d recovery: %w", tpl.ID, err)
+		}
+		lib.Upsert(&tool.AnomalyTemplate{
+			ID: tpl.ID,
+			Signature: tool.AnomalyTemplateSignature{
+				Type:        tpl.SignatureType,
+				Subtype:     tpl.SignatureSubtype,
+				SitePattern: tpl.SignatureSite,
+				Severity:    tpl.SignatureSeverity,
+			},
+			Recovery: recovery,
+			Stats: tool.AnomalyTemplateStats{
+				MatchCount:   tpl.MatchCount,
+				SuccessCount: tpl.SuccessCount,
+				FailureCount: tpl.FailureCount,
+				UpdatedAt:    tpl.UpdatedAt,
+			},
+			CreatedAt: tpl.CreatedAt,
+			UpdatedAt: tpl.UpdatedAt,
+			Source:    "persisted",
+		})
+	}
+
+	tool.SetSharedAnomalyTemplateLibrary(lib)
+	return nil
+}
 
 // runEntry tracks an in-flight or finished Run.
 type runEntry struct {
@@ -46,6 +195,52 @@ type runEntry struct {
 	taskExec *kernel.TaskExecution `json:"-"`
 
 	cancel context.CancelFunc `json:"-"`
+}
+
+func runPatternSplitScanOnce(ctx context.Context, store tool.PatternFailureStore) (int, error) {
+	if store == nil {
+		return 0, nil
+	}
+	lib := patternSplitSharedLibrary()
+	if lib == nil {
+		return 0, nil
+	}
+	spawned, err := patternSplitScan(ctx, lib, store)
+	if err != nil {
+		return 0, err
+	}
+	return len(spawned), nil
+}
+
+func startPatternSplitScanner(ctx context.Context, store tool.PatternFailureStore) {
+	if store == nil {
+		return
+	}
+	go func() {
+		if n, err := runPatternSplitScanOnce(ctx, store); err != nil {
+			fmt.Fprintf(os.Stderr, "brain serve: warning: pattern split scan: %v\n", err)
+		} else if n > 0 {
+			fmt.Fprintf(os.Stderr, "brain serve: pattern split spawned %d variant(s)\n", n)
+		}
+
+		ticker := time.NewTicker(patternSplitScanInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := runPatternSplitScanOnce(ctx, store)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "brain serve: warning: pattern split scan: %v\n", err)
+					continue
+				}
+				if n > 0 {
+					fmt.Fprintf(os.Stderr, "brain serve: pattern split spawned %d variant(s)\n", n)
+				}
+			}
+		}
+	}()
 }
 
 func (e *runEntry) snapshot() *runEntry {
@@ -105,21 +300,59 @@ func (e *runEntry) finish(status string, result json.RawMessage) {
 
 // runManager manages Runs in memory.
 type runManager struct {
-	runs     sync.Map // id → *runEntry
-	store    *runtimeStore
+	runs         sync.Map // id → *runEntry
+	store        *runtimeStore
 	pool         *kernel.ProcessBrainPool  // 全局共享的 BrainPool，多 run 复用
 	eventBus     *events.MemEventBus       // 全局事件总线，用于 SSE 推送
 	leaseManager *kernel.MemLeaseManager   // 全局租约管理器，协调资源互斥与共享访问
 	capMatcher   *kernel.CapabilityMatcher // 全局能力匹配器，三阶段 brain 选择
 	learner      *kernel.LearningEngine    // 全局自适应学习引擎（L1-L3）
 	ctxEngine    kernel.ContextEngine      // 全局上下文装配引擎
-	orgEnforcer  kernel.OrgPolicyEnforcer // 组织级授权策略执行器（可为 nil）
-	scheduler    kernel.TaskScheduler     // 任务级调度引擎（B-2）
-	remotePool   *kernel.RemoteBrainPool  // 远程 brain 连接池（D-3，可为 nil）
-	rootCtx  context.Context
-	wg       sync.WaitGroup
-	launchMu sync.Mutex // guards concurrent slot reservations
-	running  int
+	orgEnforcer  kernel.OrgPolicyEnforcer  // 组织级授权策略执行器（可为 nil）
+	scheduler    kernel.TaskScheduler      // 任务级调度引擎（B-2）
+	remotePool   *kernel.RemoteBrainPool   // 远程 brain 连接池（D-3，可为 nil）
+	rootCtx      context.Context
+	wg           sync.WaitGroup
+	launchMu     sync.Mutex // guards concurrent slot reservations
+	running      int
+}
+
+type learningStoreSitemapCache struct {
+	store persistence.LearningStore
+}
+
+func newSharedBrowserHumanEventSourceFactory() tool.HumanEventSourceFactory {
+	return func(context.Context) (cdp.EventSource, error) {
+		sess, ok := tool.CurrentSharedBrowserSession()
+		if !ok || sess == nil {
+			// The browser session is created lazily by browser tools. During
+			// early takeover requests there may be no live session yet; in that
+			// case degrade to marker-only recording instead of creating a new one.
+			return nil, nil
+		}
+		return cdp.NewCDPEventSource(sess), nil
+	}
+}
+
+func (c learningStoreSitemapCache) Save(ctx context.Context, snap *persistence.SitemapSnapshot) error {
+	if c.store == nil {
+		return nil
+	}
+	return c.store.SaveSitemapSnapshot(ctx, snap)
+}
+
+func (c learningStoreSitemapCache) Get(ctx context.Context, siteOrigin string, depth int) (*persistence.SitemapSnapshot, error) {
+	if c.store == nil {
+		return nil, nil
+	}
+	return c.store.GetSitemapSnapshot(ctx, siteOrigin, depth)
+}
+
+func (c learningStoreSitemapCache) Purge(ctx context.Context, olderThan time.Time) (int64, error) {
+	if c.store == nil {
+		return 0, nil
+	}
+	return c.store.PurgeSitemapSnapshots(ctx, olderThan)
 }
 
 func (rm *runManager) get(id string) (*runEntry, bool) {
@@ -275,8 +508,16 @@ func runServe(args []string) int {
 		return cli.ExitSoftware
 	}
 
+	// 初始化自适应工具策略（B-5）
+	initAdaptiveToolPolicy(cfg)
+	if err := configureBrowserFeatureGate(); err != nil {
+		fmt.Fprintf(os.Stderr, "brain serve: warning: browser feature gate: %v\n", err)
+	}
+	configureBrowserRuntimeEnv(filepath.Dir(configPath()))
+	startBrowserRuntimeProjectionPublisher(serveCtx, filepath.Dir(configPath()))
+
 	// 全局 BrainPool：所有并发 run 共享，不再 per-run fork sidecar。
-	pool := buildBrainPool(cfg)
+	pool := buildBrainPoolWithRuntimeDir(cfg, filepath.Dir(configPath()))
 	defer func() {
 		if pool != nil {
 			_ = pool.Shutdown(context.Background())
@@ -328,9 +569,6 @@ func runServe(args []string) int {
 			defer hookRunner.Stop()
 		}
 	}
-	// 初始化自适应工具策略（B-5）
-	initAdaptiveToolPolicy(cfg)
-
 	// M6 学习闭环:让 anomalyInjectingTool 每次跑完就把结果回写给
 	// AdaptivePolicy,成功率低的工具会在下一轮 Evaluate 时被自动降权 / 禁用。
 	// 参照 SetInteractionSink 的进程级注入风格。
@@ -358,10 +596,30 @@ func runServe(args []string) int {
 	} else {
 		learner = kernel.NewLearningEngine()
 	}
+	if err := loadSharedAnomalyTemplateLibrary(serveCtx, learner); err != nil {
+		fmt.Fprintf(os.Stderr, "brain serve: warning: load anomaly templates: %v\n", err)
+	}
 
 	// Task #13: 让 browser brain 的交互序列走 LearningEngine → LearningStore,
 	// 这样 ui_pattern_learn 的聚类就能从 SQLite 读到 InteractionSequence。
 	tool.SetInteractionSink(learner)
+	if runtime.Stores != nil && runtime.Stores.LearningStore != nil {
+		// P3.3/P3.4 serve 主路径接线:
+		// - browser.sitemap 直接复用 LearningStore 的 snapshot 持久化接口
+		// - human.request_takeover 把真人录制序列直接落到 HumanDemoSequence
+		// - pattern_exec 失败样本直接落到 pattern_failure_samples,供 P3.2 自分裂扫描
+		tool.SetSitemapCache(learningStoreSitemapCache{store: runtime.Stores.LearningStore})
+		tool.SetHumanDemoSink(runtime.Stores.LearningStore)
+		tool.SetPatternFailureStore(runtime.Stores.LearningStore)
+		startPatternSplitScanner(serveCtx, runtime.Stores.LearningStore)
+	} else {
+		tool.SetSitemapCache(nil)
+		tool.SetHumanDemoSink(nil)
+		tool.SetPatternFailureStore(nil)
+	}
+	// P3.3 DOM 录制绑定到已存在的共享 browser session；session 尚未初始化
+	// 时工厂返回 nil，安全退化为只录 takeover marker，不会误建新 browser。
+	tool.SetHumanEventSourceFactory(newSharedBrowserHumanEventSourceFactory())
 
 	// 上下文引擎：注入 LLM Summarizer + SharedStore 持久化
 	ctxEngine := kernel.NewDefaultContextEngine()

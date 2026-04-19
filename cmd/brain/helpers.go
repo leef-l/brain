@@ -7,12 +7,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/kernel/manifest"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/tool"
 )
 
 // bgCtx returns a context with a 30-second timeout for CLI operations.
@@ -151,7 +154,13 @@ func discoverBrainsFromManifest() []kernel.BrainRegistration {
 
 		// 从 runtime.entrypoint 推导 Binary 路径
 		if m.Runtime.Entrypoint != "" {
-			reg.Binary = m.Runtime.Entrypoint
+			reg.Binary = resolveManifestEntrypoint(m)
+		}
+		if len(m.Runtime.Args) > 0 {
+			reg.Args = append([]string(nil), m.Runtime.Args...)
+		}
+		if len(m.Runtime.Env) > 0 {
+			reg.Env = manifestEnvSlice(m.Runtime.Env)
 		}
 
 		// 从 metadata 中提取可选的 model 和 auto_start
@@ -174,6 +183,41 @@ func discoverBrainsFromManifest() []kernel.BrainRegistration {
 	}
 
 	return registrations
+}
+
+func resolveManifestEntrypoint(m *manifest.Manifest) string {
+	if m == nil {
+		return ""
+	}
+	entrypoint := m.Runtime.Entrypoint
+	if entrypoint == "" {
+		return ""
+	}
+	if filepath.IsAbs(entrypoint) {
+		return entrypoint
+	}
+	base := filepath.Dir(m.SourcePath)
+	if base == "." || base == "" {
+		return entrypoint
+	}
+	return filepath.Join(base, entrypoint)
+}
+
+func manifestEnvSlice(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key+"="+env[key])
+	}
+	return out
 }
 
 // mergeManifestAndConfigBrains 合并 manifest 发现的脑和 cfg.Brains 配置的脑。
@@ -201,8 +245,17 @@ func mergeManifestAndConfigBrains(manifestBrains []kernel.BrainRegistration, cfg
 // 多个并发 run 共享同一个 pool，不再 per-run fork sidecar。
 // 优先使用 manifest 发现的脑，cfg.Brains 作为 fallback。
 func buildBrainPool(cfg *brainConfig) *kernel.ProcessBrainPool {
+	return buildBrainPoolWithRuntimeDir(cfg, "")
+}
+
+func buildBrainPoolWithRuntimeDir(cfg *brainConfig, runtimeDataDir string) *kernel.ProcessBrainPool {
 	binResolver := defaultBinResolver()
 	runner := &kernel.ProcessRunner{BinResolver: binResolver}
+	if strings.TrimSpace(runtimeDataDir) != "" {
+		gate := tool.CurrentBrowserFeatureGateConfig()
+		projection := kernel.BrowserRuntimeProjectionForDataDir(runtimeDataDir, gate.Enabled, gate.Features)
+		runner.Env = append(runner.Env, projection.Env()...)
+	}
 
 	var orchCfg kernel.OrchestratorConfig
 
@@ -225,6 +278,24 @@ func buildBrainPool(cfg *brainConfig) *kernel.ProcessBrainPool {
 		return nil
 	}
 	return pool
+}
+
+func configureBrowserRuntimeEnv(runtimeDataDir string) {
+	if strings.TrimSpace(runtimeDataDir) == "" {
+		return
+	}
+	gate := tool.CurrentBrowserFeatureGateConfig()
+	projection := kernel.BrowserRuntimeProjectionForDataDir(runtimeDataDir, gate.Enabled, gate.Features)
+	for _, entry := range projection.Env() {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			continue
+		}
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			continue
+		}
+		_ = os.Setenv(key, value)
+	}
 }
 
 // buildOrchestrator creates an Orchestrator with LLM proxy for specialist

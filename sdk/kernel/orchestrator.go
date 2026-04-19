@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
-	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
 )
 
@@ -88,6 +88,12 @@ type BrainRegistration struct {
 	// takes precedence over the BinResolver. This allows third-party brains
 	// to be registered purely through configuration.
 	Binary string `json:"binary,omitempty"`
+
+	// Args are optional extra argv entries passed to the sidecar process.
+	Args []string `json:"args,omitempty"`
+
+	// Env are optional KEY=VALUE pairs appended to the sidecar environment.
+	Env []string `json:"env,omitempty"`
 
 	// Model is the LLM model ID to use for this brain via LLMProxy.
 	// An empty string means the brain does not use LLM proxying.
@@ -520,7 +526,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 	var assembledContext json.RawMessage
 	if o.contextEngine != nil {
 		messages := []llm.Message{{
-			Role: "user",
+			Role:    "user",
 			Content: []llm.ContentBlock{{Type: "text", Text: req.Instruction}},
 		}}
 		// 如果请求中已有 context，将其作为 system 消息前置

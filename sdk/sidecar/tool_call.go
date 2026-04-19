@@ -43,6 +43,9 @@ func DispatchToolCall(ctx context.Context, params json.RawMessage, fallback tool
 	if err != nil {
 		return toolCallFailure(req.Name, "tool_execution_failed", fmt.Sprintf("tool error: %v", err)), nil
 	}
+	if result == nil {
+		return toolCallFailure(req.Name, "tool_execution_failed", fmt.Sprintf("tool %s returned nil result", req.Name)), nil
+	}
 
 	return &protocol.ToolCallResult{
 		Tool:    req.Name,

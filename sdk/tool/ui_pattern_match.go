@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -23,9 +24,9 @@ import (
 
 // PatternMatch is a candidate pattern + confidence score.
 type PatternMatch struct {
-	Pattern     *UIPattern `json:"pattern"`
-	Score       float64    `json:"score"`
-	MatchedVia  string     `json:"matched_via"` // summary of which conditions matched
+	Pattern    *UIPattern `json:"pattern"`
+	Score      float64    `json:"score"`
+	MatchedVia string     `json:"matched_via"` // summary of which conditions matched
 }
 
 // MatchPatterns scores and returns candidate patterns for the current page.
@@ -74,6 +75,12 @@ func evaluateMatch(ctx context.Context, sess *cdp.BrowserSession, cond *MatchCon
 			return false, ""
 		}
 		reasons = append(reasons, "url")
+	}
+	if cond.SiteHost != "" {
+		if !siteHostMatchesURL(cond.SiteHost, url) {
+			return false, ""
+		}
+		reasons = append(reasons, "site")
 	}
 
 	titleLower := strings.ToLower(title)
@@ -160,10 +167,24 @@ func matchStrength(cond *MatchCondition, reason string) float64 {
 	if cond.URLPattern != "" {
 		signals++
 	}
+	if cond.SiteHost != "" {
+		signals++
+	}
 	signals += len(cond.Has)
 	signals += len(cond.TitleContains)
 	signals += len(cond.TextContains)
 	return float64(signals) / 10.0 // capped 1.0
+}
+
+func siteHostMatchesURL(siteHost, pageURL string) bool {
+	if siteHost == "" || pageURL == "" {
+		return false
+	}
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Host, siteHost)
 }
 
 func recencyBonus(last time.Time) float64 {
@@ -187,11 +208,11 @@ func recencyBonus(last time.Time) float64 {
 // ResolveElement finds a DOM element matching the descriptor and returns its
 // data-brain-id (attached by browser.snapshot). The descriptor is tried with
 // multiple fallbacks, UiPath Object Repository-style:
-//   1. role+name exact match from current snapshot
-//   2. role+name fuzzy match
-//   3. CSS selector
-//   4. XPath
-//   5. declared fallbacks (recursive)
+//  1. role+name exact match from current snapshot
+//  2. role+name fuzzy match
+//  3. CSS selector
+//  4. XPath
+//  5. declared fallbacks (recursive)
 //
 // Returns brain_id > 0 on success, 0 on failure.
 func ResolveElement(ctx context.Context, sess *cdp.BrowserSession, desc ElementDescriptor) (int, error) {
@@ -406,14 +427,14 @@ func CheckPostCondition(ctx context.Context, sess *cdp.BrowserSession, cond *Pos
 
 // ExecutionResult is the outcome of running a pattern.
 type ExecutionResult struct {
-	PatternID      string        `json:"pattern_id"`
-	Success        bool          `json:"success"`
-	ActionsRun     int           `json:"actions_run"`
-	StepResults    []StepOutcome `json:"step_results"`
-	PostConditions []PostOutcome `json:"post_conditions"`
-	DurationMS     int64         `json:"duration_ms"`
-	Error          string        `json:"error,omitempty"`
-	AbortedByAnomaly string      `json:"aborted_by_anomaly,omitempty"`
+	PatternID        string        `json:"pattern_id"`
+	Success          bool          `json:"success"`
+	ActionsRun       int           `json:"actions_run"`
+	StepResults      []StepOutcome `json:"step_results"`
+	PostConditions   []PostOutcome `json:"post_conditions"`
+	DurationMS       int64         `json:"duration_ms"`
+	Error            string        `json:"error,omitempty"`
+	AbortedByAnomaly string        `json:"aborted_by_anomaly,omitempty"`
 }
 
 // StepOutcome captures one ActionStep's result.
@@ -440,20 +461,54 @@ const maxPatternChainDepth = 3
 // 生产用 sharedPatternLib().GetAny,测试用内存 map,避免单测打开 SQLite。
 type patternLibGetter func(id string) *UIPattern
 
+func (g patternLibGetter) Get(id string) *UIPattern {
+	if g == nil {
+		return nil
+	}
+	return g(id)
+}
+
+func (patternLibGetter) AnomalyTemplates() AnomalyTemplateSource { return nil }
+
+type patternExecGetter interface {
+	Get(id string) *UIPattern
+	AnomalyTemplates() AnomalyTemplateSource
+}
+
+type patternExecDeps struct {
+	patterns  patternLibGetter
+	templates AnomalyTemplateSource
+}
+
+func (d patternExecDeps) Get(id string) *UIPattern {
+	return d.patterns.Get(id)
+}
+
+func (d patternExecDeps) AnomalyTemplates() AnomalyTemplateSource {
+	return d.templates
+}
+
+func sharedPatternExecGetter() patternExecGetter {
+	return patternExecDeps{
+		patterns: patternLibGetter(func(id string) *UIPattern {
+			lib, _ := sharedPatternLib()
+			if lib == nil {
+				return nil
+			}
+			return lib.GetAny(id)
+		}),
+		templates: SharedAnomalyTemplateLibrary(),
+	}
+}
+
 // ExecutePattern runs a pattern against the current page. `variables` provides
 // placeholder values (e.g. {"credentials.email": "a@b.com"}).
 func ExecutePattern(ctx context.Context, sess *cdp.BrowserSession, registry Registry, p *UIPattern, variables map[string]interface{}) *ExecutionResult {
-	return executePatternWithLib(ctx, sess, registry, p, variables, func(id string) *UIPattern {
-		lib, _ := sharedPatternLib()
-		if lib == nil {
-			return nil
-		}
-		return lib.GetAny(id)
-	})
+	return executePatternWithLib(ctx, sess, registry, p, variables, sharedPatternExecGetter())
 }
 
 // executePatternWithLib 是带 lib 注入点的内部实现,测试用。
-func executePatternWithLib(ctx context.Context, sess *cdp.BrowserSession, registry Registry, p *UIPattern, variables map[string]interface{}, getter patternLibGetter) *ExecutionResult {
+func executePatternWithLib(ctx context.Context, sess *cdp.BrowserSession, registry Registry, p *UIPattern, variables map[string]interface{}, getter patternExecGetter) *ExecutionResult {
 	start := time.Now()
 	res := &ExecutionResult{PatternID: p.ID}
 	urlBefore, _ := readPageMeta(ctx, sess)
@@ -477,7 +532,7 @@ func executePatternWithLib(ctx context.Context, sess *cdp.BrowserSession, regist
 			finalize(res, current, false, start)
 			return res
 		}
-		next := getter(switchTo)
+		next := getter.Get(switchTo)
 		if next == nil {
 			res.Error = "fallback pattern not found: " + switchTo
 			finalize(res, current, false, start)
@@ -524,8 +579,7 @@ func executePatternWithLib(ctx context.Context, sess *cdp.BrowserSession, regist
 //   - terminal=false, switchTo="<id>":触发 fallback_pattern,主循环切换并重跑
 //
 // retry 在本函数里原地循环,不回给主循环。
-func runActionSequence(ctx context.Context, sess *cdp.BrowserSession, registry Registry, p *UIPattern, variables map[string]interface{}, res *ExecutionResult, start time.Time, getter patternLibGetter) (terminal bool, switchTo string) {
-	_ = getter
+func runActionSequence(ctx context.Context, sess *cdp.BrowserSession, registry Registry, p *UIPattern, variables map[string]interface{}, res *ExecutionResult, start time.Time, getter patternExecGetter) (terminal bool, switchTo string) {
 	for i := 0; i < len(p.ActionSequence); i++ {
 		step := p.ActionSequence[i]
 		retries := 0
@@ -544,9 +598,16 @@ func runActionSequence(ctx context.Context, sess *cdp.BrowserSession, registry R
 
 			// 检查 tool 返回里的 _anomalies 并按 OnAnomaly 决策
 			if toolResult != nil && len(toolResult.Output) > 0 {
-				aType, aSubtype := detectAnomalyInOutput(toolResult.Output)
+				aType, aSubtype, severity := detectAnomalyInOutput(toolResult.Output)
 				if aType != "" || aSubtype != "" {
-					handler, match := matchAnomalyHandler(p, aType, aSubtype)
+					handler, match, _ := ResolveAnomalyHandler(
+						anomalyTemplateSource(getter),
+						p,
+						aType,
+						aSubtype,
+						currentSiteOrigin(ctx, sess),
+						severity,
+					)
 					if match {
 						switch handler.Action {
 						case "abort":
@@ -786,22 +847,39 @@ func lookupVar(vars map[string]interface{}, path string) (interface{}, bool) {
 }
 
 // detectAnomalyInOutput peeks at tool output for the first entry of
-// `_anomalies.anomalies[0]` and returns (type, subtype). Either may be empty.
+// `_anomalies.anomalies[0]` and returns (type, subtype, severity). Each field
+// may be empty.
 // 选第一条异常是 anomaly 列表里优先级最高的(anomalyInjectingTool 按
 // severity 排序过),M5 on_anomaly 只对"最严重那条"做路由决策,后续条
 // 通过 _anomalies 字段仍可被 Agent 看到。
-func detectAnomalyInOutput(output json.RawMessage) (atype, subtype string) {
+func detectAnomalyInOutput(output json.RawMessage) (atype, subtype, severity string) {
 	var wrapper struct {
 		Anomalies struct {
 			Anomalies []struct {
-				Type    string `json:"type"`
-				Subtype string `json:"subtype"`
+				Type     string `json:"type"`
+				Subtype  string `json:"subtype"`
+				Severity string `json:"severity"`
 			} `json:"anomalies"`
 		} `json:"_anomalies"`
 	}
 	if err := json.Unmarshal(output, &wrapper); err == nil && len(wrapper.Anomalies.Anomalies) > 0 {
 		first := wrapper.Anomalies.Anomalies[0]
-		return first.Type, first.Subtype
+		return first.Type, first.Subtype, first.Severity
 	}
-	return "", ""
+	return "", "", ""
+}
+
+func anomalyTemplateSource(getter patternExecGetter) AnomalyTemplateSource {
+	if getter == nil {
+		return nil
+	}
+	return getter.AnomalyTemplates()
+}
+
+func currentSiteOrigin(ctx context.Context, sess *cdp.BrowserSession) string {
+	if sess == nil {
+		return ""
+	}
+	url, _ := readPageMeta(ctx, sess)
+	return normalizeOrigin(url)
 }
