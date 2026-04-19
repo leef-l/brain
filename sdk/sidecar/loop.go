@@ -98,10 +98,12 @@ type FaultAnomaly struct {
 
 // llmRequest is the payload sent to the Kernel via llm.complete.
 type llmRequest struct {
-	System    []systemBlock `json:"system,omitempty"`
-	Messages  []message     `json:"messages"`
-	Tools     []toolSchema  `json:"tools,omitempty"`
-	MaxTokens int           `json:"max_tokens,omitempty"`
+	System     []systemBlock `json:"system,omitempty"`
+	Messages   []message     `json:"messages"`
+	Tools      []toolSchema  `json:"tools,omitempty"`
+	Model      string        `json:"model,omitempty"`
+	ToolChoice string        `json:"tool_choice,omitempty"`
+	MaxTokens  int           `json:"max_tokens,omitempty"`
 }
 
 type systemBlock struct {
@@ -436,9 +438,6 @@ func collectToolResults(messages []llm.Message) []toolResultSnapshot {
 					}
 				}
 			case "tool_result":
-				if len(block.Output) == 0 {
-					continue
-				}
 				toolName := toolNames[block.ToolUseID]
 				snapshot := toolResultSnapshot{
 					ToolUseID: block.ToolUseID,
@@ -456,6 +455,9 @@ func collectToolResults(messages []llm.Message) []toolResultSnapshot {
 				case toolName == "":
 					snapshot.CollectCode = "orphan_tool_result"
 					snapshot.CollectError = "tool_result references unknown tool_use_id: " + block.ToolUseID
+				case len(block.Output) == 0:
+					snapshot.CollectCode = "empty_tool_result"
+					snapshot.CollectError = "tool_result missing output payload"
 				}
 				out = append(out, snapshot)
 			}
@@ -1547,6 +1549,13 @@ func anomalyContainerObject(obj map[string]interface{}) map[string]interface{} {
 }
 
 func extractMessage(obj map[string]interface{}, raw json.RawMessage) string {
+	if nested := nestedErrorObject(obj); nested != nil {
+		for _, key := range []string{"message", "error", "summary"} {
+			if msg := stringValue(nested[key]); msg != "" {
+				return msg
+			}
+		}
+	}
 	for _, key := range []string{"error", "message", "summary", "diff", "status"} {
 		if msg := stringValue(obj[key]); msg != "" {
 			return msg
@@ -1560,12 +1569,27 @@ func extractMessage(obj map[string]interface{}, raw json.RawMessage) string {
 }
 
 func structuredCode(obj map[string]interface{}) string {
+	if nested := nestedErrorObject(obj); nested != nil {
+		for _, key := range []string{"error_code", "code"} {
+			if code := stringValue(nested[key]); code != "" {
+				return code
+			}
+		}
+	}
 	for _, key := range []string{"error_code", "code"} {
 		if code := stringValue(obj[key]); code != "" {
 			return code
 		}
 	}
 	return ""
+}
+
+func nestedErrorObject(obj map[string]interface{}) map[string]interface{} {
+	if obj == nil {
+		return nil
+	}
+	nested, _ := obj["error"].(map[string]interface{})
+	return nested
 }
 
 func inferFaultRoute(msg string) string {

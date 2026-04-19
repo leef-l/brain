@@ -46,7 +46,11 @@ func (p *kernelLLMProvider) Stream(ctx context.Context, req *llm.ChatRequest) (l
 
 // chatRequestToWire 把 llm.ChatRequest 转为 sidecar 内部 llmRequest。
 func chatRequestToWire(req *llm.ChatRequest) llmRequest {
-	out := llmRequest{MaxTokens: req.MaxTokens}
+	out := llmRequest{
+		Model:      req.Model,
+		ToolChoice: req.ToolChoice,
+		MaxTokens:  req.MaxTokens,
+	}
 	for _, sb := range req.System {
 		out.System = append(out.System, systemBlock{Text: sb.Text})
 	}

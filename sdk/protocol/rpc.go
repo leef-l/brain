@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/leef-l/brain/sdk/diaglog"
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 )
 
@@ -639,14 +640,20 @@ func (r *bidirRPC) sendResultResponse(ctx context.Context, id string, result int
 	} else {
 		msg.Result = json.RawMessage("null")
 	}
-	body, _ := json.Marshal(msg)
+	body, err := json.Marshal(msg)
+	if err != nil {
+		diaglog.Logf("rpc", "send result response marshal failed id=%s err=%v", id, err)
+		return
+	}
 	writeCtx, cancel := context.WithTimeout(ctx, DefaultWriteTimeout)
 	defer cancel()
-	_ = r.writer.WriteFrame(writeCtx, &Frame{
+	if err := r.writer.WriteFrame(writeCtx, &Frame{
 		ContentLength: len(body),
 		ContentType:   CanonicalContentType,
 		Body:          body,
-	})
+	}); err != nil {
+		diaglog.Logf("rpc", "send result response write failed id=%s err=%v", id, err)
+	}
 }
 
 // sendErrorResponse writes a protocol error response frame for id / err.
@@ -656,13 +663,18 @@ func (r *bidirRPC) sendErrorResponse(ctx context.Context, id string, rpcErr *RPC
 		ID:      id,
 		Error:   rpcErr,
 	}
-	body, _ := json.Marshal(msg)
+	body, err := json.Marshal(msg)
+	if err != nil {
+		diaglog.Logf("rpc", "send error response marshal failed id=%s err=%v", id, err)
+		return
+	}
 	writeCtx, cancel := context.WithTimeout(ctx, DefaultWriteTimeout)
 	defer cancel()
-	_ = r.writer.WriteFrame(writeCtx, &Frame{
+	if err := r.writer.WriteFrame(writeCtx, &Frame{
 		ContentLength: len(body),
 		ContentType:   CanonicalContentType,
 		Body:          body,
-	})
+	}); err != nil {
+		diaglog.Logf("rpc", "send error response write failed id=%s err=%v", id, err)
+	}
 }
-

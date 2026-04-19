@@ -213,10 +213,7 @@ func (h *quantHandler) handleExecute(ctx context.Context, params json.RawMessage
 	case "force_close":
 		result, err = h.execForceClose(ctx, req.Context)
 	default:
-		result = &sidecar.ExecuteResult{
-			Status: "failed",
-			Error:  fmt.Sprintf("unknown instruction: %s", req.Instruction),
-		}
+		result = h.execNaturalLanguage(ctx, &req)
 	}
 	if result != nil {
 		diaglog.Logf("brain", "kind=%s instruction=%s status=%s duration=%s err=%v", h.Kind(), req.Instruction, result.Status, time.Since(start), err)
@@ -224,6 +221,42 @@ func (h *quantHandler) handleExecute(ctx context.Context, params json.RawMessage
 		diaglog.Logf("brain", "kind=%s instruction=%s nil_result duration=%s err=%v", h.Kind(), req.Instruction, time.Since(start), err)
 	}
 	return result, err
+}
+
+func (h *quantHandler) execNaturalLanguage(ctx context.Context, req *sidecar.ExecuteRequest) *sidecar.ExecuteResult {
+	if h.caller == nil {
+		return &sidecar.ExecuteResult{
+			Status: "failed",
+			Error:  fmt.Sprintf("unknown instruction: %s", req.Instruction),
+		}
+	}
+
+	systemPrompt := `You are a specialist Quant Brain for trading and portfolio operations.
+
+Your tools:
+- quant.global_portfolio
+- quant.global_risk_status
+- quant.strategy_weights
+- quant.daily_pnl
+- quant.account_status
+- quant.trade_history
+- quant.trace_query
+- quant.pause_trading / quant.resume_trading
+- quant.account_pause / quant.account_resume
+- quant.account_close_all / quant.force_close
+- quant.backtest_start
+
+RULES:
+- Use direct quant tools to answer portfolio, risk, account, trade-history, and execution questions.
+- For dangerous actions like force close or pause/resume, be explicit and precise.
+- Never invent account ids, symbols, or trading outcomes.
+- If runtime data is missing, report that exact limitation.`
+
+	maxTurns := 8
+	if req.Budget != nil && req.Budget.MaxTurns > 0 {
+		maxTurns = req.Budget.MaxTurns
+	}
+	return sidecar.RunAgentLoopWithContext(ctx, h.caller, h.registry, systemPrompt, req.Instruction, maxTurns, req.Context)
 }
 
 // ---------------------------------------------------------------------------

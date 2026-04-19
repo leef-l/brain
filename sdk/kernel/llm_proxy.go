@@ -44,11 +44,12 @@ type LLMProxy struct {
 // llmCompleteRequest is the payload sent by a sidecar in an llm.complete
 // reverse RPC call.
 type llmCompleteRequest struct {
-	System    []llm.SystemBlock `json:"system,omitempty"`
-	Messages  []llm.Message     `json:"messages"`
-	Tools     []llm.ToolSchema  `json:"tools,omitempty"`
-	Model     string            `json:"model,omitempty"`
-	MaxTokens int               `json:"max_tokens,omitempty"`
+	System     []llm.SystemBlock `json:"system,omitempty"`
+	Messages   []llm.Message     `json:"messages"`
+	Tools      []llm.ToolSchema  `json:"tools,omitempty"`
+	Model      string            `json:"model,omitempty"`
+	ToolChoice string            `json:"tool_choice,omitempty"`
+	MaxTokens  int               `json:"max_tokens,omitempty"`
 }
 
 // llmCompleteResponse is the payload returned to the sidecar.
@@ -120,12 +121,13 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 	}
 
 	chatReq := &llm.ChatRequest{
-		BrainID:   string(kind),
-		System:    req.System,
-		Messages:  req.Messages,
-		Tools:     req.Tools,
-		Model:     model,
-		MaxTokens: maxTokens,
+		BrainID:    string(kind),
+		System:     req.System,
+		Messages:   req.Messages,
+		Tools:      req.Tools,
+		Model:      model,
+		ToolChoice: req.ToolChoice,
+		MaxTokens:  maxTokens,
 	}
 	diaglog.Info("llm", "complete request",
 		"kind", kind,

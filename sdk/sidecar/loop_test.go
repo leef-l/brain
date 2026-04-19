@@ -2481,6 +2481,56 @@ func TestFailedExecuteResult_BackfillsGenericErrorWhenNoSignalExists(t *testing.
 	}
 }
 
+func TestCollectToolResults_PreservesEmptyToolResultAsCollectionError(t *testing.T) {
+	results := collectToolResults([]llm.Message{
+		{
+			Role: "assistant",
+			Content: []llm.ContentBlock{
+				{Type: "tool_use", ToolUseID: "tool-1", ToolName: "verifier.browser_action"},
+			},
+		},
+		{
+			Role: "user",
+			Content: []llm.ContentBlock{
+				{Type: "tool_result", ToolUseID: "tool-1", IsError: true},
+			},
+		},
+	})
+
+	if len(results) != 1 {
+		t.Fatalf("results=%d, want 1", len(results))
+	}
+	if results[0].CollectCode != "empty_tool_result" {
+		t.Fatalf("collect_code=%q, want empty_tool_result", results[0].CollectCode)
+	}
+}
+
+func TestCollectFaultSummary_ExtractsNestedEnvelopeError(t *testing.T) {
+	results := []toolResultSnapshot{
+		{
+			ToolUseID: "tool-1",
+			ToolName:  "verifier.browser_action",
+			IsError:   true,
+			Output: json.RawMessage(`{
+				"tool":"verifier.browser_action",
+				"isError":true,
+				"error":{"code":"browser_budget_exhausted","message":"browser specialist hit turn budget"}
+			}`),
+		},
+	}
+
+	fault := collectFaultSummary(results, nil)
+	if fault == nil {
+		t.Fatal("fault=nil, want nested error extracted")
+	}
+	if fault.Code != "browser_budget_exhausted" {
+		t.Fatalf("code=%q, want browser_budget_exhausted", fault.Code)
+	}
+	if fault.Message != "browser specialist hit turn budget" {
+		t.Fatalf("message=%q, want nested error message", fault.Message)
+	}
+}
+
 func hasArtifact(artifacts []ArtifactRef, kind, toolName, locator string) bool {
 	for _, artifact := range artifacts {
 		if artifact.Kind == kind && artifact.Tool == toolName && artifact.Locator == locator {

@@ -601,6 +601,17 @@ func (r *Runner) executeSingleTool(ctx context.Context, run *Run, turn *Turn, re
 			IsError:   true,
 		}
 	}
+	if result == nil {
+		if r.ToolObserver != nil {
+			r.ToolObserver.OnToolEnd(ctx, run, turn, tb.ToolName, false, json.RawMessage(fmt.Sprintf(`"tool %s returned nil result"`, tb.ToolName)))
+		}
+		return llm.ContentBlock{
+			Type:      "tool_result",
+			ToolUseID: tb.ToolUseID,
+			Output:    json.RawMessage(fmt.Sprintf(`"tool %s returned nil result"`, tb.ToolName)),
+			IsError:   true,
+		}
+	}
 
 	// Sanitize if sanitizer is configured.
 	if r.Sanitizer != nil {

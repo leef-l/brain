@@ -308,23 +308,24 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*
 		ToolName string          `json:"tool_name"`
 		Input    json.RawMessage `json:"input"`
 	}
-	if err := json.Unmarshal(ar.Content, &rawBlocks); err == nil {
-		for _, rb := range rawBlocks {
-			cb := ContentBlock{Type: rb.Type}
-			switch rb.Type {
-			case "text":
-				cb.Text = rb.Text
-			case "tool_use":
-				toolName := rb.Name
-				if strings.TrimSpace(toolName) == "" {
-					toolName = rb.ToolName
-				}
-				cb.ToolUseID = rb.ID
-				cb.ToolName = restoreToolName(toolName)
-				cb.Input = rb.Input
+	if err := json.Unmarshal(ar.Content, &rawBlocks); err != nil {
+		return nil, fmt.Errorf("invalid anthropic content: %w; body=%s", err, string(rawBody))
+	}
+	for _, rb := range rawBlocks {
+		cb := ContentBlock{Type: rb.Type}
+		switch rb.Type {
+		case "text":
+			cb.Text = rb.Text
+		case "tool_use":
+			toolName := rb.Name
+			if strings.TrimSpace(toolName) == "" {
+				toolName = rb.ToolName
 			}
-			resp.Content = append(resp.Content, cb)
+			cb.ToolUseID = rb.ID
+			cb.ToolName = restoreToolName(toolName)
+			cb.Input = rb.Input
 		}
+		resp.Content = append(resp.Content, cb)
 	}
 	if err := ValidateToolUseResponse("anthropic", resp); err != nil {
 		return nil, fmt.Errorf("%w; body=%s", err, string(rawBody))

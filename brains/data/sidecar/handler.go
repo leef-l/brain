@@ -25,6 +25,7 @@ type dataHandler struct {
 	registry tool.Registry
 	logger   *slog.Logger
 	learner  *data.DataBrainLearner
+	caller   sidecar.KernelCaller
 }
 
 // NewHandler creates a data sidecar handler.
@@ -68,6 +69,9 @@ func NewHandler(db *data.DataBrain, logger *slog.Logger) *dataHandler {
 func (h *dataHandler) Kind() agent.Kind { return agent.KindData }
 func (h *dataHandler) Version() string  { return brain.SDKVersion }
 func (h *dataHandler) Tools() []string  { return sidecar.RegistryToolNames(h.registry) }
+func (h *dataHandler) SetKernelCaller(caller sidecar.KernelCaller) {
+	h.caller = caller
+}
 
 // ---------------------------------------------------------------------------
 // sidecar.ToolSchemaProvider
@@ -119,10 +123,7 @@ func (h *dataHandler) handleExecute(ctx context.Context, params json.RawMessage)
 	case "feature_vector":
 		result, execErr = h.execFeatureVector(req.Context)
 	default:
-		result = &sidecar.ExecuteResult{
-			Status: "failed",
-			Error:  fmt.Sprintf("unknown instruction: %s", req.Instruction),
-		}
+		result = h.execNaturalLanguage(ctx, &req)
 	}
 
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
@@ -137,6 +138,39 @@ func (h *dataHandler) handleExecute(ctx context.Context, params json.RawMessage)
 	}
 
 	return result, execErr
+}
+
+func (h *dataHandler) execNaturalLanguage(ctx context.Context, req *sidecar.ExecuteRequest) *sidecar.ExecuteResult {
+	if h.caller == nil {
+		return &sidecar.ExecuteResult{
+			Status: "failed",
+			Error:  fmt.Sprintf("unknown instruction: %s", req.Instruction),
+		}
+	}
+
+	systemPrompt := `You are a specialist Data Brain for real-time market data queries.
+
+Your tools:
+- data.active_instruments: list currently active instruments available in this runtime
+- data.get_snapshot: latest market snapshot for one instrument
+- data.get_candles: recent OHLCV history
+- data.get_feature_vector: regime and feature vector
+- data.provider_health: data provider health
+- data.validation_stats: data quality metrics
+- data.backfill_status: historical backfill progress
+
+RULES:
+- Use only the instruments that actually exist in the runtime.
+- If the requested asset is unavailable, say that clearly instead of inventing a symbol.
+- Prefer data.active_instruments first when the user asks for an unsupported or unclear market.
+- Return concrete values when tools provide them; otherwise state the exact limitation.
+- Do not claim browser/web search results. You are a market-data specialist, not a browser.`
+
+	maxTurns := 6
+	if req.Budget != nil && req.Budget.MaxTurns > 0 {
+		maxTurns = req.Budget.MaxTurns
+	}
+	return sidecar.RunAgentLoopWithContext(ctx, h.caller, h.registry, systemPrompt, req.Instruction, maxTurns, req.Context)
 }
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	"time"
 
@@ -133,6 +135,7 @@ func (h *verifierHandler) handleVerify(ctx context.Context, params json.RawMessa
 
 	start := time.Now()
 	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	applyVerifierVerdict(result)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "verifier.verify",
 		Success:   result.Status == "completed",
@@ -141,6 +144,65 @@ func (h *verifierHandler) handleVerify(ctx context.Context, params json.RawMessa
 	})
 	return result, nil
 }
+
+var verifierVerdictRE = regexp.MustCompile(`(?i)VERDICT:\s*(PASS|FAIL)(?:\s*[—:-]\s*(.*))?`)
+
+func applyVerifierVerdict(result *sidecar.ExecuteResult) {
+	if result == nil {
+		return
+	}
+	matches := verifierVerdictRE.FindStringSubmatch(result.Summary)
+	if len(matches) < 2 {
+		return
+	}
+	passed := strings.EqualFold(matches[1], "PASS")
+	reason := ""
+	if len(matches) >= 3 {
+		reason = strings.TrimSpace(matches[2])
+	}
+	if result.Verification == nil {
+		result.Verification = &sidecar.VerificationResult{}
+	}
+	result.Verification.SourceTool = joinVerifierSourceTool(result.Verification.SourceTool, "verifier.verdict")
+	result.Verification.Passed = boolPtr(passed)
+	result.Verification.Checks = append(result.Verification.Checks, sidecar.VerificationCheck{
+		Name:   "verifier.verdict",
+		Passed: passed,
+		Reason: reason,
+	})
+	if passed {
+		if result.Status == "" {
+			result.Status = "completed"
+		}
+		return
+	}
+	result.Status = "failed"
+	if strings.TrimSpace(result.Error) == "" {
+		if reason != "" {
+			result.Error = reason
+		} else {
+			result.Error = "verifier verdict: FAIL"
+		}
+	}
+}
+
+func joinVerifierSourceTool(current, extra string) string {
+	if strings.TrimSpace(extra) == "" {
+		return current
+	}
+	if strings.TrimSpace(current) == "" {
+		return extra
+	}
+	parts := strings.Split(current, ",")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == extra {
+			return current
+		}
+	}
+	return current + "," + extra
+}
+
+func boolPtr(v bool) *bool { return &v }
 
 func (h *verifierHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	return sidecar.DispatchToolCall(ctx, params, h.registry, h.buildRegistry)

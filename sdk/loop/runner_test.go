@@ -71,6 +71,22 @@ func (f *failingTool) Execute(_ context.Context, _ json.RawMessage) (*tool.Resul
 	return nil, fmt.Errorf("intentional infrastructure failure")
 }
 
+type nilResultTool struct{}
+
+func (t *nilResultTool) Name() string { return "test.nil_result" }
+func (t *nilResultTool) Schema() tool.Schema {
+	return tool.Schema{
+		Name:        "test.nil_result",
+		Description: "Returns a nil result without an error",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Brain:       "test",
+	}
+}
+func (t *nilResultTool) Risk() tool.Risk { return tool.RiskSafe }
+func (t *nilResultTool) Execute(_ context.Context, _ json.RawMessage) (*tool.Result, error) {
+	return nil, nil
+}
+
 type blockingProvider struct{}
 
 func (p *blockingProvider) Name() string { return "blocking" }
@@ -117,6 +133,29 @@ func TestRunner_SingleTextTurn(t *testing.T) {
 	// FinalMessages: [user, assistant]
 	if len(result.FinalMessages) != 2 {
 		t.Errorf("FinalMessages len = %d, want 2", len(result.FinalMessages))
+	}
+}
+
+func TestRunner_ExecuteSingleTool_NilResultReturnsErrorBlock(t *testing.T) {
+	reg := tool.NewMemRegistry()
+	reg.Register(&nilResultTool{})
+
+	runner := newTestRunner(llm.NewMockProvider("mock"), reg)
+	run := NewRun("run-nil-tool", "test-brain", defaultBudget())
+	turn := &Turn{Index: 0}
+
+	block := runner.executeSingleTool(context.Background(), run, turn, reg, llm.ContentBlock{
+		Type:      "tool_use",
+		ToolUseID: "tu-1",
+		ToolName:  "test.nil_result",
+		Input:     json.RawMessage(`{}`),
+	})
+
+	if !block.IsError {
+		t.Fatalf("is_error=%v, want true", block.IsError)
+	}
+	if string(block.Output) != `"tool test.nil_result returned nil result"` {
+		t.Fatalf("output=%s, want nil-result error", string(block.Output))
 	}
 }
 

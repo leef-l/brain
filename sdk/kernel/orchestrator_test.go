@@ -1044,6 +1044,47 @@ func TestLLMProxy_ModelResolutionPriority(t *testing.T) {
 	}
 }
 
+func TestLLMProxy_ForwardsToolChoice(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	provider := llm.NewMockProvider("mock")
+	provider.QueueToolUse("browser.open", json.RawMessage(`{"url":"https://example.com"}`))
+
+	proxy := &LLMProxy{
+		ProviderFactory: func(kind agent.Kind) llm.Provider { return provider },
+	}
+
+	reqParams, _ := json.Marshal(llmCompleteRequest{
+		Messages: []llm.Message{{
+			Role: "user",
+			Content: []llm.ContentBlock{{
+				Type: "text",
+				Text: "open example.com",
+			}},
+		}},
+		Tools: []llm.ToolSchema{{
+			Name:        "browser.open",
+			Description: "Open a URL",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		}},
+		ToolChoice: "browser.open",
+		MaxTokens:  64,
+	})
+	_, err := proxy.handleComplete(ctx, agent.KindBrowser, reqParams)
+	if err != nil {
+		t.Fatalf("handleComplete: %v", err)
+	}
+
+	requests := provider.Requests()
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(requests))
+	}
+	if requests[0].ToolChoice != "browser.open" {
+		t.Fatalf("tool_choice=%q, want browser.open", requests[0].ToolChoice)
+	}
+}
+
 type flakyProvider struct {
 	mu       sync.Mutex
 	requests []*llm.ChatRequest
