@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "element_plus_buttons",
+  "element_id": 3,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5412,
+      "action_intent": "Open the site search dialog",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 1.0
+    },
+    {
+      "run": 1,
+      "latency_ms": 2178,
+      "action_intent": "Open search dialog to search documentation",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2938,
+      "action_intent": "Open the site search dialog",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

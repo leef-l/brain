@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "browser",
   "name": "Browser Brain",
-  "brain_version": "0.1.0",
+  "brain_version": "1.0.0",
   "description": "浏览器专家：网页导航、元素交互、截图、JavaScript 执行",
   "capabilities": [
     "web.navigate",
@@ -33,6 +33,13 @@
   "health": {
     "startup_timeout_ms": 10000,
     "heartbeat_timeout_ms": 30000,
-    "expected_methods": ["brain/execute", "brain/tools_list"]
+    "expected_methods": [
+      "brain/execute",
+      "brain/tools_list",
+      "brain/metrics"
+    ]
+  },
+  "compatibility": {
+    "min_kernel_version": "1.0.0"
   }
 }

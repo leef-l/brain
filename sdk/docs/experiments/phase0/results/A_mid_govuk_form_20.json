@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "govuk_form",
+  "element_id": 20,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3279,
+      "action_intent": "Navigate to the Passwords pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2913,
+      "action_intent": "Navigate to the Passwords pattern documentation page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 1.0
+    },
+    {
+      "run": 2,
+      "latency_ms": 3989,
+      "action_intent": "Navigate to the Passwords pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 1.0
+    }
+  ]
+}

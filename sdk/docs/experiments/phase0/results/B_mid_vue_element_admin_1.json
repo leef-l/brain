@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "vue_element_admin",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3306,
+      "action_intent": "Click on Carbon advertisement link",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3977,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '30897d91fc2e529691058160de7cbe04', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 9460,
+      "action_intent": "Click external advertisement link",
+      "reversibility": "semi_reversible",
+      "risk_level": "external_effect",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

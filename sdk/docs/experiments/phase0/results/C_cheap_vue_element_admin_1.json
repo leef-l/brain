@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "vue_element_admin",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3916,
+      "action_intent": "Navigate to an external advertisement website.",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.9
+    },
+    {
+      "run": 1,
+      "latency_ms": 3027,
+      "action_intent": "Navigate to an external advertisement page.",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 3913,
+      "action_intent": "Navigate to an external advertisement website via a carbon ads link.",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.85
+    }
+  ]
+}

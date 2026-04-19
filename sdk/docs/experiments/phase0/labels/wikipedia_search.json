@@ -1,0 +1,168 @@
+{
+  "page_id": "wikipedia_search",
+  "url": "https://en.wikipedia.org/w/index.php?search=brain+agent&title=Special%3ASearch&fulltext=1",
+  "category": "search",
+  "snapshot_file": "samples/wikipedia_search/snapshot.json",
+  "screenshot_file": "samples/wikipedia_search/screenshot.png",
+  "html_file": "samples/wikipedia_search/page.html",
+  "drafted_at": "2026-04-19T09:04:44Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 4,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": null,
+        "name": "Search",
+        "href": null,
+        "bbox": {
+          "x": 730,
+          "y": 33,
+          "w": 71,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Submit the search query entered in the top navigation search bar to find results on Wikipedia",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "This is the header/navbar search button (id=4), distinct from the in-page search button (id=11). Both trigger the same search action but from different locations on the page.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 11,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "Search",
+        "href": null,
+        "bbox": {
+          "x": 708,
+          "y": 197,
+          "w": 73,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Submit the search query entered in the main search results page input to execute or refine a Wikipedia search",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "This is the in-page search submit button below the main search input (id=10). Functionally equivalent to id=4 but associated with the body-level search form.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 12,
+      "element": {
+        "tag": "a",
+        "role": "button",
+        "type": null,
+        "name": "Advanced search:",
+        "href": null,
+        "bbox": {
+          "x": 394,
+          "y": 236,
+          "w": 700,
+          "h": 33
+        }
+      },
+      "draft": {
+        "action_intent": "Toggle or expand the advanced search options panel to refine search parameters such as namespaces or filters",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "secondary",
+        "notes": "This is an anchor styled as a button (role=button). It likely expands/collapses an advanced search panel in-place rather than navigating to a new page.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 3,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "search",
+        "name": "Search Wikipedia",
+        "href": null,
+        "bbox": {
+          "x": 493,
+          "y": 33,
+          "w": 404,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Enter or modify a search query in the top navigation bar search field",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Header-level search input (type=search). Typing here does not commit any action until the user submits. May show autocomplete suggestions.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 10,
+      "element": {
+        "tag": "input",
+        "role": "combobox",
+        "type": "search",
+        "name": "brain agent",
+        "href": null,
+        "bbox": {
+          "x": 358,
+          "y": 197,
+          "w": 628,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Enter or modify the search query in the main search results page input field to refine the current search",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "This is the body-level combobox search input pre-filled with 'brain agent'. The combobox role suggests it may offer autocomplete/dropdown suggestions as the user types.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "",
+        "href": "https://en.wikipedia.org/wiki/Main_Page",
+        "bbox": {
+          "x": 179,
+          "y": 33,
+          "w": 140,
+          "h": 38
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Wikipedia Main Page",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "Likely the Wikipedia logo/wordmark link in the top-left corner (empty accessible name, links to Main_Page). Standard site-wide navigation element.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-01-search-duckduckgo",
+  "category": "misc",
+  "site": "https://duckduckgo.com",
+  "goal": "On https://duckduckgo.com, submit a search for the keyword 'privacy' and verify the results page URL carries the query.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)([?\u0026]q=|search)"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "search",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-01-1",
+    "domain": "search",
+    "subdomain": "duckduckgo"
+  }
+}

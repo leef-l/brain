@@ -1,0 +1,35 @@
+{
+  "id": "01_gitea_search_star",
+  "description": "Gitea 登录 → 搜索仓库 → Star(跨 2 个 P1 模式:auth + nav)",
+  "site": "https://demo.gitea.com",
+  "max_turns": 10,
+  "token_budget": 40000,
+  "steps": [
+    {
+      "name": "login",
+      "url_hint": "/user/login",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Log in as tester / tester123"
+    },
+    {
+      "name": "search_repo",
+      "url_hint": "/explore/repos",
+      "category": "search",
+      "pattern_id": "search_query",
+      "goal": "Search for repository named 'awesome'"
+    },
+    {
+      "name": "star_repo",
+      "url_hint": "/awesome",
+      "category": "nav",
+      "pattern_id": "close_modal",
+      "goal": "Click the Star button on the first result"
+    }
+  ],
+  "success": [
+    { "kind": "dom_contains", "value": "Unstar" },
+    { "kind": "url_contains", "value": "/awesome" }
+  ],
+  "tags": ["longchain", "auth_to_search", "phase2"]
+}

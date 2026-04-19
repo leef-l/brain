@@ -1,0 +1,754 @@
+{
+  "page_id": "startpage_search",
+  "url": "https://www.startpage.com/do/search?q=brain+agent",
+  "category": "search",
+  "built_at": "2026-04-19T09:27:25Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 4,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "clear search bar",
+        "href": null,
+        "bbox": {
+          "x": 714,
+          "y": 43,
+          "w": 20,
+          "h": 20
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Clear the current text in the search bar",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "clear the current text in the search bar": 3,
+            "clear the search bar text": 2,
+            "clear the text from the search input field": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Clear the current text in the search bar",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Clear the current text in the search bar",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Clear the current text in the search bar",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Clear the search bar text",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Clear the search bar text",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Clear the text from the search input field.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Clear the search query input field",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Clear the search query from the input field.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Clear the search query from the search bar.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "search button",
+        "href": null,
+        "bbox": {
+          "x": 751,
+          "y": 43,
+          "w": 20,
+          "h": 20
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Submit the search query to get results",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "submit the search query to get results": 4,
+            "submit the current search query to get results": 3,
+            "submit the search query": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Submit the search query to get results",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Submit the search query to get results",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Submit the search query to get results",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Submit the search query",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Submit the search query",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Submit the search query to get results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Submit the current search query to get results",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Submit the current search query to get results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Submit the current search query to get results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "element": {
+        "tag": "div",
+        "role": "button",
+        "type": null,
+        "name": "safe search filter",
+        "href": null,
+        "bbox": {
+          "x": 338,
+          "y": 144,
+          "w": 170,
+          "h": 17
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Apply a safe search filter",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "apply a safe search filter": 2,
+            "open a menu to adjust the safe search filtering level": 2,
+            "open or adjust the safe search filter settings": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 8,
+            "safe_caution": 1
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Open or adjust the safe search filter settings",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Open or adjust the safe search filter setting",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Open or toggle the safe search filter options",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Apply a safe search filter",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Apply a safe search filter",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Open the safe search filter options.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Open a menu to adjust the safe search filtering level",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Open a menu to adjust the safe search filtering level.",
+          "reversibility": "reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Open a menu to adjust the safe search filter level.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "element": {
+        "tag": "input",
+        "role": "searchbox",
+        "type": "text",
+        "name": "search",
+        "href": null,
+        "bbox": {
+          "x": 434,
+          "y": 43,
+          "w": 537,
+          "h": 20
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Enter or edit a search query in the search box",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "enter or edit a search query in the search box": 3,
+            "type a search query": 1,
+            "enter a search query": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Enter or edit a search query in the search box",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Enter or edit a search query in the search box",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Enter or edit a search query in the search box",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Type a search query",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Enter a search query",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter or modify search query text.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Enter or edit the text for a new search query",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Type or edit a search query.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Type or edit the text for a web search.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Startpage Search",
+        "href": "https://www.startpage.com/?sc=ja3FJtoatVWM00&t=device",
+        "bbox": {
+          "x": 1572,
+          "y": 203,
+          "w": 213,
+          "h": 20
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Startpage homepage",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the startpage homepage": 4,
+            "navigate to the startpage home page": 2,
+            "navigate to the startpage home search page": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Startpage home search page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Startpage home page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Startpage home page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the Startpage homepage",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to Startpage home page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the Startpage homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the Startpage homepage",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the Startpage homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the Startpage.com homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "skip to main content",
+        "href": "https://www.startpage.com/do/search?q=brain+agent#mainline-skip-to",
+        "bbox": {
+          "x": -10007,
+          "y": 42,
+          "w": 184,
+          "h": 52
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Skip navigation and jump to the main content area",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "consensus": {
+          "action_intent": {
+            "skip navigation and jump to the main content area": 3,
+            "skip to main content": 2,
+            "skip past navigation elements to the main page content": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "navigation": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Skip navigation and jump to the main content area",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Skip navigation and jump to the main content area",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Skip navigation and jump to the main content area",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Skip to main content",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Skip to main content",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Skip navigation and jump to main content.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Skip past navigation elements to the main page content",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Skip navigation links to go directly to the main page content.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Skip past navigation elements to the main page content.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    }
+  ]
+}

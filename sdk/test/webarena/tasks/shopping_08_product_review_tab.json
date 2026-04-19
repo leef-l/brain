@@ -1,0 +1,12 @@
+{
+  "id": "shopping-product-review-tab",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "On any product detail page, click the 'Reviews' tab and verify the review form (name / rating / review body) rendered.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "dom_has", "value": "#input-name" },
+    { "kind": "dom_has", "value": "textarea[name='text']" }
+  ],
+  "tags": ["shopping", "interaction", "phase2"]
+}

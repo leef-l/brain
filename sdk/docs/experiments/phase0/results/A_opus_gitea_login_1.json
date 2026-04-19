@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "gitea_login",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4138,
+      "action_intent": "Navigate to the Gitea home page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 1,
+      "latency_ms": 3198,
+      "action_intent": "Navigate to the Gitea home page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 2,
+      "latency_ms": 3087,
+      "action_intent": "Navigate to the Gitea home page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    }
+  ]
+}

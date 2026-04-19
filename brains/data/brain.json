@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "data",
   "name": "Data Brain",
-  "brain_version": "0.1.0",
+  "brain_version": "1.0.0",
   "description": "行情数据采集：K线、快照、特征向量、回放、健康检查",
   "capabilities": [
     "market.candles",
@@ -33,6 +33,13 @@
   "health": {
     "startup_timeout_ms": 5000,
     "heartbeat_timeout_ms": 30000,
-    "expected_methods": ["brain/execute", "brain/tools_list"]
+    "expected_methods": [
+      "brain/execute",
+      "brain/tools_list",
+      "brain/metrics"
+    ]
+  },
+  "compatibility": {
+    "min_kernel_version": "1.0.0"
   }
 }

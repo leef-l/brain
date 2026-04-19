@@ -1,0 +1,759 @@
+{
+  "page_id": "angular_material_button",
+  "url": "https://material.angular.dev/components/button/examples",
+  "category": "framework_angular",
+  "built_at": "2026-04-19T09:34:24Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 2,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": null,
+        "name": "OKAY, GOT IT",
+        "href": null,
+        "bbox": {
+          "x": 422,
+          "y": 848,
+          "w": 111,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Dismiss or acknowledge a notification or cookie consent banner",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "ambiguous",
+        "consensus": {
+          "action_intent": {
+            "dismiss or acknowledge a notification or cookie consent banner": 3,
+            "dismiss a notification or informational message": 2,
+            "dismiss the cookie consent banner": 1
+          },
+          "reversibility": {
+            "reversible": 8,
+            "irreversible": 1
+          },
+          "risk_level": {
+            "safe": 8,
+            "safe_caution": 1
+          },
+          "flow_role": {
+            "primary": 4,
+            "escape": 2,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Dismiss or acknowledge a notification or cookie consent banner",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Dismiss or acknowledge a notification or cookie consent banner",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Dismiss or acknowledge a notification or cookie consent banner",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Dismiss the cookie consent banner",
+          "reversibility": "reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Dismiss the notification or cookie consent banner.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Dismiss a notice or cookie banner",
+          "reversibility": "irreversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Dismiss a notification or informational message.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Dismiss a notification or informational message.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Dismiss a cookie or notification banner.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": null,
+        "name": "Select a version",
+        "href": null,
+        "bbox": {
+          "x": 1227,
+          "y": 28,
+          "w": 95,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Open a dropdown to select a different documentation version",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "open a dropdown to select a different documentation version": 2,
+            "open a dropdown to select a specific angular material version": 1,
+            "open version selector dropdown": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Open a dropdown to select a specific Angular Material version",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Open a dropdown to select a different documentation version",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Open a dropdown to select a different documentation version",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Open version selector dropdown",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Open a dropdown to select the Angular version.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Select a documentation version",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Choose a specific version of the framework or documentation.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Open a dropdown menu to choose a version of the framework.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Open a dropdown to select a different Angular version.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": null,
+        "name": "Select a theme",
+        "href": null,
+        "bbox": {
+          "x": 1294,
+          "y": 28,
+          "w": 40,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Open a dropdown to select a different visual theme for the site",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "open a dropdown to select a different visual theme for the site": 2,
+            "open a dropdown to select a visual theme for the documentation site": 1,
+            "open theme selector dropdown": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Open a dropdown to select a visual theme for the documentation site",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Open a dropdown to select a different visual theme for the site",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Open a dropdown to select a different visual theme for the site",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Open theme selector dropdown",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Open a dropdown to select the documentation theme.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Select a documentation theme",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Choose a visual theme for the documentation site.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Open a dropdown menu to choose a visual theme for the site.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Open a dropdown to select a different UI theme.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "element": {
+        "tag": "a",
+        "role": "tab",
+        "type": null,
+        "name": "OVERVIEW",
+        "href": "https://material.angular.dev/components/button/overview",
+        "bbox": {
+          "x": 370,
+          "y": 100,
+          "w": 160,
+          "h": 48
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Overview tab for the button component documentation",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the overview tab for the button component documentation": 3,
+            "navigate to the button component overview": 2,
+            "navigate to the overview documentation page for buttons": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 5,
+            "navigation": 4
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Overview tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Overview tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Overview tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the button component overview",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the button component overview page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the button component overview",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the overview documentation page for buttons.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the overview documentation page for buttons.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the Overview documentation page for the button component.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "element": {
+        "tag": "a",
+        "role": "tab",
+        "type": null,
+        "name": "API",
+        "href": "https://material.angular.dev/components/button/api",
+        "bbox": {
+          "x": 530,
+          "y": 100,
+          "w": 160,
+          "h": 48
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the API tab for the button component documentation",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the api tab for the button component documentation": 3,
+            "navigate to the api documentation page for buttons": 2,
+            "navigate to the button component api reference": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 5,
+            "navigation": 4
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the API tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the API tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the API tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the button component API reference",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the button component API reference page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the button component API tab",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the API documentation page for buttons.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the API documentation page for buttons.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the API documentation page for the button component.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "element": {
+        "tag": "a",
+        "role": "tab",
+        "type": null,
+        "name": "STYLING",
+        "href": "https://material.angular.dev/components/button/styling",
+        "bbox": {
+          "x": 690,
+          "y": 100,
+          "w": 160,
+          "h": 48
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Styling tab for the button component documentation",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the styling tab for the button component documentation": 3,
+            "navigate to the styling documentation page for buttons": 2,
+            "navigate to the button component styling guide": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 5,
+            "navigation": 4
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Styling tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Styling tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Styling tab for the button component documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the button component styling guide",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the button component styling guide page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the button component styling tab",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the styling documentation page for buttons.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the styling documentation page for buttons.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the Styling documentation page for the button component.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    }
+  ]
+}

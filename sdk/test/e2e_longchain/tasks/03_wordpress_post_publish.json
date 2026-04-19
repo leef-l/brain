@@ -1,0 +1,41 @@
+{
+  "id": "03_wordpress_post_publish",
+  "description": "WordPress 登录 → 新建文章 → 保存草稿 → 发布(auth + admin 复合)",
+  "site": "https://wordpress.com/wp-login.php",
+  "max_turns": 12,
+  "token_budget": 50000,
+  "steps": [
+    {
+      "name": "login",
+      "url_hint": "/wp-login.php",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Log in as editor"
+    },
+    {
+      "name": "new_post",
+      "url_hint": "/wp-admin/post-new.php",
+      "category": "admin",
+      "pattern_id": "admin_row_edit",
+      "goal": "Open new-post editor and fill title + body"
+    },
+    {
+      "name": "save_draft",
+      "url_hint": "/wp-admin/post-new.php",
+      "category": "form",
+      "pattern_id": "submit_generic_form",
+      "goal": "Click Save Draft"
+    },
+    {
+      "name": "publish",
+      "url_hint": "/wp-admin/post.php",
+      "category": "form",
+      "pattern_id": "submit_generic_form",
+      "goal": "Click Publish"
+    }
+  ],
+  "success": [
+    { "kind": "dom_contains", "value": "Post published" }
+  ],
+  "tags": ["longchain", "admin_crud", "phase2"]
+}

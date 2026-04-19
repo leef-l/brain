@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "govuk_form",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2843,
+      "action_intent": "Reject analytics cookies on this website",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "secondary",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 2699,
+      "action_intent": "Reject analytics cookies on this website",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2644,
+      "action_intent": "Reject analytics cookies on this website",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    }
+  ]
+}

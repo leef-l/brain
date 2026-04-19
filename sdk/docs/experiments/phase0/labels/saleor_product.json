@@ -1,0 +1,168 @@
+{
+  "page_id": "saleor_product",
+  "url": "https://demo.saleor.io/default-channel/products/apple-juice/",
+  "category": "ecommerce",
+  "snapshot_file": "samples/saleor_product/snapshot.json",
+  "screenshot_file": "samples/saleor_product/screenshot.png",
+  "html_file": "samples/saleor_product/page.html",
+  "drafted_at": "2026-04-19T09:04:15Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 11,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "Add to bag",
+        "href": null,
+        "bbox": {
+          "x": 1040,
+          "y": 349,
+          "w": 576,
+          "h": 56
+        }
+      },
+      "draft": {
+        "action_intent": "Add the Apple Juice product to the shopping bag/cart.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Standard add-to-cart action on a product detail page. Item can typically be removed from the cart later.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 8,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "0 items in cart, view bag",
+        "href": null,
+        "bbox": {
+          "x": 1308,
+          "y": 32,
+          "w": 40,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Open the shopping cart/bag to view its contents (currently 0 items).",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Opens a cart drawer or navigates to a cart page. Could be classified as cross_page_nav if it navigates to a separate cart page rather than opening an overlay; reviewer should verify behavior.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 12,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Description",
+        "href": null,
+        "bbox": {
+          "x": 1040,
+          "y": 479,
+          "w": 576,
+          "h": 52
+        }
+      },
+      "draft": {
+        "action_intent": "Expand or reveal the product description section on the product detail page.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "secondary",
+        "notes": "Likely an accordion/tab toggle. Clicking again or clicking another tab collapses it.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "Search for products...",
+        "href": null,
+        "bbox": {
+          "x": 580,
+          "y": 32,
+          "w": 448,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Enter a search query to find products in the store.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Text input field for product search. Typing is fully reversible; submitting a search navigates but can be undone via back navigation.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Homepage",
+        "href": "https://demo.saleor.io/default-channel",
+        "bbox": {
+          "x": 173,
+          "y": 32,
+          "w": 122,
+          "h": 28
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the store's homepage.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "notes": "Logo or brand link pointing to the storefront root. Standard homepage navigation.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 3,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "All",
+        "href": "https://demo.saleor.io/default-channel/products",
+        "bbox": {
+          "x": 935,
+          "y": 32,
+          "w": 18,
+          "h": 20
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the full product listing page showing all products.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "Category/filter link in the top nav. Could be argued as cross_page_nav since it leaves the current product page for a catalog page; reviewer may want to confirm whether 'navigation' or 'cross_page_nav' is the better fit.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

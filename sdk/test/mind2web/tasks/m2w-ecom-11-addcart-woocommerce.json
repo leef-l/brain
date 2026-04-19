@@ -1,0 +1,24 @@
+{
+  "id": "m2w-ecom-11-addcart-woocommerce",
+  "category": "ecommerce",
+  "site": "https://woocommerce.com",
+  "goal": "On https://woocommerce.com, open any product detail page and add it to the cart. Verify a toast / mini-cart / cart count indicator reflects the addition.",
+  "max_turns": 12,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[class*=\"cart-count\" i], [data-cart-count], .mini-cart, .cart-drawer, [role=\"status\"]"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "ecommerce",
+    "add_to_cart",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-ecom-06-a",
+    "domain": "ecom",
+    "subdomain": "woocommerce"
+  }
+}

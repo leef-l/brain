@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "element_plus_buttons",
+  "element_id": 3,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3431,
+      "action_intent": "Open search dialog to find documentation content",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2739,
+      "action_intent": "Open search dialog to find documentation content",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2747,
+      "action_intent": "Open search dialog to find documentation content",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

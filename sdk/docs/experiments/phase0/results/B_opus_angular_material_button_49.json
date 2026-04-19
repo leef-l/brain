@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "angular_material_button",
+  "element_id": 49,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5183,
+      "action_intent": "Navigate to the API reference tab for the Button component",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 4906,
+      "action_intent": "Navigate to the API reference tab for the Button component",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 4881,
+      "action_intent": "Navigate to the API reference tab for the Button component",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

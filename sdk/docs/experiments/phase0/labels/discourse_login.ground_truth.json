@@ -1,0 +1,761 @@
+{
+  "page_id": "discourse_login",
+  "url": "https://meta.discourse.org/login",
+  "category": "login_rich",
+  "built_at": "2026-04-19T09:22:11Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 7,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Log In",
+        "href": null,
+        "bbox": {
+          "x": 559,
+          "y": 511,
+          "w": 382,
+          "h": 38
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Submit login credentials to authenticate into the account",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "submit login credentials to authenticate into the account": 3,
+            "log in with email and password": 2,
+            "submit login credentials to access account": 2
+          },
+          "reversibility": {
+            "semi_reversible": 7,
+            "irreversible": 1,
+            "conditional": 1
+          },
+          "risk_level": {
+            "safe_caution": 9
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Submit login credentials to authenticate into the account",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Submit login credentials to authenticate into the account",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Submit login credentials to authenticate into the account",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Log in with email and password",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "User attempts to log in with entered credentials.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Log in with email and password",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Submit login credentials to access account",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Submit credentials to log into the account.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Submit login credentials to access account",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Log in with Discourse ID",
+        "href": null,
+        "bbox": {
+          "x": 959,
+          "y": 357,
+          "w": 226,
+          "h": 46
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Log in using Discourse ID as an alternative authentication method",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "secondary",
+        "consensus": {
+          "action_intent": {
+            "log in using discourse id as an alternative authentication method": 3,
+            "log in with discourse id": 2,
+            "user attempts to log in using discourse id provider": 1
+          },
+          "reversibility": {
+            "semi_reversible": 7,
+            "irreversible": 1,
+            "conditional": 1
+          },
+          "risk_level": {
+            "safe_caution": 9
+          },
+          "flow_role": {
+            "secondary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Log in using Discourse ID as an alternative authentication method",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Log in using Discourse ID as an alternative authentication method",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Log in using Discourse ID as an alternative authentication method",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Log in with Discourse ID",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "User attempts to log in using Discourse ID provider.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Log in with Discourse ID",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Authenticate using Discourse ID provider",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Authenticate using a Discourse ID provider.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Authenticate using Discourse ID service",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Sign in with Google",
+        "href": null,
+        "bbox": {
+          "x": 959,
+          "y": 455,
+          "w": 226,
+          "h": 46
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Log in using Google account as an alternative authentication method",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "secondary",
+        "consensus": {
+          "action_intent": {
+            "log in using google account as an alternative authentication method": 2,
+            "log in using google as an alternative authentication method": 1,
+            "log in using google account": 1
+          },
+          "reversibility": {
+            "semi_reversible": 7,
+            "irreversible": 1,
+            "conditional": 1
+          },
+          "risk_level": {
+            "safe_caution": 7,
+            "external_effect": 2
+          },
+          "flow_role": {
+            "secondary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Log in using Google account as an alternative authentication method",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Log in using Google as an alternative authentication method",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Log in using Google account as an alternative authentication method",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Log in using Google account",
+          "reversibility": "irreversible",
+          "risk_level": "external_effect",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "User attempts to log in using Google account.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Log in with Google account",
+          "reversibility": "conditional",
+          "risk_level": "external_effect",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Authenticate using Google OAuth provider",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Authenticate using a Google account.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Authenticate using Google OAuth",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "I forgot my password",
+        "href": "https://meta.discourse.org/login",
+        "bbox": {
+          "x": 438,
+          "y": 467,
+          "w": 139,
+          "h": 19
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the password recovery flow",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "escape",
+        "consensus": {
+          "action_intent": {
+            "navigate to the password recovery flow": 3,
+            "navigate to password recovery page": 3,
+            "navigate to reset password page": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "escape": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the password recovery flow",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the password recovery flow",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the password recovery flow",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to reset password page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "User navigates to password recovery page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to password recovery page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to password recovery page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the password recovery page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to password recovery page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "password",
+        "name": "",
+        "href": null,
+        "bbox": {
+          "x": 559,
+          "y": 430,
+          "w": 382,
+          "h": 46
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Enter account password for login authentication",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "enter account password for login authentication": 3,
+            "enter password for authentication": 2,
+            "enter account password": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Enter account password for login authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Enter account password for login authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Enter account password for login authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter account password",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "User enters their password to authenticate.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter login password",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Enter password for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter the password for the account.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter password for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "email",
+        "name": "",
+        "href": null,
+        "bbox": {
+          "x": 559,
+          "y": 344,
+          "w": 382,
+          "h": 46
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Enter email address for login authentication",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "enter email address for login authentication": 3,
+            "enter email address for authentication": 2,
+            "enter account email address": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Enter email address for login authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Enter email address for login authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Enter email address for login authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter account email address",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "User enters their email address to authenticate.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter login email address",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Enter email address for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter the email address for the account.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter email address for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    }
+  ]
+}

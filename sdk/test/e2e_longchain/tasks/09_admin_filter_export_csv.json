@@ -1,0 +1,41 @@
+{
+  "id": "09_admin_filter_export_csv",
+  "description": "后台 CRUD + 导出:列表 → 筛选 → 批量导出 CSV(压测 browser.downloads 感知)",
+  "site": "https://adminlte.io/demo",
+  "max_turns": 12,
+  "token_budget": 45000,
+  "steps": [
+    {
+      "name": "login",
+      "url_hint": "/login",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Log in with demo credentials"
+    },
+    {
+      "name": "open_orders",
+      "url_hint": "/pages/orders",
+      "category": "admin",
+      "pattern_id": "admin_table_pagination",
+      "goal": "Open orders table"
+    },
+    {
+      "name": "filter_last30",
+      "url_hint": "/pages/orders",
+      "category": "admin",
+      "pattern_id": "admin_filter_apply",
+      "goal": "Filter orders to last 30 days"
+    },
+    {
+      "name": "export_csv",
+      "url_hint": "/pages/orders",
+      "category": "admin",
+      "pattern_id": "admin_export_csv",
+      "goal": "Export filtered rows to CSV; confirm browser download event"
+    }
+  ],
+  "success": [
+    { "kind": "file_downloaded", "value": "*.csv" }
+  ],
+  "tags": ["longchain", "admin_export", "download_sense", "phase2"]
+}

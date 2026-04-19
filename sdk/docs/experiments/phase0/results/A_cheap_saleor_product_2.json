@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "saleor_product",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2782,
+      "action_intent": "Search for products by entering text",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2739,
+      "action_intent": "Search for products by entering text in the search field",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2485,
+      "action_intent": "Search for products in the store",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

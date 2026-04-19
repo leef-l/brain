@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "kind": "desktop",
+  "name": "Desktop Brain",
+  "brain_version": "0.1.0",
+  "description": "OS 级自动化:在浏览器之外驱动本地应用,支持打开文件、枚举窗口、发送快捷键等。依赖系统命令(xdg-open / wmctrl / xdotool / osascript)。",
+  "capabilities": [
+    "desktop.open_path",
+    "desktop.list_windows",
+    "desktop.send_hotkey",
+    "domain.os_automation",
+    "resource.desktop",
+    "mode.interactive"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-desktop-sidecar"
+  },
+  "policy": {
+    "approval_class": "exec-capable",
+    "approval_mode": "explicit",
+    "sandbox_profile": "workspace",
+    "tool_scope": "desktop"
+  },
+  "task_patterns": [
+    "打开本地文件",
+    "切换窗口",
+    "发送键盘快捷键"
+  ],
+  "health": {
+    "startup_timeout_ms": 3000,
+    "heartbeat_timeout_ms": 30000,
+    "expected_methods": [
+      "brain/execute",
+      "brain/tools_list",
+      "brain/metrics"
+    ]
+  },
+  "compatibility": {
+    "min_kernel_version": "1.0.0"
+  }
+}

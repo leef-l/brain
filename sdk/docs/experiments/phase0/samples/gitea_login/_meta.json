@@ -1,0 +1,14 @@
+{
+  "id": "gitea_login",
+  "category": "login_simple",
+  "description": "Gitea demo站登录页,开源稳定",
+  "url": "https://demo.gitea.com/user/login",
+  "captured_at": "2026-04-19T09:29:13Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "wait_selector_timeout",
+  "error": null,
+  "element_count": 11
+}

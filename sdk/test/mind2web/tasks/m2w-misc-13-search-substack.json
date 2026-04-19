@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-13-search-substack",
+  "category": "misc",
+  "site": "https://substack.com",
+  "goal": "On https://substack.com, submit a search for the keyword 'privacy' and verify the results page URL carries the query.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)([?\u0026]q=|search)"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "search",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-05-1",
+    "domain": "newsletter",
+    "subdomain": "substack"
+  }
+}

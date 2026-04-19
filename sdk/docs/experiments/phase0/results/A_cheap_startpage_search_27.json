@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "startpage_search",
+  "element_id": 27,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2783,
+      "action_intent": "Open safe search filter options",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 2892,
+      "action_intent": "Open safe search filter options to adjust content filtering level",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 2910,
+      "action_intent": "Open safe search filter options to change content filtering level",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    }
+  ]
+}

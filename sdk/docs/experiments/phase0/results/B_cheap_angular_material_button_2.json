@@ -1,0 +1,9 @@
+{
+  "combo": "B",
+  "role": "cheap",
+  "provider": "deepseek",
+  "page_id": "angular_material_button",
+  "element_id": 2,
+  "predictions": [],
+  "skipped": "provider has no image support"
+}

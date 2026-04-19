@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "quant",
   "name": "Quant Brain",
-  "brain_version": "0.1.0",
+  "brain_version": "1.0.0",
   "description": "量化策略执行：仓位管理、风控、下单、回测、自适应学习",
   "capabilities": [
     "trading.portfolio",
@@ -34,6 +34,13 @@
   "health": {
     "startup_timeout_ms": 5000,
     "heartbeat_timeout_ms": 30000,
-    "expected_methods": ["brain/execute", "brain/tools_list"]
+    "expected_methods": [
+      "brain/execute",
+      "brain/tools_list",
+      "brain/metrics"
+    ]
+  },
+  "compatibility": {
+    "min_kernel_version": "1.0.0"
   }
 }

@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-02-subscribe-duckduckgo",
+  "category": "misc",
+  "site": "https://duckduckgo.com",
+  "goal": "On https://duckduckgo.com, find a newsletter/subscribe widget and submit it with test@example.com; verify a confirmation message.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[role=\"alert\"], .success, .subscribed, .confirmation"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "subscribe",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-01-2",
+    "domain": "search",
+    "subdomain": "duckduckgo"
+  }
+}

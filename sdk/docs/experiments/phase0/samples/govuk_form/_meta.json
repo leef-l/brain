@@ -1,0 +1,14 @@
+{
+  "id": "govuk_form",
+  "category": "form_simple",
+  "description": "GOV.UK 表单模式示例",
+  "url": "https://design-system.service.gov.uk/patterns/addresses/",
+  "captured_at": "2026-04-19T08:54:13Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 78
+}

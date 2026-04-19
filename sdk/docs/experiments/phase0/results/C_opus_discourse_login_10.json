@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "discourse_login",
+  "element_id": 10,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4171,
+      "action_intent": "Sign in to the site using Google OAuth authentication",
+      "reversibility": "conditional",
+      "risk_level": "external_effect",
+      "flow_role": "secondary",
+      "confidence": 0.93
+    },
+    {
+      "run": 1,
+      "latency_ms": 4115,
+      "action_intent": "Sign in to the site using Google OAuth authentication",
+      "reversibility": "conditional",
+      "risk_level": "external_effect",
+      "flow_role": "secondary",
+      "confidence": 0.93
+    },
+    {
+      "run": 2,
+      "latency_ms": 3994,
+      "action_intent": "Sign in to the site using Google OAuth authentication",
+      "reversibility": "conditional",
+      "risk_level": "external_effect",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    }
+  ]
+}

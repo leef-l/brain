@@ -12,6 +12,7 @@ import (
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
+	"github.com/leef-l/brain/sdk/toolpolicy"
 
 	brain "github.com/leef-l/brain"
 )
@@ -44,9 +45,16 @@ func NewHandler(db *data.DataBrain, logger *slog.Logger) *dataHandler {
 	reg.Register(newReplayStartTool(db))
 	reg.Register(newReplayStopTool(db))
 
+	var filtered tool.Registry = reg
+	if cfg, err := toolpolicy.Load(""); err != nil {
+		logger.Warn("load tool policy failed", "err", err)
+	} else {
+		filtered = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindData))...)
+	}
+
 	return &dataHandler{
 		db:       db,
-		registry: reg,
+		registry: filtered,
 		logger:   logger,
 		learner:  data.NewDataBrainLearner(db),
 	}

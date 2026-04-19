@@ -1,0 +1,12 @@
+{
+  "id": "shopping-add-to-cart-qty2",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "Open any product detail on demo.opencart.com, change quantity to 2, click 'Add to Cart' and verify the mini-cart indicator updates with item total.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "dom_has", "value": "#cart" },
+    { "kind": "text_contains", "value": "2 item" }
+  ],
+  "tags": ["shopping", "cart", "happy_path", "phase2"]
+}

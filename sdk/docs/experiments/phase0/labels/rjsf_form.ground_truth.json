@@ -1,0 +1,758 @@
+{
+  "page_id": "rjsf_form",
+  "url": "https://rjsf-team.github.io/react-jsonschema-form/",
+  "category": "form_complex",
+  "built_at": "2026-04-19T09:24:45Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 47,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Submit",
+        "href": null,
+        "bbox": {
+          "x": 1204,
+          "y": 50,
+          "w": 70,
+          "h": 34
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Submit the form with the current field values",
+        "reversibility": "ambiguous",
+        "risk_level": "safe_caution",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "submit the form with the current field values": 3,
+            "submit the completed form data for processing": 2,
+            "submit the form with entered data": 1
+          },
+          "reversibility": {
+            "conditional": 3,
+            "reversible": 2,
+            "irreversible": 4
+          },
+          "risk_level": {
+            "safe_caution": 6,
+            "safe": 3
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": false,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Submit the form with the current field values",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Submit the form with the current field values",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Submit the form with the current field values",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Submit the form with entered data.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Submit the form configuration to see validation results",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Submit the form",
+          "reversibility": "irreversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Submit the completed form data for processing.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Submit the completed form data.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Submit the completed form data for processing.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Close Samples Drawer",
+        "href": null,
+        "bbox": {
+          "x": 184,
+          "y": 16,
+          "w": 31,
+          "h": 31
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Close the samples drawer panel",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "escape",
+        "consensus": {
+          "action_intent": {
+            "close the samples drawer panel": 5,
+            "close the samples drawer": 1,
+            "close the samples drawer panel to hide example forms": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "escape": 7,
+            "utility": 2
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Close the samples drawer panel",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Close the samples drawer panel",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Close the samples drawer panel",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Close the samples drawer panel.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Close the samples drawer panel",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Close the samples drawer",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Close the samples drawer panel to hide example forms.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Close the samples selection drawer.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Close the samples drawer to hide example forms.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "react-jsonschema-form\nTheme\nSelect theme\ndefault\nantd\nchakra-ui\ndaisy-ui\nfluentui-rc\nmantine\nmui\nprimereact\nreact-bootst",
+        "href": null,
+        "bbox": {
+          "x": 680,
+          "y": 37,
+          "w": 930,
+          "h": 74
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Open or interact with the theme selection dropdown for the playground",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "open or interact with the theme selection dropdown for the playground": 3,
+            "open the theme selection dropdown": 1,
+            "change the visual theme for the form preview": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Open or interact with the theme selection dropdown for the playground",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Open or interact with the theme selection dropdown for the playground",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Open or interact with the theme selection dropdown for the playground",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Open the theme selection dropdown.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Change the visual theme for the form preview",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Select a form theme",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Open a dropdown menu to select a different UI theme for the form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Open a dropdown to select a UI theme.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Open a dropdown to select a UI theme for the form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "root",
+        "href": null,
+        "bbox": {
+          "x": 1301,
+          "y": 1078,
+          "w": 263,
+          "h": 34
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Edit the root field text input value in the form",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "edit the root field text input value in the form": 3,
+            "enter or edit the root field value": 1,
+            "edit the root field value in the live form": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Edit the root field text input value in the form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Edit the root field text input value in the form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Edit the root field text input value in the form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter or edit the root field value.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Edit the root field value in the live form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter text in the root input field",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Edit the root key name for the form's JSON schema.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter a custom root schema identifier.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter a custom root schema ID for the form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 74,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "_",
+        "href": null,
+        "bbox": {
+          "x": 1301,
+          "y": 1152,
+          "w": 263,
+          "h": 34
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Edit the underscore-named text input value in the form",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "edit the underscore-named text input value in the form": 3,
+            "enter or edit the underscore field value": 1,
+            "edit the underscore field value in the live form": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Edit the underscore-named text input value in the form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Edit the underscore-named text input value in the form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Edit the underscore-named text input value in the form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter or edit the underscore field value.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Edit the underscore field value in the live form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter text in the secondary input field",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Edit the placeholder text for empty form fields.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter a custom property name for the form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter a custom underscore field schema ID for the form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "button",
+        "role": "tab",
+        "type": "button",
+        "name": "BLANK",
+        "href": null,
+        "bbox": {
+          "x": 100,
+          "y": 43,
+          "w": 199,
+          "h": 24
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Select the BLANK sample template to load into the playground",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "consensus": {
+          "action_intent": {
+            "select the blank sample template to load into the playground": 3,
+            "select the blank sample form template": 2,
+            "switch to the blank form template": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "navigation": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Select the BLANK sample template to load into the playground",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Select the BLANK sample template to load into the playground",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Select the BLANK sample template to load into the playground",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Select the BLANK sample form template.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Select the BLANK sample form template",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Switch to the BLANK sample tab",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Switch to the blank form template view.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Switch to the blank form template.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Switch to the blank form template.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "m2w-ecom-28-checkout-ikea",
+  "category": "ecommerce",
+  "site": "https://www.ikea.com",
+  "goal": "On https://www.ikea.com, starting from a cart with one item, proceed through checkout with the provided test address and stop at the payment gateway (do NOT enter card data).",
+  "max_turns": 20,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)(stripe|paypal|braintree|adyen|alipay|gateway|psp|3dsecure|/payment(/|\\?|$)|/pay(/|\\?|$))"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "ecommerce",
+    "checkout",
+    "cross_site",
+    "payment_gateway"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-ecom-14-b",
+    "domain": "ecom",
+    "subdomain": "ikea"
+  }
+}

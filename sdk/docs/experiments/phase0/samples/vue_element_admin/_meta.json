@@ -1,0 +1,14 @@
+{
+  "id": "vue_element_admin",
+  "category": "framework_vue",
+  "description": "Vue 2 + Element UI,中后台模板(Vue 框架覆盖)",
+  "url": "https://panjiachen.github.io/vue-element-admin/#/dashboard",
+  "captured_at": "2026-04-19T09:29:52Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 9
+}

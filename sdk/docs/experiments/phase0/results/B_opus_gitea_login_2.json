@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "gitea_login",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5817,
+      "action_intent": "Navigate to the Explore page to browse public repositories",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 1,
+      "latency_ms": 4070,
+      "action_intent": "Navigate to the Explore page to browse public repositories",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 2,
+      "latency_ms": 5043,
+      "action_intent": "Navigate to the Explore page to browse public repositories",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import (
 
 	data "github.com/leef-l/brain/brains/data"
 	"github.com/leef-l/brain/brains/data/store"
+	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/sidecar"
 
 	"gopkg.in/yaml.v3"
@@ -21,6 +22,11 @@ import (
 // starts it, and runs the sidecar stdio JSON-RPC loop.
 func Main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	if _, err := license.CheckSidecar("brain-data", license.VerifyOptions{}); err != nil {
+		logger.Error("license check failed", "err", err)
+		os.Exit(1)
+	}
 
 	cfg, st := loadConfig(logger)
 

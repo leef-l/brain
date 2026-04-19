@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "gitea_login",
+  "element_id": 6,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3036,
+      "action_intent": "Sign in using a passkey instead of password.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.8
+    },
+    {
+      "run": 1,
+      "latency_ms": 3013,
+      "action_intent": "Authenticate using a passkey instead of password",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 3067,
+      "action_intent": "Sign in using a passkey instead of password",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.8
+    }
+  ]
+}

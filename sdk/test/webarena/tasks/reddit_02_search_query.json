@@ -1,0 +1,12 @@
+{
+  "id": "reddit-search-query",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "On old.reddit.com, use the top search bar to search for 'rust async' and land on the search results page.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "url_contains", "value": "/search" },
+    { "kind": "url_contains", "value": "q=rust" }
+  ],
+  "tags": ["reddit", "search", "happy_path", "phase1"]
+}

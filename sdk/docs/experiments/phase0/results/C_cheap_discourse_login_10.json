@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "discourse_login",
+  "element_id": 10,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3591,
+      "action_intent": "Initiate OAuth login using Google account",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "primary",
+      "confidence": 0.9
+    },
+    {
+      "run": 1,
+      "latency_ms": 2683,
+      "action_intent": "Initiate OAuth login using Google account",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2679,
+      "action_intent": "Initiate OAuth login using Google account",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "primary",
+      "confidence": 0.95
+    }
+  ]
+}

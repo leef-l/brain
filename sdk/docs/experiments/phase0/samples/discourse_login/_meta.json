@@ -1,0 +1,14 @@
+{
+  "id": "discourse_login",
+  "category": "login_rich",
+  "description": "Discourse 登录页,含多字段+SSO",
+  "url": "https://meta.discourse.org/login",
+  "captured_at": "2026-04-19T08:55:40Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 11
+}

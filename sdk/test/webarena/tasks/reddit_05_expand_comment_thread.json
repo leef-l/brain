@@ -1,0 +1,11 @@
+{
+  "id": "reddit-expand-comment-thread",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "Open a post in /r/programming, then click 'load more comments' / 'continue this thread' at least once and verify additional comments rendered.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "dom_has", "value": ".morechildren, .deepthread" }
+  ],
+  "tags": ["reddit", "interaction", "phase2"]
+}

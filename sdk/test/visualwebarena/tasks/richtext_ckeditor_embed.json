@@ -1,0 +1,22 @@
+{
+  "id": "richtext_ckeditor_embed",
+  "category": "richtext",
+  "site": "https://ckeditor.com/ckeditor-5/demo/full-featured/",
+  "goal": "Insert a media embed using its toolbar icon and confirm a media widget appears.",
+  "max_turns": 12,
+  "visual_required": "hard",
+  "modality": [
+    "richtext"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "media"
+    }
+  ],
+  "tags": [
+    "richtext",
+    "hard"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-23-subscribe-spotify",
+  "category": "misc",
+  "site": "https://open.spotify.com",
+  "goal": "On https://open.spotify.com, find a newsletter/subscribe widget and submit it with test@example.com; verify a confirmation message.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[role=\"alert\"], .success, .subscribed, .confirmation"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "subscribe",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-08-2",
+    "domain": "audio",
+    "subdomain": "spotify"
+  }
+}

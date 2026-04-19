@@ -64,6 +64,16 @@ type Runner struct {
 	// 当 > 0 且 MessageCompressor 非 nil 时，超预算的消息会被自动压缩。
 	TokenBudget int
 
+	// PreTurnHook 在每 turn 开始构建 ChatRequest 前被调用,允许集成方
+	// 动态重写本轮曝露给 LLM 的工具 schema 列表。典型用途:P3.5 BrowserStage
+	// 自动切换——每 turn 依据 recorder 信号决定本轮工具 allow-list。
+	//
+	// 返回 nil 切片表示"沿用 opts.Tools"。返回空切片表示"本轮不开放任何工具"。
+	// Runner.ToolRegistry 不会被 hook 改动——dispatchTools 仍按原 registry 查找,
+	// 这样即便 hook 误裁,LLM 若非要调也能被正确执行;只是 schema 不再外泄。
+	// hook 返回非 nil error 时视为失败并终止 run(与其他硬失败一致)。
+	PreTurnHook func(ctx context.Context, run *Run, turnIndex int) ([]llm.ToolSchema, error)
+
 	// Now returns the current time. Defaults to time.Now().UTC when nil.
 	Now func() time.Time
 }
@@ -173,8 +183,29 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		run.CurrentTurn++
 		turn := NewTurn(run.ID, run.CurrentTurn, now)
 
+		// PreTurnHook: 让集成方按 turn 重写曝露给 LLM 的工具 schema 列表。
+		// 只影响本轮 buildChatRequest 看到的 tools,ToolRegistry 不动。
+		turnOpts := opts
+		if r.PreTurnHook != nil {
+			newTools, hookErr := r.PreTurnHook(ctx, run, run.CurrentTurn)
+			if hookErr != nil {
+				turn.End(r.now())
+				be := toBrainError(hookErr)
+				run.Fail(r.now())
+				turns = append(turns, &TurnResult{
+					Turn:      turn,
+					NextState: StateFailed,
+					Error:     be,
+				})
+				break
+			}
+			if newTools != nil {
+				turnOpts.Tools = newTools
+			}
+		}
+
 		// Build the ChatRequest.
-		req := r.buildChatRequest(run, messages, opts)
+		req := r.buildChatRequest(run, messages, turnOpts)
 
 		// Call LLM.
 		var resp *llm.ChatResponse

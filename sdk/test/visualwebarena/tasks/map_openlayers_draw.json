@@ -1,0 +1,22 @@
+{
+  "id": "map_openlayers_draw",
+  "category": "map",
+  "site": "https://openlayers.org/en/latest/examples/draw-features.html",
+  "goal": "Draw a polygon on the map and confirm the features count increments.",
+  "max_turns": 12,
+  "visual_required": "hard",
+  "modality": [
+    "map"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "1"
+    }
+  ],
+  "tags": [
+    "map",
+    "hard"
+  ]
+}

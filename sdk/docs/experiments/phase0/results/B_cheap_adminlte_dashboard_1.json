@@ -1,0 +1,9 @@
+{
+  "combo": "B",
+  "role": "cheap",
+  "provider": "deepseek",
+  "page_id": "adminlte_dashboard",
+  "element_id": 1,
+  "predictions": [],
+  "skipped": "provider has no image support"
+}

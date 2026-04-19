@@ -1,0 +1,22 @@
+{
+  "id": "canvas_chartjs_line",
+  "category": "canvas",
+  "site": "https://www.chartjs.org/samples/latest/charts/line/basic.html",
+  "goal": "Identify which of the two datasets has the highest peak value and name it.",
+  "max_turns": 12,
+  "visual_required": "hard",
+  "modality": [
+    "canvas"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Dataset 2"
+    }
+  ],
+  "tags": [
+    "canvas",
+    "hard"
+  ]
+}

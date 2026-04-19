@@ -1,0 +1,755 @@
+{
+  "page_id": "saleor_product",
+  "url": "https://demo.saleor.io/default-channel/products/apple-juice/",
+  "category": "ecommerce",
+  "built_at": "2026-04-19T09:26:10Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 11,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "Add to bag",
+        "href": null,
+        "bbox": {
+          "x": 1040,
+          "y": 349,
+          "w": 576,
+          "h": 56
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Add the Apple Juice product to the shopping bag",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "add the apple juice product to the shopping bag": 3,
+            "add the product to the shopping cart": 2,
+            "add the product to the shopping bag": 1
+          },
+          "reversibility": {
+            "semi_reversible": 9
+          },
+          "risk_level": {
+            "safe_caution": 6,
+            "safe": 3
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Add the Apple Juice product to the shopping bag",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Add the Apple Juice product to the shopping bag",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Add the Apple Juice product to the shopping bag",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Add the product to the shopping bag.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Add the apple juice product to shopping bag.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "User adds the apple juice product to their shopping bag.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Add this product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Add the product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Add the product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "Search for products...",
+        "href": null,
+        "bbox": {
+          "x": 580,
+          "y": 32,
+          "w": 448,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Search for products in the store catalog",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "search for products in the store catalog": 2,
+            "search for products using keywords": 2,
+            "search for products on the website": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Search for products in the store catalog",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Search for products in the store",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Search for products in the store catalog",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Search for products using keywords.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Search for products using keywords.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "User searches for products by entering keywords.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Search for products by entering keywords.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Search for products on the website.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Search for products on the website.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Log in",
+        "href": "https://demo.saleor.io/default-channel/login",
+        "bbox": {
+          "x": 1264,
+          "y": 32,
+          "w": 40,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the login page to sign in",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the login page to sign in": 3,
+            "navigate to the login page": 2,
+            "navigate to the login page to access account": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the login page to sign in",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the login page to sign in",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the login page to sign in",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the login page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to login page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "User navigates to the login page to authenticate.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the login page to access account.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the login page to access account.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the login page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "0 items in cart, view bag",
+        "href": null,
+        "bbox": {
+          "x": 1308,
+          "y": 32,
+          "w": 40,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "View the contents of the shopping cart.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "ambiguous",
+        "consensus": {
+          "action_intent": {
+            "view the contents of the shopping cart": 3,
+            "open the shopping cart to view added items": 2,
+            "open the shopping cart to view bag contents": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 2,
+            "navigation": 3,
+            "cross_page_nav": 4
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Open the shopping cart to view added items",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Open the shopping cart to view bag contents",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Open the shopping cart to view added items",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "View the shopping cart contents.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "View shopping cart contents.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "User views the contents of their shopping bag.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "View the contents of the shopping cart.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "View the contents of the shopping cart.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "View the contents of the shopping cart.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Description",
+        "href": null,
+        "bbox": {
+          "x": 1040,
+          "y": 479,
+          "w": 576,
+          "h": 52
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Expand or toggle the product description section",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "consensus": {
+          "action_intent": {
+            "expand or toggle the product description section": 2,
+            "switch to view the product description section": 2,
+            "expand or view the product description section": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "navigation": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Expand or toggle the product description section",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Expand or view the product description section",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Expand or toggle the product description section",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "View the product description tab.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "View product description tab.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "User expands or views the product description section.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Switch to view the product description tab.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Switch to view the product description section.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Switch to view the product description section.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Homepage",
+        "href": "https://demo.saleor.io/default-channel",
+        "bbox": {
+          "x": 173,
+          "y": 32,
+          "w": 122,
+          "h": 28
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the website's homepage.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the website's homepage": 3,
+            "navigate back to the store homepage": 2,
+            "navigate to the store homepage": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate back to the store homepage",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the store homepage",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate back to the store homepage",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "User navigates to the homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the website's homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the website's homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the website's homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    }
+  ]
+}

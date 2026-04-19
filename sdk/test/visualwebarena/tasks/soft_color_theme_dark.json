@@ -1,0 +1,22 @@
+{
+  "id": "soft_color_theme_dark",
+  "category": "visual_state",
+  "site": "https://getbootstrap.com/docs/5.3/customize/color-modes/",
+  "goal": "Switch the page to dark mode and confirm theme attribute updates.",
+  "max_turns": 8,
+  "visual_required": "soft",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "dark"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "soft"
+  ]
+}

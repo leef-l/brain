@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-05-subscribe-bing",
+  "category": "misc",
+  "site": "https://www.bing.com",
+  "goal": "On https://www.bing.com, find a newsletter/subscribe widget and submit it with test@example.com; verify a confirmation message.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[role=\"alert\"], .success, .subscribed, .confirmation"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "subscribe",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-02-2",
+    "domain": "search",
+    "subdomain": "bing"
+  }
+}

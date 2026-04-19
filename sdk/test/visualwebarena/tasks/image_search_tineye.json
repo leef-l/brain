@@ -1,0 +1,22 @@
+{
+  "id": "image_search_tineye",
+  "category": "image_search",
+  "site": "https://tineye.com/",
+  "goal": "Upload an image, wait for results, and confirm count of matches is shown.",
+  "max_turns": 12,
+  "visual_required": "hard",
+  "modality": [
+    "image_search"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "matches"
+    }
+  ],
+  "tags": [
+    "image_search",
+    "hard"
+  ]
+}

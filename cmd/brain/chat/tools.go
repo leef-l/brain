@@ -21,7 +21,9 @@ func RegisterToolsForMode(reg tool.Registry, mode env.PermissionMode, brainKind 
 	}
 
 	reg.Register(cliruntime.ManageTool(&e, tool.NewReadFileTool(brainKind), env.ToolClassRead))
+	reg.Register(cliruntime.ManageTool(&e, tool.NewListFilesTool(brainKind), env.ToolClassRead))
 	reg.Register(cliruntime.ManageTool(&e, tool.NewSearchTool(brainKind), env.ToolClassRead))
+	reg.Register(tool.NewNoteTool(brainKind))
 	reg.Register(tool.NewCheckOutputTool())
 
 	if mode == env.ModePlan {
@@ -29,6 +31,7 @@ func RegisterToolsForMode(reg tool.Registry, mode env.PermissionMode, brainKind 
 	}
 
 	reg.Register(cliruntime.ManageTool(&e, tool.NewWriteFileTool(brainKind), env.ToolClassEdit))
+	reg.Register(cliruntime.ManageTool(&e, tool.NewEditFileTool(brainKind), env.ToolClassEdit))
 	reg.Register(cliruntime.ManageTool(&e, tool.NewDeleteFileTool(brainKind), env.ToolClassDelete))
 	reg.Register(cliruntime.NewManagedShellTool(brainKind, &e))
 	reg.Register(cliruntime.NewManagedRunTestsTool(&e))

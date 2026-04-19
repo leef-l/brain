@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "adminlte_dashboard",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2993,
+      "action_intent": "Navigate to the current page or refresh the view",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.8
+    },
+    {
+      "run": 1,
+      "latency_ms": 2917,
+      "action_intent": "Navigate to the current page or refresh the page content",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 3494,
+      "action_intent": "Navigate to the current page or refresh the view",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.85
+    }
+  ]
+}

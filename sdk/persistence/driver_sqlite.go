@@ -184,6 +184,29 @@ CREATE TABLE IF NOT EXISTS learning_preferences (
 	updated_at TEXT    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS daily_summaries (
+	date         TEXT PRIMARY KEY,        -- YYYY-MM-DD
+	brain_counts TEXT    NOT NULL DEFAULT '{}',
+	runs_total   INTEGER NOT NULL DEFAULT 0,
+	runs_failed  INTEGER NOT NULL DEFAULT 0,
+	summary_text TEXT    NOT NULL DEFAULT '',
+	updated_at   TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS interaction_sequences (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	run_id      TEXT    NOT NULL,
+	brain_kind  TEXT    NOT NULL,
+	goal        TEXT    NOT NULL DEFAULT '',
+	site        TEXT    NOT NULL DEFAULT '',
+	url         TEXT    NOT NULL DEFAULT '',
+	outcome     TEXT    NOT NULL,
+	duration_ms INTEGER NOT NULL DEFAULT 0,
+	started_at  TEXT    NOT NULL,
+	actions     BLOB    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_interaction_seq_brain ON interaction_sequences(brain_kind, id DESC);
+
 CREATE TABLE IF NOT EXISTS shared_messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	from_brain TEXT    NOT NULL DEFAULT '',
@@ -193,6 +216,70 @@ CREATE TABLE IF NOT EXISTS shared_messages (
 	created_at TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_shared_messages_brains ON shared_messages(from_brain, to_brain);
+
+-- P3.1 — Anomaly template library.
+CREATE TABLE IF NOT EXISTS anomaly_templates (
+	id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+	signature_type     TEXT    NOT NULL DEFAULT '',
+	signature_subtype  TEXT    NOT NULL DEFAULT '',
+	signature_site     TEXT    NOT NULL DEFAULT '',
+	signature_severity TEXT    NOT NULL DEFAULT '',
+	recovery_actions   BLOB,
+	match_count        INTEGER NOT NULL DEFAULT 0,
+	success_count      INTEGER NOT NULL DEFAULT 0,
+	failure_count      INTEGER NOT NULL DEFAULT 0,
+	created_at         TEXT    NOT NULL,
+	updated_at         TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_anomaly_templates_sig ON anomaly_templates(signature_type, signature_subtype);
+
+-- P3.1 — Per-site anomaly aggregation.
+CREATE TABLE IF NOT EXISTS site_anomaly_profile (
+	site_origin            TEXT    NOT NULL,
+	anomaly_type           TEXT    NOT NULL DEFAULT '',
+	anomaly_subtype        TEXT    NOT NULL DEFAULT '',
+	frequency              INTEGER NOT NULL DEFAULT 0,
+	avg_duration_ms        INTEGER NOT NULL DEFAULT 0,
+	recovery_success_rate  REAL    NOT NULL DEFAULT 0,
+	last_seen_at           TEXT    NOT NULL,
+	PRIMARY KEY (site_origin, anomaly_type, anomaly_subtype)
+);
+
+-- P3.2 — Pattern failure samples for clustering.
+CREATE TABLE IF NOT EXISTS pattern_failure_samples (
+	id               INTEGER PRIMARY KEY AUTOINCREMENT,
+	pattern_id       TEXT    NOT NULL DEFAULT '',
+	site_origin      TEXT    NOT NULL DEFAULT '',
+	anomaly_subtype  TEXT    NOT NULL DEFAULT '',
+	failure_step     INTEGER NOT NULL DEFAULT 0,
+	page_fingerprint BLOB,
+	failed_at        TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pattern_failures_pattern ON pattern_failure_samples(pattern_id, id DESC);
+
+-- P3.3 — Human-demo sequences recorded during takeover.
+CREATE TABLE IF NOT EXISTS human_demo_sequences (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	run_id      TEXT    NOT NULL DEFAULT '',
+	brain_kind  TEXT    NOT NULL DEFAULT '',
+	goal        TEXT    NOT NULL DEFAULT '',
+	site        TEXT    NOT NULL DEFAULT '',
+	url         TEXT    NOT NULL DEFAULT '',
+	actions     BLOB,
+	approved    INTEGER NOT NULL DEFAULT 0,
+	recorded_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_human_demo_approved ON human_demo_sequences(approved, id DESC);
+
+-- P3.4 — Sitemap snapshot cache with TTL eviction.
+CREATE TABLE IF NOT EXISTS sitemap_snapshots (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	site_origin  TEXT    NOT NULL DEFAULT '',
+	depth        INTEGER NOT NULL DEFAULT 0,
+	urls         BLOB,
+	collected_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sitemap_site_depth ON sitemap_snapshots(site_origin, depth, id DESC);
 `
 
 // ── sqliteDriver ────────────────────────────────────────────────────────
@@ -1303,6 +1390,129 @@ func (s *sqliteLearningStore) ListSequences(ctx context.Context, limit int) ([]*
 	return out, nil
 }
 
+// InteractionSequence — per-brain action traces
+
+func (s *sqliteLearningStore) SaveInteractionSequence(ctx context.Context, seq *InteractionSequence) error {
+	if seq == nil {
+		return nil
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	at := seq.StartedAt
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	actionsJSON, err := json.Marshal(seq.Actions)
+	if err != nil {
+		return err
+	}
+	_, err = s.c.db.ExecContext(ctx,
+		`INSERT INTO interaction_sequences (run_id, brain_kind, goal, site, url, outcome, duration_ms, started_at, actions)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		seq.RunID, seq.BrainKind, seq.Goal, seq.Site, seq.URL, seq.Outcome,
+		seq.DurationMs, at.Format(sqliteTimeLayout), actionsJSON)
+	return err
+}
+
+func (s *sqliteLearningStore) ListInteractionSequences(ctx context.Context, brainKind string, limit int) ([]*InteractionSequence, error) {
+	query := `SELECT id, run_id, brain_kind, goal, site, url, outcome, duration_ms, started_at, actions FROM interaction_sequences`
+	args := []interface{}{}
+	if brainKind != "" {
+		query += ` WHERE brain_kind = ?`
+		args = append(args, brainKind)
+	}
+	query += ` ORDER BY id DESC`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := s.c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*InteractionSequence
+	for rows.Next() {
+		seq := &InteractionSequence{}
+		var startedAt string
+		var actions []byte
+		if err := rows.Scan(&seq.ID, &seq.RunID, &seq.BrainKind, &seq.Goal, &seq.Site, &seq.URL,
+			&seq.Outcome, &seq.DurationMs, &startedAt, &actions); err != nil {
+			continue
+		}
+		seq.StartedAt, _ = time.Parse(sqliteTimeLayout, startedAt)
+		if len(actions) > 0 {
+			_ = json.Unmarshal(actions, &seq.Actions)
+		}
+		out = append(out, seq)
+	}
+	return out, nil
+}
+
+// DailySummary — per-day conversation digest (Task #15)
+
+func (s *sqliteLearningStore) SaveDailySummary(ctx context.Context, d *DailySummary) error {
+	if d == nil {
+		return nil
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	now := d.UpdatedAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	_, err := s.c.db.ExecContext(ctx,
+		`INSERT INTO daily_summaries (date, brain_counts, runs_total, runs_failed, summary_text, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(date) DO UPDATE SET
+		   brain_counts = excluded.brain_counts,
+		   runs_total   = excluded.runs_total,
+		   runs_failed  = excluded.runs_failed,
+		   summary_text = excluded.summary_text,
+		   updated_at   = excluded.updated_at`,
+		d.Date, d.BrainCounts, d.RunsTotal, d.RunsFailed, d.SummaryText, now.Format(sqliteTimeLayout))
+	return err
+}
+
+func (s *sqliteLearningStore) GetDailySummary(ctx context.Context, date string) (*DailySummary, error) {
+	row := s.c.db.QueryRowContext(ctx,
+		`SELECT date, brain_counts, runs_total, runs_failed, summary_text, updated_at FROM daily_summaries WHERE date = ?`,
+		date)
+	d := &DailySummary{}
+	var updated string
+	err := row.Scan(&d.Date, &d.BrainCounts, &d.RunsTotal, &d.RunsFailed, &d.SummaryText, &updated)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	d.UpdatedAt, _ = time.Parse(sqliteTimeLayout, updated)
+	return d, nil
+}
+
+func (s *sqliteLearningStore) ListDailySummaries(ctx context.Context, limit int) ([]*DailySummary, error) {
+	query := `SELECT date, brain_counts, runs_total, runs_failed, summary_text, updated_at FROM daily_summaries ORDER BY date DESC`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+	rows, err := s.c.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*DailySummary
+	for rows.Next() {
+		d := &DailySummary{}
+		var updated string
+		if err := rows.Scan(&d.Date, &d.BrainCounts, &d.RunsTotal, &d.RunsFailed, &d.SummaryText, &updated); err != nil {
+			continue
+		}
+		d.UpdatedAt, _ = time.Parse(sqliteTimeLayout, updated)
+		out = append(out, d)
+	}
+	return out, nil
+}
+
 // L3
 
 func (s *sqliteLearningStore) SavePreference(ctx context.Context, pref *LearningPreference) error {
@@ -1353,6 +1563,366 @@ func (s *sqliteLearningStore) ListPreferences(ctx context.Context) ([]*LearningP
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// ── P3.1 AnomalyTemplate ───────────────────────────────────────────────
+
+func (s *sqliteLearningStore) SaveAnomalyTemplate(ctx context.Context, tpl *AnomalyTemplate) error {
+	if tpl == nil {
+		return nil
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	now := time.Now().UTC()
+	createdAt := tpl.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+	updatedAt := tpl.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = now
+	}
+	actions := []byte(tpl.RecoveryActions)
+	if tpl.ID > 0 {
+		_, err := s.c.db.ExecContext(ctx,
+			`INSERT INTO anomaly_templates
+			 (id, signature_type, signature_subtype, signature_site, signature_severity,
+			  recovery_actions, match_count, success_count, failure_count, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			   signature_type=excluded.signature_type,
+			   signature_subtype=excluded.signature_subtype,
+			   signature_site=excluded.signature_site,
+			   signature_severity=excluded.signature_severity,
+			   recovery_actions=excluded.recovery_actions,
+			   match_count=excluded.match_count,
+			   success_count=excluded.success_count,
+			   failure_count=excluded.failure_count,
+			   updated_at=excluded.updated_at`,
+			tpl.ID, tpl.SignatureType, tpl.SignatureSubtype, tpl.SignatureSite, tpl.SignatureSeverity,
+			actions, tpl.MatchCount, tpl.SuccessCount, tpl.FailureCount,
+			createdAt.Format(sqliteTimeLayout), updatedAt.Format(sqliteTimeLayout))
+		return err
+	}
+	res, err := s.c.db.ExecContext(ctx,
+		`INSERT INTO anomaly_templates
+		 (signature_type, signature_subtype, signature_site, signature_severity,
+		  recovery_actions, match_count, success_count, failure_count, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		tpl.SignatureType, tpl.SignatureSubtype, tpl.SignatureSite, tpl.SignatureSeverity,
+		actions, tpl.MatchCount, tpl.SuccessCount, tpl.FailureCount,
+		createdAt.Format(sqliteTimeLayout), updatedAt.Format(sqliteTimeLayout))
+	if err != nil {
+		return err
+	}
+	tpl.ID, _ = res.LastInsertId()
+	tpl.CreatedAt = createdAt
+	tpl.UpdatedAt = updatedAt
+	return nil
+}
+
+func (s *sqliteLearningStore) GetAnomalyTemplate(ctx context.Context, id int64) (*AnomalyTemplate, error) {
+	row := s.c.db.QueryRowContext(ctx,
+		`SELECT id, signature_type, signature_subtype, signature_site, signature_severity,
+		        recovery_actions, match_count, success_count, failure_count, created_at, updated_at
+		 FROM anomaly_templates WHERE id = ?`, id)
+	tpl := &AnomalyTemplate{}
+	var actions []byte
+	var createdAt, updatedAt string
+	err := row.Scan(&tpl.ID, &tpl.SignatureType, &tpl.SignatureSubtype,
+		&tpl.SignatureSite, &tpl.SignatureSeverity,
+		&actions, &tpl.MatchCount, &tpl.SuccessCount, &tpl.FailureCount,
+		&createdAt, &updatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(actions) > 0 {
+		tpl.RecoveryActions = json.RawMessage(actions)
+	}
+	tpl.CreatedAt, _ = time.Parse(sqliteTimeLayout, createdAt)
+	tpl.UpdatedAt, _ = time.Parse(sqliteTimeLayout, updatedAt)
+	return tpl, nil
+}
+
+func (s *sqliteLearningStore) ListAnomalyTemplates(ctx context.Context) ([]*AnomalyTemplate, error) {
+	rows, err := s.c.db.QueryContext(ctx,
+		`SELECT id, signature_type, signature_subtype, signature_site, signature_severity,
+		        recovery_actions, match_count, success_count, failure_count, created_at, updated_at
+		 FROM anomaly_templates ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*AnomalyTemplate
+	for rows.Next() {
+		tpl := &AnomalyTemplate{}
+		var actions []byte
+		var createdAt, updatedAt string
+		if err := rows.Scan(&tpl.ID, &tpl.SignatureType, &tpl.SignatureSubtype,
+			&tpl.SignatureSite, &tpl.SignatureSeverity,
+			&actions, &tpl.MatchCount, &tpl.SuccessCount, &tpl.FailureCount,
+			&createdAt, &updatedAt); err != nil {
+			continue
+		}
+		if len(actions) > 0 {
+			tpl.RecoveryActions = json.RawMessage(actions)
+		}
+		tpl.CreatedAt, _ = time.Parse(sqliteTimeLayout, createdAt)
+		tpl.UpdatedAt, _ = time.Parse(sqliteTimeLayout, updatedAt)
+		out = append(out, tpl)
+	}
+	return out, nil
+}
+
+func (s *sqliteLearningStore) DeleteAnomalyTemplate(ctx context.Context, id int64) error {
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	_, err := s.c.db.ExecContext(ctx, `DELETE FROM anomaly_templates WHERE id = ?`, id)
+	return err
+}
+
+// ── P3.1 SiteAnomalyProfile ────────────────────────────────────────────
+
+func (s *sqliteLearningStore) UpsertSiteAnomalyProfile(ctx context.Context, p *SiteAnomalyProfile) error {
+	if p == nil {
+		return nil
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	at := p.LastSeenAt
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	_, err := s.c.db.ExecContext(ctx,
+		`INSERT INTO site_anomaly_profile
+		 (site_origin, anomaly_type, anomaly_subtype, frequency, avg_duration_ms, recovery_success_rate, last_seen_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(site_origin, anomaly_type, anomaly_subtype) DO UPDATE SET
+		   frequency=excluded.frequency,
+		   avg_duration_ms=excluded.avg_duration_ms,
+		   recovery_success_rate=excluded.recovery_success_rate,
+		   last_seen_at=excluded.last_seen_at`,
+		p.SiteOrigin, p.AnomalyType, p.AnomalySubtype,
+		p.Frequency, p.AvgDurationMs, p.RecoverySuccessRate,
+		at.Format(sqliteTimeLayout))
+	return err
+}
+
+func (s *sqliteLearningStore) ListSiteAnomalyProfiles(ctx context.Context, site string) ([]*SiteAnomalyProfile, error) {
+	query := `SELECT site_origin, anomaly_type, anomaly_subtype, frequency,
+	                 avg_duration_ms, recovery_success_rate, last_seen_at
+	          FROM site_anomaly_profile`
+	args := []interface{}{}
+	if site != "" {
+		query += ` WHERE site_origin = ?`
+		args = append(args, site)
+	}
+	query += ` ORDER BY site_origin, anomaly_type, anomaly_subtype`
+	rows, err := s.c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*SiteAnomalyProfile
+	for rows.Next() {
+		p := &SiteAnomalyProfile{}
+		var atStr string
+		if err := rows.Scan(&p.SiteOrigin, &p.AnomalyType, &p.AnomalySubtype,
+			&p.Frequency, &p.AvgDurationMs, &p.RecoverySuccessRate, &atStr); err != nil {
+			continue
+		}
+		p.LastSeenAt, _ = time.Parse(sqliteTimeLayout, atStr)
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// ── P3.2 PatternFailureSample ──────────────────────────────────────────
+
+func (s *sqliteLearningStore) SavePatternFailureSample(ctx context.Context, sample *PatternFailureSample) error {
+	if sample == nil {
+		return nil
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	at := sample.FailedAt
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	res, err := s.c.db.ExecContext(ctx,
+		`INSERT INTO pattern_failure_samples
+		 (pattern_id, site_origin, anomaly_subtype, failure_step, page_fingerprint, failed_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		sample.PatternID, sample.SiteOrigin, sample.AnomalySubtype,
+		sample.FailureStep, []byte(sample.PageFingerprint),
+		at.Format(sqliteTimeLayout))
+	if err != nil {
+		return err
+	}
+	sample.ID, _ = res.LastInsertId()
+	sample.FailedAt = at
+	return nil
+}
+
+func (s *sqliteLearningStore) ListPatternFailureSamples(ctx context.Context, patternID string) ([]*PatternFailureSample, error) {
+	query := `SELECT id, pattern_id, site_origin, anomaly_subtype, failure_step, page_fingerprint, failed_at
+	          FROM pattern_failure_samples`
+	args := []interface{}{}
+	if patternID != "" {
+		query += ` WHERE pattern_id = ?`
+		args = append(args, patternID)
+	}
+	query += ` ORDER BY id DESC`
+	rows, err := s.c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*PatternFailureSample
+	for rows.Next() {
+		sample := &PatternFailureSample{}
+		var fp []byte
+		var atStr string
+		if err := rows.Scan(&sample.ID, &sample.PatternID, &sample.SiteOrigin,
+			&sample.AnomalySubtype, &sample.FailureStep, &fp, &atStr); err != nil {
+			continue
+		}
+		if len(fp) > 0 {
+			sample.PageFingerprint = json.RawMessage(fp)
+		}
+		sample.FailedAt, _ = time.Parse(sqliteTimeLayout, atStr)
+		out = append(out, sample)
+	}
+	return out, nil
+}
+
+// ── P3.3 HumanDemoSequence ─────────────────────────────────────────────
+
+func (s *sqliteLearningStore) SaveHumanDemoSequence(ctx context.Context, seq *HumanDemoSequence) error {
+	if seq == nil {
+		return nil
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	at := seq.RecordedAt
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	approved := 0
+	if seq.Approved {
+		approved = 1
+	}
+	res, err := s.c.db.ExecContext(ctx,
+		`INSERT INTO human_demo_sequences
+		 (run_id, brain_kind, goal, site, url, actions, approved, recorded_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		seq.RunID, seq.BrainKind, seq.Goal, seq.Site, seq.URL,
+		[]byte(seq.Actions), approved, at.Format(sqliteTimeLayout))
+	if err != nil {
+		return err
+	}
+	seq.ID, _ = res.LastInsertId()
+	seq.RecordedAt = at
+	return nil
+}
+
+func (s *sqliteLearningStore) ListHumanDemoSequences(ctx context.Context, approvedOnly bool) ([]*HumanDemoSequence, error) {
+	query := `SELECT id, run_id, brain_kind, goal, site, url, actions, approved, recorded_at
+	          FROM human_demo_sequences`
+	args := []interface{}{}
+	if approvedOnly {
+		query += ` WHERE approved = 1`
+	}
+	query += ` ORDER BY id DESC`
+	rows, err := s.c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*HumanDemoSequence
+	for rows.Next() {
+		seq := &HumanDemoSequence{}
+		var actions []byte
+		var approvedInt int
+		var atStr string
+		if err := rows.Scan(&seq.ID, &seq.RunID, &seq.BrainKind,
+			&seq.Goal, &seq.Site, &seq.URL,
+			&actions, &approvedInt, &atStr); err != nil {
+			continue
+		}
+		if len(actions) > 0 {
+			seq.Actions = json.RawMessage(actions)
+		}
+		seq.Approved = approvedInt != 0
+		seq.RecordedAt, _ = time.Parse(sqliteTimeLayout, atStr)
+		out = append(out, seq)
+	}
+	return out, nil
+}
+
+// ── P3.4 SitemapSnapshot ───────────────────────────────────────────────
+
+func (s *sqliteLearningStore) SaveSitemapSnapshot(ctx context.Context, snap *SitemapSnapshot) error {
+	if snap == nil {
+		return nil
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	at := snap.CollectedAt
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	res, err := s.c.db.ExecContext(ctx,
+		`INSERT INTO sitemap_snapshots (site_origin, depth, urls, collected_at)
+		 VALUES (?, ?, ?, ?)`,
+		snap.SiteOrigin, snap.Depth, []byte(snap.URLs),
+		at.Format(sqliteTimeLayout))
+	if err != nil {
+		return err
+	}
+	snap.ID, _ = res.LastInsertId()
+	snap.CollectedAt = at
+	return nil
+}
+
+func (s *sqliteLearningStore) GetSitemapSnapshot(ctx context.Context, siteOrigin string, depth int) (*SitemapSnapshot, error) {
+	row := s.c.db.QueryRowContext(ctx,
+		`SELECT id, site_origin, depth, urls, collected_at
+		 FROM sitemap_snapshots
+		 WHERE site_origin = ? AND depth = ?
+		 ORDER BY id DESC LIMIT 1`,
+		siteOrigin, depth)
+	snap := &SitemapSnapshot{}
+	var urls []byte
+	var atStr string
+	err := row.Scan(&snap.ID, &snap.SiteOrigin, &snap.Depth, &urls, &atStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(urls) > 0 {
+		snap.URLs = json.RawMessage(urls)
+	}
+	snap.CollectedAt, _ = time.Parse(sqliteTimeLayout, atStr)
+	return snap, nil
+}
+
+func (s *sqliteLearningStore) PurgeSitemapSnapshots(ctx context.Context, olderThan time.Time) (int64, error) {
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	res, err := s.c.db.ExecContext(ctx,
+		`DELETE FROM sitemap_snapshots WHERE collected_at < ?`,
+		olderThan.Format(sqliteTimeLayout))
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // ── sqliteSharedMessageStore — implements SharedMessageStore ───────────

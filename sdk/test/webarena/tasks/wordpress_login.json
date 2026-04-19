@@ -1,0 +1,11 @@
+{
+  "id": "wp-login-complex",
+  "category": "auth",
+  "site": "https://demo.wp-api.org",
+  "goal": "Go to /wp-login.php, fill in the demo credentials, submit, and verify the admin dashboard loaded.",
+  "max_turns": 10,
+  "success": [
+    { "kind": "url_contains", "value": "wp-admin" }
+  ],
+  "tags": ["login", "complex_path", "phase2"]
+}

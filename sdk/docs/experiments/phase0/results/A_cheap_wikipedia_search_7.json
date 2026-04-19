@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "wikipedia_search",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3080,
+      "action_intent": "Navigate to login page to access account features",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2831,
+      "action_intent": "Navigate to login page to access account features",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2833,
+      "action_intent": "Navigate to login page to access account features",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

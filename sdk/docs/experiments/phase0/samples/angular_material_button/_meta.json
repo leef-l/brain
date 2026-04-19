@@ -1,0 +1,14 @@
+{
+  "id": "angular_material_button",
+  "category": "framework_angular",
+  "description": "Angular Material 按钮示例(Angular 框架覆盖)",
+  "url": "https://material.angular.dev/components/button/examples",
+  "captured_at": "2026-04-19T09:30:00Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 88
+}

@@ -1,0 +1,24 @@
+{
+  "id": "m2w-admin-10-rowedit-opencart-admin",
+  "category": "admin",
+  "site": "https://demo.opencart.com/admin",
+  "goal": "On https://demo.opencart.com/admin admin, open the edit form for any row and save a trivial change; verify a success alert or the row's updated value.",
+  "max_turns": 14,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[role=\"alert\"], .success, .alert-success, .notification-success"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "admin",
+    "row_edit",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-admin-05-b",
+    "domain": "ecom",
+    "subdomain": "opencart-admin"
+  }
+}

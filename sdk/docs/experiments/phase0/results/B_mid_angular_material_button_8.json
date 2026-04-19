@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "angular_material_button",
+  "element_id": 8,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3407,
+      "action_intent": "Open a dropdown menu to select a version of the Angular Material documentation",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 6577,
+      "action_intent": "Open version selector dropdown",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 3462,
+      "action_intent": "Open a dropdown menu to select a version",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    }
+  ]
+}

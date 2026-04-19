@@ -353,3 +353,70 @@ header h1 {
         max-width: 200px;
     }
 }
+
+/* ---- Learning panel (Task #17) ---- */
+
+.panel-wide {
+    grid-column: 1 / -1;
+}
+
+.learning-section {
+    margin-bottom: 1.5rem;
+}
+
+.learning-section h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.95rem;
+    color: #555;
+}
+
+.learning-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.learning-table th {
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    background: rgba(100, 120, 140, 0.08);
+    border-bottom: 1px solid rgba(100, 120, 140, 0.2);
+    font-weight: 600;
+}
+
+.learning-table td {
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid rgba(100, 120, 140, 0.08);
+    font-family: "SFMono-Regular", Menlo, monospace;
+}
+
+.learning-table tr:hover td {
+    background: rgba(100, 120, 140, 0.04);
+}
+
+.daily-card {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: rgba(100, 120, 140, 0.05);
+    border-left: 3px solid #5b9dd9;
+    border-radius: 3px;
+}
+
+.daily-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 0.3rem;
+}
+
+.daily-meta {
+    color: #777;
+    font-size: 0.78rem;
+}
+
+.daily-text {
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    line-height: 1.4;
+    color: #333;
+}

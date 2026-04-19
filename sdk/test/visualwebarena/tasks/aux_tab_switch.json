@@ -1,0 +1,22 @@
+{
+  "id": "aux_tab_switch",
+  "category": "visual_state",
+  "site": "https://getbootstrap.com/docs/5.3/components/navs-tabs/",
+  "goal": "Switch to the Profile tab and confirm its panel is active.",
+  "max_turns": 8,
+  "visual_required": "aux",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Profile"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "aux"
+  ]
+}

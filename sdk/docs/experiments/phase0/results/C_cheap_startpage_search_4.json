@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "startpage_search",
+  "element_id": 4,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4117,
+      "action_intent": "Clear the search bar text.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3950,
+      "action_intent": "Clear the current search query from the search bar.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3330,
+      "action_intent": "Clear the text from the search input field.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

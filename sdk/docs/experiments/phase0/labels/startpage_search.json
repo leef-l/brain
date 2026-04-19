@@ -1,0 +1,168 @@
+{
+  "page_id": "startpage_search",
+  "url": "https://www.startpage.com/do/search?q=brain+agent",
+  "category": "search",
+  "snapshot_file": "samples/startpage_search/snapshot.json",
+  "screenshot_file": "samples/startpage_search/screenshot.png",
+  "html_file": "samples/startpage_search/page.html",
+  "drafted_at": "2026-04-19T09:04:30Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 4,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "clear search bar",
+        "href": null,
+        "bbox": {
+          "x": 714,
+          "y": 43,
+          "w": 20,
+          "h": 20
+        }
+      },
+      "draft": {
+        "action_intent": "Clear the current text in the search input field.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "User can simply retype the query. Standard search bar clear button.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 5,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "search button",
+        "href": null,
+        "bbox": {
+          "x": 751,
+          "y": 43,
+          "w": 20,
+          "h": 20
+        }
+      },
+      "draft": {
+        "action_intent": "Submit the current search query to retrieve results.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Triggers a new search or re-search; navigates to a results page. No destructive side effect.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 27,
+      "element": {
+        "tag": "div",
+        "role": "button",
+        "type": null,
+        "name": "safe search filter",
+        "href": null,
+        "bbox": {
+          "x": 338,
+          "y": 144,
+          "w": 170,
+          "h": 17
+        }
+      },
+      "draft": {
+        "action_intent": "Open or toggle the Safe Search filter to adjust content filtering level.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "secondary",
+        "notes": "Nearby element shows 'Safe Search: Moderate', so this likely opens a dropdown or cycles through filter levels. Setting persists for the session but is easily changed back.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "button",
+        "role": "link",
+        "type": "submit",
+        "name": "Startpage home page",
+        "href": null,
+        "bbox": {
+          "x": 74,
+          "y": 44,
+          "w": 116,
+          "h": 29
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate back to the Startpage homepage.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "Role is 'link' with type 'submit', which is slightly unusual but functionally acts as a home navigation link. Current search results page will be left.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 8,
+      "element": {
+        "tag": "button",
+        "role": "link",
+        "type": "submit",
+        "name": "Settings",
+        "href": null,
+        "bbox": {
+          "x": 1507,
+          "y": 96,
+          "w": 84,
+          "h": 20
+        }
+      },
+      "draft": {
+        "action_intent": "Open the Startpage settings/preferences page.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Located inside the hamburger menu area. Navigates to a settings page where changes would be separate actions. The button itself just navigates.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 19,
+      "element": {
+        "tag": "button",
+        "role": "link",
+        "type": "submit",
+        "name": "All",
+        "href": null,
+        "bbox": {
+          "x": 166,
+          "y": 101,
+          "w": 33,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Filter search results to show all result types (web results).",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "This is the 'All' tab in the search type navigation (All / Images / Videos / News / etc.). Likely already the active tab given the current page context. Could be considered 'secondary' instead of 'navigation' since it filters within the same search page rather than navigating away.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

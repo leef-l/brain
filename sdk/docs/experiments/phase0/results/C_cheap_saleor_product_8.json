@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "saleor_product",
+  "element_id": 8,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3061,
+      "action_intent": "View the shopping cart contents.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3538,
+      "action_intent": "View the shopping cart contents and proceed to checkout.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3467,
+      "action_intent": "View the shopping cart contents.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

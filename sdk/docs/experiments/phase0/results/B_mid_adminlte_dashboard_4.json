@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "adminlte_dashboard",
+  "element_id": 4,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 6843,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '4aa01e15066e3efe27830a99ed4e08ad', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 6426,
+      "action_intent": "Navigate within the AdminLTE demo page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.7
+    },
+    {
+      "run": 2,
+      "latency_ms": 6090,
+      "action_intent": "Toggle a dropdown menu or UI control",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.75
+    }
+  ]
+}

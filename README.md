@@ -284,12 +284,22 @@ brain config set file_policy '{
 | 大脑 | 二进制 | 工具数 | 说明 |
 |------|--------|--------|------|
 | Central | `brain`（内置） | - | 协调器，LLM 复审，日终分析 |
-| Code | `brain-code` | 5 | 读写文件、搜索代码、执行命令 |
-| Browser | `brain-browser` | 5 | CDP 浏览器自动化 |
+| Code | `brain-code` | 8 | 读写/编辑文件、列目录、搜索（带上下文）、命令执行、TODO 规划 |
+| Browser | `brain-browser` | 16 | CDP 浏览器自动化（导航、交互、截图、JS 执行）、TODO 规划 |
 | Data | `brain-data-sidecar` | 9 | OKX 行情采集、192 维特征向量 |
 | Quant | `brain-quant-sidecar` | 14 | 策略聚合、风控、交易执行 |
-| Verifier | `brain-verifier` | 4 | 只读独立验证 |
-| Fault | `brain-fault` | 3 | 混沌工程 |
+| Verifier | `brain-verifier` | 5 | 只读独立验证、TODO 规划 |
+| Fault | `brain-fault` | 5 | 混沌工程、TODO 规划 |
+
+所有基础大脑（code/browser/verifier/fault）共享同一套工业级 Agent Loop 引擎（`sdk/loop.Runner`）：
+
+- **死循环检测**（LoopDetector）：自动发现 tool+args 重复调用，中止无进展循环
+- **5 维预算**（Budget）：MaxTurns / MaxCostUSD / MaxLLMCalls / MaxToolCalls / MaxDuration
+- **Prompt Cache**：L1 system block 自动 cache_control，长任务 token 成本下降 50-90%
+- **消息压缩**（MessageCompressor）：长会话超预算时自动压缩
+- **工具结果卫生化**（MemSanitizer）：prompt injection / 二进制 / BIDI / PII 防护
+- **跨脑上下文注入**：central ContextEngine 装配的上下文注入到专精大脑对话起始
+- **TODO 规划**：每个大脑都有 `<kind>.note` 工具做多步任务 scratchpad
 
 ### 三脑量化系统
 

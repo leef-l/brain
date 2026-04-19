@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "angular_material_button",
+  "element_id": 48,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3373,
+      "action_intent": "Navigate to the Button component overview page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 1.0
+    },
+    {
+      "run": 1,
+      "latency_ms": 3225,
+      "action_intent": "Navigate to the button component overview page.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 5238,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '278a3607fecb9d5e192477af9d23a343', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    }
+  ]
+}

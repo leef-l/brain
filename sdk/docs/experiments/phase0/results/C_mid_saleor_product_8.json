@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "saleor_product",
+  "element_id": 8,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 6586,
+      "action_intent": "View shopping cart contents",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2172,
+      "action_intent": "Open cart to view items in shopping bag",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 4190,
+      "action_intent": "Open the shopping bag to view cart items",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

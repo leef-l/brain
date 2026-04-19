@@ -1,0 +1,12 @@
+{
+  "id": "gitlab-explore-projects",
+  "category": "gitlab",
+  "site": "https://gitlab.com",
+  "goal": "Navigate to https://gitlab.com/explore/projects/trending and verify the trending projects list is rendered.",
+  "max_turns": 4,
+  "success": [
+    { "kind": "url_contains", "value": "/explore/projects/trending" },
+    { "kind": "dom_has", "value": ".project-row, .projects-list" }
+  ],
+  "tags": ["gitlab", "navigation", "happy_path", "phase1"]
+}

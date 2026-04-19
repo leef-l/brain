@@ -1,0 +1,12 @@
+{
+  "id": "shopping-product-search",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "On demo.opencart.com, use the top search input to search for 'iPhone' and reach the search results page.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_contains", "value": "search=iPhone" },
+    { "kind": "dom_has", "value": ".product-thumb" }
+  ],
+  "tags": ["shopping", "search", "happy_path", "phase1"]
+}

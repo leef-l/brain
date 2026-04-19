@@ -1,0 +1,23 @@
+{
+  "id": "soft_image_carousel_alt",
+  "category": "image_search",
+  "site": "https://getbootstrap.com/docs/5.3/components/carousel/",
+  "goal": "Advance the carousel twice and report the alt text of the current image.",
+  "max_turns": 10,
+  "visual_required": "soft",
+  "modality": [
+    "image_search",
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Third slide"
+    }
+  ],
+  "tags": [
+    "image_search",
+    "soft"
+  ]
+}

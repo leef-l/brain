@@ -1,0 +1,11 @@
+{
+  "id": "map-note-create-cancel",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "On openstreetmap.org (unauthenticated), click the 'Add a note' tool, drag it onto the map, then click 'Cancel' instead of saving; verify no pending note remains.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "url_contains", "value": "openstreetmap.org" }
+  ],
+  "tags": ["map", "interaction", "phase3"]
+}

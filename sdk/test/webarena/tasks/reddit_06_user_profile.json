@@ -1,0 +1,12 @@
+{
+  "id": "reddit-user-profile",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "Navigate to the user profile /user/spez on old.reddit.com and verify the profile page displays post/comment tabs.",
+  "max_turns": 4,
+  "success": [
+    { "kind": "url_contains", "value": "/user/spez" },
+    { "kind": "text_contains", "value": "post karma" }
+  ],
+  "tags": ["reddit", "navigation", "happy_path", "phase1"]
+}

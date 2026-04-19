@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "govuk_form",
+  "element_id": 21,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4495,
+      "action_intent": "Navigate to Payment card details pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 9533,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '94a3682ccba282842b45ebed70388474', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 9628,
+      "action_intent": "Navigate to Payment card details pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "adminlte_dashboard",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 7721,
+      "action_intent": "Open notifications or messages dropdown in the top navbar",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.35
+    },
+    {
+      "run": 1,
+      "latency_ms": 5443,
+      "action_intent": "Open notifications or messages dropdown in the top navbar",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.35
+    },
+    {
+      "run": 2,
+      "latency_ms": 5524,
+      "action_intent": "Open notifications or messages dropdown in the top navbar",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.35
+    }
+  ]
+}

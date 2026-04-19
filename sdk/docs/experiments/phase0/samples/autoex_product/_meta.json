@@ -1,0 +1,14 @@
+{
+  "id": "autoex_product",
+  "category": "ecommerce",
+  "description": "automationexercise 商品详情,加购+数量+评论",
+  "url": "https://automationexercise.com/product_details/1",
+  "captured_at": "2026-04-19T09:29:31Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "wait_selector_timeout",
+  "error": null,
+  "element_count": 29
+}

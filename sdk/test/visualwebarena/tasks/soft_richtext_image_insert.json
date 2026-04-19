@@ -1,0 +1,22 @@
+{
+  "id": "soft_richtext_image_insert",
+  "category": "richtext",
+  "site": "https://tiptap.dev/",
+  "goal": "Insert an image block via toolbar and confirm figure element appears.",
+  "max_turns": 12,
+  "visual_required": "soft",
+  "modality": [
+    "richtext"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "figure"
+    }
+  ],
+  "tags": [
+    "richtext",
+    "soft"
+  ]
+}

@@ -7,6 +7,43 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+#### 基础大脑深度改造（Agent Loop 架构级）
+
+- **sidecar Agent Loop 接入 sdk/loop.Runner**：4 个基础大脑（code/browser/verifier/fault）的 `RunAgentLoop` 从手搓 250 行 for-loop 替换为 `sdk/loop.Runner` 适配层。一次性激活此前闲置的 4000 行工业级能力：
+  - **LoopDetector**：tool+args hash 检测重复，防止 LLM 在同一错误 edit 上死循环
+  - **Budget 5 维**：MaxTurns / MaxCostUSD / MaxLLMCalls / MaxToolCalls / MaxDuration 全面贯通
+  - **MessageCompressor**：超预算时自动压缩长会话
+  - **CacheBuilder**：Prompt Cache L1 system 自动打 cache_control，长任务 token 成本下降 50-90%
+  - **MemSanitizer**：prompt injection / 二进制 / 长度 / BIDI / PII 6 阶段工具结果卫生化
+  - **ToolObserver**：工具执行生命周期观测
+- **新增 `sdk/sidecar/kernel_provider.go`**：`kernelLLMProvider` 实现 `llm.Provider`，把 sidecar 的 LLM 调用通过反向 RPC 转发到 Kernel，sidecar 能透明复用主进程所有 Provider（Anthropic / DeepSeek / Mock）。
+- **新增 `RunAgentLoopWithContext`**：接受 `ExecuteRequest.Context`，把 central 装配的 ContextEngine 上下文作为前置 user message 注入对话起始。跨脑委派不再"每次新鲜开始"。
+- **Usage 回传链路**：`llm_proxy.go` 的 `llmCompleteResponse` 新增 `Usage` 字段（InputTokens/OutputTokens/CacheReadTokens/CacheCreationTokens/CostUSD）；sidecar 侧 `wireToChatResponse` 映射到 `llm.ChatResponse.Usage`，`Budget.CheckCost()` 从此真实生效。
+- **`brain.note` Scratchpad 工具**（`sdk/tool/builtin_note.go`）：支持 add/update/done/list/clear，按 brainKind 隔离进程内存储。4 个基础大脑全部注册，Code Brain system prompt 加"复杂任务先 plan 再执行"引导。参考 Claude Code 的 TodoWrite 设计。Schema description 明确声明"in-memory only, lost on sidecar restart"。
+
+#### 工具错误结构化（失败反馈友好化）
+
+- **`code.edit_file` 找不到 old_string 时**：返回 `hints`（CRLF / UTF-8 BOM / 大小写 / leading-trailing whitespace 诊断）+ `similar_lines` 最相近 3 行（带行号）。LLM 能立即定位差异而不是盲试。
+- **`code.search` 返回 `backend` + `notes`**：标注使用 ripgrep 还是 walk，声明两后端差异（1MB 上限、glob basename vs path 语义）。LLM 能感知"我搜到的是否完整"。
+- **`*.shell_exec` 截断标注**：`limitWriter` 新增 `dropped` 计数，stdout/stderr 末尾追加 `[... truncated: N bytes dropped ...]` 可见提示 + response 带 `stdout_dropped_bytes` / `stderr_dropped_bytes` 结构化字段。LLM 不再误以为看到完整输出。
+
+#### 工具扩展
+
+- **Code Brain 工具**（5 → 8 个）：新增 `code.edit_file`、`code.list_files`、`code.note`；`code.search` 增强。
+- **Browser / Verifier / Fault Brain** 各自注册 `<kind>.note` 工具。
+- Code Brain sidecar、主进程 chat / run 三处 registry 全部注册新工具，LLM 在所有模式下可见。
+- approval 启发式规则新增：`code.edit_*` → `ApprovalWorkspaceWrite`、`*.note` → `ApprovalReadonly`（优先于 `browser.*` 网络规则）。
+
+### Fixed
+
+- **Fault Brain `kill_process` 硬编码 deny-list**：拒绝 init/systemd/sshd/kthreadd 等 30+ 系统进程名 + PID<100 + kernel/systemd 前缀。此前仅依赖 system prompt 提示，LLM 被 prompt-inject 即可杀关键进程。
+- **Fault Brain `inject_latency` network 模式去欺骗性**：此前只返回 tc 命令字符串却 status=completed 误导 LLM。改为真实执行 `tc netem`（检测 Linux+tc+root），带 deferred cleanup 自动移除规则；能力不足时返回明确 `status=unsupported`。
+- **Browser Brain session 泄漏**：`buildRegistry` 每次 RPC 调用都 `NewBrowserTools()` 导致 Chromium 进程泄漏并丢失会话。改为复用 handler 的 `h.browserTools`。
+- **`ExecuteRequest.Context` 被静默丢弃**：4 个基础大脑此前不读 `req.Context`，central 花 token 装配的 ContextEngine 上下文到 sidecar 入口即归零。
+- **approval `browser.note` 误归类**：`browser.*` → external-network 规则抢占了 `*.note`，本应是纯本地 scratchpad 的 `browser.note` 被标成需要网络审批。调整规则表顺序，`*.note` 置于 L3 之后、L4 前。
+
 ## [1.0.0] - 2026-04-19
 
 ### Added

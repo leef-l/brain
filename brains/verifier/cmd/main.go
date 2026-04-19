@@ -39,6 +39,7 @@ func newVerifierHandler() *verifierHandler {
 
 	// Browser action tool — delegates to Browser Brain via Kernel.
 	reg.Register(tool.NewBrowserActionTool())
+	reg.Register(tool.NewNoteTool("verifier"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-verifier: load tool policy: %v\n", err)
@@ -131,7 +132,7 @@ func (h *verifierHandler) handleVerify(ctx context.Context, params json.RawMessa
 	}
 
 	start := time.Now()
-	result := sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns)
+	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "verifier.verify",
 		Success:   result.Status == "completed",
@@ -192,6 +193,7 @@ func (h *verifierHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (to
 	bat.SetKernelCaller(h.caller)
 	bat.SetExecutionSpec(spec)
 	reg.Register(bat)
+	reg.Register(tool.NewNoteTool("verifier"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-verifier: load tool policy: %v\n", err)

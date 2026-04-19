@@ -1,0 +1,14 @@
+{
+  "id": "rjsf_form",
+  "category": "form_complex",
+  "description": "react-jsonschema-form playground,动态表单",
+  "url": "https://rjsf-team.github.io/react-jsonschema-form/",
+  "captured_at": "2026-04-19T08:54:17Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 80
+}

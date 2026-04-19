@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "autoex_product",
+  "element_id": 24,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3304,
+      "action_intent": "Enter reviewer name for product review submission",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 5723,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '91058b1bb389e72e67661a8dd04eeb84', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 3978,
+      "action_intent": "Enter reviewer's name for product review submission",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.85
+    }
+  ]
+}

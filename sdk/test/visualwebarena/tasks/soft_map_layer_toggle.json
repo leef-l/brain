@@ -1,0 +1,22 @@
+{
+  "id": "soft_map_layer_toggle",
+  "category": "map",
+  "site": "https://leafletjs.com/examples/layers-control/",
+  "goal": "Toggle the 'Roads' layer off and confirm layers-control reflects state.",
+  "max_turns": 10,
+  "visual_required": "soft",
+  "modality": [
+    "map"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "checked"
+    }
+  ],
+  "tags": [
+    "map",
+    "soft"
+  ]
+}

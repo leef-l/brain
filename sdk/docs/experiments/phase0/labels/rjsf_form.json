@@ -1,0 +1,168 @@
+{
+  "page_id": "rjsf_form",
+  "url": "https://rjsf-team.github.io/react-jsonschema-form/",
+  "category": "form_complex",
+  "snapshot_file": "samples/rjsf_form/snapshot.json",
+  "screenshot_file": "samples/rjsf_form/screenshot.png",
+  "html_file": "samples/rjsf_form/page.html",
+  "drafted_at": "2026-04-19T09:04:01Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 47,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Submit",
+        "href": null,
+        "bbox": {
+          "x": 1204,
+          "y": 50,
+          "w": 70,
+          "h": 34
+        }
+      },
+      "draft": {
+        "action_intent": "The user wants to submit the currently configured form in the playground to see its output or trigger form submission behavior.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "This is a playground/demo environment, so 'Submit' does not send data to a real backend — it likely just displays the form data. No persistent side effects expected.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Close Samples Drawer",
+        "href": null,
+        "bbox": {
+          "x": 184,
+          "y": 16,
+          "w": 31,
+          "h": 31
+        }
+      },
+      "draft": {
+        "action_intent": "The user wants to close the samples drawer panel that lists example schema presets.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "escape",
+        "notes": "Closing the drawer is purely a UI toggle; the drawer can presumably be reopened. Verify whether there's a corresponding open button or if clicking the logo/header reopens it.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 41,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "react-jsonschema-form\nTheme\nSelect theme\ndefault\nantd\nchakra-ui\ndaisy-ui\nfluentui-rc\nmantine\nmui\nprimereact\nreact-bootst",
+        "href": null,
+        "bbox": {
+          "x": 680,
+          "y": 37,
+          "w": 930,
+          "h": 74
+        }
+      },
+      "draft": {
+        "action_intent": "The user wants to navigate to the react-jsonschema-form playground home or toggle the samples/navigation drawer open.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "This button's name is truncated and contains the app title plus theme selector text, suggesting it may be a hamburger/brand button that opens the samples drawer or acts as a home link. The exact behavior is ambiguous from the label alone — could be a drawer toggle or a brand logo link. Reviewer should verify actual click behavior.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 73,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "root",
+        "href": null,
+        "bbox": {
+          "x": 1301,
+          "y": 1078,
+          "w": 263,
+          "h": 34
+        }
+      },
+      "draft": {
+        "action_intent": "The user wants to enter or edit the root-level form data value in the playground's rendered form preview.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "This is a text input field labeled 'root' in the form output area. It appears to be part of the live-rendered form based on the current JSON schema. Changes are local to the playground session only.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 74,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "_",
+        "href": null,
+        "bbox": {
+          "x": 1301,
+          "y": 1152,
+          "w": 263,
+          "h": 34
+        }
+      },
+      "draft": {
+        "action_intent": "The user wants to enter or edit a secondary form field value (labeled '_') in the playground's rendered form preview.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "The field name '_' is unusual and likely comes from the current JSON schema definition. It sits near the 'root' input, suggesting it's another field in the same rendered form. Reviewer should confirm whether '_' is a real schema field name or a rendering artifact.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "button",
+        "role": "tab",
+        "type": "button",
+        "name": "BLANK",
+        "href": null,
+        "bbox": {
+          "x": 100,
+          "y": 43,
+          "w": 199,
+          "h": 24
+        }
+      },
+      "draft": {
+        "action_intent": "The user wants to load the 'BLANK' sample schema template into the playground editors.",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "navigation",
+        "notes": "Selecting this tab will replace the current schema, uiSchema, and formData editors with a blank template. Any unsaved edits to the current playground state would be lost. Marking semi_reversible because the user can switch to another sample but cannot automatically recover custom edits. Reviewer should verify whether there's a confirmation dialog before overwriting.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "element_plus_buttons",
+  "element_id": 213,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 8959,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '914e9e6b9ed1059468921e1ae2f2c7a1', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 5340,
+      "action_intent": "Click the Search button in the demo showcase.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 8887,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '7ad5b705d9d6a776a36cae9b70ebc184', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    }
+  ]
+}

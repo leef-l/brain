@@ -1,0 +1,22 @@
+{
+  "id": "map_gmaps_airport",
+  "category": "map",
+  "site": "https://www.google.com/maps",
+  "goal": "Search 'LAX' and confirm the airport pin is centred on the map.",
+  "max_turns": 12,
+  "visual_required": "hard",
+  "modality": [
+    "map"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Los Angeles"
+    }
+  ],
+  "tags": [
+    "map",
+    "hard"
+  ]
+}

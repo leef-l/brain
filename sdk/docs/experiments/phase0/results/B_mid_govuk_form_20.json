@@ -1,0 +1,29 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "govuk_form",
+  "element_id": 20,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4468,
+      "action_intent": "Navigate to the Passwords pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 1.0
+    },
+    {
+      "run": 1,
+      "latency_ms": 9802,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '1e8b9ec5af5e7e501bf0a96e6f2ae5ce', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 9260,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'e900d27a016cd91d29f81ad107ab4f22', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    }
+  ]
+}

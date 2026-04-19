@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/llm"
@@ -61,8 +62,14 @@ type ContextEngine interface {
 
 // DefaultContextEngine 是 ContextEngine 的默认实现。
 type DefaultContextEngine struct {
-	// SharedMessages 存放最近一次 Share() 调用投递的消息，
-	// 仅用于测试和调试，生产环境应替换为 BrainChannel 投递。
+	// SharedMessages 保留为 Deprecated 字段,仅反映"最近一次 Share() 调用"。
+	// 旧代码有读这个字段的测试,为不破坏 API 保留;但实际生产路径(多 delegate
+	// 并发)应读 ShareFor(from, to) 而不是读这个字段。
+	//
+	// Task #18:多 delegate 并发时这个字段会被后来的 Share() 覆盖,产生跨脑
+	// 上下文串。真正的消息按 (from, to) 写进 sharedBuckets;Delegate 边界
+	// 切断时,Orchestrator 必须调 ClearShared(from, to) 显式回收桶,防止
+	// 下一次 delegate 继承前一次的 shared 消息。
 	SharedMessages []llm.Message
 
 	// Summarizer 是可选的 LLM provider，用于 Compress 阶段 2.5 的智能摘要。
@@ -74,6 +81,17 @@ type DefaultContextEngine struct {
 
 	// SharedStore 是可选的持久化后端，用于保存 Share() 的跨脑消息。
 	SharedStore persistence.SharedMessageStore
+
+	// sharedBuckets 是按 (from, to) 分桶的跨脑消息存储,解决多 delegate 并发
+	// 时 SharedMessages 相互覆盖的问题(Task #18)。
+	sharedMu      sync.Mutex
+	sharedBuckets map[sharedKey][]llm.Message
+}
+
+// sharedKey 标识一对 (from, to) brain 通信通道。
+type sharedKey struct {
+	from agent.Kind
+	to   agent.Kind
 }
 
 // NewDefaultContextEngine 创建默认的 ContextEngine。
@@ -384,9 +402,18 @@ var credentialPattern = regexp.MustCompile(`(?i)(api_key|password|secret|token\s
 // 规则：
 //   - 隐私过滤：剔除包含凭证关键词的消息
 //   - 数量限制：最多传递 10 条消息（取最新的）
+//   - 按 (from, to) 分桶存储，支持多 delegate 并发（Task #18）
+//
+// 调用方(Orchestrator)在 delegate 结束后 SHOULD 调 ClearShared(from, to)
+// 切断桶，防止下一次 delegate 继承前一次的 shared 消息。
 func (e *DefaultContextEngine) Share(ctx context.Context, from, to agent.Kind, messages []llm.Message) error {
 	if len(messages) == 0 {
+		e.sharedMu.Lock()
+		if e.sharedBuckets != nil {
+			delete(e.sharedBuckets, sharedKey{from, to})
+		}
 		e.SharedMessages = nil
+		e.sharedMu.Unlock()
 		return nil
 	}
 
@@ -405,7 +432,14 @@ func (e *DefaultContextEngine) Share(ctx context.Context, from, to agent.Kind, m
 		filtered = filtered[len(filtered)-maxShareMessages:]
 	}
 
+	e.sharedMu.Lock()
+	if e.sharedBuckets == nil {
+		e.sharedBuckets = map[sharedKey][]llm.Message{}
+	}
+	e.sharedBuckets[sharedKey{from, to}] = filtered
+	// 兼容旧字段:后写覆盖,仅给 legacy 测试和单桶读取场景用
 	e.SharedMessages = filtered
+	e.sharedMu.Unlock()
 
 	// 异步持久化
 	if e.SharedStore != nil && len(filtered) > 0 {
@@ -423,6 +457,34 @@ func (e *DefaultContextEngine) Share(ctx context.Context, from, to agent.Kind, m
 		}()
 	}
 	return nil
+}
+
+// SharedFor 返回 (from, to) 桶中的消息拷贝。无桶返回 nil。
+// 线程安全;调用方不应共享返回 slice(不锁保护)。
+func (e *DefaultContextEngine) SharedFor(from, to agent.Kind) []llm.Message {
+	e.sharedMu.Lock()
+	defer e.sharedMu.Unlock()
+	msgs, ok := e.sharedBuckets[sharedKey{from, to}]
+	if !ok {
+		return nil
+	}
+	out := make([]llm.Message, len(msgs))
+	copy(out, msgs)
+	return out
+}
+
+// ClearShared 切断 (from, to) 桶。Orchestrator.Delegate 在 subtask 完成后
+// 必须调用本方法,否则下一次 delegate 会继承前一次的 shared 消息(Task #18)。
+// from/to 都为零值时清空全部桶——仅应在 engine 重置时使用。
+func (e *DefaultContextEngine) ClearShared(from, to agent.Kind) {
+	e.sharedMu.Lock()
+	defer e.sharedMu.Unlock()
+	if from == "" && to == "" {
+		e.sharedBuckets = nil
+		e.SharedMessages = nil
+		return
+	}
+	delete(e.sharedBuckets, sharedKey{from, to})
 }
 
 // containsCredential 检查消息是否包含敏感凭证信息。

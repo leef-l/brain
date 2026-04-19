@@ -48,11 +48,24 @@ type llmCompleteRequest struct {
 }
 
 // llmCompleteResponse is the payload returned to the sidecar.
+// Usage 在 v1.1 起从主进程带回，让 sidecar Agent Loop 的 Budget/CheckCost
+// 能真正生效；此前版本字段缺失导致 LLM call 成本盲区。
 type llmCompleteResponse struct {
 	ID         string             `json:"id"`
 	Model      string             `json:"model"`
 	StopReason string             `json:"stop_reason"`
 	Content    []llm.ContentBlock `json:"content"`
+	Usage      *llmUsageWire      `json:"usage,omitempty"`
+}
+
+// llmUsageWire 是主进程 llm.complete 响应里可选的 Usage 字段，
+// 与 sidecar 侧 loop.go 中的同名结构镜像。
+type llmUsageWire struct {
+	InputTokens         int     `json:"input_tokens,omitempty"`
+	OutputTokens        int     `json:"output_tokens,omitempty"`
+	CacheReadTokens     int     `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int     `json:"cache_creation_tokens,omitempty"`
+	CostUSD             float64 `json:"cost_usd,omitempty"`
 }
 
 // RegisterHandlers installs llm.complete and llm.stream handlers on the
@@ -121,5 +134,12 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 		Model:      resp.Model,
 		StopReason: resp.StopReason,
 		Content:    resp.Content,
+		Usage: &llmUsageWire{
+			InputTokens:         resp.Usage.InputTokens,
+			OutputTokens:        resp.Usage.OutputTokens,
+			CacheReadTokens:     resp.Usage.CacheReadTokens,
+			CacheCreationTokens: resp.Usage.CacheCreationTokens,
+			CostUSD:             resp.Usage.CostUSD,
+		},
 	}, nil
 }

@@ -1,0 +1,12 @@
+{
+  "id": "gitlab-merge-requests-list",
+  "category": "gitlab",
+  "site": "https://gitlab.com",
+  "goal": "From gitlab.com/gitlab-org/gitlab, click 'Merge requests' in the sidebar and verify the MR list view loaded.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_contains", "value": "/-/merge_requests" },
+    { "kind": "dom_has", "value": "[data-testid='issuable-list'], .mr-list" }
+  ],
+  "tags": ["gitlab", "navigation", "happy_path", "phase1"]
+}

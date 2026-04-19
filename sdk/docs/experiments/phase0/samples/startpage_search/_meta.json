@@ -1,0 +1,14 @@
+{
+  "id": "startpage_search",
+  "category": "search",
+  "description": "Startpage 搜索结果页",
+  "url": "https://www.startpage.com/do/search?q=brain+agent",
+  "captured_at": "2026-04-19T09:29:49Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "wait_selector_timeout",
+  "error": null,
+  "element_count": 97
+}

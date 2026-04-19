@@ -1,0 +1,12 @@
+{
+  "id": "reddit-browse-subreddit",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "Navigate to https://old.reddit.com/r/programming and verify the subreddit landing page loaded with post listings.",
+  "max_turns": 4,
+  "success": [
+    { "kind": "url_contains", "value": "/r/programming" },
+    { "kind": "dom_has", "value": ".thing.link" }
+  ],
+  "tags": ["reddit", "navigation", "happy_path", "phase1"]
+}

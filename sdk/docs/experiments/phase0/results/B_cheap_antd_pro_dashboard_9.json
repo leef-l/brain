@@ -1,0 +1,9 @@
+{
+  "combo": "B",
+  "role": "cheap",
+  "provider": "deepseek",
+  "page_id": "antd_pro_dashboard",
+  "element_id": 9,
+  "predictions": [],
+  "skipped": "provider has no image support"
+}

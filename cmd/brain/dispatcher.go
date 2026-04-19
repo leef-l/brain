@@ -28,6 +28,7 @@ var commands = map[string]command{
 	"config":  {Short: "Manage configuration", Run: runConfig},
 	"serve":   {Short: "Start the Kernel service (cluster mode)", Run: runServe},
 	"brain":   {Short: "Manage installed brains (list, install, activate, deactivate)", Run: runBrainManage},
+	"pattern": {Short: "Share the UI pattern library (import / export)", Run: runPattern},
 	"doctor":  {Short: "Diagnose the local brain environment", Run: runDoctor},
 	"version": {Short: "Print version information", Run: runVersion},
 }
@@ -47,6 +48,7 @@ var commandOrder = []string{
 	"config",
 	"serve",
 	"brain",
+	"pattern",
 	"doctor",
 	"version",
 }

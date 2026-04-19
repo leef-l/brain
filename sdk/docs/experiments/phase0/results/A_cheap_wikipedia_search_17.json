@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "wikipedia_search",
+  "element_id": 17,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3148,
+      "action_intent": "Start Wikipedia article creation wizard to draft and submit a new article for review.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3084,
+      "action_intent": "Start the article creation wizard to draft and submit a new Wikipedia page for review.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2993,
+      "action_intent": "Start the Wikipedia article creation wizard to draft and submit a new article for review.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.9
+    }
+  ]
+}

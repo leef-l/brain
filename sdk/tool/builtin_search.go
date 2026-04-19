@@ -30,7 +30,7 @@ func (t *SearchTool) Name() string { return t.brainKind + ".search" }
 func (t *SearchTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Search for a pattern in files recursively. Returns matching lines with file paths and line numbers.",
+		Description: "Search for a pattern in files recursively. Returns matching lines with file paths and line numbers. Supports context lines (-B/-A) and multiline matching.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -53,6 +53,18 @@ func (t *SearchTool) Schema() Schema {
     "max_results": {
       "type": "integer",
       "description": "Maximum number of matches to return. Default: 50"
+    },
+    "context_before": {
+      "type": "integer",
+      "description": "Lines of context before each match (ripgrep -B). Default: 0"
+    },
+    "context_after": {
+      "type": "integer",
+      "description": "Lines of context after each match (ripgrep -A). Default: 0"
+    },
+    "multiline": {
+      "type": "boolean",
+      "description": "Enable multiline regex (pattern may span newlines, requires is_regex=true). Default: false"
     }
   },
   "required": ["pattern"]
@@ -72,23 +84,34 @@ func (t *SearchTool) Schema() Schema {
 func (t *SearchTool) Risk() Risk { return RiskSafe }
 
 type searchInput struct {
-	Pattern    string `json:"pattern"`
-	Path       string `json:"path"`
-	Glob       string `json:"glob"`
-	IsRegex    bool   `json:"is_regex"`
-	MaxResults int    `json:"max_results"`
+	Pattern       string `json:"pattern"`
+	Path          string `json:"path"`
+	Glob          string `json:"glob"`
+	IsRegex       bool   `json:"is_regex"`
+	MaxResults    int    `json:"max_results"`
+	ContextBefore int    `json:"context_before"`
+	ContextAfter  int    `json:"context_after"`
+	Multiline     bool   `json:"multiline"`
 }
 
 type searchMatch struct {
-	File string `json:"file"`
-	Line int    `json:"line"`
-	Text string `json:"text"`
+	File    string   `json:"file"`
+	Line    int      `json:"line"`
+	Text    string   `json:"text"`
+	Before  []string `json:"before,omitempty"`
+	After   []string `json:"after,omitempty"`
 }
 
 type searchOutput struct {
 	Matches   []searchMatch `json:"matches"`
 	Total     int           `json:"total"`
 	Truncated bool          `json:"truncated"`
+	// Backend 标注实际使用的搜索后端（ripgrep / walk）。两后端对 glob 语义
+	// 和 skip 规则有差异，LLM 需要这个信号来判断结果可比性。
+	Backend string `json:"backend,omitempty"`
+	// Notes 列出非致命但影响结果的副作用（大文件跳过、glob 语义差异等），
+	// 便于 LLM 做失败恢复或二次查询。
+	Notes []string `json:"notes,omitempty"`
 }
 
 // skipDirs are directories to always skip during search.
@@ -150,7 +173,12 @@ func (t *SearchTool) Execute(ctx context.Context, args json.RawMessage) (*Result
 	var re *regexp.Regexp
 	if input.IsRegex {
 		var err error
-		re, err = regexp.Compile(input.Pattern)
+		pattern := input.Pattern
+		if input.Multiline {
+			// (?s) — DOTALL 让 . 匹配换行；walk 路径按整个文件全文匹配
+			pattern = "(?s)" + pattern
+		}
+		re, err = regexp.Compile(pattern)
 		if err != nil {
 			return &Result{Output: jsonStr(fmt.Sprintf("invalid regex: %v", err)), IsError: true}, nil
 		}
@@ -168,6 +196,14 @@ func (t *SearchTool) Execute(ctx context.Context, args json.RawMessage) (*Result
 	out, usedRG, err := t.searchWithRipgrep(ctx, absPath, input)
 	if !usedRG {
 		out, err = t.searchWithWalk(ctx, absPath, input, re)
+		out.Backend = "walk"
+		out.Notes = append(out.Notes,
+			"ripgrep not found; using slower walk backend. Install ripgrep for faster search and richer glob semantics.",
+			"walk backend: glob matches basename only (not path); files >1MB are skipped.")
+	} else {
+		out.Backend = "ripgrep"
+		// ripgrep 也会跳过 >1MB 文件（--max-filesize 1M），给个提示
+		out.Notes = append(out.Notes, "ripgrep backend: files >1MB are skipped; binary files auto-detected.")
 	}
 
 	if err != nil && ctx.Err() == nil {
@@ -265,6 +301,15 @@ func buildRipgrepArgs(input searchInput, searchPath string) []string {
 	if input.Glob != "" {
 		args = append(args, "-g", input.Glob)
 	}
+	if input.ContextBefore > 0 {
+		args = append(args, "-B", fmt.Sprintf("%d", input.ContextBefore))
+	}
+	if input.ContextAfter > 0 {
+		args = append(args, "-A", fmt.Sprintf("%d", input.ContextAfter))
+	}
+	if input.Multiline && input.IsRegex {
+		args = append(args, "-U", "--multiline-dotall")
+	}
 	if input.IsRegex {
 		args = append(args, "-e", input.Pattern)
 	} else {
@@ -278,6 +323,19 @@ func parseRipgrepOutput(r io.Reader, searchDir string, maxResults int) (searchOu
 	var out searchOutput
 	out.Matches = []searchMatch{}
 
+	// ripgrep 输出顺序：对每个文件，按行号交织 context / match / context 事件。
+	// 我们累积 "上一次 match 之前缓冲的 context 行"作为该 match 的 before；
+	// 一旦遇到新 match，把上一次 match 的 after 填完。这样也不用重开窗口。
+	pendingBefore := []string{} // 在下一个 match 出现前累积的 context 行
+	var lastMatchIdx = -1        // 指向 out.Matches 中最近一次 match 的下标（已提交）
+	var lastMatchFile string
+
+	flushAfter := func() {
+		pendingBefore = pendingBefore[:0]
+		lastMatchIdx = -1
+		lastMatchFile = ""
+	}
+
 	dec := json.NewDecoder(bufio.NewReader(r))
 	for {
 		var ev ripgrepEvent
@@ -287,23 +345,43 @@ func parseRipgrepOutput(r io.Reader, searchDir string, maxResults int) (searchOu
 			}
 			return out, err
 		}
-		if ev.Type != "match" {
-			continue
+		switch ev.Type {
+		case "begin":
+			// 新文件开始：重置 pending/last 状态
+			flushAfter()
+		case "end":
+			flushAfter()
+		case "context":
+			file := normalizeRipgrepPath(searchDir, ev.Data.Path.Text)
+			text := truncateSearchLine(ev.Data.Lines.Text)
+			if lastMatchIdx >= 0 && file == lastMatchFile {
+				// 属于最近一次 match 的 after
+				out.Matches[lastMatchIdx].After = append(out.Matches[lastMatchIdx].After, text)
+			} else {
+				// 作为下一个 match 的 before
+				pendingBefore = append(pendingBefore, text)
+			}
+		case "match":
+			out.Total++
+			if len(out.Matches) >= maxResults {
+				out.Truncated = true
+				continue
+			}
+			file := normalizeRipgrepPath(searchDir, ev.Data.Path.Text)
+			text := truncateSearchLine(ev.Data.Lines.Text)
+			m := searchMatch{
+				File: file,
+				Line: ev.Data.LineNumber,
+				Text: text,
+			}
+			if len(pendingBefore) > 0 {
+				m.Before = append([]string(nil), pendingBefore...)
+				pendingBefore = pendingBefore[:0]
+			}
+			out.Matches = append(out.Matches, m)
+			lastMatchIdx = len(out.Matches) - 1
+			lastMatchFile = file
 		}
-
-		out.Total++
-		if len(out.Matches) >= maxResults {
-			out.Truncated = true
-			continue
-		}
-
-		file := normalizeRipgrepPath(searchDir, ev.Data.Path.Text)
-		text := truncateSearchLine(ev.Data.Lines.Text)
-		out.Matches = append(out.Matches, searchMatch{
-			File: file,
-			Line: ev.Data.LineNumber,
-			Text: text,
-		})
 	}
 }
 
@@ -402,11 +480,31 @@ func (t *SearchTool) searchWithWalk(ctx context.Context, absPath string, input s
 				out.Truncated = true
 				continue
 			}
-			out.Matches = append(out.Matches, searchMatch{
+			m := searchMatch{
 				File: relPath,
 				Line: i + 1,
 				Text: truncateSearchLine(line),
-			})
+			}
+			// 收集上下文
+			if input.ContextBefore > 0 {
+				start := i - input.ContextBefore
+				if start < 0 {
+					start = 0
+				}
+				for j := start; j < i; j++ {
+					m.Before = append(m.Before, truncateSearchLine(lines[j]))
+				}
+			}
+			if input.ContextAfter > 0 {
+				end := i + 1 + input.ContextAfter
+				if end > len(lines) {
+					end = len(lines)
+				}
+				for j := i + 1; j < end; j++ {
+					m.After = append(m.After, truncateSearchLine(lines[j]))
+				}
+			}
+			out.Matches = append(out.Matches, m)
 		}
 		return nil
 	})

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/tool/cdp"
 )
 
@@ -19,13 +21,35 @@ import (
 type browserSessionHolder struct {
 	mu      sync.Mutex
 	session *cdp.BrowserSession
+	netbuf  *netBuf         // Network event buffer; attached on first session creation.
+	history *anomalyHistory // Anomaly history; attached on first session creation.
+
+	// snapshotCache 承载 P3.4 增量 snapshot 的上一次结果。browserSnapshotTool
+	// 在 incremental=true 且 MutationObserver 已注入时读取,和本次采集到的
+	// dirty 元素合并。pageKey 用 URL 做边界 —— 跨页导航后必须全扫,避免上
+	// 个页面的 data-brain-id 映射污染新页面。
+	snapshotCache       []brainElement
+	snapshotCachePageKey string
+	// observerInstalled 表示已经 Exec 过 brainInstallObserverJS,且 URL
+	// 未变化(URL 变化时自然会被 MutationObserver 本身 reset,但本侧也清零)。
+	observerInstalled bool
 }
 
 func newBrowserSessionHolder() *browserSessionHolder {
-	return &browserSessionHolder{}
+	return &browserSessionHolder{
+		netbuf:  newNetBuf(200),
+		history: newAnomalyHistory(),
+	}
+}
+
+// anomalyHistory exposes the per-session history for v2 tools.
+func (h *browserSessionHolder) anomalyHistory() *anomalyHistory {
+	return h.history
 }
 
 // get returns the current session, creating one if needed.
+// On first creation, it subscribes the NetBuf to CDP Network.* events so
+// every browser tool observes the same in-flight request stream.
 func (h *browserSessionHolder) get(ctx context.Context) (*cdp.BrowserSession, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -39,6 +63,10 @@ func (h *browserSessionHolder) get(ctx context.Context) (*cdp.BrowserSession, er
 		return nil, err
 	}
 	h.session = s
+	// Subscribe NetBuf and JS-error watcher to CDP events. Both are idempotent
+	// per-client: the session is freshly created so no listeners exist yet.
+	h.netbuf.attach(s.Client())
+	attachJSErrorWatcher(s.Client(), h.history)
 	return s, nil
 }
 
@@ -57,11 +85,32 @@ func (h *browserSessionHolder) close() {
 // ---------------------------------------------------------------------------
 
 // NewBrowserTools creates all browser tools sharing a single browser session.
+//
+// Side-effecting tools (click/type/open/navigate/…) are automatically wrapped
+// with anomalyInjectingTool so that post-action high/blocker anomalies are
+// appended to the tool_result under `_anomalies`. Read-only tools and the
+// anomaly tool itself are returned unwrapped to avoid recursion.
 func NewBrowserTools() []Tool {
 	holder := newBrowserSessionHolder()
-	return []Tool{
+	patternExec := &browserPatternExecTool{holder: holder}
+	raw := []Tool{
 		&browserOpenTool{holder: holder},
 		&browserNavigateTool{holder: holder},
+		&browserSnapshotTool{holder: holder},          // P0-1 — semantic+interactive snapshot
+		&browserNetworkTool{holder: holder},           // P0-2 — observed request buffer
+		&browserWaitNetworkIdleTool{holder: holder},   // P0-2 — true networkIdle
+		&browserCheckAnomalyTool{holder: holder},      // P0-3 — anomaly perception MVP
+		&browserUnderstandTool{holder: holder},        // Phase 1 — L4-L7 semantic annotation + cache
+		&browserSitemapTool{holder: holder},           // P0-3 — whole-site BFS + route patterns
+		&browserPatternMatchTool{holder: holder},      // Phase 2 — UI pattern match
+		patternExec,                                    // Phase 2 — UI pattern exec
+		&browserPatternListTool{},                     // Phase 2 — UI pattern list
+		&browserIframeTool{holder: holder},            // P1 — iframe punch-through
+		&browserDownloadsTool{holder: holder},         // P1 — downloads dir watcher
+		&browserStorageTool{holder: holder},           // P1 — cookies + localStorage export/import
+		&browserFillFormTool{holder: holder},          // P1 — batch form fill
+		&browserChangesTool{holder: holder},           // P1 — DOM diff since last call
+		&browserCheckAnomalyV2Tool{holder: holder},    // Task #10 — full anomaly perception
 		&browserClickTool{holder: holder},
 		&browserDoubleClickTool{holder: holder},
 		&browserRightClickTool{holder: holder},
@@ -73,9 +122,41 @@ func NewBrowserTools() []Tool {
 		&browserSelectTool{holder: holder},
 		&browserUploadFileTool{holder: holder},
 		&browserScreenshotTool{holder: holder},
+		&browserVisualInspectTool{holder: holder},   // Phase 3 — multimodal fallback
 		&browserEvalTool{holder: holder},
 		&browserWaitTool{holder: holder},
 	}
+	out := make([]Tool, len(raw))
+	for i, t := range raw {
+		wrapped := t
+		if autoInjectTools[t.Name()] {
+			wrapped = &anomalyInjectingTool{inner: wrapped, holder: holder}
+		}
+		if retryTools[t.Name()] {
+			wrapped = WithRetry(wrapped)
+		}
+		out[i] = wrapped
+	}
+	// pattern_exec needs the fully-wrapped sibling map so its internal calls
+	// to browser.click / browser.type also get anomaly injection. M5 also
+	// needs human.request_takeover so on_anomaly=human_intervention can route
+	// through the coordinator without depending on a host-level registry.
+	siblings := make([]Tool, 0, len(out)+1)
+	siblings = append(siblings, out...)
+	siblings = append(siblings, NewHumanRequestTakeoverTool())
+	patternExec.setSiblings(siblings)
+	return out
+}
+
+// retryTools 列出启用 Task #14 retry 装饰器的 browser 工具。只挑真正会遇到
+// transient 错误的工具(导航/等待/下载),读只读工具(snapshot/network)无
+// 重试价值——失败了也是参数或会话问题,重试只会浪费配额。
+var retryTools = map[string]bool{
+	"browser.open":              true,
+	"browser.navigate":          true,
+	"browser.wait":              true,
+	"browser.wait_network_idle": true,
+	"browser.downloads":         true,
 }
 
 // CloseBrowserSession closes the shared browser session.
@@ -141,11 +222,11 @@ func (t *browserOpenTool) Execute(ctx context.Context, args json.RawMessage) (*R
 
 	if input.NewTab {
 		if err := sess.NewTab(ctx, input.URL); err != nil {
-			return errResult("new tab: %v", err), nil
+			return classifyNavigateError(err, "new tab"), nil
 		}
 	} else {
 		if err := sess.Navigate(ctx, input.URL); err != nil {
-			return errResult("navigate: %v", err), nil
+			return classifyNavigateError(err, "navigate"), nil
 		}
 	}
 
@@ -239,7 +320,7 @@ func (t *browserNavigateTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 
 	if err != nil {
-		return errResult("navigate %s: %v", input.Action, err), nil
+		return classifyNavigateError(err, "navigate "+input.Action), nil
 	}
 	return okResult(map[string]string{"status": "ok", "action": input.Action}), nil
 }
@@ -255,13 +336,14 @@ func (t *browserClickTool) Risk() Risk   { return RiskMedium }
 func (t *browserClickTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Click an element by CSS selector or coordinates. Simulates a real mouse click.",
+		Description: "Click an element. Preferred: pass id from browser.snapshot. Falls back to CSS selector or explicit x,y coordinates.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "selector": { "type": "string", "description": "CSS selector of the element to click" },
-    "x": { "type": "number", "description": "X coordinate (if no selector)" },
-    "y": { "type": "number", "description": "Y coordinate (if no selector)" }
+    "id":       { "type": "integer", "description": "data-brain-id from browser.snapshot (preferred)" },
+    "selector": { "type": "string",  "description": "CSS selector (fallback when no id)" },
+    "x":        { "type": "number",  "description": "X coordinate (fallback when no id/selector)" },
+    "y":        { "type": "number",  "description": "Y coordinate (fallback when no id/selector)" }
   }
 }`),
 		OutputSchema: browserPointOutputSchema,
@@ -278,6 +360,7 @@ func (t *browserClickTool) Schema() Schema {
 
 func (t *browserClickTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
+		ID       int      `json:"id"`
 		Selector string   `json:"selector"`
 		X        *float64 `json:"x"`
 		Y        *float64 `json:"y"`
@@ -291,7 +374,7 @@ func (t *browserClickTool) Execute(ctx context.Context, args json.RawMessage) (*
 		return errResult("no browser session: %v", err), nil
 	}
 
-	x, y, err := resolveCoordinates(ctx, sess, input.Selector, input.X, input.Y)
+	x, y, err := resolveTarget(ctx, sess, input.ID, input.Selector, input.X, input.Y)
 	if err != nil {
 		return errResult("%v", err), nil
 	}
@@ -313,13 +396,14 @@ func (t *browserDoubleClickTool) Risk() Risk   { return RiskMedium }
 func (t *browserDoubleClickTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Double-click an element by CSS selector or coordinates.",
+		Description: "Double-click an element. Preferred: pass id from browser.snapshot.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "selector": { "type": "string", "description": "CSS selector" },
-    "x": { "type": "number", "description": "X coordinate" },
-    "y": { "type": "number", "description": "Y coordinate" }
+    "id":       { "type": "integer", "description": "data-brain-id from browser.snapshot (preferred)" },
+    "selector": { "type": "string",  "description": "CSS selector (fallback)" },
+    "x":        { "type": "number",  "description": "X coordinate (fallback)" },
+    "y":        { "type": "number",  "description": "Y coordinate (fallback)" }
   }
 }`),
 		OutputSchema: browserPointOutputSchema,
@@ -336,6 +420,7 @@ func (t *browserDoubleClickTool) Schema() Schema {
 
 func (t *browserDoubleClickTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
+		ID       int      `json:"id"`
 		Selector string   `json:"selector"`
 		X        *float64 `json:"x"`
 		Y        *float64 `json:"y"`
@@ -349,7 +434,7 @@ func (t *browserDoubleClickTool) Execute(ctx context.Context, args json.RawMessa
 		return errResult("no browser session: %v", err), nil
 	}
 
-	x, y, err := resolveCoordinates(ctx, sess, input.Selector, input.X, input.Y)
+	x, y, err := resolveTarget(ctx, sess, input.ID, input.Selector, input.X, input.Y)
 	if err != nil {
 		return errResult("%v", err), nil
 	}
@@ -371,13 +456,14 @@ func (t *browserRightClickTool) Risk() Risk   { return RiskMedium }
 func (t *browserRightClickTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Right-click an element by CSS selector or coordinates.",
+		Description: "Right-click an element. Preferred: pass id from browser.snapshot.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "selector": { "type": "string", "description": "CSS selector" },
-    "x": { "type": "number", "description": "X coordinate" },
-    "y": { "type": "number", "description": "Y coordinate" }
+    "id":       { "type": "integer", "description": "data-brain-id from browser.snapshot (preferred)" },
+    "selector": { "type": "string",  "description": "CSS selector (fallback)" },
+    "x":        { "type": "number",  "description": "X coordinate (fallback)" },
+    "y":        { "type": "number",  "description": "Y coordinate (fallback)" }
   }
 }`),
 		OutputSchema: browserPointOutputSchema,
@@ -394,6 +480,7 @@ func (t *browserRightClickTool) Schema() Schema {
 
 func (t *browserRightClickTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
+		ID       int      `json:"id"`
 		Selector string   `json:"selector"`
 		X        *float64 `json:"x"`
 		Y        *float64 `json:"y"`
@@ -407,7 +494,7 @@ func (t *browserRightClickTool) Execute(ctx context.Context, args json.RawMessag
 		return errResult("no browser session: %v", err), nil
 	}
 
-	x, y, err := resolveCoordinates(ctx, sess, input.Selector, input.X, input.Y)
+	x, y, err := resolveTarget(ctx, sess, input.ID, input.Selector, input.X, input.Y)
 	if err != nil {
 		return errResult("%v", err), nil
 	}
@@ -429,14 +516,15 @@ func (t *browserTypeTool) Risk() Risk   { return RiskMedium }
 func (t *browserTypeTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Type text into the focused element or a specified element. Can clear existing content first.",
+		Description: "Type text into an element. Preferred: pass id from browser.snapshot. Falls back to selector or the currently focused element.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "text": { "type": "string", "description": "Text to type" },
-    "selector": { "type": "string", "description": "CSS selector to focus before typing" },
-    "clear": { "type": "boolean", "description": "Clear existing content before typing (default: false)" },
-    "delay_ms": { "type": "integer", "description": "Delay between keystrokes in ms (default: 0, instant)" }
+    "text":     { "type": "string",  "description": "Text to type" },
+    "id":       { "type": "integer", "description": "data-brain-id from browser.snapshot (preferred)" },
+    "selector": { "type": "string",  "description": "CSS selector to focus before typing (fallback)" },
+    "clear":    { "type": "boolean", "description": "Clear existing content before typing (default: false)" },
+    "delay_ms": { "type": "integer", "description": "Delay between keystrokes in ms (default: 0)" }
   },
   "required": ["text"]
 }`),
@@ -455,6 +543,7 @@ func (t *browserTypeTool) Schema() Schema {
 func (t *browserTypeTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
 		Text     string `json:"text"`
+		ID       int    `json:"id"`
 		Selector string `json:"selector"`
 		Clear    bool   `json:"clear"`
 		DelayMS  int    `json:"delay_ms"`
@@ -468,8 +557,12 @@ func (t *browserTypeTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		return errResult("no browser session: %v", err), nil
 	}
 
-	// Focus the element if selector given.
-	if input.Selector != "" {
+	// Focus by id > selector. Falls back to currently focused element.
+	if input.ID > 0 {
+		if err := focusBrainID(ctx, sess, input.ID); err != nil {
+			return errResult("focus id=%d: %v", input.ID, err), nil
+		}
+	} else if input.Selector != "" {
 		if err := focusElement(ctx, sess, input.Selector); err != nil {
 			return errResult("focus %s: %v", input.Selector, err), nil
 		}
@@ -682,13 +775,14 @@ func (t *browserHoverTool) Risk() Risk   { return RiskSafe }
 func (t *browserHoverTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Hover over an element (triggers CSS :hover, tooltips, dropdown menus).",
+		Description: "Hover over an element (triggers :hover, tooltips, dropdowns). Preferred: pass id from browser.snapshot.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "selector": { "type": "string", "description": "CSS selector" },
-    "x": { "type": "number", "description": "X coordinate" },
-    "y": { "type": "number", "description": "Y coordinate" }
+    "id":       { "type": "integer", "description": "data-brain-id from browser.snapshot (preferred)" },
+    "selector": { "type": "string",  "description": "CSS selector (fallback)" },
+    "x":        { "type": "number",  "description": "X coordinate (fallback)" },
+    "y":        { "type": "number",  "description": "Y coordinate (fallback)" }
   }
 }`),
 		OutputSchema: browserPointOutputSchema,
@@ -705,6 +799,7 @@ func (t *browserHoverTool) Schema() Schema {
 
 func (t *browserHoverTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
+		ID       int      `json:"id"`
 		Selector string   `json:"selector"`
 		X        *float64 `json:"x"`
 		Y        *float64 `json:"y"`
@@ -718,7 +813,7 @@ func (t *browserHoverTool) Execute(ctx context.Context, args json.RawMessage) (*
 		return errResult("no browser session: %v", err), nil
 	}
 
-	x, y, err := resolveCoordinates(ctx, sess, input.Selector, input.X, input.Y)
+	x, y, err := resolveTarget(ctx, sess, input.ID, input.Selector, input.X, input.Y)
 	if err != nil {
 		return errResult("%v", err), nil
 	}
@@ -838,16 +933,16 @@ func (t *browserSelectTool) Risk() Risk   { return RiskMedium }
 func (t *browserSelectTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Select an option from a <select> dropdown by value, text, or index.",
+		Description: "Select an option from a <select> dropdown by value, text, or index. Preferred: pass id from browser.snapshot.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "selector": { "type": "string", "description": "CSS selector of the <select> element" },
-    "value": { "type": "string", "description": "Option value to select" },
-    "text": { "type": "string", "description": "Option visible text to select" },
-    "index": { "type": "integer", "description": "Option index to select (0-based)" }
-  },
-  "required": ["selector"]
+    "id":       { "type": "integer", "description": "data-brain-id from browser.snapshot (preferred)" },
+    "selector": { "type": "string",  "description": "CSS selector of the <select> element (fallback)" },
+    "value":    { "type": "string",  "description": "Option value to select" },
+    "text":     { "type": "string",  "description": "Option visible text to select" },
+    "index":    { "type": "integer", "description": "Option index to select (0-based)" }
+  }
 }`),
 		OutputSchema: browserSelectOutputSchema,
 		Brain:        "browser",
@@ -863,6 +958,7 @@ func (t *browserSelectTool) Schema() Schema {
 
 func (t *browserSelectTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
+		ID       int    `json:"id"`
 		Selector string `json:"selector"`
 		Value    string `json:"value"`
 		Text     string `json:"text"`
@@ -871,13 +967,19 @@ func (t *browserSelectTool) Execute(ctx context.Context, args json.RawMessage) (
 	if err := json.Unmarshal(args, &input); err != nil {
 		return errResult("invalid arguments: %v", err), nil
 	}
-	if input.Selector == "" {
-		return errResult("selector is required"), nil
+	if input.ID <= 0 && input.Selector == "" {
+		return errResult("either id (from browser.snapshot) or selector is required"), nil
 	}
 
 	sess, err := t.holder.get(ctx)
 	if err != nil {
 		return errResult("no browser session: %v", err), nil
+	}
+
+	// Prefer id → [data-brain-id="N"] lookup; else the caller's selector.
+	targetSel := input.Selector
+	if input.ID > 0 {
+		targetSel = fmt.Sprintf(`[data-brain-id="%d"]`, input.ID)
 	}
 
 	// Build JS to select the option.
@@ -890,7 +992,7 @@ func (t *browserSelectTool) Execute(ctx context.Context, args json.RawMessage) (
 			el.value = %q;
 			el.dispatchEvent(new Event('change',{bubbles:true}));
 			return JSON.stringify({status:"ok",value:el.value});
-		})()`, input.Selector, input.Value)
+		})()`, targetSel, input.Value)
 	case input.Text != "":
 		js = fmt.Sprintf(`(function(){
 			var el = document.querySelector(%q);
@@ -900,7 +1002,7 @@ func (t *browserSelectTool) Execute(ctx context.Context, args json.RawMessage) (
 			}
 			el.dispatchEvent(new Event('change',{bubbles:true}));
 			return JSON.stringify({status:"ok",value:el.value,text:el.options[el.selectedIndex].text});
-		})()`, input.Selector, input.Text)
+		})()`, targetSel, input.Text)
 	case input.Index != nil:
 		js = fmt.Sprintf(`(function(){
 			var el = document.querySelector(%q);
@@ -908,7 +1010,7 @@ func (t *browserSelectTool) Execute(ctx context.Context, args json.RawMessage) (
 			el.selectedIndex = %d;
 			el.dispatchEvent(new Event('change',{bubbles:true}));
 			return JSON.stringify({status:"ok",index:%d,value:el.value});
-		})()`, input.Selector, *input.Index, *input.Index)
+		})()`, targetSel, *input.Index, *input.Index)
 	default:
 		return errResult("one of value, text, or index is required"), nil
 	}
@@ -1266,11 +1368,9 @@ func (t *browserWaitTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		})
 
 	case "idle":
-		// Wait for network idle (no pending requests for 500ms).
-		time.Sleep(500 * time.Millisecond)
-		err = pollUntil(waitCtx, 300*time.Millisecond, func() (bool, error) {
-			return evalBool(waitCtx, sess, `document.readyState === "complete"`)
-		})
+		// Legacy "idle" — now backed by real network observation from netbuf
+		// (quiet period default 500ms). Prefer wait.network_idle for new code.
+		err = waitNetworkIdle(waitCtx, t.holder.netbuf, 500*time.Millisecond)
 
 	case "js":
 		if input.Expression == "" {
@@ -1285,7 +1385,7 @@ func (t *browserWaitTool) Execute(ctx context.Context, args json.RawMessage) (*R
 	}
 
 	if err != nil {
-		return errResult("wait %s: %v", input.Condition, err), nil
+		return ErrorResult(brainerrors.CodeToolTimeout, "wait %s: %v", input.Condition, err), nil
 	}
 	return okResult(map[string]string{"status": "ok", "condition": input.Condition}), nil
 }
@@ -1298,6 +1398,27 @@ func (t *browserWaitTool) Execute(ctx context.Context, args json.RawMessage) (*R
 func errResult(format string, a ...interface{}) *Result {
 	msg := fmt.Sprintf(format, a...)
 	return &Result{Output: jsonStr(msg), IsError: true}
+}
+
+// classifyNavigateError 把 CDP / 网络层错误归到 brain-v3 的 error_code,让
+// retry 装饰器能正确决策。超时/网络抖动归 CodeToolTimeout(transient),其余
+// 归 CodeToolExecutionFailed(permanent)。
+func classifyNavigateError(err error, phase string) *Result {
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "timeout"),
+		strings.Contains(msg, "deadline"),
+		strings.Contains(msg, "reset"),
+		strings.Contains(msg, "connection refused"),
+		strings.Contains(msg, "temporarily unavailable"),
+		strings.Contains(msg, "net::err_internet_disconnected"),
+		strings.Contains(msg, "net::err_network_changed"):
+		return ErrorResult(brainerrors.CodeToolTimeout, "%s: %v", phase, err)
+	}
+	return ErrorResult(brainerrors.CodeToolExecutionFailed, "%s: %v", phase, err)
 }
 
 // okResult creates a success Result from any JSON-serializable value.
@@ -1318,7 +1439,17 @@ func resolveCoordinates(ctx context.Context, sess *cdp.BrowserSession, selector 
 	if x != nil && y != nil {
 		return *x, *y, nil
 	}
-	return 0, 0, fmt.Errorf("provide selector or both x,y coordinates")
+	return 0, 0, fmt.Errorf("provide id, selector, or both x,y coordinates")
+}
+
+// resolveTarget is the snapshot-aware variant of resolveCoordinates.
+// Priority: id (from browser.snapshot) > selector > explicit x,y.
+// Preferred by new code; older tools still call resolveCoordinates for compatibility.
+func resolveTarget(ctx context.Context, sess *cdp.BrowserSession, id int, selector string, x, y *float64) (float64, float64, error) {
+	if id > 0 {
+		return resolveBrainID(ctx, sess, id)
+	}
+	return resolveCoordinates(ctx, sess, selector, x, y)
 }
 
 // getElementCenter returns the center coordinates of an element.

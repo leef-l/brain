@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "saleor_product",
+  "element_id": 12,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2884,
+      "action_intent": "Switch to the product description tab",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3485,
+      "action_intent": "View the product description section",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3059,
+      "action_intent": "View the product description section",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

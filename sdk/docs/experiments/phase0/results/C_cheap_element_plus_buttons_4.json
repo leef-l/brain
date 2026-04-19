@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "element_plus_buttons",
+  "element_id": 4,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3379,
+      "action_intent": "Navigate to the Guide section of the Element Plus documentation.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3268,
+      "action_intent": "Navigate to the Guide section of the Element Plus documentation.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3262,
+      "action_intent": "Navigate to the Guide section of the Element Plus documentation.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    }
+  ]
+}

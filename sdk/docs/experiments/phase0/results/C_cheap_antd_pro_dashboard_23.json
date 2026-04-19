@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "antd_pro_dashboard",
+  "element_id": 23,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3641,
+      "action_intent": "Filter dashboard data to show metrics for the current week.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2987,
+      "action_intent": "Filter dashboard data to show metrics for the current week.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3201,
+      "action_intent": "Filter the dashboard data to show metrics for the current week.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.9
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "m2w-admin-16-rowedit-mautic",
+  "category": "admin",
+  "site": "https://demo.mautic.org",
+  "goal": "On https://demo.mautic.org admin, open the edit form for any row and save a trivial change; verify a success alert or the row's updated value.",
+  "max_turns": 14,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[role=\"alert\"], .success, .alert-success, .notification-success"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "admin",
+    "row_edit",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-admin-08-b",
+    "domain": "marketing",
+    "subdomain": "mautic"
+  }
+}

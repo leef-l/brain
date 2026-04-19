@@ -1,0 +1,168 @@
+{
+  "page_id": "adminlte_dashboard",
+  "url": "https://adminlte.io/themes/v3/",
+  "category": "admin_structured",
+  "snapshot_file": "samples/adminlte_dashboard/snapshot.json",
+  "screenshot_file": "samples/adminlte_dashboard/screenshot.png",
+  "html_file": "samples/adminlte_dashboard/page.html",
+  "drafted_at": "2026-04-19T09:02:30Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 1,
+      "element": {
+        "tag": "a",
+        "role": "button",
+        "type": null,
+        "name": "",
+        "href": "https://adminlte.io/themes/v3/#",
+        "bbox": {
+          "x": 281,
+          "y": 28,
+          "w": 46,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Toggle or open a navigation/menu element in the top navbar",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "Element has no visible text and href is '#', likely a hamburger/toggle button for sidebar or a dropdown. Exact function unclear from context alone.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 4,
+      "element": {
+        "tag": "a",
+        "role": "button",
+        "type": null,
+        "name": "",
+        "href": "https://adminlte.io/themes/v3/#",
+        "bbox": {
+          "x": 1218,
+          "y": 28,
+          "w": 48,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Open a notifications or messages dropdown panel showing items (nearby badges with counts 3 and 15 suggest notification area)",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Positioned in the top-right navbar area near badge counts. Likely a notifications bell or messages icon dropdown. Exact icon/label not provided.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 7,
+      "element": {
+        "tag": "a",
+        "role": "button",
+        "type": null,
+        "name": "",
+        "href": "https://adminlte.io/themes/v3/#",
+        "bbox": {
+          "x": 1361,
+          "y": 28,
+          "w": 46,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Open a user-related or settings dropdown/panel in the far-right area of the navbar",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Rightmost navbar button near other notification buttons. Could be a control sidebar toggle or user menu. AdminLTE v3 typically places a control sidebar toggle here.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 11,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "search",
+        "name": "Search",
+        "href": null,
+        "bbox": {
+          "x": 103,
+          "y": 159,
+          "w": 189,
+          "h": 38
+        }
+      },
+      "draft": {
+        "action_intent": "Search for items or pages within the admin sidebar navigation",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Search input in the sidebar area, filters or searches sidebar menu items. No data mutation involved.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Home",
+        "href": "https://adminlte.io/themes/v3/index3.html",
+        "bbox": {
+          "x": 341,
+          "y": 28,
+          "w": 74,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Home page (index3.html)",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "notes": "Standard top navbar link pointing to index3.html. Straightforward navigation.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 3,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Contact",
+        "href": "https://adminlte.io/themes/v3/#",
+        "bbox": {
+          "x": 422,
+          "y": 28,
+          "w": 88,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Contact page or section",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "notes": "href is '#' so it may be a placeholder/demo link that doesn't actually navigate. Could be navigation or a no-op in this demo theme. Reviewer should verify if it leads anywhere.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

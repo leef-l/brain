@@ -1,0 +1,43 @@
+{
+  "id": "08_wishlist_similar_search",
+  "description": "电商搜索 → 商品详情 → 加入心愿单 → 搜索相似商品 fallback(驱动 ecommerce_find_similar_product)",
+  "site": "https://demo.opencart.com",
+  "max_turns": 12,
+  "token_budget": 45000,
+  "steps": [
+    {
+      "name": "search",
+      "url_hint": "/index.php?route=product/search",
+      "category": "search",
+      "pattern_id": "search_query",
+      "goal": "Search for 'iPhone'"
+    },
+    {
+      "name": "open_detail",
+      "url_hint": "/product",
+      "category": "commerce",
+      "pattern_id": "ecommerce_product_detail_gallery",
+      "goal": "Open first result"
+    },
+    {
+      "name": "add_wishlist",
+      "url_hint": "/product",
+      "category": "commerce",
+      "pattern_id": "ecommerce_add_to_cart_with_feedback",
+      "goal": "Add to wishlist (reuses the add_to_cart_with_feedback structure)"
+    },
+    {
+      "name": "similar",
+      "url_hint": "/product",
+      "category": "commerce",
+      "pattern_id": "ecommerce_find_similar_product",
+      "goal": "Use similar-product fallback (out-of-stock signal)",
+      "expect_anomaly": "error_message",
+      "expect_recovery": "fallback_pattern"
+    }
+  ],
+  "success": [
+    { "kind": "dom_contains", "value": "similar" }
+  ],
+  "tags": ["longchain", "fallback_pattern", "phase2"]
+}

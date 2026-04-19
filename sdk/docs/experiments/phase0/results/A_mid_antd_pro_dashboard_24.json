@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "antd_pro_dashboard",
+  "element_id": 24,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 30855,
+      "action_intent": "Filter dashboard data to current month",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 4301,
+      "action_intent": "Filter dashboard data to show this month's statistics",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.9
+    },
+    {
+      "run": 2,
+      "latency_ms": 3345,
+      "action_intent": "Filter dashboard data to current month",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    }
+  ]
+}

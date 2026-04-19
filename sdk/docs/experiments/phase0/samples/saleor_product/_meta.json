@@ -1,0 +1,14 @@
+{
+  "id": "saleor_product",
+  "category": "ecommerce",
+  "description": "Saleor 商品详情页,加购/收藏",
+  "url": "https://demo.saleor.io/default-channel/products/apple-juice/",
+  "captured_at": "2026-04-19T08:53:22Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 22
+}

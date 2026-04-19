@@ -1,0 +1,24 @@
+{
+  "id": "m2w-ecom-25-addcart-bestbuy",
+  "category": "ecommerce",
+  "site": "https://www.bestbuy.com",
+  "goal": "On https://www.bestbuy.com, open any product detail page and add it to the cart. Verify a toast / mini-cart / cart count indicator reflects the addition.",
+  "max_turns": 12,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[class*=\"cart-count\" i], [data-cart-count], .mini-cart, .cart-drawer, [role=\"status\"]"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "ecommerce",
+    "add_to_cart",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-ecom-13-a",
+    "domain": "ecom",
+    "subdomain": "bestbuy"
+  }
+}

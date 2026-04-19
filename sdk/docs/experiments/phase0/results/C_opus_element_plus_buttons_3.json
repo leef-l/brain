@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "element_plus_buttons",
+  "element_id": 3,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4218,
+      "action_intent": "Open site-wide search dialog",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.97
+    },
+    {
+      "run": 1,
+      "latency_ms": 5653,
+      "action_intent": "Open site-wide search dialog",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.97
+    },
+    {
+      "run": 2,
+      "latency_ms": 4211,
+      "action_intent": "Open documentation search dialog",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.97
+    }
+  ]
+}

@@ -319,3 +319,107 @@ func ToolScopesForDelegate(brainKind string) []string {
 	}
 	return scopes
 }
+
+// BrowserStage* 是 Browser Brain 语义理解阶段标识,对应 40 号文档 §3 的阶段 1-3。
+const (
+	BrowserStageNewPage     = "new_page"
+	BrowserStageKnownFlow   = "known_flow"
+	BrowserStageDestructive = "destructive"
+	BrowserStageFallback    = "fallback"
+)
+
+// ToolScopesForBrowserStage 返回某个 Browser Brain 语义阶段额外开放的 scope。
+// 这些 scope 叠加在 run.browser 之后,profile 匹配时晚定义的覆盖早定义的,
+// 方便运营在 ~/.brain/config.json 里为不同阶段配不同工具 allow-list。
+//
+// 未知 stage 返回空,退回通用 run.browser 行为。
+func ToolScopesForBrowserStage(stage string) []string {
+	stage = strings.TrimSpace(stage)
+	switch stage {
+	case BrowserStageNewPage,
+		BrowserStageKnownFlow,
+		BrowserStageDestructive,
+		BrowserStageFallback:
+		return []string{"run.browser." + stage}
+	}
+	return nil
+}
+
+// DefaultBrowserStageProfiles 返回四个内建 profile + 对应 active_tools 绑定,
+// 调用方可以合并到已有 Config,也可全量覆盖。profile 命名以 "browser_" 开头,
+// 避免和用户自定义 profile 冲突。
+//
+// 设计对应文档 40 §5.1:
+//   - new_page   优先 snapshot + understand + sitemap,禁 screenshot
+//   - known_flow 优先 pattern_match/list/exec,限制昂贵工具
+//   - destructive 在 known_flow 之上加 visual_inspect + snapshot 做视觉复核
+//   - fallback   全量开放,包括 visual_inspect 和 eval
+func DefaultBrowserStageProfiles() (map[string]*Profile, map[string]string) {
+	profiles := map[string]*Profile{
+		"browser_new_page": {
+			Include: []string{
+				"browser.snapshot", "browser.understand", "browser.sitemap",
+				"browser.check_anomaly", "browser.wait*", "browser.network",
+				"browser.navigate", "browser.open",
+				"browser.click", "browser.type", "browser.press_key",
+				"browser.scroll", "browser.hover",
+			},
+		},
+		"browser_known_flow": {
+			Include: []string{
+				"browser.pattern_*",
+				"browser.snapshot", "browser.check_anomaly",
+				"browser.click", "browser.type", "browser.press_key",
+				"browser.scroll", "browser.navigate",
+				"browser.fill_form", "browser.storage",
+				"browser.wait*", "browser.network",
+			},
+		},
+		"browser_destructive": {
+			Include: []string{
+				"browser.pattern_*",
+				"browser.snapshot", "browser.understand",
+				"browser.visual_inspect", "browser.screenshot",
+				"browser.check_anomaly",
+				"browser.click", "browser.type", "browser.press_key",
+			},
+		},
+		"browser_fallback": {
+			// 兜底阶段允许全量工具,但 exclude 掉 eval 的原始危险变体
+			// (如未来引入 browser.eval.unrestricted)。目前全开。
+			Include: []string{"browser.*"},
+		},
+	}
+	active := map[string]string{
+		"run.browser." + BrowserStageNewPage:     "browser_new_page",
+		"run.browser." + BrowserStageKnownFlow:   "browser_known_flow",
+		"run.browser." + BrowserStageDestructive: "browser_destructive",
+		"run.browser." + BrowserStageFallback:    "browser_fallback",
+	}
+	return profiles, active
+}
+
+// MergeBrowserStageProfiles 把默认 browser 阶段 profiles/active_tools 合并到
+// cfg,调用方可在启动时无感引入。已存在的同名 profile 不被覆盖,让用户可自定义。
+func MergeBrowserStageProfiles(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	profiles, active := DefaultBrowserStageProfiles()
+	if cfg.ToolProfiles == nil {
+		cfg.ToolProfiles = map[string]*Profile{}
+	}
+	for k, v := range profiles {
+		if _, exists := cfg.ToolProfiles[k]; !exists {
+			cfg.ToolProfiles[k] = v
+		}
+	}
+	if cfg.ActiveTools == nil {
+		cfg.ActiveTools = map[string]string{}
+	}
+	for k, v := range active {
+		if _, exists := cfg.ActiveTools[k]; !exists {
+			cfg.ActiveTools[k] = v
+		}
+	}
+}

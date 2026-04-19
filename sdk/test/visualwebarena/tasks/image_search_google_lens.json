@@ -1,0 +1,22 @@
+{
+  "id": "image_search_google_lens",
+  "category": "image_search",
+  "site": "https://images.google.com/",
+  "goal": "Upload a picture of the Eiffel Tower and confirm the top result mentions Paris.",
+  "max_turns": 15,
+  "visual_required": "hard",
+  "modality": [
+    "image_search"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Paris"
+    }
+  ],
+  "tags": [
+    "image_search",
+    "hard"
+  ]
+}

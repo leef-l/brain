@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "wikipedia_search",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 9147,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '06a9207907f3cef74c079c9178aa3d6f', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 4922,
+      "action_intent": "Navigate to Wikipedia login page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 4707,
+      "action_intent": "Navigate to the login page to authenticate",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

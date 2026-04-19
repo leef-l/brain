@@ -1,0 +1,11 @@
+{
+  "id": "gitea-login-happy",
+  "category": "auth",
+  "site": "https://demo.gitea.com",
+  "goal": "Navigate to https://demo.gitea.com/user/login, log in with username 'tester' password 'tester123', and verify the dashboard loaded.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "url_contains", "value": "dashboard" }
+  ],
+  "tags": ["login", "happy_path", "phase1"]
+}

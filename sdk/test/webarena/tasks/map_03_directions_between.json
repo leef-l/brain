@@ -1,0 +1,12 @@
+{
+  "id": "map-directions-between",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "On openstreetmap.org, click the directions icon, enter 'Paris' as the 'from' and 'Lyon' as the 'to', and request a car route; verify directions are rendered in the panel.",
+  "max_turns": 10,
+  "success": [
+    { "kind": "url_contains", "value": "directions" },
+    { "kind": "dom_has", "value": ".directions_form" }
+  ],
+  "tags": ["map", "routing", "phase2"]
+}

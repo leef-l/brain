@@ -1,0 +1,23 @@
+{
+  "id": "m2w-auth-20-logout-zoom",
+  "category": "auth",
+  "site": "https://zoom.us",
+  "goal": "Starting from an authenticated session on https://zoom.us, click the logout / sign-out link and verify the login form reappears.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "input[type=\"password\"], a[href*=\"login\" i]"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "logout",
+    "cross_site_auth"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-auth-10-b",
+    "domain": "saas",
+    "subdomain": "zoom"
+  }
+}

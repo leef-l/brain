@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Posts - React Admin</title>
+</head>
+<body>
+  <div id="root">
+    <main class="RaLayout-main">
+      <div class="RaList-root">
+        <div class="RaList-actions">
+          <button type="button" class="MuiButton-root RaFilterButton-root" aria-label="Add filter">Filter</button>
+          <button type="button" class="MuiButton-root RaExportButton-root" aria-label="Export">
+            <span class="MuiButton-label">Export</span>
+          </button>
+          <button type="button" class="MuiButton-root RaBulkActionsToolbar-delete" data-action="batch-delete">
+            Delete selected
+          </button>
+        </div>
+        <div class="RaFilterForm-root">
+          <select name="status" class="MuiSelect-root" aria-label="Status">
+            <option value="">All</option>
+            <option value="published">Published</option>
+            <option value="draft">Draft</option>
+          </select>
+          <input type="date" placeholder="From" class="MuiInput-input">
+          <input type="date" placeholder="To" class="MuiInput-input">
+          <button type="submit" class="MuiButton-root MuiButton-containedPrimary">Apply</button>
+        </div>
+        <div class="MuiDataGrid-root" role="grid">
+          <div class="MuiDataGrid-columnHeaders">
+            <div class="MuiDataGrid-columnHeader">
+              <input type="checkbox" aria-label="Select all rows" class="MuiCheckbox-input">
+            </div>
+            <div class="MuiDataGrid-columnHeader">Title</div>
+            <div class="MuiDataGrid-columnHeader">Author</div>
+            <div class="MuiDataGrid-columnHeader">Status</div>
+            <div class="MuiDataGrid-columnHeader">Actions</div>
+          </div>
+          <div class="MuiDataGrid-virtualScroller">
+            <div class="MuiDataGrid-row" role="row">
+              <div class="MuiDataGrid-cell">
+                <input type="checkbox" class="MuiCheckbox-input">
+              </div>
+              <div class="MuiDataGrid-cell">Hello React Admin</div>
+              <div class="MuiDataGrid-cell">ra@example.com</div>
+              <div class="MuiDataGrid-cell">published</div>
+              <div class="MuiDataGrid-cell">
+                <button class="MuiButton-root RaEditButton-root">Edit</button>
+                <button class="MuiButton-root RaDeleteButton-root MuiButton-colorError">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="RaPagination-root" aria-label="Pagination">
+          <button aria-label="Go to previous page">«</button>
+          <button class="MuiPaginationItem-root Mui-selected" aria-current="page">1</button>
+          <button class="MuiPaginationItem-root">2</button>
+          <button class="MuiPaginationItem-root">3</button>
+          <button aria-label="Go to next page" rel="next">Next</button>
+        </div>
+      </div>
+      <!-- Edit dialog (modal) -->
+      <div role="dialog" class="MuiDialog-root">
+        <div class="MuiDialog-container">
+          <div class="MuiDialog-paper">
+            <form class="RaSimpleForm-root">
+              <input type="text" name="title" class="MuiInput-input">
+            </form>
+            <div class="MuiDialogActions-root">
+              <button class="MuiButton-root">Cancel</button>
+              <button class="MuiButton-root MuiButton-containedPrimary">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Delete confirm alert-dialog -->
+      <div role="alertdialog" class="MuiDialog-root RaConfirm-root">
+        <div class="MuiDialog-paper">
+          <h2 class="MuiDialogTitle-root">Confirm</h2>
+          <div class="MuiDialogContent-root">Delete this post? This cannot be undone.</div>
+          <div class="MuiDialogActions-root">
+            <button class="MuiButton-root">Cancel</button>
+            <button class="MuiButton-root MuiButton-colorError">Confirm</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

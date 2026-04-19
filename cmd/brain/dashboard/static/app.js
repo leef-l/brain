@@ -257,6 +257,102 @@
         setText('#event-count', eventCount);
     }
 
+    function loadLearning() {
+        fetchJSON('/v1/dashboard/learning')
+            .then(function (data) {
+                var container = $('#learning-content');
+                var patterns = data.patterns || [];
+                var daily = data.daily || [];
+                var interactions = data.interactions || [];
+
+                if (patterns.length === 0 && daily.length === 0 && interactions.length === 0) {
+                    container.innerHTML = '<div class="placeholder">No learning data yet</div>';
+                    return;
+                }
+
+                var html = '';
+
+                // 模式库表格
+                html += '<div class="learning-section"><h3>Patterns</h3>';
+                if (patterns.length === 0) {
+                    html += '<div class="placeholder">No patterns</div>';
+                } else {
+                    patterns.sort(function (a, b) { return (b.success_count || 0) - (a.success_count || 0); });
+                    html += '<table class="learning-table"><thead><tr>'
+                        + '<th>ID</th><th>Category</th><th>Source</th>'
+                        + '<th>Match</th><th>Success</th><th>Fail</th><th>Rate</th><th>Last Hit</th>'
+                        + '</tr></thead><tbody>';
+                    for (var i = 0; i < patterns.length; i++) {
+                        var p = patterns[i];
+                        var rate = (p.success_rate || 0) * 100;
+                        html += '<tr>'
+                            + '<td>' + escapeHTML(truncate(p.id, 36)) + '</td>'
+                            + '<td>' + escapeHTML(p.category || '-') + '</td>'
+                            + '<td>' + escapeHTML(p.source || '-') + '</td>'
+                            + '<td>' + (p.match_count || 0) + '</td>'
+                            + '<td>' + (p.success_count || 0) + '</td>'
+                            + '<td>' + (p.failure_count || 0) + '</td>'
+                            + '<td>' + rate.toFixed(1) + '%</td>'
+                            + '<td>' + escapeHTML(formatTime(p.last_hit_at) || '-') + '</td>'
+                            + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                }
+                html += '</div>';
+
+                // Interaction 统计
+                html += '<div class="learning-section"><h3>Interactions by Brain</h3>';
+                if (interactions.length === 0) {
+                    html += '<div class="placeholder">No interactions recorded</div>';
+                } else {
+                    interactions.sort(function (a, b) { return (b.count || 0) - (a.count || 0); });
+                    html += '<table class="learning-table"><thead><tr>'
+                        + '<th>Brain</th><th>Sequences</th><th>Successes</th><th>Rate</th>'
+                        + '</tr></thead><tbody>';
+                    for (var j = 0; j < interactions.length; j++) {
+                        var it = interactions[j];
+                        var total = it.count || 0;
+                        var succ = it.successes || 0;
+                        var irate = total > 0 ? (succ / total * 100) : 0;
+                        html += '<tr>'
+                            + '<td>' + escapeHTML(it.brain_kind || 'unknown') + '</td>'
+                            + '<td>' + total + '</td>'
+                            + '<td>' + succ + '</td>'
+                            + '<td>' + irate.toFixed(1) + '%</td>'
+                            + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                }
+                html += '</div>';
+
+                // 每日总结
+                html += '<div class="learning-section"><h3>Daily Summaries (last 14d)</h3>';
+                if (daily.length === 0) {
+                    html += '<div class="placeholder">No daily summaries</div>';
+                } else {
+                    for (var k = 0; k < daily.length; k++) {
+                        var d = daily[k];
+                        html += '<div class="daily-card">'
+                            + '<div class="daily-head">'
+                            + '<strong>' + escapeHTML(d.date) + '</strong>'
+                            + ' <span class="daily-meta">' + (d.runs_total || 0) + ' runs, ' + (d.runs_failed || 0) + ' failed</span>'
+                            + '</div>';
+                        if (d.summary_text) {
+                            html += '<div class="daily-text">' + escapeHTML(truncate(d.summary_text, 600)) + '</div>';
+                        }
+                        html += '</div>';
+                    }
+                }
+                html += '</div>';
+
+                container.innerHTML = html;
+            })
+            .catch(function (err) {
+                console.error('Failed to load learning:', err);
+                $('#learning-content').innerHTML = '<div class="placeholder">Failed to load learning data</div>';
+            });
+    }
+
     // --- Utility ---
 
     function escapeHTML(str) {
@@ -274,6 +370,7 @@
         loadOverview();
         loadBrains();
         loadExecutions();
+        loadLearning();
 
         // Event connection (WebSocket preferred, SSE fallback)
         connectWS();
@@ -284,6 +381,8 @@
             loadBrains();
             loadExecutions();
         }, POLL_INTERVAL);
+        // Learning 面板更新频率低(读库开销)
+        setInterval(loadLearning, POLL_INTERVAL * 4);
     }
 
     // Start when DOM ready

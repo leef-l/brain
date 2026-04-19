@@ -1,0 +1,33 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "adminlte_dashboard",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5043,
+      "action_intent": "Navigate to page number 15 in pagination",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 5996,
+      "action_intent": "Toggle sidebar menu",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 3701,
+      "error": "JSONDecodeError('Extra data: line 2 column 1 (char 154)')"
+    }
+  ]
+}

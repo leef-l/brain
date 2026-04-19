@@ -1,0 +1,24 @@
+{
+  "id": "m2w-admin-04-rowedit-django-cms",
+  "category": "admin",
+  "site": "https://demo.django-cms.org/en/admin/",
+  "goal": "On https://demo.django-cms.org/en/admin/ admin, open the edit form for any row and save a trivial change; verify a success alert or the row's updated value.",
+  "max_turns": 14,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[role=\"alert\"], .success, .alert-success, .notification-success"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "admin",
+    "row_edit",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-admin-02-b",
+    "domain": "cms",
+    "subdomain": "django-cms"
+  }
+}

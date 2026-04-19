@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "wikipedia_search",
+  "element_id": 12,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 8445,
+      "action_intent": "Toggle advanced search options panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.92
+    },
+    {
+      "run": 1,
+      "latency_ms": 6325,
+      "action_intent": "Toggle advanced search options panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.92
+    },
+    {
+      "run": 2,
+      "latency_ms": 6635,
+      "action_intent": "Toggle advanced search options panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.92
+    }
+  ]
+}

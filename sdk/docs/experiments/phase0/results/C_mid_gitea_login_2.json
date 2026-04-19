@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "gitea_login",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3075,
+      "action_intent": "Navigate to explore repositories page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2727,
+      "action_intent": "Navigate to explore repositories page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 5021,
+      "action_intent": "Navigate to explore repositories page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 1.0
+    }
+  ]
+}

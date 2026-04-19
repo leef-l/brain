@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "angular_material_button",
+  "element_id": 48,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3664,
+      "action_intent": "Navigate to button component overview page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3624,
+      "action_intent": "Navigate to the Angular Material button component overview page.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3024,
+      "action_intent": "Navigate to the Button component overview page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

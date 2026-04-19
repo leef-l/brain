@@ -1,0 +1,22 @@
+{
+  "id": "soft_map_zoom_level",
+  "category": "map",
+  "site": "https://leafletjs.com/examples/quick-start/",
+  "goal": "Zoom in twice and report the new zoom level attribute.",
+  "max_turns": 8,
+  "visual_required": "soft",
+  "modality": [
+    "map"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "zoom"
+    }
+  ],
+  "tags": [
+    "map",
+    "soft"
+  ]
+}

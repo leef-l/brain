@@ -1,0 +1,11 @@
+{
+  "id": "gitlab-copy-clone-url",
+  "category": "gitlab",
+  "site": "https://gitlab.com",
+  "goal": "On gitlab.com/gitlab-org/gitlab, click the 'Code' dropdown button on the repo page and verify the clone URL popover (SSH / HTTPS fields) is displayed.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "dom_has", "value": "[data-testid='ssh-url'], input.js-clone" }
+  ],
+  "tags": ["gitlab", "interaction", "phase2"]
+}

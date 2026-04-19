@@ -1,0 +1,631 @@
+{
+  "page_id": "gitea_login",
+  "url": "https://demo.gitea.com/user/login",
+  "category": "login_simple",
+  "built_at": "2026-04-19T09:16:33Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 4,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Sign In",
+        "href": "https://demo.gitea.com/user/login",
+        "bbox": {
+          "x": 1383,
+          "y": 55,
+          "w": 94,
+          "h": 36
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the sign-in page",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the sign-in page": 3,
+            "navigate to the login page to sign in": 3,
+            "navigate to the sign in page": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 5,
+            "primary": 2,
+            "navigation": 2
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the sign-in page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the sign-in page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the sign-in page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the login page to sign in.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the sign in page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the sign in page to authenticate.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the login page to sign in.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the login page to access account.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the login page to sign in.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Home",
+        "href": "https://demo.gitea.com/",
+        "bbox": {
+          "x": 38,
+          "y": 55,
+          "w": 56,
+          "h": 36
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the home page.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the home page": 4,
+            "navigate to the gitea home page": 3,
+            "navigate to the website's home page": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Gitea home page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Gitea home page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Gitea home page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the home page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the home page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the home page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the website's home page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the website's main homepage.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the home page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Explore",
+        "href": "https://demo.gitea.com/explore/repos",
+        "bbox": {
+          "x": 110,
+          "y": 55,
+          "w": 79,
+          "h": 36
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the explore repositories page",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the explore repositories page": 4,
+            "navigate to explore public repositories": 2,
+            "navigate to the explore page": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the explore repositories page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the explore repositories page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the explore repositories page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the explore repositories page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the explore page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the explore page to browse repositories.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to explore public repositories.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Browse and discover public repositories on the platform.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to explore public repositories.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "element": {
+        "tag": "div",
+        "role": "menu",
+        "type": null,
+        "name": "Auto",
+        "href": null,
+        "bbox": {
+          "x": 1170,
+          "y": 882,
+          "w": 56,
+          "h": 16
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Toggle or change the site color theme setting",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "toggle or change the site color theme setting": 2,
+            "toggle the theme or appearance mode selector": 1,
+            "open theme selection menu": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Toggle or change the site color theme setting",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Toggle the theme or appearance mode selector",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Toggle or change the site color theme setting",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Open theme selection menu.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Toggle the auto theme setting",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Toggle the theme auto-detection setting menu.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Open a menu to toggle theme settings.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Toggle or select the theme or appearance mode.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Open a menu to select a theme or color scheme.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "element": {
+        "tag": "div",
+        "role": "menu",
+        "type": null,
+        "name": "English",
+        "href": null,
+        "bbox": {
+          "x": 1246,
+          "y": 882,
+          "w": 68,
+          "h": 16
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Toggle or change the site language setting",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "toggle or change the site language setting": 2,
+            "toggle the language selection menu": 2,
+            "open language selection menu": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Toggle or change the site language setting",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Toggle the language selection menu",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Toggle or change the site language setting",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Open language selection menu.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Toggle the language setting",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Toggle the language selection menu.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Open a menu to change the site language.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Change the user interface language.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Open a menu to select a language.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    }
+  ]
+}

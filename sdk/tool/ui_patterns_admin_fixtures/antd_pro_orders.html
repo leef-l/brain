@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>订单管理 - Ant Design Pro</title>
+</head>
+<body>
+  <div id="root">
+    <section class="ant-pro-page-container">
+      <div class="ant-pro-table">
+        <div class="ant-pro-table-search">
+          <form class="ant-form ant-form-horizontal">
+            <div class="ant-row">
+              <div class="ant-col">
+                <div class="ant-select" role="combobox">
+                  <span class="ant-select-selector">
+                    <span class="ant-select-selection-placeholder">状态</span>
+                  </span>
+                </div>
+              </div>
+              <div class="ant-col">
+                <input type="date" placeholder="起始日期" class="ant-input">
+                <input type="date" placeholder="截止日期" class="ant-input">
+              </div>
+              <div class="ant-col">
+                <button type="submit" class="ant-btn ant-btn-primary">查询</button>
+                <button type="button" class="ant-btn">重置</button>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="ant-pro-table-list-toolbar">
+          <button type="button" class="ant-btn ant-btn-primary export-action" aria-label="导出">导出 Excel</button>
+          <button type="button" class="ant-btn batch-action" data-action="batch">批量操作</button>
+        </div>
+        <div class="ant-table">
+          <table>
+            <thead class="ant-table-thead">
+              <tr>
+                <th class="ant-table-cell ant-table-selection-column">
+                  <input type="checkbox" aria-label="select all" class="ant-checkbox-input">
+                </th>
+                <th class="ant-table-cell">订单号</th>
+                <th class="ant-table-cell">金额</th>
+                <th class="ant-table-cell">状态</th>
+                <th class="ant-table-cell">操作</th>
+              </tr>
+            </thead>
+            <tbody class="ant-table-tbody">
+              <tr class="ant-table-row">
+                <td class="ant-table-cell"><input type="checkbox" class="ant-checkbox-input"></td>
+                <td class="ant-table-cell">#1001</td>
+                <td class="ant-table-cell">¥199.00</td>
+                <td class="ant-table-cell"><span class="ant-tag ant-tag-green">已支付</span></td>
+                <td class="ant-table-cell">
+                  <a class="edit-link">编辑</a>
+                  <a class="delete-link danger">删除</a>
+                </td>
+              </tr>
+              <tr class="ant-table-row">
+                <td class="ant-table-cell"><input type="checkbox" class="ant-checkbox-input"></td>
+                <td class="ant-table-cell">#1002</td>
+                <td class="ant-table-cell">¥59.90</td>
+                <td class="ant-table-cell"><span class="ant-tag">退款中</span></td>
+                <td class="ant-table-cell">
+                  <a class="edit-link">编辑</a>
+                  <a class="delete-link danger">删除</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ul class="ant-pagination">
+          <li class="ant-pagination-prev"><a>«</a></li>
+          <li class="ant-pagination-item ant-pagination-item-active"><a>1</a></li>
+          <li class="ant-pagination-item"><a>2</a></li>
+          <li class="ant-pagination-item"><a>3</a></li>
+          <li class="ant-pagination-next"><a>下一页</a></li>
+        </ul>
+      </div>
+    </section>
+    <!-- AntD confirm modal -->
+    <div class="ant-modal-root">
+      <div role="alertdialog" class="ant-modal-confirm ant-modal-confirm-confirm">
+        <div class="ant-modal-confirm-body">
+          <span class="ant-modal-confirm-title">确认删除</span>
+          <div class="ant-modal-confirm-content">删除后不可恢复,是否继续?</div>
+        </div>
+        <div class="ant-modal-confirm-btns">
+          <button class="ant-btn">取消</button>
+          <button class="ant-btn ant-btn-primary ant-btn-dangerous">确认</button>
+        </div>
+      </div>
+    </div>
+    <!-- Edit drawer -->
+    <div class="ant-drawer">
+      <div class="ant-drawer-content">
+        <div class="ant-drawer-body">
+          <form>
+            <input type="text" class="ant-input" name="amount">
+          </form>
+        </div>
+        <div class="ant-drawer-footer">
+          <button class="ant-btn">取消</button>
+          <button class="ant-btn ant-btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

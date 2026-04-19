@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "rjsf_form",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2941,
+      "action_intent": "Close the samples drawer panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3022,
+      "action_intent": "Close the samples drawer panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.92
+    },
+    {
+      "run": 2,
+      "latency_ms": 3459,
+      "action_intent": "Close the samples drawer panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.95
+    }
+  ]
+}

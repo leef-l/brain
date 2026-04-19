@@ -1,0 +1,11 @@
+{
+  "id": "map-search-city",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "Open openstreetmap.org, search for 'Berlin, Germany' in the search box and verify the map view centered on Berlin.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_contains", "value": "query=Berlin" }
+  ],
+  "tags": ["map", "search", "happy_path", "phase1"]
+}

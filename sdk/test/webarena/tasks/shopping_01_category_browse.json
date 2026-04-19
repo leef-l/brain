@@ -1,0 +1,12 @@
+{
+  "id": "shopping-category-browse",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "Open demo.opencart.com and navigate to the 'Desktops' category; verify the category listing page loaded with at least one product card.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_contains", "value": "path=20" },
+    { "kind": "dom_has", "value": ".product-thumb" }
+  ],
+  "tags": ["shopping", "navigation", "happy_path", "phase1"]
+}

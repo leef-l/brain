@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "adminlte_dashboard",
+  "element_id": 11,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2169,
+      "action_intent": "Search for content within the admin dashboard",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2481,
+      "action_intent": "Enter search query to filter content",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3656,
+      "action_intent": "Search the AdminLTE dashboard",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.9
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "angular_material_button",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2490,
+      "error": "JSONDecodeError('Extra data: line 2 column 1 (char 156)')"
+    },
+    {
+      "run": 1,
+      "latency_ms": 5342,
+      "action_intent": "Dismiss cookie consent banner",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3156,
+      "action_intent": "Dismiss a notification or dialog popup",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.85
+    }
+  ]
+}

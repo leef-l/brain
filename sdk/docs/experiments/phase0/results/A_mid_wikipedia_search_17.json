@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "wikipedia_search",
+  "element_id": 17,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3236,
+      "action_intent": "Navigate to article creation wizard to draft a new Wikipedia article",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2517,
+      "action_intent": "Create a draft Wikipedia article and submit it for review",
+      "reversibility": "conditional",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 2319,
+      "action_intent": "Open the article creation wizard page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    }
+  ]
+}

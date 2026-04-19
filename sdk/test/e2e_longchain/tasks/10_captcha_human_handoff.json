@@ -1,0 +1,36 @@
+{
+  "id": "10_captcha_human_handoff",
+  "description": "故意触发 captcha:on_anomaly=human_intervention,由 mock coordinator 放行后继续(验证 #16 人工接管链路)",
+  "site": "https://demo.brain.local/high-friction-login",
+  "max_turns": 14,
+  "token_budget": 55000,
+  "steps": [
+    {
+      "name": "open_login",
+      "url_hint": "/login",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Attempt login"
+    },
+    {
+      "name": "captcha_block",
+      "url_hint": "/login",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Captcha triggers — request human takeover",
+      "expect_anomaly": "captcha",
+      "expect_recovery": "human_intervention"
+    },
+    {
+      "name": "post_captcha_continue",
+      "url_hint": "/dashboard",
+      "category": "nav",
+      "pattern_id": "close_modal",
+      "goal": "Resume after coordinator releases the hold; dismiss any onboarding modal"
+    }
+  ],
+  "success": [
+    { "kind": "url_contains", "value": "dashboard" }
+  ],
+  "tags": ["longchain", "human_handoff", "captcha", "phase2"]
+}

@@ -1,0 +1,29 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "vue_element_admin",
+  "element_id": 4,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4180,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '434898e8d2beaae0a1cbfc478c552ac8', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 3740,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'b8eddc644553f41bb0d6d6de0cda20d9', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 3645,
+      "action_intent": "Click on a login form helper element",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.5
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "canvas_fabric_logo_colour",
+  "category": "canvas",
+  "site": "https://fabricjs.com/kitchensink",
+  "goal": "Change the color of the logo on the canvas to red.",
+  "max_turns": 12,
+  "visual_required": "hard",
+  "modality": [
+    "canvas"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "red"
+    }
+  ],
+  "tags": [
+    "canvas",
+    "hard"
+  ]
+}

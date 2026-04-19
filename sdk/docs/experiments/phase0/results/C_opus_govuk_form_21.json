@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "govuk_form",
+  "element_id": 21,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3934,
+      "action_intent": "Navigate to the Payment card details pattern documentation page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 1,
+      "latency_ms": 3798,
+      "action_intent": "Navigate to the Payment card details pattern documentation page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 2,
+      "latency_ms": 4411,
+      "action_intent": "Navigate to the Payment card details pattern documentation page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    }
+  ]
+}

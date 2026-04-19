@@ -569,11 +569,20 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 
 	// Send brain/execute and wait for result.
 	var execResult json.RawMessage
-	if err := rpc.Call(ctx, "brain/execute", payload, &execResult); err != nil {
+	rpcErr := rpc.Call(ctx, "brain/execute", payload, &execResult)
+
+	// Task #18: subtask 完成(成功或失败)后清掉 (central→target) 的 shared 桶,
+	// 防止下一次 delegate 继承本次的跨脑消息。只对默认 engine 生效;第三方
+	// engine 自己负责边界切断。
+	if ce, ok := o.contextEngine.(*DefaultContextEngine); ok && ce != nil {
+		ce.ClearShared(agent.Kind("central"), req.TargetKind)
+	}
+
+	if rpcErr != nil {
 		return &SubtaskResult{
 			TaskID: req.TaskID,
 			Status: "failed",
-			Error:  fmt.Sprintf("brain/execute: %v", err),
+			Error:  fmt.Sprintf("brain/execute: %v", rpcErr),
 			Usage:  SubtaskUsage{Duration: time.Since(start)},
 		}, nil
 	}

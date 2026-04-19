@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "adminlte_dashboard",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 6080,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '29bbd8995836cfdcab79ac32998fe0eb', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 5423,
+      "action_intent": "Navigate to a page section or pagination item",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.75
+    },
+    {
+      "run": 2,
+      "latency_ms": 9551,
+      "action_intent": "Navigate to page or section within admin template",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.6
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "map-search-poi",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "On openstreetmap.org, search for 'Brandenburg Gate' and click the first result; verify the POI side panel opened with coordinates.",
+  "max_turns": 7,
+  "success": [
+    { "kind": "url_contains", "value": "query=Brandenburg" },
+    { "kind": "dom_has", "value": "#sidebar_content" }
+  ],
+  "tags": ["map", "poi", "happy_path", "phase2"]
+}

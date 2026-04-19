@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "wikipedia_search",
+  "element_id": 17,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3445,
+      "action_intent": "Navigate to Wikipedia Article Wizard to create a draft article",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.92
+    },
+    {
+      "run": 1,
+      "latency_ms": 3141,
+      "action_intent": "Navigate to Wikipedia Article Wizard to create a draft article",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.92
+    },
+    {
+      "run": 2,
+      "latency_ms": 3537,
+      "action_intent": "Navigate to Wikipedia Article Wizard to create a draft article",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.92
+    }
+  ]
+}

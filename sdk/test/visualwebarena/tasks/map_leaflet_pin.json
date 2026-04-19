@@ -1,0 +1,22 @@
+{
+  "id": "map_leaflet_pin",
+  "category": "map",
+  "site": "https://leafletjs.com/examples/quick-start/",
+  "goal": "Click on the pinned marker on the map and confirm the popup shows its name.",
+  "max_turns": 10,
+  "visual_required": "hard",
+  "modality": [
+    "map"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "popup"
+    }
+  ],
+  "tags": [
+    "map",
+    "hard"
+  ]
+}

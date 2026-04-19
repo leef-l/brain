@@ -1,0 +1,14 @@
+{
+  "id": "antd_pro_dashboard",
+  "category": "admin_freeform",
+  "description": "Ant Design Pro 后台,高密度工具栏",
+  "url": "https://preview.pro.ant.design/dashboard/analysis",
+  "captured_at": "2026-04-19T08:53:48Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 67
+}

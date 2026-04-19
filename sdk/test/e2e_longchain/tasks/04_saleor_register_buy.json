@@ -1,0 +1,55 @@
+{
+  "id": "04_saleor_register_buy",
+  "description": "Saleor 注册 → 登录 → 加购 → checkout(auth + ecommerce 接力,验证模式库跨 URL 迁移)",
+  "site": "https://demo.saleor.io",
+  "max_turns": 14,
+  "token_budget": 60000,
+  "steps": [
+    {
+      "name": "register",
+      "url_hint": "/account/register",
+      "category": "auth",
+      "pattern_id": "register_email_password",
+      "goal": "Register with fresh email from $credentials"
+    },
+    {
+      "name": "verify_email",
+      "url_hint": "/account/verify",
+      "category": "auth",
+      "pattern_id": "email_verification_code",
+      "goal": "Enter verification code from mailbox"
+    },
+    {
+      "name": "login",
+      "url_hint": "/account/login",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Log in with fresh credentials"
+    },
+    {
+      "name": "browse",
+      "url_hint": "/products",
+      "category": "commerce",
+      "pattern_id": "ecommerce_browse_product_list",
+      "goal": "Open a product category"
+    },
+    {
+      "name": "add_cart",
+      "url_hint": "/product",
+      "category": "commerce",
+      "pattern_id": "ecommerce_add_to_cart_with_feedback",
+      "goal": "Add item to cart"
+    },
+    {
+      "name": "checkout",
+      "url_hint": "/checkout",
+      "category": "commerce",
+      "pattern_id": "ecommerce_proceed_to_checkout",
+      "goal": "Proceed to checkout"
+    }
+  ],
+  "success": [
+    { "kind": "url_contains", "value": "checkout" }
+  ],
+  "tags": ["longchain", "auth_to_commerce_handoff", "phase2"]
+}

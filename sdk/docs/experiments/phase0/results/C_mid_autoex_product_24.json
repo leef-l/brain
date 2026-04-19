@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "autoex_product",
+  "element_id": 24,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5153,
+      "action_intent": "Enter name for product review",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.9
+    },
+    {
+      "run": 1,
+      "latency_ms": 4962,
+      "action_intent": "Enter your name for a product review",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2898,
+      "action_intent": "Enter your name for product review submission.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    }
+  ]
+}

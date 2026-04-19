@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Apple Juice - Saleor</title>
+</head>
+<body>
+<main class="product-page">
+  <div itemscope itemtype="https://schema.org/Product" class="product-detail pdp">
+    <h1 itemprop="name">Apple Juice</h1>
+    <div class="pdp-gallery">
+      <button type="button" class="thumb" data-gallery-thumb>
+        <img src="/media/apple-1.jpg" alt="Apple juice thumbnail" />
+      </button>
+      <button type="button" class="thumb" data-gallery-thumb>
+        <img src="/media/apple-2.jpg" alt="Apple juice alternate" />
+      </button>
+    </div>
+    <div class="price" itemprop="offers">$4.99</div>
+    <form method="post" data-testid="add-to-cart-form">
+      <label>Qty <input type="number" name="quantity" value="1" min="1" /></label>
+      <button type="submit" data-add-to-cart class="add-to-cart">Add to Cart</button>
+    </form>
+    <section class="related-products" data-related-products>
+      <h2>You might also like</h2>
+      <a href="/products/banana-juice/">Banana Juice</a>
+      <a href="/products/orange-juice/">Orange Juice</a>
+    </section>
+  </div>
+</main>
+</body>
+</html>

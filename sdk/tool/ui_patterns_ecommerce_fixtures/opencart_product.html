@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>HTC Touch HD - Your Store</title>
+</head>
+<body>
+<div id="content" class="col-sm-8">
+  <h1 itemprop="name">HTC Touch HD</h1>
+  <div class="thumbnails product-images">
+    <a class="thumbnail" href="image/catalog/demo/htc_touch_1.jpg" data-gallery-thumb>
+      <img src="image/catalog/demo/htc_touch_thumb_1.jpg" alt="HTC Touch thumb 1" />
+    </a>
+    <a class="thumbnail" href="image/catalog/demo/htc_touch_2.jpg" data-gallery-thumb>
+      <img src="image/catalog/demo/htc_touch_thumb_2.jpg" alt="HTC Touch thumb 2" />
+    </a>
+  </div>
+  <div class="product" itemtype="http://schema.org/Product" itemscope>
+    <p>Price: <span class="price">$150.00</span></p>
+    <form action="/index.php?route=checkout/cart/add" method="post" id="product">
+      <label for="input-quantity">Qty</label>
+      <input type="number" name="quantity" id="input-quantity" value="1" />
+      <button type="button" id="button-cart" name="cart" class="btn btn-primary add-to-cart">Add to Cart</button>
+    </form>
+    <p class="stock">In Stock</p>
+  </div>
+  <div class="related-products">
+    <h3>Related Products</h3>
+    <a href="/index.php?route=product/product&amp;product_id=30">iPhone</a>
+    <a href="/index.php?route=product/product&amp;product_id=40">Palm Treo Pro</a>
+  </div>
+</div>
+</body>
+</html>

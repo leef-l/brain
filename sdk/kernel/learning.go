@@ -543,6 +543,26 @@ func (le *LearningEngine) RecommendOrder(steps []TaskStep) []TaskStep {
 	return le.sequences.RecommendOrder(steps)
 }
 
+// RecordInteractionSequence 记录一次大脑内部 tool 级动作轨迹(L2 的细粒度
+// 补充)。browser brain 调用本函数把完整的 browser action 序列持久化,供
+// ui_pattern_learn.go 从 store 读取后聚类成 UIPattern。
+//
+// 未配置 LearningStore 时静默丢弃——调用方不需做任何判断。
+func (le *LearningEngine) RecordInteractionSequence(ctx context.Context, seq *persistence.InteractionSequence) error {
+	if le.store == nil || seq == nil {
+		return nil
+	}
+	return le.store.SaveInteractionSequence(ctx, seq)
+}
+
+// ListInteractionSequences 查询某个 brain 的交互轨迹(聚类算法用)。
+func (le *LearningEngine) ListInteractionSequences(ctx context.Context, brainKind string, limit int) ([]*persistence.InteractionSequence, error) {
+	if le.store == nil {
+		return nil, nil
+	}
+	return le.store.ListInteractionSequences(ctx, brainKind, limit)
+}
+
 // RecordUserFeedback 记录用户反馈 (L3 入口)
 func (le *LearningEngine) RecordUserFeedback(category, value string, weight float64) {
 	le.prefs.RecordFeedback(category, value, weight)
@@ -564,6 +584,71 @@ func (le *LearningEngine) RecordUserFeedback(category, value string, weight floa
 // GetPreference 获取用户偏好 (L3 查询)
 func (le *LearningEngine) GetPreference(category string) *UserPreference {
 	return le.prefs.GetPreference(category)
+}
+
+// ---------------------------------------------------------------------------
+// P3.1 — AnomalyTemplate + SiteAnomalyProfile 持久化入口
+// ---------------------------------------------------------------------------
+//
+// 本包不直接依赖 sdk/tool(避免循环),所以这里的入口仅暴露 persistence 层
+// 类型。sdk/tool 侧的 AnomalyTemplate / HostAnomalyEntry 由调用方自己转换
+// 成 persistence.AnomalyTemplate / persistence.SiteAnomalyProfile 再调用
+// 下面这些方法,和 InteractionSequence 的风格一致。
+//
+// 没配 store 时静默丢弃,让单元测试和无持久化路径都能顺畅跑。
+
+// SaveAnomalyTemplate 落盘一条异常模板(新建或更新)。
+func (le *LearningEngine) SaveAnomalyTemplate(ctx context.Context, tpl *persistence.AnomalyTemplate) error {
+	if le.store == nil || tpl == nil {
+		return nil
+	}
+	return le.store.SaveAnomalyTemplate(ctx, tpl)
+}
+
+// GetAnomalyTemplate 按 ID 查询。不存在返回 (nil, nil);不存在或 store 未配时
+// 调用方当作"无模板"处理。
+func (le *LearningEngine) GetAnomalyTemplate(ctx context.Context, id int64) (*persistence.AnomalyTemplate, error) {
+	if le.store == nil {
+		return nil, nil
+	}
+	return le.store.GetAnomalyTemplate(ctx, id)
+}
+
+// ListAnomalyTemplates 全量读出(数量可控,目前 < 数千条,未来需要再加分页)。
+// P3.1 启动时用它把持久化态反序列化回 AnomalyTemplateLibrary。
+func (le *LearningEngine) ListAnomalyTemplates(ctx context.Context) ([]*persistence.AnomalyTemplate, error) {
+	if le.store == nil {
+		return nil, nil
+	}
+	return le.store.ListAnomalyTemplates(ctx)
+}
+
+// DeleteAnomalyTemplate 按 ID 删除。未配 store 或 ID=0 直接返回 nil。
+func (le *LearningEngine) DeleteAnomalyTemplate(ctx context.Context, id int64) error {
+	if le.store == nil || id == 0 {
+		return nil
+	}
+	return le.store.DeleteAnomalyTemplate(ctx, id)
+}
+
+// UpsertSiteAnomalyProfile 落盘一条站点画像(upsert by site+type+subtype)。
+// 画像由 browser 工具层的 siteHistory.snapshotProfiles() 生成后转换成 persistence
+// 形式再调用。snapshotProfiles 返回切片,调用方按条目循环即可 —— 这里刻意
+// 不做批量入口以保持接口最小化。
+func (le *LearningEngine) UpsertSiteAnomalyProfile(ctx context.Context, p *persistence.SiteAnomalyProfile) error {
+	if le.store == nil || p == nil {
+		return nil
+	}
+	return le.store.UpsertSiteAnomalyProfile(ctx, p)
+}
+
+// ListSiteAnomalyProfiles 查询某站所有异常画像。LLM 辅助修复工具里会读它。
+// site 为空返回空切片(不遍历全表)。
+func (le *LearningEngine) ListSiteAnomalyProfiles(ctx context.Context, site string) ([]*persistence.SiteAnomalyProfile, error) {
+	if le.store == nil || site == "" {
+		return nil, nil
+	}
+	return le.store.ListSiteAnomalyProfiles(ctx, site)
 }
 
 // IngestBrainMetrics 消费 sidecar 上报的 BrainMetrics，转换为 L1 四维指标

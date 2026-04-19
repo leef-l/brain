@@ -1,0 +1,25 @@
+{
+  "id": "m2w-ecom-02-checkout-opencart",
+  "category": "ecommerce",
+  "site": "https://demo.opencart.com",
+  "goal": "On https://demo.opencart.com, starting from a cart with one item, proceed through checkout with the provided test address and stop at the payment gateway (do NOT enter card data).",
+  "max_turns": 20,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)(stripe|paypal|braintree|adyen|alipay|gateway|psp|3dsecure|/payment(/|\\?|$)|/pay(/|\\?|$))"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "ecommerce",
+    "checkout",
+    "cross_site",
+    "payment_gateway"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-ecom-01-b",
+    "domain": "ecom",
+    "subdomain": "opencart"
+  }
+}

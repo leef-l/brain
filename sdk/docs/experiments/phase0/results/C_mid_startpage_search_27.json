@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "startpage_search",
+  "element_id": 27,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2370,
+      "action_intent": "Open safe search filter dropdown to adjust content filtering level",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 2698,
+      "action_intent": "Open safe search filter dropdown to change content filtering setting",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2923,
+      "action_intent": "Opens safe search filter dropdown to adjust content filtering",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

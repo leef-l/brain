@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "adminlte_dashboard",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3303,
+      "action_intent": "Navigate to the Home page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.92
+    },
+    {
+      "run": 1,
+      "latency_ms": 3316,
+      "action_intent": "Navigate to the Home page of the admin panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3091,
+      "action_intent": "Navigate to the Home page of the admin panel",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    }
+  ]
+}

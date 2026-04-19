@@ -1,0 +1,50 @@
+{
+  "id": "06_session_expired_relog",
+  "description": "模拟 session 过期:登录 → 中途 session_expired → 触发 M3/M5 on_anomaly 路由到 fallback_pattern(重登录)→ 继续原任务",
+  "site": "https://demo.opencart.com",
+  "max_turns": 14,
+  "token_budget": 50000,
+  "steps": [
+    {
+      "name": "login_initial",
+      "url_hint": "/index.php?route=account/login",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Initial login"
+    },
+    {
+      "name": "browse_catalog",
+      "url_hint": "/index.php?route=product/category",
+      "category": "commerce",
+      "pattern_id": "ecommerce_browse_product_list",
+      "goal": "Browse a category"
+    },
+    {
+      "name": "add_cart_with_expired_session",
+      "url_hint": "/index.php?route=checkout/cart/add",
+      "category": "commerce",
+      "pattern_id": "ecommerce_add_to_cart_with_feedback",
+      "goal": "Add to cart — session has quietly expired server-side",
+      "expect_anomaly": "session_expired",
+      "expect_recovery": "fallback_pattern"
+    },
+    {
+      "name": "relog_fallback",
+      "url_hint": "/index.php?route=account/login",
+      "category": "auth",
+      "pattern_id": "session_expired_relog",
+      "goal": "Fallback pattern re-logs user"
+    },
+    {
+      "name": "retry_add_cart",
+      "url_hint": "/index.php?route=checkout/cart",
+      "category": "commerce",
+      "pattern_id": "ecommerce_add_to_cart_with_feedback",
+      "goal": "Retry add-to-cart after recovery"
+    }
+  ],
+  "success": [
+    { "kind": "dom_contains", "value": "cart" }
+  ],
+  "tags": ["longchain", "anomaly_recovery", "session_expired", "phase2"]
+}

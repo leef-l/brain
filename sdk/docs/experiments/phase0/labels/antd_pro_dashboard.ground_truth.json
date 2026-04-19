@@ -1,0 +1,750 @@
+{
+  "page_id": "antd_pro_dashboard",
+  "url": "https://preview.pro.ant.design/dashboard/analysis",
+  "category": "admin_freeform",
+  "built_at": "2026-04-19T09:19:31Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 22,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "今日",
+        "href": null,
+        "bbox": {
+          "x": 886,
+          "y": 377,
+          "w": 60,
+          "h": 32
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Filter the sales data to show only today's results.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "consensus": {
+          "action_intent": {
+            "filter the sales data to show only today's results": 3,
+            "filter dashboard data to show today's metrics": 3,
+            "filter dashboard data to show today's statistics": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "navigation": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Filter the sales data to show only today's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Filter the sales data to show only today's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Filter the sales data to show only today's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Filter dashboard data to today",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Filter dashboard data to show today's statistics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Filter dashboard data to show today's statistics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Filter dashboard data to show today's metrics.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Filter dashboard data to show today's metrics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Filter dashboard data to show today's metrics.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "本周",
+        "href": null,
+        "bbox": {
+          "x": 946,
+          "y": 377,
+          "w": 60,
+          "h": 32
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Filter the sales data to show this week's results.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "consensus": {
+          "action_intent": {
+            "filter the sales data to show this week's results": 3,
+            "filter dashboard data to show this week's metrics": 3,
+            "filter dashboard data to show this week's statistics": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "navigation": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Filter the sales data to show this week's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Filter the sales data to show this week's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Filter the sales data to show this week's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Filter dashboard data to this week",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Filter dashboard data to show this week's statistics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Filter dashboard data to show this week's statistics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Filter dashboard data to show this week's metrics.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Filter dashboard data to show this week's metrics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Filter dashboard data to show this week's metrics.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "本月",
+        "href": null,
+        "bbox": {
+          "x": 1006,
+          "y": 377,
+          "w": 60,
+          "h": 32
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Filter the sales data to show this month's results.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "consensus": {
+          "action_intent": {
+            "filter the sales data to show this month's results": 3,
+            "filter dashboard data to show this month's metrics": 3,
+            "filter dashboard data to show this month's statistics": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "navigation": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Filter the sales data to show this month's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Filter the sales data to show this month's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Filter the sales data to show this month's results.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Filter dashboard data to this month",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Filter dashboard data to show this month's statistics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Filter dashboard data to show this month's statistics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Filter dashboard data to show this month's metrics.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Filter dashboard data to show this month's metrics",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Filter dashboard data to show this month's metrics.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Welcome",
+        "href": "https://preview.pro.ant.design/welcome",
+        "bbox": {
+          "x": 70,
+          "y": 80,
+          "w": 84,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Welcome page",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the welcome page": 6,
+            "navigate to the welcome page via the sidebar menu": 3
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Welcome page via the sidebar menu.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Welcome page via the sidebar menu.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Welcome page via the sidebar menu.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the Welcome page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the Welcome page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the Welcome page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the Welcome page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the Welcome page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the Welcome page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Analysis",
+        "href": "https://preview.pro.ant.design/dashboard/analysis",
+        "bbox": {
+          "x": 82,
+          "y": 216,
+          "w": 56,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Analysis dashboard page.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the analysis dashboard page": 9
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Analysis dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Analysis dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Analysis dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the Analysis dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the Analysis dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the Analysis dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the Analysis dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the Analysis dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the Analysis dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Monitor",
+        "href": "https://preview.pro.ant.design/dashboard/monitor",
+        "bbox": {
+          "x": 81,
+          "y": 260,
+          "w": 53,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Monitor dashboard page.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the monitor dashboard page": 9
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Monitor dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Monitor dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Monitor dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the Monitor dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the Monitor dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the Monitor dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the Monitor dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the Monitor dashboard page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the Monitor dashboard page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    }
+  ]
+}

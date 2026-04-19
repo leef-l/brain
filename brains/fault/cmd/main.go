@@ -16,9 +16,12 @@ import (
 	"fmt"
 	"os"
 
+	"time"
+
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
@@ -29,6 +32,7 @@ import (
 type faultHandler struct {
 	registry tool.Registry
 	caller   sidecar.KernelCaller
+	learner  *kernel.DefaultBrainLearner
 }
 
 func newFaultHandler() *faultHandler {
@@ -37,13 +41,17 @@ func newFaultHandler() *faultHandler {
 	reg.Register(tool.NewInjectLatencyTool())
 	reg.Register(tool.NewKillProcessTool())
 	reg.Register(tool.NewCorruptResponseTool())
+	reg.Register(tool.NewNoteTool("fault"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-fault: load tool policy: %v\n", err)
 	} else {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindFault))...)
 	}
-	return &faultHandler{registry: reg}
+	return &faultHandler{
+		registry: reg,
+		learner:  kernel.NewDefaultBrainLearner(agent.KindFault),
+	}
 }
 
 func (h *faultHandler) Kind() agent.Kind { return agent.KindFault }
@@ -64,6 +72,8 @@ func (h *faultHandler) HandleMethod(ctx context.Context, method string, params j
 		return h.handleToolsCall(ctx, params)
 	case "brain/execute":
 		return h.handleExecute(ctx, params)
+	case "brain/metrics":
+		return h.learner.ExportMetrics(), nil
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
@@ -130,7 +140,15 @@ When done, summarize:
 		}, nil
 	}
 
-	return sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns), nil
+	start := time.Now()
+	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType:  "fault.execute",
+		Success:   result.Status == "completed",
+		Duration:  time.Since(start),
+		ToolCalls: result.Turns,
+	})
+	return result, nil
 }
 
 func (h *faultHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -174,6 +192,7 @@ func (h *faultHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (tool.
 	reg.Register(tool.WrapSandbox(tool.NewInjectLatencyTool(), bounds.Sandbox))
 	reg.Register(tool.WrapSandbox(tool.NewKillProcessTool(), bounds.Sandbox))
 	reg.Register(tool.WrapSandbox(tool.NewCorruptResponseTool(), bounds.Sandbox))
+	reg.Register(tool.NewNoteTool("fault"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-fault: load tool policy: %v\n", err)

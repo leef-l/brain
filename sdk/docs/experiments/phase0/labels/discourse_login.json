@@ -1,0 +1,168 @@
+{
+  "page_id": "discourse_login",
+  "url": "https://meta.discourse.org/login",
+  "category": "login_rich",
+  "snapshot_file": "samples/discourse_login/snapshot.json",
+  "screenshot_file": "samples/discourse_login/screenshot.png",
+  "html_file": "samples/discourse_login/page.html",
+  "drafted_at": "2026-04-19T09:03:19Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 7,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Log In",
+        "href": null,
+        "bbox": {
+          "x": 559,
+          "y": 511,
+          "w": 382,
+          "h": 38
+        }
+      },
+      "draft": {
+        "action_intent": "Submit the entered email and password credentials to log in to the Discourse account.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Primary login submission button for the credential-based login form. Session can be ended by logging out.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 9,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Log in with Discourse ID",
+        "href": null,
+        "bbox": {
+          "x": 959,
+          "y": 357,
+          "w": 226,
+          "h": 46
+        }
+      },
+      "draft": {
+        "action_intent": "Initiate authentication via a Discourse ID federated login flow.",
+        "reversibility": "reversible",
+        "risk_level": "external_effect",
+        "flow_role": "secondary",
+        "notes": "Redirects to an external Discourse ID identity provider. Classified as external_effect because it hands off to a third-party auth service. Session is reversible via logout.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 10,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Sign in with Google",
+        "href": null,
+        "bbox": {
+          "x": 959,
+          "y": 455,
+          "w": 226,
+          "h": 46
+        }
+      },
+      "draft": {
+        "action_intent": "Initiate authentication via Google's OAuth flow to log in.",
+        "reversibility": "reversible",
+        "risk_level": "external_effect",
+        "flow_role": "secondary",
+        "notes": "Redirects to Google's OAuth consent screen, an external service. Session is reversible via logout.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 6,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "I forgot my password",
+        "href": "https://meta.discourse.org/login",
+        "bbox": {
+          "x": 438,
+          "y": 467,
+          "w": 139,
+          "h": 19
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the password reset flow to recover a forgotten password.",
+        "reversibility": "reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "utility",
+        "notes": "Triggers a password reset email. Marked safe_caution because it sends an email (minor external side-effect) and could lead to a password change, but the user must confirm via email. The href points to the same /login URL, so the actual behavior may be a modal or in-page state change — reviewer should verify.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 5,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "password",
+        "name": "",
+        "href": null,
+        "bbox": {
+          "x": 559,
+          "y": 430,
+          "w": 382,
+          "h": 46
+        }
+      },
+      "draft": {
+        "action_intent": "Enter the account password for credential-based login.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Password input field (type=password). Part of the primary login form. No submission occurs until the Log In button is pressed.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 4,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "email",
+        "name": "",
+        "href": null,
+        "bbox": {
+          "x": 559,
+          "y": 344,
+          "w": 382,
+          "h": 46
+        }
+      },
+      "draft": {
+        "action_intent": "Enter the email address or username for credential-based login.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Email/username input field (type=email). Part of the primary login form. No submission occurs until the Log In button is pressed.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

@@ -24,11 +24,13 @@ type CommandRequest struct {
 }
 
 type CommandOutcome struct {
-	Stdout    string
-	Stderr    string
-	ExitCode  int
-	TimedOut  bool
-	Sandboxed bool
+	Stdout        string
+	Stderr        string
+	ExitCode      int
+	TimedOut      bool
+	Sandboxed     bool
+	StdoutDropped int // stdout 因 maxCommandOutputBytes 丢弃的字节数
+	StderrDropped int // stderr 同上
 }
 
 func ParseCommandRequest(args json.RawMessage) (CommandRequest, error) {
@@ -108,37 +110,51 @@ func ExecuteCommandRequest(ctx context.Context, req CommandRequest, sb *Sandbox,
 		}
 	}
 
+	stdoutStr := strings.TrimRight(stdout.String(), "\n")
+	stderrStr := strings.TrimRight(stderr.String(), "\n")
+	// 明确告诉 LLM 输出被截断了多少字节，避免它以为自己看到了完整输出
+	if note := stdoutW.TruncatedNote(); note != "" {
+		stdoutStr = stdoutStr + "\n" + note
+	}
+	if note := stderrW.TruncatedNote(); note != "" {
+		stderrStr = stderrStr + "\n" + note
+	}
 	return CommandOutcome{
-		Stdout:    strings.TrimRight(stdout.String(), "\n"),
-		Stderr:    strings.TrimRight(stderr.String(), "\n"),
-		ExitCode:  exitCode,
-		TimedOut:  execCtx.Err() == context.DeadlineExceeded,
-		Sandboxed: sandboxed,
+		Stdout:         stdoutStr,
+		Stderr:         stderrStr,
+		ExitCode:       exitCode,
+		TimedOut:       execCtx.Err() == context.DeadlineExceeded,
+		Sandboxed:      sandboxed,
+		StdoutDropped:  stdoutW.dropped,
+		StderrDropped:  stderrW.dropped,
 	}, nil
 }
 
 func ResultForCommandTool(toolName string, outcome CommandOutcome) *Result {
+	payload := map[string]interface{}{
+		"stdout":    outcome.Stdout,
+		"stderr":    outcome.Stderr,
+		"exit_code": outcome.ExitCode,
+		"timed_out": outcome.TimedOut,
+	}
+	if outcome.StdoutDropped > 0 {
+		payload["stdout_dropped_bytes"] = outcome.StdoutDropped
+	}
+	if outcome.StderrDropped > 0 {
+		payload["stderr_dropped_bytes"] = outcome.StderrDropped
+	}
+
 	switch {
 	case strings.HasSuffix(toolName, ".run_tests"):
-		raw, _ := json.Marshal(map[string]interface{}{
-			"stdout":    outcome.Stdout,
-			"stderr":    outcome.Stderr,
-			"exit_code": outcome.ExitCode,
-			"passed":    outcome.ExitCode == 0 && !outcome.TimedOut,
-			"timed_out": outcome.TimedOut,
-		})
+		payload["passed"] = outcome.ExitCode == 0 && !outcome.TimedOut
+		raw, _ := json.Marshal(payload)
 		return &Result{
 			Output:  raw,
 			IsError: outcome.ExitCode != 0 || outcome.TimedOut,
 		}
 	default:
-		raw, _ := json.Marshal(map[string]interface{}{
-			"stdout":    outcome.Stdout,
-			"stderr":    outcome.Stderr,
-			"exit_code": outcome.ExitCode,
-			"timed_out": outcome.TimedOut,
-			"sandboxed": outcome.Sandboxed,
-		})
+		payload["sandboxed"] = outcome.Sandboxed
+		raw, _ := json.Marshal(payload)
 		return &Result{
 			Output:  raw,
 			IsError: outcome.ExitCode != 0,
@@ -159,17 +175,28 @@ type limitWriter struct {
 	buf     *bytes.Buffer
 	max     int
 	written int
+	dropped int // 被截断丢弃的字节数；供外层构造 "truncated 提示" 使用
 }
 
 func (w *limitWriter) Write(p []byte) (int, error) {
 	remaining := w.max - w.written
 	if remaining <= 0 {
+		w.dropped += len(p)
 		return len(p), nil
 	}
 	if len(p) > remaining {
+		w.dropped += len(p) - remaining
 		p = p[:remaining]
 	}
 	n, _ := w.buf.Write(p)
 	w.written += n
 	return len(p), nil
+}
+
+// TruncatedNote 返回对 LLM 友好的截断提示。未截断时返回空串。
+func (w *limitWriter) TruncatedNote() string {
+	if w.dropped == 0 {
+		return ""
+	}
+	return fmt.Sprintf("[... truncated: %d bytes dropped; raise your command's verbosity or pipe to less if you need more]", w.dropped)
 }

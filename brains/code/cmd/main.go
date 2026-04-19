@@ -35,9 +35,12 @@ func newCodeHandler() *codeHandler {
 	var reg tool.Registry = tool.NewMemRegistry()
 	reg.Register(tool.NewReadFileTool("code"))
 	reg.Register(tool.NewWriteFileTool("code"))
+	reg.Register(tool.NewEditFileTool("code"))
 	reg.Register(tool.NewDeleteFileTool("code"))
+	reg.Register(tool.NewListFilesTool("code"))
 	reg.Register(tool.NewSearchTool("code"))
 	reg.Register(tool.NewShellExecTool("code", nil))
+	reg.Register(tool.NewNoteTool("code"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-code: load tool policy: %v\n", err)
@@ -95,9 +98,13 @@ func (h *codeHandler) handleExecute(ctx context.Context, params json.RawMessage)
 	}
 
 	systemPrompt := "You are a specialist code brain. Your job is to write, edit, and debug code. " +
-		"You have tools for reading files, writing files, searching code, and executing shell commands. " +
+		"You have tools for reading files, writing files, editing files (prefer code.edit_file over code.write_file for small changes to save tokens), " +
+		"listing files, searching code, and executing shell commands. " +
 		"Complete the task described in the user message. " +
-		"Be precise and efficient. Write clean, working code. " +
+		"Be precise and efficient. Write clean, working code.\n\n" +
+		"FOR COMPLEX TASKS (3+ steps): start by calling code.note with action=add to plan your steps, " +
+		"then mark each step done (action=done) as you complete it. This prevents getting lost mid-task. " +
+		"For simple tasks, skip planning and just execute.\n\n" +
 		"When done, summarize what you did."
 
 	maxTurns := 10
@@ -114,7 +121,7 @@ func (h *codeHandler) handleExecute(ctx context.Context, params json.RawMessage)
 	}
 
 	start := time.Now()
-	result := sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns)
+	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "code.execute",
 		Success:   result.Status == "completed",
@@ -163,7 +170,9 @@ func (h *codeHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (tool.R
 	var reg tool.Registry = tool.NewMemRegistry()
 	reg.Register(toolguard.WrapReadPolicy(tool.WrapSandbox(tool.NewReadFileTool("code"), bounds.Sandbox), bounds.FilePolicy))
 	reg.Register(toolguard.WrapFilePolicy(tool.WrapSandbox(tool.NewWriteFileTool("code"), bounds.Sandbox), bounds.FilePolicy))
+	reg.Register(toolguard.WrapFilePolicy(tool.WrapSandbox(tool.NewEditFileTool("code"), bounds.Sandbox), bounds.FilePolicy))
 	reg.Register(toolguard.WrapDeletePolicy(tool.WrapSandbox(tool.NewDeleteFileTool("code"), bounds.Sandbox), bounds.FilePolicy))
+	reg.Register(toolguard.WrapReadPolicy(tool.WrapSandbox(tool.NewListFilesTool("code"), bounds.Sandbox), bounds.FilePolicy))
 	reg.Register(toolguard.WrapReadPolicy(tool.WrapSandbox(tool.NewSearchTool("code"), bounds.Sandbox), bounds.FilePolicy))
 
 	sh := tool.NewShellExecTool("code", bounds.Sandbox)
@@ -171,6 +180,7 @@ func (h *codeHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (tool.R
 		sh.SetCommandSandbox(bounds.CommandSandbox)
 	}
 	reg.Register(toolguard.WrapCommandPolicy(tool.WrapSandbox(sh, bounds.Sandbox), bounds.CommandSandbox, bounds.SandboxConfig, bounds.FilePolicy))
+	reg.Register(tool.NewNoteTool("code"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-code: load tool policy: %v\n", err)

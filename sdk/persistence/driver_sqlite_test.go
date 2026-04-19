@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 // ── Helper ──────────────────────────────────────────────────────────────
@@ -1085,5 +1086,300 @@ func TestSQLiteAuditLoggerPurge(t *testing.T) {
 	results, _ := al.Query(ctx, AuditFilter{})
 	if len(results) != 0 {
 		t.Errorf("after purge, count = %d, want 0", len(results))
+	}
+}
+
+// ── P3.0 bootstrap — AnomalyTemplate / SiteAnomalyProfile / PatternFailureSample
+// / HumanDemoSequence / SitemapSnapshot tests ──────────────────────────
+
+func TestSQLiteAnomalyTemplateRoundTrip(t *testing.T) {
+	cs := openSQLiteTest(t)
+	ctx := context.Background()
+	ls := cs.LearningStore
+
+	tpl := &AnomalyTemplate{
+		SignatureType:     "ui_injection",
+		SignatureSubtype:  "urgent_cta",
+		SignatureSite:     "example.com",
+		SignatureSeverity: "high",
+		RecoveryActions:   json.RawMessage(`[{"tool":"browser.close_modal"}]`),
+		MatchCount:        3,
+		SuccessCount:      2,
+		FailureCount:      1,
+	}
+	if err := ls.SaveAnomalyTemplate(ctx, tpl); err != nil {
+		t.Fatalf("SaveAnomalyTemplate: %v", err)
+	}
+	if tpl.ID == 0 {
+		t.Fatal("expected non-zero ID after save")
+	}
+
+	got, err := ls.GetAnomalyTemplate(ctx, tpl.ID)
+	if err != nil {
+		t.Fatalf("GetAnomalyTemplate: %v", err)
+	}
+	if got == nil || got.SignatureSubtype != "urgent_cta" || got.MatchCount != 3 {
+		t.Fatalf("GetAnomalyTemplate = %+v", got)
+	}
+	if string(got.RecoveryActions) != `[{"tool":"browser.close_modal"}]` {
+		t.Errorf("RecoveryActions = %s", got.RecoveryActions)
+	}
+
+	list, err := ls.ListAnomalyTemplates(ctx)
+	if err != nil {
+		t.Fatalf("ListAnomalyTemplates: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("list = %d, want 1", len(list))
+	}
+
+	// Upsert by ID: same template, updated counts.
+	tpl.SuccessCount = 5
+	if err := ls.SaveAnomalyTemplate(ctx, tpl); err != nil {
+		t.Fatalf("SaveAnomalyTemplate (update): %v", err)
+	}
+	list2, _ := ls.ListAnomalyTemplates(ctx)
+	if len(list2) != 1 {
+		t.Fatalf("after update, list = %d, want 1", len(list2))
+	}
+	if list2[0].SuccessCount != 5 {
+		t.Errorf("SuccessCount = %d, want 5", list2[0].SuccessCount)
+	}
+
+	// Delete
+	if err := ls.DeleteAnomalyTemplate(ctx, tpl.ID); err != nil {
+		t.Fatalf("DeleteAnomalyTemplate: %v", err)
+	}
+	got2, _ := ls.GetAnomalyTemplate(ctx, tpl.ID)
+	if got2 != nil {
+		t.Errorf("after delete, got = %+v, want nil", got2)
+	}
+}
+
+func TestSQLiteSiteAnomalyProfileUpsert(t *testing.T) {
+	cs := openSQLiteTest(t)
+	ctx := context.Background()
+	ls := cs.LearningStore
+
+	p := &SiteAnomalyProfile{
+		SiteOrigin:          "https://shop.example.com",
+		AnomalyType:         "ui_injection",
+		AnomalySubtype:      "urgent_cta",
+		Frequency:           7,
+		AvgDurationMs:       1200,
+		RecoverySuccessRate: 0.71,
+	}
+	if err := ls.UpsertSiteAnomalyProfile(ctx, p); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	// Upsert again → should merge into same row (key: site+type+subtype).
+	p.Frequency = 12
+	p.RecoverySuccessRate = 0.83
+	if err := ls.UpsertSiteAnomalyProfile(ctx, p); err != nil {
+		t.Fatalf("Upsert (2): %v", err)
+	}
+
+	list, err := ls.ListSiteAnomalyProfiles(ctx, "https://shop.example.com")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("list = %d, want 1 (upsert should not dup)", len(list))
+	}
+	if list[0].Frequency != 12 || list[0].RecoverySuccessRate != 0.83 {
+		t.Errorf("after upsert, got = %+v", list[0])
+	}
+
+	// Filter by empty site returns all.
+	ls.UpsertSiteAnomalyProfile(ctx, &SiteAnomalyProfile{
+		SiteOrigin: "https://other.example.com", AnomalyType: "timeout", AnomalySubtype: "navigation",
+		Frequency: 1,
+	})
+	all, _ := ls.ListSiteAnomalyProfiles(ctx, "")
+	if len(all) != 2 {
+		t.Errorf("list all = %d, want 2", len(all))
+	}
+}
+
+func TestSQLitePatternFailureSampleRoundTrip(t *testing.T) {
+	cs := openSQLiteTest(t)
+	ctx := context.Background()
+	ls := cs.LearningStore
+
+	s1 := &PatternFailureSample{
+		PatternID:       "pat-login-v2",
+		SiteOrigin:      "https://a.example.com",
+		AnomalySubtype:  "captcha",
+		FailureStep:     3,
+		PageFingerprint: json.RawMessage(`{"dom_hash":"abc"}`),
+	}
+	if err := ls.SavePatternFailureSample(ctx, s1); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if s1.ID == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+	ls.SavePatternFailureSample(ctx, &PatternFailureSample{
+		PatternID: "pat-login-v2", SiteOrigin: "https://b.example.com", FailureStep: 1,
+	})
+	ls.SavePatternFailureSample(ctx, &PatternFailureSample{
+		PatternID: "pat-checkout", SiteOrigin: "https://c.example.com", FailureStep: 5,
+	})
+
+	list, err := ls.ListPatternFailureSamples(ctx, "pat-login-v2")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("list(pat-login-v2) = %d, want 2", len(list))
+	}
+
+	// Empty filter → all samples.
+	all, _ := ls.ListPatternFailureSamples(ctx, "")
+	if len(all) != 3 {
+		t.Errorf("list all = %d, want 3", len(all))
+	}
+
+	// Fingerprint round-trips intact.
+	if string(list[1].PageFingerprint) != `{"dom_hash":"abc"}` {
+		t.Errorf("fingerprint lost: %s", list[1].PageFingerprint)
+	}
+}
+
+func TestSQLiteHumanDemoSequenceRoundTrip(t *testing.T) {
+	cs := openSQLiteTest(t)
+	ctx := context.Background()
+	ls := cs.LearningStore
+
+	seq := &HumanDemoSequence{
+		RunID:     "run-1",
+		BrainKind: "browser",
+		Goal:      "recover from paywall",
+		Site:      "https://news.example.com",
+		URL:       "https://news.example.com/article/42",
+		Actions:   json.RawMessage(`[{"tool":"browser.click","selector":"#close"}]`),
+		Approved:  false,
+	}
+	if err := ls.SaveHumanDemoSequence(ctx, seq); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	ls.SaveHumanDemoSequence(ctx, &HumanDemoSequence{
+		RunID: "run-2", BrainKind: "browser", Approved: true,
+		Actions: json.RawMessage(`[]`),
+	})
+
+	all, err := ls.ListHumanDemoSequences(ctx, false)
+	if err != nil {
+		t.Fatalf("List all: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("list all = %d, want 2", len(all))
+	}
+
+	approved, _ := ls.ListHumanDemoSequences(ctx, true)
+	if len(approved) != 1 {
+		t.Fatalf("approved = %d, want 1", len(approved))
+	}
+	if !approved[0].Approved {
+		t.Error("approved filter returned non-approved row")
+	}
+	if string(all[1].Actions) != `[{"tool":"browser.click","selector":"#close"}]` {
+		t.Errorf("actions lost: %s", all[1].Actions)
+	}
+}
+
+func TestSQLiteSitemapSnapshotRoundTripAndPurge(t *testing.T) {
+	cs := openSQLiteTest(t)
+	ctx := context.Background()
+	ls := cs.LearningStore
+
+	snap := &SitemapSnapshot{
+		SiteOrigin: "https://shop.example.com",
+		Depth:      2,
+		URLs:       json.RawMessage(`["/a","/b","/c"]`),
+	}
+	if err := ls.SaveSitemapSnapshot(ctx, snap); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := ls.GetSitemapSnapshot(ctx, "https://shop.example.com", 2)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if string(got.URLs) != `["/a","/b","/c"]` {
+		t.Errorf("URLs lost: %s", got.URLs)
+	}
+
+	// Missing key returns nil without error.
+	missing, err := ls.GetSitemapSnapshot(ctx, "https://shop.example.com", 99)
+	if err != nil {
+		t.Fatalf("Get(missing): %v", err)
+	}
+	if missing != nil {
+		t.Errorf("missing snapshot = %+v, want nil", missing)
+	}
+
+	// Second save at same (site, depth) → Get returns the newer row.
+	snap2 := &SitemapSnapshot{
+		SiteOrigin: "https://shop.example.com",
+		Depth:      2,
+		URLs:       json.RawMessage(`["/a","/b","/c","/d"]`),
+	}
+	ls.SaveSitemapSnapshot(ctx, snap2)
+	got2, _ := ls.GetSitemapSnapshot(ctx, "https://shop.example.com", 2)
+	if string(got2.URLs) != `["/a","/b","/c","/d"]` {
+		t.Errorf("expected newer snapshot, got %s", got2.URLs)
+	}
+
+	// Purge with a future cutoff removes everything.
+	future := time.Now().UTC().Add(1 * time.Hour)
+	n, err := ls.PurgeSitemapSnapshots(ctx, future)
+	if err != nil {
+		t.Fatalf("Purge: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("Purge n = %d, want 2", n)
+	}
+
+	after, _ := ls.GetSitemapSnapshot(ctx, "https://shop.example.com", 2)
+	if after != nil {
+		t.Errorf("after purge, snapshot = %+v, want nil", after)
+	}
+}
+
+// Schema migration idempotency: reopening the same DSN must not error.
+func TestSQLiteSchemaIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	dsn := filepath.Join(dir, "idem.db")
+
+	cs, err := Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("Open (1): %v", err)
+	}
+	// Write one row so we can verify the reopen still sees it.
+	err = cs.LearningStore.SaveAnomalyTemplate(context.Background(), &AnomalyTemplate{
+		SignatureType: "persist_check",
+	})
+	if err != nil {
+		t.Fatalf("SaveAnomalyTemplate: %v", err)
+	}
+	cs.Close()
+
+	cs2, err := Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("Open (2): %v", err)
+	}
+	defer cs2.Close()
+
+	list, err := cs2.LearningStore.ListAnomalyTemplates(context.Background())
+	if err != nil {
+		t.Fatalf("ListAnomalyTemplates after reopen: %v", err)
+	}
+	if len(list) != 1 || list[0].SignatureType != "persist_check" {
+		t.Errorf("after reopen, list = %+v", list)
 	}
 }

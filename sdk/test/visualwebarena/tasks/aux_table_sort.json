@@ -1,0 +1,22 @@
+{
+  "id": "aux_table_sort",
+  "category": "visual_state",
+  "site": "https://www.w3schools.com/html/html_tables.asp",
+  "goal": "Click on the 'Country' header to sort the demo table.",
+  "max_turns": 8,
+  "visual_required": "aux",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Country"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "aux"
+  ]
+}

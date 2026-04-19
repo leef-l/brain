@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "gitea_login",
+  "element_id": 6,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2917,
+      "action_intent": "Sign in using a passkey authentication method",
+      "reversibility": "conditional",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.9
+    },
+    {
+      "run": 1,
+      "latency_ms": 3137,
+      "action_intent": "Sign in using a passkey authentication method",
+      "reversibility": "conditional",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.88
+    },
+    {
+      "run": 2,
+      "latency_ms": 2878,
+      "action_intent": "Sign in using a passkey authentication method",
+      "reversibility": "conditional",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.88
+    }
+  ]
+}

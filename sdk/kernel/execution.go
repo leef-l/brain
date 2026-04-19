@@ -2,11 +2,13 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/loop"
 )
 
@@ -170,16 +172,23 @@ type TaskExecution struct {
 	run    *loop.Run
 	cancel context.CancelFunc
 	mu     sync.Mutex
+
+	// Task #19: 每次 Transition 若 bus != nil 就发一条 task.state.<to>
+	// 事件,外部 hook(daemon/录制/外部进程)通过 Subscribe 即可接入。
+	bus events.Publisher
 }
 
 type TaskExecutionConfig struct {
-	BrainID   string
-	ParentID  string
-	Mode      ExecutionMode
-	Lifecycle LifecyclePolicy
-	Restart   RestartPolicy
-	Budget    loop.Budget
+	BrainID    string
+	ParentID   string
+	Mode       ExecutionMode
+	Lifecycle  LifecyclePolicy
+	Restart    RestartPolicy
+	Budget     loop.Budget
 	MaxRestart int
+
+	// Bus 可选,设置后每次 Transition 自动发事件;零值时 hook 机制 no-op。
+	Bus events.Publisher
 }
 
 func NewTaskExecution(cfg TaskExecutionConfig) *TaskExecution {
@@ -207,22 +216,53 @@ func NewTaskExecution(cfg TaskExecutionConfig) *TaskExecution {
 		CreatedAt:       time.Now().UTC(),
 		Budget:          cfg.Budget,
 		MaxRestartCount: cfg.MaxRestart,
+		bus:             cfg.Bus,
 	}
+}
+
+// SetEventBus 允许构造后补注入 EventBus。主要给"先建 TaskExecution 再加入
+// 注册表"的场景。已设置时以新值覆盖。
+func (te *TaskExecution) SetEventBus(bus events.Publisher) {
+	te.mu.Lock()
+	defer te.mu.Unlock()
+	te.bus = bus
 }
 
 func (te *TaskExecution) Transition(to ExecutionState) error {
 	te.mu.Lock()
-	defer te.mu.Unlock()
 
 	if !canTransition(te.State, to) {
+		te.mu.Unlock()
 		return fmt.Errorf("invalid state transition: %s → %s", te.State, to)
 	}
 
+	from := te.State
 	te.State = to
 
 	if to.IsTerminal() {
 		now := time.Now().UTC()
 		te.EndedAt = &now
+	}
+
+	bus := te.bus
+	execID := te.ID
+	brainID := te.BrainID
+	te.mu.Unlock()
+
+	if bus != nil {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"execution_id": execID,
+			"brain_id":     brainID,
+			"from":         string(from),
+			"to":           string(to),
+			"terminal":     to.IsTerminal(),
+		})
+		bus.Publish(context.Background(), events.Event{
+			ExecutionID: execID,
+			Type:        "task.state." + string(to),
+			Timestamp:   time.Now().UTC(),
+			Data:        payload,
+		})
 	}
 
 	return nil

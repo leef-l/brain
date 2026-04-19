@@ -1,0 +1,14 @@
+{
+  "id": "wikipedia_search",
+  "category": "search",
+  "description": "Wikipedia 搜索结果页,链接密集",
+  "url": "https://en.wikipedia.org/w/index.php?search=brain+agent&title=Special%3ASearch&fulltext=1",
+  "captured_at": "2026-04-19T08:58:49Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 83
+}

@@ -239,7 +239,7 @@ func registerBuiltinMethods(rpc protocol.BidirRPC, handler BrainHandler) {
 		return handler.HandleMethod(ctx, "tools/call", params)
 	})
 
-	for _, method := range []string{"brain/execute", "brain/plan", "brain/verify", "brain/metrics"} {
+	for _, method := range []string{"brain/execute", "brain/plan", "brain/verify", "brain/metrics", "brain/learn"} {
 		m := method
 		rpc.Handle(m, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 			return handler.HandleMethod(ctx, m, params)

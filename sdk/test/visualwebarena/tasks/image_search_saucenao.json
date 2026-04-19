@@ -1,0 +1,22 @@
+{
+  "id": "image_search_saucenao",
+  "category": "image_search",
+  "site": "https://saucenao.com/",
+  "goal": "Reverse-search an anime character image and land on a result page.",
+  "max_turns": 15,
+  "visual_required": "hard",
+  "modality": [
+    "image_search"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Similarity"
+    }
+  ],
+  "tags": [
+    "image_search",
+    "hard"
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "id": "02_opencart_cart_checkout",
+  "description": "OpenCart 浏览 → 加购 → 结算到支付网关(全程 P1.2 ecommerce)",
+  "site": "https://demo.opencart.com",
+  "max_turns": 12,
+  "token_budget": 50000,
+  "steps": [
+    {
+      "name": "browse_list",
+      "url_hint": "/index.php?route=product/category",
+      "category": "commerce",
+      "pattern_id": "ecommerce_browse_product_list",
+      "goal": "Open the Desktops category"
+    },
+    {
+      "name": "open_detail",
+      "url_hint": "/product",
+      "category": "commerce",
+      "pattern_id": "ecommerce_product_detail_gallery",
+      "goal": "Open the first product detail page"
+    },
+    {
+      "name": "add_cart",
+      "url_hint": "/product",
+      "category": "commerce",
+      "pattern_id": "ecommerce_add_to_cart_with_feedback",
+      "goal": "Add current product to cart and confirm feedback toast"
+    },
+    {
+      "name": "checkout",
+      "url_hint": "/checkout",
+      "category": "commerce",
+      "pattern_id": "ecommerce_proceed_to_checkout",
+      "goal": "Proceed to checkout from cart drawer"
+    },
+    {
+      "name": "shipping",
+      "url_hint": "/checkout",
+      "category": "commerce",
+      "pattern_id": "ecommerce_fill_shipping_address",
+      "goal": "Fill shipping address from $credentials"
+    },
+    {
+      "name": "place_order",
+      "url_hint": "/checkout",
+      "category": "commerce",
+      "pattern_id": "ecommerce_place_order_to_payment_gateway",
+      "goal": "Place order and land on payment gateway"
+    }
+  ],
+  "success": [
+    { "kind": "url_contains", "value": "payment" },
+    { "kind": "dom_contains", "value": "order" }
+  ],
+  "tags": ["longchain", "ecommerce_full_flow", "phase2"]
+}

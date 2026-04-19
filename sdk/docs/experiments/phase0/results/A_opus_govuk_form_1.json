@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "govuk_form",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3040,
+      "action_intent": "Accept analytics cookies on the website",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3055,
+      "action_intent": "Accept analytics cookies on the website",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2900,
+      "action_intent": "Accept analytics cookies on the website",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    }
+  ]
+}

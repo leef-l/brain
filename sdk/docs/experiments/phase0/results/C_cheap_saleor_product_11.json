@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "saleor_product",
+  "element_id": 11,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3478,
+      "action_intent": "Add the product to the shopping cart.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3392,
+      "action_intent": "Add the product 'Apple Juice' to the shopping cart.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3422,
+      "action_intent": "Add the product to the shopping cart.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    }
+  ]
+}

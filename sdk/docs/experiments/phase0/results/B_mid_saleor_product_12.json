@@ -1,0 +1,25 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "saleor_product",
+  "element_id": 12,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5197,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '95f7cc70770be182d7c25e036bcfa15c', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 4999,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'a834b5d2ba31e6feba034fb3b3c74a38', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 4991,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '1111d9dc87bbfcc34c69547caaec9e60', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    }
+  ]
+}

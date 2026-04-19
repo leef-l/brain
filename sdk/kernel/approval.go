@@ -52,6 +52,12 @@ type ApprovalRequest struct {
 	ToolName   string        // 完整工具名，例如 "quant.place_order"
 	Class      ApprovalClass // 语义审批等级
 	Mode       string        // "delegate" | "direct"
+
+	// Args 是工具参数的文本形式,供参数级规则(Task #20 ParamRule)匹配。
+	// Key 是参数名,value 是字符串化后的参数值。调用方对需要参数级细化审批
+	// 的工具(如 shell.exec、command_exec、browser.navigate)填充本字段。
+	// 未提供时,参数级规则全部跳过,退回工具名/class 级别决策。
+	Args map[string]string
 }
 
 // ApprovalDecision 是审批结论。
@@ -91,15 +97,94 @@ type DefaultSemanticApprover struct {
 	// ManifestMinLevel 预留给 Phase C 的 manifest 最小审批等级查询。
 	// 返回指定 brain kind 的最低审批等级；返回空字符串表示无约束。
 	ManifestMinLevel func(targetKind agent.Kind) ApprovalClass
+
+	// ParamRules 是参数级 glob 匹配规则表(Task #20)。按顺序匹配,先命中先生效。
+	// 规则支持两种效果:
+	//   - 命中并给出更高 class → 升级审批(变严)
+	//   - 命中并明确 Deny → 直接拒绝
+	// 未匹配任何规则时走原 (工具名 + class) 决策。
+	ParamRules []ParamRule
+}
+
+// ParamRule 是一条参数级审批规则。
+type ParamRule struct {
+	// ToolPattern 用和 matchToolPattern 相同的语法匹配工具名。
+	ToolPattern string
+
+	// ArgKey 是要检查的参数名;从 ApprovalRequest.Args[ArgKey] 取字符串。
+	// 参数不存在或为空时本规则跳过。
+	ArgKey string
+
+	// ValueGlob 用 sdk/internal/pathglob 语法匹配参数值(支持 ** 段通配)。
+	// 例如 "git *" 匹配任何以 "git " 开头的命令;"rm -rf /" 精确匹配。
+	ValueGlob string
+
+	// 以下三个字段互斥,命中时只有一个生效(按优先级 Deny > Class > AllowAs):
+	//   - Deny 为 true → 直接拒绝
+	//   - Class 非空 → 覆盖为该 class(通常用来升级,如 exec-capable → control-plane)
+	//   - AllowAs 非空 → 降级到该 class(需要审慎使用,仅用于白名单场景)
+	Deny    bool
+	Class   ApprovalClass
+	AllowAs ApprovalClass
+
+	// Reason 命中时用于 ApprovalDecision.Reason 或 log。空时自动生成。
+	Reason string
 }
 
 // Approve 实现 SemanticApprover 接口。
 func (d *DefaultSemanticApprover) Approve(_ context.Context, req ApprovalRequest) ApprovalDecision {
-	// 第一步：确定最终的 ApprovalClass
+	// 第一步：确定最终的 ApprovalClass(前缀规则 + manifest 最小级别)
 	class := d.resolveClass(req)
+
+	// 第一.五步(Task #20): 参数级 glob 匹配。命中 Deny 规则直接拒绝;
+	// 命中 Class 规则升级到该 class;命中 AllowAs 降级到该 class。
+	if decision, override, ok := d.applyParamRules(req, class); ok {
+		if decision != nil {
+			return *decision
+		}
+		class = override
+	}
 
 	// 第二步：根据 class 和 caller 做授权决策
 	return d.authorize(req.CallerKind, class)
+}
+
+// applyParamRules 按顺序匹配 ParamRules。
+// 返回值:
+//   - decision 非 nil 时立即返回(典型是 Deny 命中)
+//   - override 非空时替换 class(Class 升级或 AllowAs 降级)
+//   - ok 表示有命中
+func (d *DefaultSemanticApprover) applyParamRules(req ApprovalRequest, class ApprovalClass) (*ApprovalDecision, ApprovalClass, bool) {
+	if len(d.ParamRules) == 0 || len(req.Args) == 0 {
+		return nil, "", false
+	}
+	for _, rule := range d.ParamRules {
+		if rule.ToolPattern != "" && !matchToolPattern(req.ToolName, rule.ToolPattern) {
+			continue
+		}
+		val, ok := req.Args[rule.ArgKey]
+		if !ok || val == "" {
+			continue
+		}
+		matched, err := matchArgGlob(rule.ValueGlob, val)
+		if err != nil || !matched {
+			continue
+		}
+		reason := rule.Reason
+		if rule.Deny {
+			if reason == "" {
+				reason = "参数级规则拒绝:" + req.ToolName + "(" + rule.ArgKey + "=" + val + ")"
+			}
+			return &ApprovalDecision{Granted: false, Reason: reason}, "", true
+		}
+		if rule.Class != "" {
+			return nil, maxClass(class, rule.Class), true
+		}
+		if rule.AllowAs != "" {
+			return nil, rule.AllowAs, true
+		}
+	}
+	return nil, "", false
 }
 
 // resolveClass 从请求中推导最终审批等级（三层决策树）。
@@ -194,6 +279,9 @@ var heuristicRules = []heuristicRule{
 	{"*.cancel_order", ApprovalControlPlane},
 	{"*.withdraw", ApprovalControlPlane},
 
+	// 纯本地 scratchpad：必须先于 browser.* 等网络规则匹配
+	{"*.note", ApprovalReadonly},
+
 	// L4: 外部网络
 	{"browser.*", ApprovalExternalNetwork},
 	{"fetch.*", ApprovalExternalNetwork},
@@ -206,6 +294,7 @@ var heuristicRules = []heuristicRule{
 
 	// L1: 工作区写
 	{"code.write_*", ApprovalWorkspaceWrite},
+	{"code.edit_*", ApprovalWorkspaceWrite},
 	{"code.patch_*", ApprovalWorkspaceWrite},
 	{"code.delete_*", ApprovalWorkspaceWrite},
 
@@ -269,6 +358,73 @@ func matchToolPattern(toolName, pattern string) bool {
 		// 精确匹配
 		return toolName == pattern
 	}
+}
+
+// matchArgGlob 对 ParamRule.ValueGlob 做 shell/URL 友好的 glob 匹配。
+//
+// 与 sdk/internal/pathglob 不同,它不按 "/" 切段、不做 path.Clean,更贴合
+// 参数值(命令行、URL)的直觉:
+//   - "**"  匹配任意字符(含空格、斜杠)
+//   - "*"   同 "**",都映射为"任意字符"
+//   - "?"   匹配单个字符
+//   - 其他字符字面匹配
+//
+// 约定这种宽松语义是为了"rm -rf *" / "sudo **" / "http://localhost**" 都能
+// 直接用。需要更严格匹配时,调用方可以把 ValueGlob 写成带精确前后缀的模式。
+func matchArgGlob(pattern, value string) (bool, error) {
+	// 转成 path.Match 兼容的单段模式:用 "?"(任意单字符)占位 "/" 避免
+	// path.Match 拒绝含 "/" 的 target。再用 "**" → 用 strings.Contains
+	// 兜底。这里干脆直接做双指针匹配,语义最稳。
+	return globMatch(pattern, value), nil
+}
+
+func globMatch(pattern, value string) bool {
+	// 递归 + memo 的简单实现;pattern 和 value 长度有限(都是单次参数串)。
+	type key struct{ p, v int }
+	memo := map[key]bool{}
+	var walk func(p, v int) bool
+	walk = func(p, v int) bool {
+		if r, ok := memo[key{p, v}]; ok {
+			return r
+		}
+		result := false
+		defer func() { memo[key{p, v}] = result }()
+
+		if p == len(pattern) {
+			result = v == len(value)
+			return result
+		}
+		c := pattern[p]
+		// "**" 等价于 "*"(都匹配任意字符序列)
+		if c == '*' {
+			// 吞掉连续的 *
+			next := p + 1
+			for next < len(pattern) && pattern[next] == '*' {
+				next++
+			}
+			// 尝试让 * 匹配 0..N 个字符
+			for k := v; k <= len(value); k++ {
+				if walk(next, k) {
+					result = true
+					return result
+				}
+			}
+			return result
+		}
+		if v == len(value) {
+			return result
+		}
+		if c == '?' {
+			result = walk(p+1, v+1)
+			return result
+		}
+		if c == value[v] {
+			result = walk(p+1, v+1)
+			return result
+		}
+		return result
+	}
+	return walk(0, 0)
 }
 
 // maxClass 返回两个 ApprovalClass 中等级更高的那个（只升不降）。

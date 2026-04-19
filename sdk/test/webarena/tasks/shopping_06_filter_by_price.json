@@ -1,0 +1,11 @@
+{
+  "id": "shopping-filter-by-price",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "Open the 'Components' category, then click the 'Price (Low > High)' sort option from the sort-by dropdown and verify the URL reflects the sort change.",
+  "max_turns": 7,
+  "success": [
+    { "kind": "url_contains", "value": "sort=p.price" }
+  ],
+  "tags": ["shopping", "filter", "phase2"]
+}

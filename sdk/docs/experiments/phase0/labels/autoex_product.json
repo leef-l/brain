@@ -1,0 +1,168 @@
+{
+  "page_id": "autoex_product",
+  "url": "https://automationexercise.com/product_details/1",
+  "category": "ecommerce",
+  "snapshot_file": "samples/autoex_product/snapshot.json",
+  "screenshot_file": "samples/autoex_product/screenshot.png",
+  "html_file": "samples/autoex_product/page.html",
+  "drafted_at": "2026-04-19T09:02:57Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 22,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Add to cart",
+        "href": null,
+        "bbox": {
+          "x": 1204,
+          "y": 316,
+          "w": 114,
+          "h": 33
+        }
+      },
+      "draft": {
+        "action_intent": "Add the currently viewed product to the shopping cart with the specified quantity.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Quantity is determined by the adjacent number input (id=21, default 1). May trigger a modal confirmation or cart flyout.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 27,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "Submit",
+        "href": null,
+        "bbox": {
+          "x": 1230,
+          "y": 921,
+          "w": 68,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Submit a product review including the user's name, email, and review text.",
+        "reversibility": "irreversible",
+        "risk_level": "external_effect",
+        "flow_role": "primary",
+        "notes": "Submits user-provided review data to the server. Typically cannot be edited or deleted after submission on this site. Confirm whether reviews are publicly visible immediately or moderated.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 29,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "",
+        "href": null,
+        "bbox": {
+          "x": 484,
+          "y": 1136,
+          "w": 51,
+          "h": 36
+        }
+      },
+      "draft": {
+        "action_intent": "Subscribe to the site's newsletter or mailing list by submitting an email address.",
+        "reversibility": "semi_reversible",
+        "risk_level": "external_effect",
+        "flow_role": "secondary",
+        "notes": "Button has no visible label text; inferred as a newsletter subscribe action based on nearby 'Your email address' input and its footer-area position. Unsubscribe is typically possible but requires a separate process. Reviewer should confirm the button's actual purpose.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 21,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "number",
+        "name": "1",
+        "href": null,
+        "bbox": {
+          "x": 1098,
+          "y": 318,
+          "w": 50,
+          "h": 33
+        }
+      },
+      "draft": {
+        "action_intent": "Specify the quantity of the product to add to the cart.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "notes": "Number input defaulting to 1. Value is consumed by the adjacent 'Add to cart' button. No server-side effect until the cart button is clicked.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 24,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "Your Name",
+        "href": null,
+        "bbox": {
+          "x": 671,
+          "y": 652,
+          "w": 375,
+          "h": 36
+        }
+      },
+      "draft": {
+        "action_intent": "Enter the reviewer's name as part of writing a product review.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "secondary",
+        "notes": "Text input field for the review form. No data is sent until the Submit button is pressed.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 25,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "email",
+        "name": "Email Address",
+        "href": null,
+        "bbox": {
+          "x": 1073,
+          "y": 652,
+          "w": 375,
+          "h": 36
+        }
+      },
+      "draft": {
+        "action_intent": "Enter the reviewer's email address as part of writing a product review.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "secondary",
+        "notes": "Email input field for the review form. No data is sent until the Submit button is pressed. Could be used for follow-up contact, but that's a post-submission concern.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

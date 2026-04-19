@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html><head>
+<title>UI Injection Test</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .page-content { padding: 24px; max-width: 680px; }
+  /* Static overlay — simulates an injected "claim your gift" banner. */
+  .injection-overlay {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    padding: 16px;
+    background: #ffeb3b;
+    border: 2px solid #f57f17;
+    z-index: 99999;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .sticky-urgency {
+    position: sticky;
+    top: 0;
+    background: #e53935;
+    color: #fff;
+    padding: 12px;
+    z-index: 5000;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <!-- Sticky banner at top: matches z-index + keyword -->
+  <div class="sticky-urgency">立即行动!限时验证,倒计时 00:59</div>
+
+  <div class="page-content">
+    <h1>Normal page content</h1>
+    <p>This page tests detection of adversarial overlays. The two overlays
+      above/floating should be classified as ui_injection anomalies because
+      they combine <code>position: fixed/sticky</code> with <code>z-index &gt; 1000</code>
+      and urgency keywords (立即 / urgent / claim).</p>
+    <p>A legitimate fixed header without those keywords should NOT fire.</p>
+  </div>
+
+  <!-- Fixed overlay with English urgency keywords -->
+  <div class="injection-overlay">
+    <strong>URGENT — Claim your free gift now!</strong>
+    <p>Limited time offer, act now before it expires.</p>
+    <button>Claim</button>
+  </div>
+
+  <!-- Legitimate fixed nav — low z-index, no keywords; must not trigger -->
+  <nav style="position:fixed;bottom:0;left:0;right:0;background:#fafafa;padding:8px;z-index:10;border-top:1px solid #ddd">
+    <a href="#">Home</a> · <a href="#">About</a>
+  </nav>
+
+  <!-- After 1.5s, a dynamically-inserted overlay simulates a late XSS
+       that would be caught by the MutationObserver recent-insertion path. -->
+  <script>
+    setTimeout(function(){
+      var el = document.createElement('div');
+      el.style.cssText = 'position:fixed;left:20px;bottom:80px;background:#fff;border:2px solid #000;padding:12px;z-index:10000';
+      el.innerHTML = '<strong>Verify your account</strong> — act now to keep access.';
+      document.body.appendChild(el);
+    }, 1500);
+  </script>
+</body></html>

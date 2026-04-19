@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "antd_pro_dashboard",
+  "element_id": 3,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 6046,
+      "action_intent": "Navigate to the Welcome page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 1,
+      "latency_ms": 5278,
+      "action_intent": "Navigate to the Welcome page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    },
+    {
+      "run": 2,
+      "latency_ms": 5398,
+      "action_intent": "Navigate to the Welcome page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.97
+    }
+  ]
+}

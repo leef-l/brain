@@ -1,0 +1,2395 @@
+<!DOCTYPE html><html lang="en-US" data-beasties-container=""><head>
+  <meta charset="utf-8">
+  <title>Button  •  Angular Material</title>
+  <base href="/">
+
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="UI component infrastructure and Material Design components for mobile and desktop Angular web applications.">
+  <meta name="keywords" content="angular, material design, material, angular material, web, ui, components, responsive, accessibility, typescript, css, mobile web, open source">
+  <meta name="author" content="Angular Components Team">
+
+  <!--Twitter card metadata-->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="@Angular">
+  <meta name="twitter:creator" content="@Angular">
+  <meta name="twitter:title" content="Angular Material">
+  <meta name="twitter:description" content="UI component infrastructure and Material Design components for Angular web applications.">
+  <meta name="twitter:image" content="https://material.angular.dev/assets/img/site-preview.png">
+
+  <!--Facebook Open Graph-->
+  <meta property="og:url" content="https://material.angular.dev/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Angular Material">
+  <meta property="og:site_name" content="Angular Material">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:description" content="UI component infrastructure and Material Design components for Angular web applications.">
+  <meta property="og:image" content="https://material.angular.dev/assets/img/site-preview.png">
+  <meta property="og:image:secure_url" content="https://material.angular.dev/assets/img/site-preview.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1339">
+  <meta property="og:image:height" content="943">
+
+  <link rel="manifest" href="assets/img/manifest.json?v=19.1.0">
+  <link rel="shortcut icon" href="assets/img/favicon.ico?v=19.1.0">
+  <meta name="theme-color" content="#d7e3ff">
+
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link rel="dns-prefetch" href="https://www.googletagmanager.com">
+
+  <style>@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3GUBGEe.woff2) format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3iUBGEe.woff2) format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3CUBGEe.woff2) format('woff2');unicode-range:U+1F00-1FFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3-UBGEe.woff2) format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMawCUBGEe.woff2) format('woff2');unicode-range:U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMaxKUBGEe.woff2) format('woff2');unicode-range:U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AD, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F7FF, U+1F800-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FA89, U+1FA8F-1FAC6, U+1FACE-1FADC, U+1FADF-1FAE9, U+1FAF0-1FAF8, U+1FB00-1FBFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3OUBGEe.woff2) format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:300;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3GUBGEe.woff2) format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3iUBGEe.woff2) format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3CUBGEe.woff2) format('woff2');unicode-range:U+1F00-1FFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3-UBGEe.woff2) format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMawCUBGEe.woff2) format('woff2');unicode-range:U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMaxKUBGEe.woff2) format('woff2');unicode-range:U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AD, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F7FF, U+1F800-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FA89, U+1FA8F-1FAC6, U+1FACE-1FADC, U+1FADF-1FAE9, U+1FAF0-1FAF8, U+1FB00-1FBFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3OUBGEe.woff2) format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:400;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3GUBGEe.woff2) format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3iUBGEe.woff2) format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3CUBGEe.woff2) format('woff2');unicode-range:U+1F00-1FFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3-UBGEe.woff2) format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMawCUBGEe.woff2) format('woff2');unicode-range:U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMaxKUBGEe.woff2) format('woff2');unicode-range:U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AD, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F7FF, U+1F800-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FA89, U+1FA8F-1FAC6, U+1FACE-1FADC, U+1FADF-1FAE9, U+1FAF0-1FAF8, U+1FB00-1FBFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3OUBGEe.woff2) format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:500;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3GUBGEe.woff2) format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3iUBGEe.woff2) format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3CUBGEe.woff2) format('woff2');unicode-range:U+1F00-1FFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3-UBGEe.woff2) format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMawCUBGEe.woff2) format('woff2');unicode-range:U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMaxKUBGEe.woff2) format('woff2');unicode-range:U+0001-000C, U+000E-001F, U+007F-009F, U+20DD-20E0, U+20E2-20E4, U+2150-218F, U+2190, U+2192, U+2194-2199, U+21AF, U+21E6-21F0, U+21F3, U+2218-2219, U+2299, U+22C4-22C6, U+2300-243F, U+2440-244A, U+2460-24FF, U+25A0-27BF, U+2800-28FF, U+2921-2922, U+2981, U+29BF, U+29EB, U+2B00-2BFF, U+4DC0-4DFF, U+FFF9-FFFB, U+10140-1018E, U+10190-1019C, U+101A0, U+101D0-101FD, U+102E0-102FB, U+10E60-10E7E, U+1D2C0-1D2D3, U+1D2E0-1D37F, U+1F000-1F0FF, U+1F100-1F1AD, U+1F1E6-1F1FF, U+1F30D-1F30F, U+1F315, U+1F31C, U+1F31E, U+1F320-1F32C, U+1F336, U+1F378, U+1F37D, U+1F382, U+1F393-1F39F, U+1F3A7-1F3A8, U+1F3AC-1F3AF, U+1F3C2, U+1F3C4-1F3C6, U+1F3CA-1F3CE, U+1F3D4-1F3E0, U+1F3ED, U+1F3F1-1F3F3, U+1F3F5-1F3F7, U+1F408, U+1F415, U+1F41F, U+1F426, U+1F43F, U+1F441-1F442, U+1F444, U+1F446-1F449, U+1F44C-1F44E, U+1F453, U+1F46A, U+1F47D, U+1F4A3, U+1F4B0, U+1F4B3, U+1F4B9, U+1F4BB, U+1F4BF, U+1F4C8-1F4CB, U+1F4D6, U+1F4DA, U+1F4DF, U+1F4E3-1F4E6, U+1F4EA-1F4ED, U+1F4F7, U+1F4F9-1F4FB, U+1F4FD-1F4FE, U+1F503, U+1F507-1F50B, U+1F50D, U+1F512-1F513, U+1F53E-1F54A, U+1F54F-1F5FA, U+1F610, U+1F650-1F67F, U+1F687, U+1F68D, U+1F691, U+1F694, U+1F698, U+1F6AD, U+1F6B2, U+1F6B9-1F6BA, U+1F6BC, U+1F6C6-1F6CF, U+1F6D3-1F6D7, U+1F6E0-1F6EA, U+1F6F0-1F6F3, U+1F6F7-1F6FC, U+1F700-1F7FF, U+1F800-1F80B, U+1F810-1F847, U+1F850-1F859, U+1F860-1F887, U+1F890-1F8AD, U+1F8B0-1F8BB, U+1F8C0-1F8C1, U+1F900-1F90B, U+1F93B, U+1F946, U+1F984, U+1F996, U+1F9E9, U+1FA00-1FA6F, U+1FA70-1FA7C, U+1FA80-1FA89, U+1FA8F-1FAC6, U+1FACE-1FADC, U+1FADF-1FAE9, U+1FAF0-1FAF8, U+1FB00-1FBFF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3OUBGEe.woff2) format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;}@font-face{font-family:'Roboto';font-style:normal;font-weight:700;font-stretch:100%;font-display:swap;src:url(https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400;font-display:swap;src:url(https://fonts.gstatic.com/s/robotomono/v31/L0xuDF4xlVMF-BfR8bXMIhJHg45mwgGEFl0_3vq_SeW4Ep0.woff2) format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;}@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400;font-display:swap;src:url(https://fonts.gstatic.com/s/robotomono/v31/L0xuDF4xlVMF-BfR8bXMIhJHg45mwgGEFl0_3vq_QOW4Ep0.woff2) format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;}@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400;font-display:swap;src:url(https://fonts.gstatic.com/s/robotomono/v31/L0xuDF4xlVMF-BfR8bXMIhJHg45mwgGEFl0_3vq_R-W4Ep0.woff2) format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;}@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400;font-display:swap;src:url(https://fonts.gstatic.com/s/robotomono/v31/L0xuDF4xlVMF-BfR8bXMIhJHg45mwgGEFl0_3vq_S-W4Ep0.woff2) format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;}@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400;font-display:swap;src:url(https://fonts.gstatic.com/s/robotomono/v31/L0xuDF4xlVMF-BfR8bXMIhJHg45mwgGEFl0_3vq_SuW4Ep0.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;}@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400;font-display:swap;src:url(https://fonts.gstatic.com/s/robotomono/v31/L0xuDF4xlVMF-BfR8bXMIhJHg45mwgGEFl0_3vq_ROW4.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;}</style>
+  <style>@font-face{font-family:'Material Icons';font-style:normal;font-weight:400;font-display:block;src:url(https://fonts.gstatic.com/s/materialicons/v145/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2) format('woff2');}.material-icons{font-family:'Material Icons';font-weight:normal;font-style:normal;font-size:24px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:'liga';-webkit-font-smoothing:antialiased;}</style>
+
+  <!--Structured Data-->
+  <script type="text/javascript" async="" src="https://www.googletagmanager.com/gtag/js?id=G-6WB6YZHVY0&amp;cx=c&amp;_slc=1"></script><script type="text/javascript" async="" src="https://www.googletagmanager.com/gtag/js?id=G-ZKVD2WCM7R&amp;cx=c&amp;_slc=1"></script><script type="text/javascript" async="" src="https://www.googletagmanager.com/gtag/js?id=G-BVV0RDSG7F&amp;cx=c&amp;gtm=4e64f1"></script><script async="" src="https://www.google-analytics.com/analytics.js"></script><script type="application/ld+json">
+    {
+      "@context": "http://schema.org",
+      "@type": "WebApplication",
+      "name": "Angular Material",
+      "description": "UI component infrastructure and Material Design components for Angular web applications.",
+      "url": "https://material.angular.dev",
+      "image": "https://material.angular.dev/assets/img/site-preview.png",
+      "screenshot": "https://material.angular.dev/assets/img/site-preview.png",
+      "applicationCategory": "Software Documentation",
+      "operatingSystem": "Android, Chrome OS, iOS, iPadOS, macOS, OS X, Linux, Windows",
+      "author": {
+        "@type": "Organization",
+        "name": "Angular",
+        "description": "Angular is a platform for building mobile and desktop web applications. Join the community of millions of developers who build compelling user interfaces with Angular.",
+        "url": "https://angular.dev",
+        "logo": "https://angular.io/assets/images/logos/angular/angular.svg"
+      }
+    }
+  </script>
+
+  <style>
+    .docs-app-background {
+      background: var(--mat-sys-surface);
+    }
+  </style>
+<style>html{background-color:var(--mat-sys-surface);color:var(--mat-sys-on-surface);--mat-sys-background:#faf9fd;--mat-sys-error:#ba1a1a;--mat-sys-error-container:#ffdad6;--mat-sys-inverse-on-surface:#f2f0f4;--mat-sys-inverse-primary:#abc7ff;--mat-sys-inverse-surface:#2f3033;--mat-sys-on-background:#1a1b1f;--mat-sys-on-error:#ffffff;--mat-sys-on-error-container:#93000a;--mat-sys-on-primary:#ffffff;--mat-sys-on-primary-container:#00458f;--mat-sys-on-primary-fixed:#001b3f;--mat-sys-on-primary-fixed-variant:#00458f;--mat-sys-on-secondary:#ffffff;--mat-sys-on-secondary-container:#3e4759;--mat-sys-on-secondary-fixed:#131c2b;--mat-sys-on-secondary-fixed-variant:#3e4759;--mat-sys-on-surface:#1a1b1f;--mat-sys-on-surface-variant:#44474e;--mat-sys-on-tertiary:#ffffff;--mat-sys-on-tertiary-container:#0000ef;--mat-sys-on-tertiary-fixed:#00006e;--mat-sys-on-tertiary-fixed-variant:#0000ef;--mat-sys-outline:#74777f;--mat-sys-outline-variant:#c4c6d0;--mat-sys-primary:#005cbb;--mat-sys-primary-container:#d7e3ff;--mat-sys-primary-fixed:#d7e3ff;--mat-sys-primary-fixed-dim:#abc7ff;--mat-sys-scrim:#000000;--mat-sys-secondary:#565e71;--mat-sys-secondary-container:#dae2f9;--mat-sys-secondary-fixed:#dae2f9;--mat-sys-secondary-fixed-dim:#bec6dc;--mat-sys-shadow:#000000;--mat-sys-surface:#faf9fd;--mat-sys-surface-bright:#faf9fd;--mat-sys-surface-container:#efedf0;--mat-sys-surface-container-high:#e9e7eb;--mat-sys-surface-container-highest:#e3e2e6;--mat-sys-surface-container-low:#f4f3f6;--mat-sys-surface-container-lowest:#ffffff;--mat-sys-surface-dim:#dbd9dd;--mat-sys-surface-tint:#005cbb;--mat-sys-surface-variant:#e0e2ec;--mat-sys-tertiary:#343dff;--mat-sys-tertiary-container:#e0e0ff;--mat-sys-tertiary-fixed:#e0e0ff;--mat-sys-tertiary-fixed-dim:#bec2ff;--mat-sys-neutral-variant20:#2d3038;--mat-sys-neutral10:#1a1b1f;--mat-sys-level0:0px 0px 0px 0px rgba(0, 0, 0, .2), 0px 0px 0px 0px rgba(0, 0, 0, .14), 0px 0px 0px 0px rgba(0, 0, 0, .12);--mat-sys-level1:0px 2px 1px -1px rgba(0, 0, 0, .2), 0px 1px 1px 0px rgba(0, 0, 0, .14), 0px 1px 3px 0px rgba(0, 0, 0, .12);--mat-sys-level2:0px 3px 3px -2px rgba(0, 0, 0, .2), 0px 3px 4px 0px rgba(0, 0, 0, .14), 0px 1px 8px 0px rgba(0, 0, 0, .12);--mat-sys-level3:0px 3px 5px -1px rgba(0, 0, 0, .2), 0px 6px 10px 0px rgba(0, 0, 0, .14), 0px 1px 18px 0px rgba(0, 0, 0, .12);--mat-sys-level4:0px 5px 5px -3px rgba(0, 0, 0, .2), 0px 8px 10px 1px rgba(0, 0, 0, .14), 0px 3px 14px 2px rgba(0, 0, 0, .12);--mat-sys-level5:0px 7px 8px -4px rgba(0, 0, 0, .2), 0px 12px 17px 2px rgba(0, 0, 0, .14), 0px 5px 22px 4px rgba(0, 0, 0, .12);--mat-sys-body-large:400 1rem / 1.5rem Roboto;--mat-sys-body-large-font:Roboto;--mat-sys-body-large-line-height:1.5rem;--mat-sys-body-large-size:1rem;--mat-sys-body-large-tracking:.031rem;--mat-sys-body-large-weight:400;--mat-sys-body-medium:400 .875rem / 1.25rem Roboto;--mat-sys-body-medium-font:Roboto;--mat-sys-body-medium-line-height:1.25rem;--mat-sys-body-medium-size:.875rem;--mat-sys-body-medium-tracking:.016rem;--mat-sys-body-medium-weight:400;--mat-sys-body-small:400 .75rem / 1rem Roboto;--mat-sys-body-small-font:Roboto;--mat-sys-body-small-line-height:1rem;--mat-sys-body-small-size:.75rem;--mat-sys-body-small-tracking:.025rem;--mat-sys-body-small-weight:400;--mat-sys-display-large:400 3.562rem / 4rem Roboto;--mat-sys-display-large-font:Roboto;--mat-sys-display-large-line-height:4rem;--mat-sys-display-large-size:3.562rem;--mat-sys-display-large-tracking:-.016rem;--mat-sys-display-large-weight:400;--mat-sys-display-medium:400 2.812rem / 3.25rem Roboto;--mat-sys-display-medium-font:Roboto;--mat-sys-display-medium-line-height:3.25rem;--mat-sys-display-medium-size:2.812rem;--mat-sys-display-medium-tracking:0;--mat-sys-display-medium-weight:400;--mat-sys-display-small:400 2.25rem / 2.75rem Roboto;--mat-sys-display-small-font:Roboto;--mat-sys-display-small-line-height:2.75rem;--mat-sys-display-small-size:2.25rem;--mat-sys-display-small-tracking:0;--mat-sys-display-small-weight:400;--mat-sys-headline-large:400 2rem / 2.5rem Roboto;--mat-sys-headline-large-font:Roboto;--mat-sys-headline-large-line-height:2.5rem;--mat-sys-headline-large-size:2rem;--mat-sys-headline-large-tracking:0;--mat-sys-headline-large-weight:400;--mat-sys-headline-medium:400 1.75rem / 2.25rem Roboto;--mat-sys-headline-medium-font:Roboto;--mat-sys-headline-medium-line-height:2.25rem;--mat-sys-headline-medium-size:1.75rem;--mat-sys-headline-medium-tracking:0;--mat-sys-headline-medium-weight:400;--mat-sys-headline-small:400 1.5rem / 2rem Roboto;--mat-sys-headline-small-font:Roboto;--mat-sys-headline-small-line-height:2rem;--mat-sys-headline-small-size:1.5rem;--mat-sys-headline-small-tracking:0;--mat-sys-headline-small-weight:400;--mat-sys-label-large:500 .875rem / 1.25rem Roboto;--mat-sys-label-large-font:Roboto;--mat-sys-label-large-line-height:1.25rem;--mat-sys-label-large-size:.875rem;--mat-sys-label-large-tracking:.006rem;--mat-sys-label-large-weight:500;--mat-sys-label-large-weight-prominent:700;--mat-sys-label-medium:500 .75rem / 1rem Roboto;--mat-sys-label-medium-font:Roboto;--mat-sys-label-medium-line-height:1rem;--mat-sys-label-medium-size:.75rem;--mat-sys-label-medium-tracking:.031rem;--mat-sys-label-medium-weight:500;--mat-sys-label-medium-weight-prominent:700;--mat-sys-label-small:500 .688rem / 1rem Roboto;--mat-sys-label-small-font:Roboto;--mat-sys-label-small-line-height:1rem;--mat-sys-label-small-size:.688rem;--mat-sys-label-small-tracking:.031rem;--mat-sys-label-small-weight:500;--mat-sys-title-large:400 1.375rem / 1.75rem Roboto;--mat-sys-title-large-font:Roboto;--mat-sys-title-large-line-height:1.75rem;--mat-sys-title-large-size:1.375rem;--mat-sys-title-large-tracking:0;--mat-sys-title-large-weight:400;--mat-sys-title-medium:500 1rem / 1.5rem Roboto;--mat-sys-title-medium-font:Roboto;--mat-sys-title-medium-line-height:1.5rem;--mat-sys-title-medium-size:1rem;--mat-sys-title-medium-tracking:.009rem;--mat-sys-title-medium-weight:500;--mat-sys-title-small:500 .875rem / 1.25rem Roboto;--mat-sys-title-small-font:Roboto;--mat-sys-title-small-line-height:1.25rem;--mat-sys-title-small-size:.875rem;--mat-sys-title-small-tracking:.006rem;--mat-sys-title-small-weight:500;--mat-sys-corner-extra-large:28px;--mat-sys-corner-extra-large-top:28px 28px 0 0;--mat-sys-corner-extra-small:4px;--mat-sys-corner-extra-small-top:4px 4px 0 0;--mat-sys-corner-full:9999px;--mat-sys-corner-large:16px;--mat-sys-corner-large-end:0 16px 16px 0;--mat-sys-corner-large-start:16px 0 0 16px;--mat-sys-corner-large-top:16px 16px 0 0;--mat-sys-corner-medium:12px;--mat-sys-corner-none:0;--mat-sys-corner-small:8px;--mat-sys-dragged-state-layer-opacity:.16;--mat-sys-focus-state-layer-opacity:.12;--mat-sys-hover-state-layer-opacity:.08;--mat-sys-pressed-state-layer-opacity:.12}html,body{height:100vh}body{font-family:Roboto,Helvetica Neue Light,Helvetica Neue,Helvetica,Arial,Lucida Grande,sans-serif;margin:0}</style><link rel="stylesheet" href="styles-OILTTX73.css" media="all" onload="this.media='all'"><noscript><link rel="stylesheet" href="styles-OILTTX73.css"></noscript><script async="" src="https://www.googletagmanager.com/gtag/js?id=G-XXPDW812XH"></script><style>material-docs-app{display:flex;flex-direction:column;height:100vh}app-navbar{position:fixed;top:0;left:0;right:0;z-index:2}material-docs-app>app-component-sidenav{flex:1}material-docs-app>router-outlet+.docs-main-content,material-docs-app>router-outlet+app-component-sidenav{margin-top:56px;overflow-y:auto;-webkit-overflow-scrolling:touch}@media(max-width:720px){material-docs-app>router-outlet+.docs-main-content,material-docs-app>router-outlet+app-component-sidenav{margin-top:92px;overflow-y:visible}}
+</style><style>.docs-popup[_ngcontent-ng-c543503563]{box-shadow:var(--mat-sys-level2);color:var(--mat-sys-on-surface);background:var(--mat-sys-surface);position:fixed;bottom:0;left:0;margin:24px;max-width:430px;z-index:1001;padding:16px 16px 8px;border-radius:8px}.docs-buttons[_ngcontent-ng-c543503563]{display:flex;justify-content:flex-end;margin:16px -8px 0 0}.docs-buttons[_ngcontent-ng-c543503563]   .mat-mdc-button[_ngcontent-ng-c543503563]{text-transform:uppercase}</style><style>[_nghost-ng-c3920750817]{color:var(--mat-sys-primary);background:var(--mat-sys-primary-container)}.docs-navbar-header[_ngcontent-ng-c3920750817]{display:flex;flex-wrap:wrap;align-items:center;padding:8px 16px}.docs-navbar-header[_ngcontent-ng-c3920750817] > .mat-mdc-button[_ngcontent-ng-c3920750817]:last-child{margin-left:auto}.docs-navbar-header[_ngcontent-ng-c3920750817]   .docs-navbar-header-item-selected[_ngcontent-ng-c3920750817]{background:color-mix(in srgb,var(--mat-sys-primary) 10%,transparent)}.mat-mdc-icon-button[_ngcontent-ng-c3920750817]{color:inherit}.docs-github-logo[_ngcontent-ng-c3920750817], app-logo[_ngcontent-ng-c3920750817]{margin-right:8px;width:24px;height:24px}.docs-flex-spacer[_ngcontent-ng-c3920750817]{flex-grow:1}.docs-navbar-link[_ngcontent-ng-c3920750817]{text-decoration:inherit;flex:1}.docs-navbar[_ngcontent-ng-c3920750817], .docs-navbar-show-small[_ngcontent-ng-c3920750817]{display:none}.docs-skip-link-wrapper[_ngcontent-ng-c3920750817]{position:absolute;top:10px;left:50%;transform:translate(-50%);border-radius:5px}@media(max-width:720px){.docs-navbar-hide-small[_ngcontent-ng-c3920750817]{display:none}.docs-navbar-show-small[_ngcontent-ng-c3920750817]{display:block}.docs-navbar[_ngcontent-ng-c3920750817]{display:flex}.docs-github-logo[_ngcontent-ng-c3920750817]{margin:0}}theme-picker[_ngcontent-ng-c3920750817]{display:none}@media(min-width:328px){theme-picker[_ngcontent-ng-c3920750817]{display:block}}</style><style>.mat-mdc-button-base {
+  text-decoration: none;
+}
+.mat-mdc-button-base .mat-icon {
+  min-height: fit-content;
+  flex-shrink: 0;
+}
+@media (hover: none) {
+  .mat-mdc-button-base:hover > span.mat-mdc-button-persistent-ripple::before {
+    opacity: 0;
+  }
+}
+
+.mdc-button {
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 64px;
+  border: none;
+  outline: none;
+  line-height: inherit;
+  -webkit-appearance: none;
+  overflow: visible;
+  vertical-align: middle;
+  background: transparent;
+  padding: 0 8px;
+}
+.mdc-button::-moz-focus-inner {
+  padding: 0;
+  border: 0;
+}
+.mdc-button:active {
+  outline: none;
+}
+.mdc-button:hover {
+  cursor: pointer;
+}
+.mdc-button:disabled {
+  cursor: default;
+  pointer-events: none;
+}
+.mdc-button[hidden] {
+  display: none;
+}
+.mdc-button .mdc-button__label {
+  position: relative;
+}
+
+.mat-mdc-button {
+  padding: 0 var(--mat-button-text-horizontal-padding, 12px);
+  height: var(--mat-button-text-container-height, 40px);
+  font-family: var(--mat-button-text-label-text-font, var(--mat-sys-label-large-font));
+  font-size: var(--mat-button-text-label-text-size, var(--mat-sys-label-large-size));
+  letter-spacing: var(--mat-button-text-label-text-tracking, var(--mat-sys-label-large-tracking));
+  text-transform: var(--mat-button-text-label-text-transform);
+  font-weight: var(--mat-button-text-label-text-weight, var(--mat-sys-label-large-weight));
+}
+.mat-mdc-button, .mat-mdc-button .mdc-button__ripple {
+  border-radius: var(--mat-button-text-container-shape, var(--mat-sys-corner-full));
+}
+.mat-mdc-button:not(:disabled) {
+  color: var(--mat-button-text-label-text-color, var(--mat-sys-primary));
+}
+.mat-mdc-button[disabled], .mat-mdc-button.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-button-text-disabled-label-text-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+}
+.mat-mdc-button.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+.mat-mdc-button:has(.material-icons, mat-icon, [matButtonIcon]) {
+  padding: 0 var(--mat-button-text-with-icon-horizontal-padding, 16px);
+}
+.mat-mdc-button > .mat-icon {
+  margin-right: var(--mat-button-text-icon-spacing, 8px);
+  margin-left: var(--mat-button-text-icon-offset, -4px);
+}
+[dir=rtl] .mat-mdc-button > .mat-icon {
+  margin-right: var(--mat-button-text-icon-offset, -4px);
+  margin-left: var(--mat-button-text-icon-spacing, 8px);
+}
+.mat-mdc-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-text-icon-offset, -4px);
+  margin-left: var(--mat-button-text-icon-spacing, 8px);
+}
+[dir=rtl] .mat-mdc-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-text-icon-spacing, 8px);
+  margin-left: var(--mat-button-text-icon-offset, -4px);
+}
+.mat-mdc-button .mat-ripple-element {
+  background-color: var(--mat-button-text-ripple-color, color-mix(in srgb, var(--mat-sys-primary) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-button .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-text-state-layer-color, var(--mat-sys-primary));
+}
+.mat-mdc-button.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-text-disabled-state-layer-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-button:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-text-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-mdc-button.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-button.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-button.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-text-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-mdc-button:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-text-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+.mat-mdc-button .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-button-text-touch-target-size, 48px);
+  display: var(--mat-button-text-touch-target-display, block);
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.mat-mdc-unelevated-button {
+  transition: box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  height: var(--mat-button-filled-container-height, 40px);
+  font-family: var(--mat-button-filled-label-text-font, var(--mat-sys-label-large-font));
+  font-size: var(--mat-button-filled-label-text-size, var(--mat-sys-label-large-size));
+  letter-spacing: var(--mat-button-filled-label-text-tracking, var(--mat-sys-label-large-tracking));
+  text-transform: var(--mat-button-filled-label-text-transform);
+  font-weight: var(--mat-button-filled-label-text-weight, var(--mat-sys-label-large-weight));
+  padding: 0 var(--mat-button-filled-horizontal-padding, 24px);
+}
+.mat-mdc-unelevated-button > .mat-icon {
+  margin-right: var(--mat-button-filled-icon-spacing, 8px);
+  margin-left: var(--mat-button-filled-icon-offset, -8px);
+}
+[dir=rtl] .mat-mdc-unelevated-button > .mat-icon {
+  margin-right: var(--mat-button-filled-icon-offset, -8px);
+  margin-left: var(--mat-button-filled-icon-spacing, 8px);
+}
+.mat-mdc-unelevated-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-filled-icon-offset, -8px);
+  margin-left: var(--mat-button-filled-icon-spacing, 8px);
+}
+[dir=rtl] .mat-mdc-unelevated-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-filled-icon-spacing, 8px);
+  margin-left: var(--mat-button-filled-icon-offset, -8px);
+}
+.mat-mdc-unelevated-button .mat-ripple-element {
+  background-color: var(--mat-button-filled-ripple-color, color-mix(in srgb, var(--mat-sys-on-primary) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-unelevated-button .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-filled-state-layer-color, var(--mat-sys-on-primary));
+}
+.mat-mdc-unelevated-button.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-filled-disabled-state-layer-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-unelevated-button:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-filled-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-mdc-unelevated-button.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-unelevated-button.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-unelevated-button.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-filled-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-mdc-unelevated-button:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-filled-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+.mat-mdc-unelevated-button .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-button-filled-touch-target-size, 48px);
+  display: var(--mat-button-filled-touch-target-display, block);
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+.mat-mdc-unelevated-button:not(:disabled) {
+  color: var(--mat-button-filled-label-text-color, var(--mat-sys-on-primary));
+  background-color: var(--mat-button-filled-container-color, var(--mat-sys-primary));
+}
+.mat-mdc-unelevated-button, .mat-mdc-unelevated-button .mdc-button__ripple {
+  border-radius: var(--mat-button-filled-container-shape, var(--mat-sys-corner-full));
+}
+.mat-mdc-unelevated-button[disabled], .mat-mdc-unelevated-button.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-button-filled-disabled-label-text-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+  background-color: var(--mat-button-filled-disabled-container-color, color-mix(in srgb, var(--mat-sys-on-surface) 12%, transparent));
+}
+.mat-mdc-unelevated-button.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+
+.mat-mdc-raised-button {
+  transition: box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--mat-button-protected-container-elevation-shadow, var(--mat-sys-level1));
+  height: var(--mat-button-protected-container-height, 40px);
+  font-family: var(--mat-button-protected-label-text-font, var(--mat-sys-label-large-font));
+  font-size: var(--mat-button-protected-label-text-size, var(--mat-sys-label-large-size));
+  letter-spacing: var(--mat-button-protected-label-text-tracking, var(--mat-sys-label-large-tracking));
+  text-transform: var(--mat-button-protected-label-text-transform);
+  font-weight: var(--mat-button-protected-label-text-weight, var(--mat-sys-label-large-weight));
+  padding: 0 var(--mat-button-protected-horizontal-padding, 24px);
+}
+.mat-mdc-raised-button > .mat-icon {
+  margin-right: var(--mat-button-protected-icon-spacing, 8px);
+  margin-left: var(--mat-button-protected-icon-offset, -8px);
+}
+[dir=rtl] .mat-mdc-raised-button > .mat-icon {
+  margin-right: var(--mat-button-protected-icon-offset, -8px);
+  margin-left: var(--mat-button-protected-icon-spacing, 8px);
+}
+.mat-mdc-raised-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-protected-icon-offset, -8px);
+  margin-left: var(--mat-button-protected-icon-spacing, 8px);
+}
+[dir=rtl] .mat-mdc-raised-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-protected-icon-spacing, 8px);
+  margin-left: var(--mat-button-protected-icon-offset, -8px);
+}
+.mat-mdc-raised-button .mat-ripple-element {
+  background-color: var(--mat-button-protected-ripple-color, color-mix(in srgb, var(--mat-sys-primary) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-raised-button .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-protected-state-layer-color, var(--mat-sys-primary));
+}
+.mat-mdc-raised-button.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-protected-disabled-state-layer-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-raised-button:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-protected-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-mdc-raised-button.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-raised-button.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-raised-button.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-protected-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-mdc-raised-button:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-protected-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+.mat-mdc-raised-button .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-button-protected-touch-target-size, 48px);
+  display: var(--mat-button-protected-touch-target-display, block);
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+.mat-mdc-raised-button:not(:disabled) {
+  color: var(--mat-button-protected-label-text-color, var(--mat-sys-primary));
+  background-color: var(--mat-button-protected-container-color, var(--mat-sys-surface));
+}
+.mat-mdc-raised-button, .mat-mdc-raised-button .mdc-button__ripple {
+  border-radius: var(--mat-button-protected-container-shape, var(--mat-sys-corner-full));
+}
+@media (hover: hover) {
+  .mat-mdc-raised-button:hover {
+    box-shadow: var(--mat-button-protected-hover-container-elevation-shadow, var(--mat-sys-level2));
+  }
+}
+.mat-mdc-raised-button:focus {
+  box-shadow: var(--mat-button-protected-focus-container-elevation-shadow, var(--mat-sys-level1));
+}
+.mat-mdc-raised-button:active, .mat-mdc-raised-button:focus:active {
+  box-shadow: var(--mat-button-protected-pressed-container-elevation-shadow, var(--mat-sys-level1));
+}
+.mat-mdc-raised-button[disabled], .mat-mdc-raised-button.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-button-protected-disabled-label-text-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+  background-color: var(--mat-button-protected-disabled-container-color, color-mix(in srgb, var(--mat-sys-on-surface) 12%, transparent));
+}
+.mat-mdc-raised-button[disabled].mat-mdc-button-disabled, .mat-mdc-raised-button.mat-mdc-button-disabled.mat-mdc-button-disabled {
+  box-shadow: var(--mat-button-protected-disabled-container-elevation-shadow, var(--mat-sys-level0));
+}
+.mat-mdc-raised-button.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+
+.mat-mdc-outlined-button {
+  border-style: solid;
+  transition: border 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  height: var(--mat-button-outlined-container-height, 40px);
+  font-family: var(--mat-button-outlined-label-text-font, var(--mat-sys-label-large-font));
+  font-size: var(--mat-button-outlined-label-text-size, var(--mat-sys-label-large-size));
+  letter-spacing: var(--mat-button-outlined-label-text-tracking, var(--mat-sys-label-large-tracking));
+  text-transform: var(--mat-button-outlined-label-text-transform);
+  font-weight: var(--mat-button-outlined-label-text-weight, var(--mat-sys-label-large-weight));
+  border-radius: var(--mat-button-outlined-container-shape, var(--mat-sys-corner-full));
+  border-width: var(--mat-button-outlined-outline-width, 1px);
+  padding: 0 var(--mat-button-outlined-horizontal-padding, 24px);
+}
+.mat-mdc-outlined-button > .mat-icon {
+  margin-right: var(--mat-button-outlined-icon-spacing, 8px);
+  margin-left: var(--mat-button-outlined-icon-offset, -8px);
+}
+[dir=rtl] .mat-mdc-outlined-button > .mat-icon {
+  margin-right: var(--mat-button-outlined-icon-offset, -8px);
+  margin-left: var(--mat-button-outlined-icon-spacing, 8px);
+}
+.mat-mdc-outlined-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-outlined-icon-offset, -8px);
+  margin-left: var(--mat-button-outlined-icon-spacing, 8px);
+}
+[dir=rtl] .mat-mdc-outlined-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-outlined-icon-spacing, 8px);
+  margin-left: var(--mat-button-outlined-icon-offset, -8px);
+}
+.mat-mdc-outlined-button .mat-ripple-element {
+  background-color: var(--mat-button-outlined-ripple-color, color-mix(in srgb, var(--mat-sys-primary) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-outlined-button .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-outlined-state-layer-color, var(--mat-sys-primary));
+}
+.mat-mdc-outlined-button.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-outlined-disabled-state-layer-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-outlined-button:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-outlined-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-mdc-outlined-button.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-outlined-button.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-outlined-button.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-outlined-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-mdc-outlined-button:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-outlined-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+.mat-mdc-outlined-button .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-button-outlined-touch-target-size, 48px);
+  display: var(--mat-button-outlined-touch-target-display, block);
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+.mat-mdc-outlined-button:not(:disabled) {
+  color: var(--mat-button-outlined-label-text-color, var(--mat-sys-primary));
+  border-color: var(--mat-button-outlined-outline-color, var(--mat-sys-outline));
+}
+.mat-mdc-outlined-button[disabled], .mat-mdc-outlined-button.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-button-outlined-disabled-label-text-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+  border-color: var(--mat-button-outlined-disabled-outline-color, color-mix(in srgb, var(--mat-sys-on-surface) 12%, transparent));
+}
+.mat-mdc-outlined-button.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+
+.mat-tonal-button {
+  transition: box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  height: var(--mat-button-tonal-container-height, 40px);
+  font-family: var(--mat-button-tonal-label-text-font, var(--mat-sys-label-large-font));
+  font-size: var(--mat-button-tonal-label-text-size, var(--mat-sys-label-large-size));
+  letter-spacing: var(--mat-button-tonal-label-text-tracking, var(--mat-sys-label-large-tracking));
+  text-transform: var(--mat-button-tonal-label-text-transform);
+  font-weight: var(--mat-button-tonal-label-text-weight, var(--mat-sys-label-large-weight));
+  padding: 0 var(--mat-button-tonal-horizontal-padding, 24px);
+}
+.mat-tonal-button:not(:disabled) {
+  color: var(--mat-button-tonal-label-text-color, var(--mat-sys-on-secondary-container));
+  background-color: var(--mat-button-tonal-container-color, var(--mat-sys-secondary-container));
+}
+.mat-tonal-button, .mat-tonal-button .mdc-button__ripple {
+  border-radius: var(--mat-button-tonal-container-shape, var(--mat-sys-corner-full));
+}
+.mat-tonal-button[disabled], .mat-tonal-button.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-button-tonal-disabled-label-text-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+  background-color: var(--mat-button-tonal-disabled-container-color, color-mix(in srgb, var(--mat-sys-on-surface) 12%, transparent));
+}
+.mat-tonal-button.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+.mat-tonal-button > .mat-icon {
+  margin-right: var(--mat-button-tonal-icon-spacing, 8px);
+  margin-left: var(--mat-button-tonal-icon-offset, -8px);
+}
+[dir=rtl] .mat-tonal-button > .mat-icon {
+  margin-right: var(--mat-button-tonal-icon-offset, -8px);
+  margin-left: var(--mat-button-tonal-icon-spacing, 8px);
+}
+.mat-tonal-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-tonal-icon-offset, -8px);
+  margin-left: var(--mat-button-tonal-icon-spacing, 8px);
+}
+[dir=rtl] .mat-tonal-button .mdc-button__label + .mat-icon {
+  margin-right: var(--mat-button-tonal-icon-spacing, 8px);
+  margin-left: var(--mat-button-tonal-icon-offset, -8px);
+}
+.mat-tonal-button .mat-ripple-element {
+  background-color: var(--mat-button-tonal-ripple-color, color-mix(in srgb, var(--mat-sys-on-secondary-container) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-tonal-button .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-tonal-state-layer-color, var(--mat-sys-on-secondary-container));
+}
+.mat-tonal-button.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-button-tonal-disabled-state-layer-color, var(--mat-sys-on-surface-variant));
+}
+.mat-tonal-button:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-tonal-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-tonal-button.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-tonal-button.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-tonal-button.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-tonal-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-tonal-button:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-button-tonal-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+.mat-tonal-button .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-button-tonal-touch-target-size, 48px);
+  display: var(--mat-button-tonal-touch-target-display, block);
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.mat-mdc-button,
+.mat-mdc-unelevated-button,
+.mat-mdc-raised-button,
+.mat-mdc-outlined-button,
+.mat-tonal-button {
+  -webkit-tap-highlight-color: transparent;
+}
+.mat-mdc-button .mat-mdc-button-ripple,
+.mat-mdc-button .mat-mdc-button-persistent-ripple,
+.mat-mdc-button .mat-mdc-button-persistent-ripple::before,
+.mat-mdc-unelevated-button .mat-mdc-button-ripple,
+.mat-mdc-unelevated-button .mat-mdc-button-persistent-ripple,
+.mat-mdc-unelevated-button .mat-mdc-button-persistent-ripple::before,
+.mat-mdc-raised-button .mat-mdc-button-ripple,
+.mat-mdc-raised-button .mat-mdc-button-persistent-ripple,
+.mat-mdc-raised-button .mat-mdc-button-persistent-ripple::before,
+.mat-mdc-outlined-button .mat-mdc-button-ripple,
+.mat-mdc-outlined-button .mat-mdc-button-persistent-ripple,
+.mat-mdc-outlined-button .mat-mdc-button-persistent-ripple::before,
+.mat-tonal-button .mat-mdc-button-ripple,
+.mat-tonal-button .mat-mdc-button-persistent-ripple,
+.mat-tonal-button .mat-mdc-button-persistent-ripple::before {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.mat-mdc-button .mat-mdc-button-ripple,
+.mat-mdc-unelevated-button .mat-mdc-button-ripple,
+.mat-mdc-raised-button .mat-mdc-button-ripple,
+.mat-mdc-outlined-button .mat-mdc-button-ripple,
+.mat-tonal-button .mat-mdc-button-ripple {
+  overflow: hidden;
+}
+.mat-mdc-button .mat-mdc-button-persistent-ripple::before,
+.mat-mdc-unelevated-button .mat-mdc-button-persistent-ripple::before,
+.mat-mdc-raised-button .mat-mdc-button-persistent-ripple::before,
+.mat-mdc-outlined-button .mat-mdc-button-persistent-ripple::before,
+.mat-tonal-button .mat-mdc-button-persistent-ripple::before {
+  content: "";
+  opacity: 0;
+}
+.mat-mdc-button .mdc-button__label,
+.mat-mdc-button .mat-icon,
+.mat-mdc-unelevated-button .mdc-button__label,
+.mat-mdc-unelevated-button .mat-icon,
+.mat-mdc-raised-button .mdc-button__label,
+.mat-mdc-raised-button .mat-icon,
+.mat-mdc-outlined-button .mdc-button__label,
+.mat-mdc-outlined-button .mat-icon,
+.mat-tonal-button .mdc-button__label,
+.mat-tonal-button .mat-icon {
+  z-index: 1;
+  position: relative;
+}
+.mat-mdc-button .mat-focus-indicator,
+.mat-mdc-unelevated-button .mat-focus-indicator,
+.mat-mdc-raised-button .mat-focus-indicator,
+.mat-mdc-outlined-button .mat-focus-indicator,
+.mat-tonal-button .mat-focus-indicator {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  border-radius: inherit;
+}
+.mat-mdc-button:focus-visible > .mat-focus-indicator::before,
+.mat-mdc-unelevated-button:focus-visible > .mat-focus-indicator::before,
+.mat-mdc-raised-button:focus-visible > .mat-focus-indicator::before,
+.mat-mdc-outlined-button:focus-visible > .mat-focus-indicator::before,
+.mat-tonal-button:focus-visible > .mat-focus-indicator::before {
+  content: "";
+  border-radius: inherit;
+}
+.mat-mdc-button._mat-animation-noopable,
+.mat-mdc-unelevated-button._mat-animation-noopable,
+.mat-mdc-raised-button._mat-animation-noopable,
+.mat-mdc-outlined-button._mat-animation-noopable,
+.mat-tonal-button._mat-animation-noopable {
+  transition: none !important;
+  animation: none !important;
+}
+.mat-mdc-button > .mat-icon,
+.mat-mdc-unelevated-button > .mat-icon,
+.mat-mdc-raised-button > .mat-icon,
+.mat-mdc-outlined-button > .mat-icon,
+.mat-tonal-button > .mat-icon {
+  display: inline-block;
+  position: relative;
+  vertical-align: top;
+  font-size: 1.125rem;
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
+.mat-mdc-outlined-button .mat-mdc-button-ripple,
+.mat-mdc-outlined-button .mdc-button__ripple {
+  top: -1px;
+  left: -1px;
+  bottom: -1px;
+  right: -1px;
+}
+
+.mat-mdc-unelevated-button .mat-focus-indicator::before,
+.mat-tonal-button .mat-focus-indicator::before,
+.mat-mdc-raised-button .mat-focus-indicator::before {
+  margin: calc(calc(var(--mat-focus-indicator-border-width, 3px) + 2px) * -1);
+}
+
+.mat-mdc-outlined-button .mat-focus-indicator::before {
+  margin: calc(calc(var(--mat-focus-indicator-border-width, 3px) + 3px) * -1);
+}
+</style><style>@media (forced-colors: active) {
+  .mat-mdc-button:not(.mdc-button--outlined),
+  .mat-mdc-unelevated-button:not(.mdc-button--outlined),
+  .mat-mdc-raised-button:not(.mdc-button--outlined),
+  .mat-mdc-outlined-button:not(.mdc-button--outlined),
+  .mat-mdc-button-base.mat-tonal-button,
+  .mat-mdc-icon-button.mat-mdc-icon-button,
+  .mat-mdc-outlined-button .mdc-button__ripple {
+    outline: solid 1px;
+  }
+}
+</style><style type="text/css"></style><style>.mat-focus-indicator {
+  position: relative;
+}
+.mat-focus-indicator::before {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  display: var(--mat-focus-indicator-display, none);
+  border-width: var(--mat-focus-indicator-border-width, 3px);
+  border-style: var(--mat-focus-indicator-border-style, solid);
+  border-color: var(--mat-focus-indicator-border-color, transparent);
+  border-radius: var(--mat-focus-indicator-border-radius, 4px);
+}
+.mat-focus-indicator:focus-visible::before {
+  content: "";
+}
+
+@media (forced-colors: active) {
+  html {
+    --mat-focus-indicator-display: block;
+  }
+}
+</style><style>[_nghost-ng-c3052461960]{display:inline-block;width:24px;height:24px}svg[_ngcontent-ng-c3052461960]{width:100%;height:100%;fill:currentColor}</style><style>.docs-version-picker-menu{max-height:256px}
+</style><style>button.docs-theme-picker-trigger{color:inherit}.docs-theme-picker-menu .mat-mdc-menu-item .docs-theme-example-icon{margin-right:0;margin-left:24px;order:1;width:24px;height:24px;border-radius:4px;border:solid 1px color-mix(in srgb,var(--mat-sys-outline-variant) 50%,transparent)}.docs-theme-picker-menu .mat-mdc-menu-item .docs-theme-example-icon svg{vertical-align:middle}
+</style><style>.mat-mdc-icon-button {
+  -webkit-user-select: none;
+  user-select: none;
+  display: inline-block;
+  position: relative;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+  background-color: transparent;
+  fill: currentColor;
+  text-decoration: none;
+  cursor: pointer;
+  z-index: 0;
+  overflow: visible;
+  border-radius: var(--mat-icon-button-container-shape, var(--mat-sys-corner-full, 50%));
+  flex-shrink: 0;
+  text-align: center;
+  width: var(--mat-icon-button-state-layer-size, 40px);
+  height: var(--mat-icon-button-state-layer-size, 40px);
+  padding: calc(calc(var(--mat-icon-button-state-layer-size, 40px) - var(--mat-icon-button-icon-size, 24px)) / 2);
+  font-size: var(--mat-icon-button-icon-size, 24px);
+  color: var(--mat-icon-button-icon-color, var(--mat-sys-on-surface-variant));
+  -webkit-tap-highlight-color: transparent;
+}
+.mat-mdc-icon-button .mat-mdc-button-ripple,
+.mat-mdc-icon-button .mat-mdc-button-persistent-ripple,
+.mat-mdc-icon-button .mat-mdc-button-persistent-ripple::before {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.mat-mdc-icon-button .mat-mdc-button-ripple {
+  overflow: hidden;
+}
+.mat-mdc-icon-button .mat-mdc-button-persistent-ripple::before {
+  content: "";
+  opacity: 0;
+}
+.mat-mdc-icon-button .mdc-button__label,
+.mat-mdc-icon-button .mat-icon {
+  z-index: 1;
+  position: relative;
+}
+.mat-mdc-icon-button .mat-focus-indicator {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  border-radius: inherit;
+}
+.mat-mdc-icon-button:focus-visible > .mat-focus-indicator::before {
+  content: "";
+  border-radius: inherit;
+}
+.mat-mdc-icon-button .mat-ripple-element {
+  background-color: var(--mat-icon-button-ripple-color, color-mix(in srgb, var(--mat-sys-on-surface-variant) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-icon-button .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-icon-button-state-layer-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-icon-button.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-icon-button-disabled-state-layer-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-icon-button:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-icon-button-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-mdc-icon-button.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-icon-button.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-icon-button.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-icon-button-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-mdc-icon-button:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-icon-button-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+.mat-mdc-icon-button .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-icon-button-touch-target-size, 48px);
+  display: var(--mat-icon-button-touch-target-display, block);
+  left: 50%;
+  width: var(--mat-icon-button-touch-target-size, 48px);
+  transform: translate(-50%, -50%);
+}
+.mat-mdc-icon-button._mat-animation-noopable {
+  transition: none !important;
+  animation: none !important;
+}
+.mat-mdc-icon-button[disabled], .mat-mdc-icon-button.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-icon-button-disabled-icon-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+}
+.mat-mdc-icon-button.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+.mat-mdc-icon-button img,
+.mat-mdc-icon-button svg {
+  width: var(--mat-icon-button-icon-size, 24px);
+  height: var(--mat-icon-button-icon-size, 24px);
+  vertical-align: baseline;
+}
+.mat-mdc-icon-button .mat-mdc-button-persistent-ripple {
+  border-radius: var(--mat-icon-button-container-shape, var(--mat-sys-corner-full, 50%));
+}
+.mat-mdc-icon-button[hidden] {
+  display: none;
+}
+.mat-mdc-icon-button.mat-unthemed:not(.mdc-ripple-upgraded):focus::before, .mat-mdc-icon-button.mat-primary:not(.mdc-ripple-upgraded):focus::before, .mat-mdc-icon-button.mat-accent:not(.mdc-ripple-upgraded):focus::before, .mat-mdc-icon-button.mat-warn:not(.mdc-ripple-upgraded):focus::before {
+  background: transparent;
+  opacity: 1;
+}
+</style><style>.cdk-visually-hidden {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+  white-space: nowrap;
+  outline: 0;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  left: 0;
+}
+[dir=rtl] .cdk-visually-hidden {
+  left: auto;
+  right: 0;
+}
+</style><style>mat-icon, mat-icon.mat-primary, mat-icon.mat-accent, mat-icon.mat-warn {
+  color: var(--mat-icon-color, inherit);
+}
+
+.mat-icon {
+  -webkit-user-select: none;
+  user-select: none;
+  background-repeat: no-repeat;
+  display: inline-block;
+  fill: currentColor;
+  height: 24px;
+  width: 24px;
+  overflow: hidden;
+}
+.mat-icon.mat-icon-inline {
+  font-size: inherit;
+  height: inherit;
+  line-height: inherit;
+  width: inherit;
+}
+.mat-icon.mat-ligature-font[fontIcon]::before {
+  content: attr(fontIcon);
+}
+
+[dir=rtl] .mat-icon-rtl-mirror {
+  transform: scale(-1, 1);
+}
+
+.mat-form-field:not(.mat-form-field-appearance-legacy) .mat-form-field-prefix .mat-icon,
+.mat-form-field:not(.mat-form-field-appearance-legacy) .mat-form-field-suffix .mat-icon {
+  display: block;
+}
+.mat-form-field:not(.mat-form-field-appearance-legacy) .mat-form-field-prefix .mat-icon-button .mat-icon,
+.mat-form-field:not(.mat-form-field-appearance-legacy) .mat-form-field-suffix .mat-icon-button .mat-icon {
+  margin: auto;
+}
+</style><style>mat-menu {
+  display: none;
+}
+
+.mat-mdc-menu-content {
+  margin: 0;
+  padding: 8px 0;
+  outline: 0;
+}
+.mat-mdc-menu-content,
+.mat-mdc-menu-content .mat-mdc-menu-item .mat-mdc-menu-item-text {
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  flex: 1;
+  white-space: normal;
+  font-family: var(--mat-menu-item-label-text-font, var(--mat-sys-label-large-font));
+  line-height: var(--mat-menu-item-label-text-line-height, var(--mat-sys-label-large-line-height));
+  font-size: var(--mat-menu-item-label-text-size, var(--mat-sys-label-large-size));
+  letter-spacing: var(--mat-menu-item-label-text-tracking, var(--mat-sys-label-large-tracking));
+  font-weight: var(--mat-menu-item-label-text-weight, var(--mat-sys-label-large-weight));
+}
+
+@keyframes _mat-menu-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes _mat-menu-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.mat-mdc-menu-panel {
+  min-width: 112px;
+  max-width: 280px;
+  overflow: auto;
+  box-sizing: border-box;
+  outline: 0;
+  animation: _mat-menu-enter 120ms cubic-bezier(0, 0, 0.2, 1);
+  border-radius: var(--mat-menu-container-shape, var(--mat-sys-corner-extra-small));
+  background-color: var(--mat-menu-container-color, var(--mat-sys-surface-container));
+  box-shadow: var(--mat-menu-container-elevation-shadow, 0px 3px 1px -2px rgba(0, 0, 0, 0.2), 0px 2px 2px 0px rgba(0, 0, 0, 0.14), 0px 1px 5px 0px rgba(0, 0, 0, 0.12));
+  will-change: transform, opacity;
+}
+.mat-mdc-menu-panel.mat-menu-panel-exit-animation {
+  animation: _mat-menu-exit 100ms 25ms linear forwards;
+}
+.mat-mdc-menu-panel.mat-menu-panel-animations-disabled {
+  animation: none;
+}
+.mat-mdc-menu-panel.mat-menu-panel-animating {
+  pointer-events: none;
+}
+.mat-mdc-menu-panel.mat-menu-panel-animating:has(.mat-mdc-menu-content:empty) {
+  display: none;
+}
+@media (forced-colors: active) {
+  .mat-mdc-menu-panel {
+    outline: solid 1px;
+  }
+}
+.mat-mdc-menu-panel .mat-divider {
+  border-top-color: var(--mat-menu-divider-color, var(--mat-sys-surface-variant));
+  margin-bottom: var(--mat-menu-divider-bottom-spacing, 8px);
+  margin-top: var(--mat-menu-divider-top-spacing, 8px);
+}
+
+.mat-mdc-menu-item {
+  display: flex;
+  position: relative;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 0;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+  color: inherit;
+  font-size: inherit;
+  background: none;
+  text-decoration: none;
+  margin: 0;
+  min-height: 48px;
+  padding-left: var(--mat-menu-item-leading-spacing, 12px);
+  padding-right: var(--mat-menu-item-trailing-spacing, 12px);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+  outline: none;
+  border: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.mat-mdc-menu-item::-moz-focus-inner {
+  border: 0;
+}
+[dir=rtl] .mat-mdc-menu-item {
+  padding-left: var(--mat-menu-item-trailing-spacing, 12px);
+  padding-right: var(--mat-menu-item-leading-spacing, 12px);
+}
+.mat-mdc-menu-item:has(.material-icons, mat-icon, [matButtonIcon]) {
+  padding-left: var(--mat-menu-item-with-icon-leading-spacing, 12px);
+  padding-right: var(--mat-menu-item-with-icon-trailing-spacing, 12px);
+}
+[dir=rtl] .mat-mdc-menu-item:has(.material-icons, mat-icon, [matButtonIcon]) {
+  padding-left: var(--mat-menu-item-with-icon-trailing-spacing, 12px);
+  padding-right: var(--mat-menu-item-with-icon-leading-spacing, 12px);
+}
+.mat-mdc-menu-item, .mat-mdc-menu-item:visited, .mat-mdc-menu-item:link {
+  color: var(--mat-menu-item-label-text-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-menu-item .mat-icon-no-color,
+.mat-mdc-menu-item .mat-mdc-menu-submenu-icon {
+  color: var(--mat-menu-item-icon-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-menu-item[disabled] {
+  cursor: default;
+  opacity: 0.38;
+}
+.mat-mdc-menu-item[disabled]::after {
+  display: block;
+  position: absolute;
+  content: "";
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+}
+.mat-mdc-menu-item:focus {
+  outline: 0;
+}
+.mat-mdc-menu-item .mat-icon {
+  flex-shrink: 0;
+  margin-right: var(--mat-menu-item-spacing, 12px);
+  height: var(--mat-menu-item-icon-size, 24px);
+  width: var(--mat-menu-item-icon-size, 24px);
+}
+[dir=rtl] .mat-mdc-menu-item {
+  text-align: right;
+}
+[dir=rtl] .mat-mdc-menu-item .mat-icon {
+  margin-right: 0;
+  margin-left: var(--mat-menu-item-spacing, 12px);
+}
+.mat-mdc-menu-item:not([disabled]):hover {
+  background-color: var(--mat-menu-item-hover-state-layer-color, color-mix(in srgb, var(--mat-sys-on-surface) calc(var(--mat-sys-hover-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-menu-item:not([disabled]).cdk-program-focused, .mat-mdc-menu-item:not([disabled]).cdk-keyboard-focused, .mat-mdc-menu-item:not([disabled]).mat-mdc-menu-item-highlighted {
+  background-color: var(--mat-menu-item-focus-state-layer-color, color-mix(in srgb, var(--mat-sys-on-surface) calc(var(--mat-sys-focus-state-layer-opacity) * 100%), transparent));
+}
+@media (forced-colors: active) {
+  .mat-mdc-menu-item {
+    margin-top: 1px;
+  }
+}
+
+.mat-mdc-menu-submenu-icon {
+  width: var(--mat-menu-item-icon-size, 24px);
+  height: 10px;
+  fill: currentColor;
+  padding-left: var(--mat-menu-item-spacing, 12px);
+}
+[dir=rtl] .mat-mdc-menu-submenu-icon {
+  padding-right: var(--mat-menu-item-spacing, 12px);
+  padding-left: 0;
+}
+[dir=rtl] .mat-mdc-menu-submenu-icon polygon {
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+@media (forced-colors: active) {
+  .mat-mdc-menu-submenu-icon {
+    fill: CanvasText;
+  }
+}
+
+.mat-mdc-menu-item .mat-mdc-menu-ripple {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  pointer-events: none;
+}
+</style><style>.mat-ripple {
+  overflow: hidden;
+  position: relative;
+}
+.mat-ripple:not(:empty) {
+  transform: translateZ(0);
+}
+
+.mat-ripple.mat-ripple-unbounded {
+  overflow: visible;
+}
+
+.mat-ripple-element {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: opacity, transform 0ms cubic-bezier(0, 0, 0.2, 1);
+  transform: scale3d(0, 0, 0);
+  background-color: var(--mat-ripple-color, color-mix(in srgb, var(--mat-sys-on-surface) 10%, transparent));
+}
+@media (forced-colors: active) {
+  .mat-ripple-element {
+    display: none;
+  }
+}
+.cdk-drag-preview .mat-ripple-element, .cdk-drag-placeholder .mat-ripple-element {
+  display: none;
+}
+</style><style>app-component-sidenav{display:flex;flex-direction:column;overflow:auto}app-component-sidenav .docs-component-viewer-footer{margin-top:0}.docs-component-viewer-sidenav-container{flex:1;box-sizing:border-box}.docs-component-viewer-sidenav{overflow:auto}.docs-component-sidenav-inner-content{display:flex;flex-direction:row}.mat-drawer::-webkit-scrollbar{height:4px;width:4px}.docs-component-viewer-nav{position:sticky;top:0}.docs-component-viewer-nav .docs-component-viewer-nav-content{border-right:1px solid var(--mat-sys-outline-variant);width:240px;padding:16px 8px;height:calc(100vh - 75px);overflow:auto;box-sizing:border-box}.docs-component-viewer-nav .docs-component-viewer-nav-content::-webkit-scrollbar{height:4px;width:4px}.docs-component-viewer-nav .docs-component-viewer-nav-content::-webkit-scrollbar-thumb{background:#00000042}.docs-component-viewer-nav .docs-component-viewer-nav-content ul{list-style-type:none;margin:0 0 5px;padding:0;overflow:hidden}.docs-component-viewer-nav .docs-component-viewer-nav-content li{font-size:13px;line-height:16px;margin:0;padding:5px 15px 5px 20px}.docs-component-sidenav-content{display:flex;flex-direction:column;min-height:100%}.docs-component-sidenav-inner-content{display:flex;flex-direction:column;flex:1}.docs-component-sidenav-body-content{display:flex;flex:1 1 auto}div .mat-mdc-list-base{padding-top:0}div.docs-component-viewer-nav-content .mat-nav-list .mat-mdc-list-item .mat-list-item-content{padding-left:25px}@media(max-width:959px){.docs-component-viewer-sidenav-container .docs-component-viewer-sidenav{z-index:4}.docs-component-viewer-nav{position:relative;top:0}.docs-component-viewer-nav .docs-component-viewer-nav-content{width:100%;border:none;margin:0;max-height:initial}}@media(max-width:720px){.docs-component-viewer-sidenav-container{flex:1 0}.docs-component-sidenav-body-content{flex-direction:column}}
+</style><style>.mat-drawer-container {
+  position: relative;
+  z-index: 1;
+  color: var(--mat-sidenav-content-text-color, var(--mat-sys-on-background));
+  background-color: var(--mat-sidenav-content-background-color, var(--mat-sys-background));
+  box-sizing: border-box;
+  display: block;
+  overflow: hidden;
+}
+.mat-drawer-container[fullscreen] {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+}
+.mat-drawer-container[fullscreen].mat-drawer-container-has-open {
+  overflow: hidden;
+}
+.mat-drawer-container.mat-drawer-container-explicit-backdrop .mat-drawer-side {
+  z-index: 3;
+}
+.mat-drawer-container.ng-animate-disabled .mat-drawer-backdrop,
+.mat-drawer-container.ng-animate-disabled .mat-drawer-content, .ng-animate-disabled .mat-drawer-container .mat-drawer-backdrop,
+.ng-animate-disabled .mat-drawer-container .mat-drawer-content {
+  transition: none;
+}
+
+.mat-drawer-backdrop {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  display: block;
+  z-index: 3;
+  visibility: hidden;
+}
+.mat-drawer-backdrop.mat-drawer-shown {
+  visibility: visible;
+  background-color: var(--mat-sidenav-scrim-color, color-mix(in srgb, var(--mat-sys-neutral-variant20) 40%, transparent));
+}
+.mat-drawer-transition .mat-drawer-backdrop {
+  transition-duration: 400ms;
+  transition-timing-function: cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition-property: background-color, visibility;
+}
+@media (forced-colors: active) {
+  .mat-drawer-backdrop {
+    opacity: 0.5;
+  }
+}
+
+.mat-drawer-content {
+  position: relative;
+  z-index: 1;
+  display: block;
+  height: 100%;
+  overflow: auto;
+}
+.mat-drawer-content.mat-drawer-content-hidden {
+  opacity: 0;
+}
+.mat-drawer-transition .mat-drawer-content {
+  transition-duration: 400ms;
+  transition-timing-function: cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition-property: transform, margin-left, margin-right;
+}
+
+.mat-drawer {
+  position: relative;
+  z-index: 4;
+  color: var(--mat-sidenav-container-text-color, var(--mat-sys-on-surface-variant));
+  box-shadow: var(--mat-sidenav-container-elevation-shadow, none);
+  background-color: var(--mat-sidenav-container-background-color, var(--mat-sys-surface));
+  border-top-right-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  border-bottom-right-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  width: var(--mat-sidenav-container-width, 360px);
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  outline: 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+  transform: translate3d(-100%, 0, 0);
+}
+@media (forced-colors: active) {
+  .mat-drawer, [dir=rtl] .mat-drawer.mat-drawer-end {
+    border-right: solid 1px currentColor;
+  }
+}
+@media (forced-colors: active) {
+  [dir=rtl] .mat-drawer, .mat-drawer.mat-drawer-end {
+    border-left: solid 1px currentColor;
+    border-right: none;
+  }
+}
+.mat-drawer.mat-drawer-side {
+  z-index: 2;
+}
+.mat-drawer.mat-drawer-end {
+  right: 0;
+  transform: translate3d(100%, 0, 0);
+  border-top-left-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  border-bottom-left-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+[dir=rtl] .mat-drawer {
+  border-top-left-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  border-bottom-left-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  transform: translate3d(100%, 0, 0);
+}
+[dir=rtl] .mat-drawer.mat-drawer-end {
+  border-top-right-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  border-bottom-right-radius: var(--mat-sidenav-container-shape, var(--mat-sys-corner-large));
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  left: 0;
+  right: auto;
+  transform: translate3d(-100%, 0, 0);
+}
+.mat-drawer-transition .mat-drawer {
+  transition: transform 400ms cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.mat-drawer:not(.mat-drawer-opened):not(.mat-drawer-animating) {
+  visibility: hidden;
+  box-shadow: none;
+}
+.mat-drawer:not(.mat-drawer-opened):not(.mat-drawer-animating) .mat-drawer-inner-container {
+  display: none;
+}
+.mat-drawer.mat-drawer-opened.mat-drawer-opened {
+  transform: none;
+}
+
+.mat-drawer-side {
+  box-shadow: none;
+  border-right-color: var(--mat-sidenav-container-divider-color, transparent);
+  border-right-width: 1px;
+  border-right-style: solid;
+}
+.mat-drawer-side.mat-drawer-end {
+  border-left-color: var(--mat-sidenav-container-divider-color, transparent);
+  border-left-width: 1px;
+  border-left-style: solid;
+  border-right: none;
+}
+[dir=rtl] .mat-drawer-side {
+  border-left-color: var(--mat-sidenav-container-divider-color, transparent);
+  border-left-width: 1px;
+  border-left-style: solid;
+  border-right: none;
+}
+[dir=rtl] .mat-drawer-side.mat-drawer-end {
+  border-right-color: var(--mat-sidenav-container-divider-color, transparent);
+  border-right-width: 1px;
+  border-right-style: solid;
+  border-left: none;
+}
+
+.mat-drawer-inner-container {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+.mat-sidenav-fixed {
+  position: fixed;
+}
+</style><style>.docs-component-page-header[_ngcontent-ng-c248665727]{display:none;justify-content:center;align-items:center;min-height:60px;background:var(--mat-sys-primary-container)}@media(max-width:959px){.docs-component-page-header[_ngcontent-ng-c248665727]{display:flex}}</style><style>[_nghost-ng-c2446638793]{display:block;margin-top:100px}footer[_ngcontent-ng-c2446638793]{border-top:solid 1px var(--mat-sys-outline-variant)}.docs-footer[_ngcontent-ng-c2446638793]{padding:12px;font-size:12px}.docs-footer-list[_ngcontent-ng-c2446638793]{align-items:center;display:flex;flex-flow:row wrap;padding:8px}.docs-footer-logo[_ngcontent-ng-c2446638793]{flex:1}app-logo[_ngcontent-ng-c2446638793]{width:50px;height:50px}.docs-footer-copyright[_ngcontent-ng-c2446638793]{display:flex;flex:1;justify-content:flex-end;flex-direction:column;min-width:225px;margin-top:16px}.docs-footer-copyright[_ngcontent-ng-c2446638793] > div[_ngcontent-ng-c2446638793]{display:flex;flex-direction:column;align-self:flex-end;text-align:center}@media(min-width:885px){.docs-footer-copyright[_ngcontent-ng-c2446638793]{margin-top:0}}.docs-footer-logo[_ngcontent-ng-c2446638793]{display:flex;align-items:center}.docs-footer-logo[_ngcontent-ng-c2446638793]   a[_ngcontent-ng-c2446638793]{display:inline-block;line-height:50px;margin:0 16px;vertical-align:bottom;font-size:16px}a[_ngcontent-ng-c2446638793]{color:var(--mat-sys-on-surface-variant);text-decoration:none}a[_ngcontent-ng-c2446638793]:hover, a[_ngcontent-ng-c2446638793]:focus{text-decoration:underline}@media screen and (max-width:884px){.docs-footer-list[_ngcontent-ng-c2446638793]{flex-direction:column}}</style><link rel="canonical" href="https://material.angular.dev/components/button/examples"><style>guide-viewer,app-component-viewer{color:var(--mat-sys-on-surface)}app-component-viewer{font-weight:400;width:calc(100% - 341px);padding:20px 50px}@media(max-width:959px){app-component-viewer{width:calc(100% - 100px)}}@media(max-width:599px){app-component-viewer{width:calc(100% - 30px);padding-left:15px;padding-right:15px}}app-component-viewer .docs-component-viewer-section-tab{min-width:160px;text-transform:uppercase}.docs-component-viewer-tabbed-content{margin-bottom:25px}.docs-component-viewer-tabbed-content.docs-sticky-top{position:sticky;top:0;z-index:2;background:var(--mat-sys-surface)}.docs-component-viewer-content{position:relative;min-height:500px}.docs-component-viewer-content component-overview,.docs-component-viewer-content component-api{display:flex;align-items:flex-start;overflow:visible}@media(max-width:959px){.docs-component-viewer-content component-overview,.docs-component-viewer-content component-api{flex-direction:column}}.docs-component-viewer-content table-of-contents{top:50px;position:sticky}@media(max-width:959px){.docs-component-viewer-content table-of-contents{order:-1;position:relative;width:auto;padding-left:0;max-height:none}}.docs-component-view-text-content{flex-grow:1;width:100%}.docs-component-api,.docs-component-overview{width:75%}@media(max-width:959px){.docs-component-api,.docs-component-overview{width:100%;margin-right:0}}
+</style><style>.mdc-tab {
+  min-width: 90px;
+  padding: 0 24px;
+  display: flex;
+  flex: 1 0 auto;
+  justify-content: center;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 1;
+  touch-action: manipulation;
+}
+
+.mdc-tab__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: inherit;
+  pointer-events: none;
+}
+
+.mdc-tab__text-label {
+  transition: 150ms color linear;
+  display: inline-block;
+  line-height: 1;
+  z-index: 2;
+}
+
+.mdc-tab--active .mdc-tab__text-label {
+  transition-delay: 100ms;
+}
+
+._mat-animation-noopable .mdc-tab__text-label {
+  transition: none;
+}
+
+.mdc-tab-indicator {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mdc-tab-indicator__content {
+  transition: var(--mat-tab-animation-duration, 250ms) transform cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: left;
+  opacity: 0;
+}
+
+.mdc-tab-indicator__content--underline {
+  align-self: flex-end;
+  box-sizing: border-box;
+  width: 100%;
+  border-top-style: solid;
+}
+
+.mdc-tab-indicator--active .mdc-tab-indicator__content {
+  opacity: 1;
+}
+
+._mat-animation-noopable .mdc-tab-indicator__content, .mdc-tab-indicator--no-transition .mdc-tab-indicator__content {
+  transition: none;
+}
+
+.mat-mdc-tab-ripple.mat-mdc-tab-ripple {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.mat-mdc-tab-header {
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.mdc-tab-indicator .mdc-tab-indicator__content {
+  transition-duration: var(--mat-tab-animation-duration, 250ms);
+}
+
+.mat-mdc-tab-header-pagination {
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  min-width: 32px;
+  cursor: pointer;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  box-sizing: content-box;
+  outline: 0;
+}
+.mat-mdc-tab-header-pagination::-moz-focus-inner {
+  border: 0;
+}
+.mat-mdc-tab-header-pagination .mat-ripple-element {
+  opacity: 0.12;
+  background-color: var(--mat-tab-inactive-ripple-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-header-pagination-controls-enabled .mat-mdc-tab-header-pagination {
+  display: flex;
+}
+
+.mat-mdc-tab-header-pagination-before,
+.mat-mdc-tab-header-rtl .mat-mdc-tab-header-pagination-after {
+  padding-left: 4px;
+}
+.mat-mdc-tab-header-pagination-before .mat-mdc-tab-header-pagination-chevron,
+.mat-mdc-tab-header-rtl .mat-mdc-tab-header-pagination-after .mat-mdc-tab-header-pagination-chevron {
+  transform: rotate(-135deg);
+}
+
+.mat-mdc-tab-header-rtl .mat-mdc-tab-header-pagination-before,
+.mat-mdc-tab-header-pagination-after {
+  padding-right: 4px;
+}
+.mat-mdc-tab-header-rtl .mat-mdc-tab-header-pagination-before .mat-mdc-tab-header-pagination-chevron,
+.mat-mdc-tab-header-pagination-after .mat-mdc-tab-header-pagination-chevron {
+  transform: rotate(45deg);
+}
+
+.mat-mdc-tab-header-pagination-chevron {
+  border-style: solid;
+  border-width: 2px 2px 0 0;
+  height: 8px;
+  width: 8px;
+  border-color: var(--mat-tab-pagination-icon-color, var(--mat-sys-on-surface));
+}
+
+.mat-mdc-tab-header-pagination-disabled {
+  box-shadow: none;
+  cursor: default;
+  pointer-events: none;
+}
+.mat-mdc-tab-header-pagination-disabled .mat-mdc-tab-header-pagination-chevron {
+  opacity: 0.4;
+}
+
+.mat-mdc-tab-list {
+  flex-grow: 1;
+  position: relative;
+  transition: transform 500ms cubic-bezier(0.35, 0, 0.25, 1);
+}
+._mat-animation-noopable .mat-mdc-tab-list {
+  transition: none;
+}
+
+.mat-mdc-tab-links {
+  display: flex;
+  flex: 1 0 auto;
+}
+[mat-align-tabs=center] > .mat-mdc-tab-link-container .mat-mdc-tab-links {
+  justify-content: center;
+}
+[mat-align-tabs=end] > .mat-mdc-tab-link-container .mat-mdc-tab-links {
+  justify-content: flex-end;
+}
+.cdk-drop-list .mat-mdc-tab-links, .mat-mdc-tab-links.cdk-drop-list {
+  min-height: var(--mat-tab-container-height, 48px);
+}
+
+.mat-mdc-tab-link-container {
+  display: flex;
+  flex-grow: 1;
+  overflow: hidden;
+  z-index: 1;
+  border-bottom-style: solid;
+  border-bottom-width: var(--mat-tab-divider-height, 1px);
+  border-bottom-color: var(--mat-tab-divider-color, var(--mat-sys-surface-variant));
+}
+
+.mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-link-container, .mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-header-pagination {
+  background-color: var(--mat-tab-background-color);
+}
+.mat-mdc-tab-nav-bar.mat-tabs-with-background.mat-primary > .mat-mdc-tab-link-container .mat-mdc-tab-link .mdc-tab__text-label {
+  color: var(--mat-tab-foreground-color);
+}
+.mat-mdc-tab-nav-bar.mat-tabs-with-background.mat-primary > .mat-mdc-tab-link-container .mdc-tab-indicator__content--underline {
+  border-color: var(--mat-tab-foreground-color);
+}
+.mat-mdc-tab-nav-bar.mat-tabs-with-background:not(.mat-primary) > .mat-mdc-tab-link-container .mat-mdc-tab-link:not(.mdc-tab--active) .mdc-tab__text-label {
+  color: var(--mat-tab-foreground-color);
+}
+.mat-mdc-tab-nav-bar.mat-tabs-with-background:not(.mat-primary) > .mat-mdc-tab-link-container .mat-mdc-tab-link:not(.mdc-tab--active) .mdc-tab-indicator__content--underline {
+  border-color: var(--mat-tab-foreground-color);
+}
+.mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-link-container .mat-mdc-tab-header-pagination-chevron,
+.mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-link-container .mat-focus-indicator::before, .mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-header-pagination .mat-mdc-tab-header-pagination-chevron,
+.mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-header-pagination .mat-focus-indicator::before {
+  border-color: var(--mat-tab-foreground-color);
+}
+.mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-link-container .mat-ripple-element, .mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-link-container .mdc-tab__ripple::before, .mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-header-pagination .mat-ripple-element, .mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-header-pagination .mdc-tab__ripple::before {
+  background-color: var(--mat-tab-foreground-color);
+}
+.mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-link-container .mat-mdc-tab-header-pagination-chevron, .mat-mdc-tab-nav-bar.mat-tabs-with-background > .mat-mdc-tab-header-pagination .mat-mdc-tab-header-pagination-chevron {
+  color: var(--mat-tab-foreground-color);
+}
+</style><style>.mat-mdc-tab-link {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-decoration: none;
+  background: none;
+  height: var(--mat-tab-container-height, 48px);
+  font-family: var(--mat-tab-label-text-font, var(--mat-sys-title-small-font));
+  font-size: var(--mat-tab-label-text-size, var(--mat-sys-title-small-size));
+  letter-spacing: var(--mat-tab-label-text-tracking, var(--mat-sys-title-small-tracking));
+  line-height: var(--mat-tab-label-text-line-height, var(--mat-sys-title-small-line-height));
+  font-weight: var(--mat-tab-label-text-weight, var(--mat-sys-title-small-weight));
+}
+.mat-mdc-tab-link.mdc-tab {
+  flex-grow: 0;
+}
+.mat-mdc-tab-link .mdc-tab-indicator__content--underline {
+  border-color: var(--mat-tab-active-indicator-color, var(--mat-sys-primary));
+  border-top-width: var(--mat-tab-active-indicator-height, 2px);
+  border-radius: var(--mat-tab-active-indicator-shape, 0);
+}
+.mat-mdc-tab-link:hover .mdc-tab__text-label {
+  color: var(--mat-tab-inactive-hover-label-text-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-link:focus .mdc-tab__text-label {
+  color: var(--mat-tab-inactive-focus-label-text-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-link.mdc-tab--active .mdc-tab__text-label {
+  color: var(--mat-tab-active-label-text-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-link.mdc-tab--active .mdc-tab__ripple::before,
+.mat-mdc-tab-link.mdc-tab--active .mat-ripple-element {
+  background-color: var(--mat-tab-active-ripple-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-link.mdc-tab--active:hover .mdc-tab__text-label {
+  color: var(--mat-tab-active-hover-label-text-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-link.mdc-tab--active:hover .mdc-tab-indicator__content--underline {
+  border-color: var(--mat-tab-active-hover-indicator-color, var(--mat-sys-primary));
+}
+.mat-mdc-tab-link.mdc-tab--active:focus .mdc-tab__text-label {
+  color: var(--mat-tab-active-focus-label-text-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-link.mdc-tab--active:focus .mdc-tab-indicator__content--underline {
+  border-color: var(--mat-tab-active-focus-indicator-color, var(--mat-sys-primary));
+}
+.mat-mdc-tab-link.mat-mdc-tab-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.mat-mdc-tab-link.mat-mdc-tab-disabled .mdc-tab__content {
+  pointer-events: none;
+}
+.mat-mdc-tab-link.mat-mdc-tab-disabled .mdc-tab__ripple::before,
+.mat-mdc-tab-link.mat-mdc-tab-disabled .mat-ripple-element {
+  background-color: var(--mat-tab-disabled-ripple-color, var(--mat-sys-on-surface-variant));
+}
+.mat-mdc-tab-link .mdc-tab__ripple::before {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  background-color: var(--mat-tab-inactive-ripple-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-link .mdc-tab__text-label {
+  color: var(--mat-tab-inactive-label-text-color, var(--mat-sys-on-surface));
+  display: inline-flex;
+  align-items: center;
+}
+.mat-mdc-tab-link .mdc-tab__content {
+  position: relative;
+  pointer-events: auto;
+}
+.mat-mdc-tab-link:hover .mdc-tab__ripple::before {
+  opacity: 0.04;
+}
+.mat-mdc-tab-link.cdk-program-focused .mdc-tab__ripple::before, .mat-mdc-tab-link.cdk-keyboard-focused .mdc-tab__ripple::before {
+  opacity: 0.12;
+}
+.mat-mdc-tab-link .mat-ripple-element {
+  opacity: 0.12;
+  background-color: var(--mat-tab-inactive-ripple-color, var(--mat-sys-on-surface));
+}
+.mat-mdc-tab-header.mat-mdc-tab-nav-bar-stretch-tabs .mat-mdc-tab-link {
+  flex-grow: 1;
+}
+.mat-mdc-tab-link::before {
+  margin: 5px;
+}
+
+@media (max-width: 599px) {
+  .mat-mdc-tab-link {
+    min-width: 72px;
+  }
+}
+</style><style>.mdc-list {
+  margin: 0;
+  padding: 8px 0;
+  list-style-type: none;
+}
+.mdc-list:focus {
+  outline: none;
+}
+
+.mdc-list-item {
+  display: flex;
+  position: relative;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 0;
+  align-items: stretch;
+  cursor: pointer;
+  padding-left: 16px;
+  padding-right: 16px;
+  background-color: var(--mat-list-list-item-container-color, transparent);
+  border-radius: var(--mat-list-list-item-container-shape, var(--mat-sys-corner-none));
+}
+.mdc-list-item.mdc-list-item--selected {
+  background-color: var(--mat-list-list-item-selected-container-color);
+}
+.mdc-list-item:focus {
+  outline: 0;
+}
+.mdc-list-item.mdc-list-item--disabled {
+  cursor: auto;
+}
+.mdc-list-item.mdc-list-item--with-one-line {
+  height: var(--mat-list-list-item-one-line-container-height, 48px);
+}
+.mdc-list-item.mdc-list-item--with-one-line .mdc-list-item__start {
+  align-self: center;
+  margin-top: 0;
+}
+.mdc-list-item.mdc-list-item--with-one-line .mdc-list-item__end {
+  align-self: center;
+  margin-top: 0;
+}
+.mdc-list-item.mdc-list-item--with-two-lines {
+  height: var(--mat-list-list-item-two-line-container-height, 64px);
+}
+.mdc-list-item.mdc-list-item--with-two-lines .mdc-list-item__start {
+  align-self: flex-start;
+  margin-top: 16px;
+}
+.mdc-list-item.mdc-list-item--with-two-lines .mdc-list-item__end {
+  align-self: center;
+  margin-top: 0;
+}
+.mdc-list-item.mdc-list-item--with-three-lines {
+  height: var(--mat-list-list-item-three-line-container-height, 88px);
+}
+.mdc-list-item.mdc-list-item--with-three-lines .mdc-list-item__start {
+  align-self: flex-start;
+  margin-top: 16px;
+}
+.mdc-list-item.mdc-list-item--with-three-lines .mdc-list-item__end {
+  align-self: flex-start;
+  margin-top: 16px;
+}
+.mdc-list-item.mdc-list-item--selected::before, .mdc-list-item.mdc-list-item--selected:focus::before, .mdc-list-item:not(.mdc-list-item--selected):focus::before {
+  position: absolute;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  content: "";
+  pointer-events: none;
+}
+
+a.mdc-list-item {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mdc-list-item__start {
+  fill: currentColor;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.mdc-list-item--with-leading-icon .mdc-list-item__start {
+  color: var(--mat-list-list-item-leading-icon-color, var(--mat-sys-on-surface-variant));
+  width: var(--mat-list-list-item-leading-icon-size, 24px);
+  height: var(--mat-list-list-item-leading-icon-size, 24px);
+  margin-left: 16px;
+  margin-right: 32px;
+}
+[dir=rtl] .mdc-list-item--with-leading-icon .mdc-list-item__start {
+  margin-left: 32px;
+  margin-right: 16px;
+}
+.mdc-list-item--with-leading-icon:hover .mdc-list-item__start {
+  color: var(--mat-list-list-item-hover-leading-icon-color);
+}
+.mdc-list-item--with-leading-avatar .mdc-list-item__start {
+  width: var(--mat-list-list-item-leading-avatar-size, 40px);
+  height: var(--mat-list-list-item-leading-avatar-size, 40px);
+  margin-left: 16px;
+  margin-right: 16px;
+  border-radius: 50%;
+}
+.mdc-list-item--with-leading-avatar .mdc-list-item__start, [dir=rtl] .mdc-list-item--with-leading-avatar .mdc-list-item__start {
+  margin-left: 16px;
+  margin-right: 16px;
+  border-radius: 50%;
+}
+
+.mdc-list-item__end {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.mdc-list-item--with-trailing-meta .mdc-list-item__end {
+  font-family: var(--mat-list-list-item-trailing-supporting-text-font, var(--mat-sys-label-small-font));
+  line-height: var(--mat-list-list-item-trailing-supporting-text-line-height, var(--mat-sys-label-small-line-height));
+  font-size: var(--mat-list-list-item-trailing-supporting-text-size, var(--mat-sys-label-small-size));
+  font-weight: var(--mat-list-list-item-trailing-supporting-text-weight, var(--mat-sys-label-small-weight));
+  letter-spacing: var(--mat-list-list-item-trailing-supporting-text-tracking, var(--mat-sys-label-small-tracking));
+}
+.mdc-list-item--with-trailing-icon .mdc-list-item__end {
+  color: var(--mat-list-list-item-trailing-icon-color, var(--mat-sys-on-surface-variant));
+  width: var(--mat-list-list-item-trailing-icon-size, 24px);
+  height: var(--mat-list-list-item-trailing-icon-size, 24px);
+}
+.mdc-list-item--with-trailing-icon:hover .mdc-list-item__end {
+  color: var(--mat-list-list-item-hover-trailing-icon-color);
+}
+.mdc-list-item.mdc-list-item--with-trailing-meta .mdc-list-item__end {
+  color: var(--mat-list-list-item-trailing-supporting-text-color, var(--mat-sys-on-surface-variant));
+}
+.mdc-list-item--selected.mdc-list-item--with-trailing-icon .mdc-list-item__end {
+  color: var(--mat-list-list-item-selected-trailing-icon-color, var(--mat-sys-primary));
+}
+
+.mdc-list-item__content {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  align-self: center;
+  flex: 1;
+  pointer-events: none;
+}
+.mdc-list-item--with-two-lines .mdc-list-item__content, .mdc-list-item--with-three-lines .mdc-list-item__content {
+  align-self: stretch;
+}
+
+.mdc-list-item__primary-text {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--mat-list-list-item-label-text-color, var(--mat-sys-on-surface));
+  font-family: var(--mat-list-list-item-label-text-font, var(--mat-sys-body-large-font));
+  line-height: var(--mat-list-list-item-label-text-line-height, var(--mat-sys-body-large-line-height));
+  font-size: var(--mat-list-list-item-label-text-size, var(--mat-sys-body-large-size));
+  font-weight: var(--mat-list-list-item-label-text-weight, var(--mat-sys-body-large-weight));
+  letter-spacing: var(--mat-list-list-item-label-text-tracking, var(--mat-sys-body-large-tracking));
+}
+.mdc-list-item:hover .mdc-list-item__primary-text {
+  color: var(--mat-list-list-item-hover-label-text-color, var(--mat-sys-on-surface));
+}
+.mdc-list-item:focus .mdc-list-item__primary-text {
+  color: var(--mat-list-list-item-focus-label-text-color, var(--mat-sys-on-surface));
+}
+.mdc-list-item--with-two-lines .mdc-list-item__primary-text, .mdc-list-item--with-three-lines .mdc-list-item__primary-text {
+  display: block;
+  margin-top: 0;
+  line-height: normal;
+  margin-bottom: -20px;
+}
+.mdc-list-item--with-two-lines .mdc-list-item__primary-text::before, .mdc-list-item--with-three-lines .mdc-list-item__primary-text::before {
+  display: inline-block;
+  width: 0;
+  height: 28px;
+  content: "";
+  vertical-align: 0;
+}
+.mdc-list-item--with-two-lines .mdc-list-item__primary-text::after, .mdc-list-item--with-three-lines .mdc-list-item__primary-text::after {
+  display: inline-block;
+  width: 0;
+  height: 20px;
+  content: "";
+  vertical-align: -20px;
+}
+
+.mdc-list-item__secondary-text {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  display: block;
+  margin-top: 0;
+  color: var(--mat-list-list-item-supporting-text-color, var(--mat-sys-on-surface-variant));
+  font-family: var(--mat-list-list-item-supporting-text-font, var(--mat-sys-body-medium-font));
+  line-height: var(--mat-list-list-item-supporting-text-line-height, var(--mat-sys-body-medium-line-height));
+  font-size: var(--mat-list-list-item-supporting-text-size, var(--mat-sys-body-medium-size));
+  font-weight: var(--mat-list-list-item-supporting-text-weight, var(--mat-sys-body-medium-weight));
+  letter-spacing: var(--mat-list-list-item-supporting-text-tracking, var(--mat-sys-body-medium-tracking));
+}
+.mdc-list-item__secondary-text::before {
+  display: inline-block;
+  width: 0;
+  height: 20px;
+  content: "";
+  vertical-align: 0;
+}
+.mdc-list-item--with-three-lines .mdc-list-item__secondary-text {
+  white-space: normal;
+  line-height: 20px;
+}
+.mdc-list-item--with-overline .mdc-list-item__secondary-text {
+  white-space: nowrap;
+  line-height: auto;
+}
+
+.mdc-list-item--with-leading-radio.mdc-list-item,
+.mdc-list-item--with-leading-checkbox.mdc-list-item,
+.mdc-list-item--with-leading-icon.mdc-list-item,
+.mdc-list-item--with-leading-avatar.mdc-list-item {
+  padding-left: 0;
+  padding-right: 16px;
+}
+[dir=rtl] .mdc-list-item--with-leading-radio.mdc-list-item,
+[dir=rtl] .mdc-list-item--with-leading-checkbox.mdc-list-item,
+[dir=rtl] .mdc-list-item--with-leading-icon.mdc-list-item,
+[dir=rtl] .mdc-list-item--with-leading-avatar.mdc-list-item {
+  padding-left: 16px;
+  padding-right: 0;
+}
+.mdc-list-item--with-leading-radio.mdc-list-item--with-two-lines .mdc-list-item__primary-text,
+.mdc-list-item--with-leading-checkbox.mdc-list-item--with-two-lines .mdc-list-item__primary-text,
+.mdc-list-item--with-leading-icon.mdc-list-item--with-two-lines .mdc-list-item__primary-text,
+.mdc-list-item--with-leading-avatar.mdc-list-item--with-two-lines .mdc-list-item__primary-text {
+  display: block;
+  margin-top: 0;
+  line-height: normal;
+  margin-bottom: -20px;
+}
+.mdc-list-item--with-leading-radio.mdc-list-item--with-two-lines .mdc-list-item__primary-text::before,
+.mdc-list-item--with-leading-checkbox.mdc-list-item--with-two-lines .mdc-list-item__primary-text::before,
+.mdc-list-item--with-leading-icon.mdc-list-item--with-two-lines .mdc-list-item__primary-text::before,
+.mdc-list-item--with-leading-avatar.mdc-list-item--with-two-lines .mdc-list-item__primary-text::before {
+  display: inline-block;
+  width: 0;
+  height: 32px;
+  content: "";
+  vertical-align: 0;
+}
+.mdc-list-item--with-leading-radio.mdc-list-item--with-two-lines .mdc-list-item__primary-text::after,
+.mdc-list-item--with-leading-checkbox.mdc-list-item--with-two-lines .mdc-list-item__primary-text::after,
+.mdc-list-item--with-leading-icon.mdc-list-item--with-two-lines .mdc-list-item__primary-text::after,
+.mdc-list-item--with-leading-avatar.mdc-list-item--with-two-lines .mdc-list-item__primary-text::after {
+  display: inline-block;
+  width: 0;
+  height: 20px;
+  content: "";
+  vertical-align: -20px;
+}
+.mdc-list-item--with-leading-radio.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end,
+.mdc-list-item--with-leading-checkbox.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end,
+.mdc-list-item--with-leading-icon.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end,
+.mdc-list-item--with-leading-avatar.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end {
+  display: block;
+  margin-top: 0;
+  line-height: normal;
+}
+.mdc-list-item--with-leading-radio.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end::before,
+.mdc-list-item--with-leading-checkbox.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end::before,
+.mdc-list-item--with-leading-icon.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end::before,
+.mdc-list-item--with-leading-avatar.mdc-list-item--with-two-lines.mdc-list-item--with-trailing-meta .mdc-list-item__end::before {
+  display: inline-block;
+  width: 0;
+  height: 32px;
+  content: "";
+  vertical-align: 0;
+}
+
+.mdc-list-item--with-trailing-icon.mdc-list-item, [dir=rtl] .mdc-list-item--with-trailing-icon.mdc-list-item {
+  padding-left: 0;
+  padding-right: 0;
+}
+.mdc-list-item--with-trailing-icon .mdc-list-item__end {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+
+.mdc-list-item--with-trailing-meta.mdc-list-item {
+  padding-left: 16px;
+  padding-right: 0;
+}
+[dir=rtl] .mdc-list-item--with-trailing-meta.mdc-list-item {
+  padding-left: 0;
+  padding-right: 16px;
+}
+.mdc-list-item--with-trailing-meta .mdc-list-item__end {
+  -webkit-user-select: none;
+  user-select: none;
+  margin-left: 28px;
+  margin-right: 16px;
+}
+[dir=rtl] .mdc-list-item--with-trailing-meta .mdc-list-item__end {
+  margin-left: 16px;
+  margin-right: 28px;
+}
+.mdc-list-item--with-trailing-meta.mdc-list-item--with-three-lines .mdc-list-item__end, .mdc-list-item--with-trailing-meta.mdc-list-item--with-two-lines .mdc-list-item__end {
+  display: block;
+  line-height: normal;
+  align-self: flex-start;
+  margin-top: 0;
+}
+.mdc-list-item--with-trailing-meta.mdc-list-item--with-three-lines .mdc-list-item__end::before, .mdc-list-item--with-trailing-meta.mdc-list-item--with-two-lines .mdc-list-item__end::before {
+  display: inline-block;
+  width: 0;
+  height: 28px;
+  content: "";
+  vertical-align: 0;
+}
+
+.mdc-list-item--with-leading-radio .mdc-list-item__start,
+.mdc-list-item--with-leading-checkbox .mdc-list-item__start {
+  margin-left: 8px;
+  margin-right: 24px;
+}
+[dir=rtl] .mdc-list-item--with-leading-radio .mdc-list-item__start,
+[dir=rtl] .mdc-list-item--with-leading-checkbox .mdc-list-item__start {
+  margin-left: 24px;
+  margin-right: 8px;
+}
+.mdc-list-item--with-leading-radio.mdc-list-item--with-two-lines .mdc-list-item__start,
+.mdc-list-item--with-leading-checkbox.mdc-list-item--with-two-lines .mdc-list-item__start {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.mdc-list-item--with-trailing-radio.mdc-list-item,
+.mdc-list-item--with-trailing-checkbox.mdc-list-item {
+  padding-left: 16px;
+  padding-right: 0;
+}
+[dir=rtl] .mdc-list-item--with-trailing-radio.mdc-list-item,
+[dir=rtl] .mdc-list-item--with-trailing-checkbox.mdc-list-item {
+  padding-left: 0;
+  padding-right: 16px;
+}
+.mdc-list-item--with-trailing-radio.mdc-list-item--with-leading-icon, .mdc-list-item--with-trailing-radio.mdc-list-item--with-leading-avatar,
+.mdc-list-item--with-trailing-checkbox.mdc-list-item--with-leading-icon,
+.mdc-list-item--with-trailing-checkbox.mdc-list-item--with-leading-avatar {
+  padding-left: 0;
+}
+[dir=rtl] .mdc-list-item--with-trailing-radio.mdc-list-item--with-leading-icon, [dir=rtl] .mdc-list-item--with-trailing-radio.mdc-list-item--with-leading-avatar,
+[dir=rtl] .mdc-list-item--with-trailing-checkbox.mdc-list-item--with-leading-icon,
+[dir=rtl] .mdc-list-item--with-trailing-checkbox.mdc-list-item--with-leading-avatar {
+  padding-right: 0;
+}
+.mdc-list-item--with-trailing-radio .mdc-list-item__end,
+.mdc-list-item--with-trailing-checkbox .mdc-list-item__end {
+  margin-left: 24px;
+  margin-right: 8px;
+}
+[dir=rtl] .mdc-list-item--with-trailing-radio .mdc-list-item__end,
+[dir=rtl] .mdc-list-item--with-trailing-checkbox .mdc-list-item__end {
+  margin-left: 8px;
+  margin-right: 24px;
+}
+.mdc-list-item--with-trailing-radio.mdc-list-item--with-three-lines .mdc-list-item__end,
+.mdc-list-item--with-trailing-checkbox.mdc-list-item--with-three-lines .mdc-list-item__end {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.mdc-list-group__subheader {
+  margin: 0.75rem 16px;
+}
+
+.mdc-list-item--disabled .mdc-list-item__start,
+.mdc-list-item--disabled .mdc-list-item__content,
+.mdc-list-item--disabled .mdc-list-item__end {
+  opacity: 1;
+}
+.mdc-list-item--disabled .mdc-list-item__primary-text,
+.mdc-list-item--disabled .mdc-list-item__secondary-text {
+  opacity: var(--mat-list-list-item-disabled-label-text-opacity, 0.3);
+}
+.mdc-list-item--disabled.mdc-list-item--with-leading-icon .mdc-list-item__start {
+  color: var(--mat-list-list-item-disabled-leading-icon-color, var(--mat-sys-on-surface));
+  opacity: var(--mat-list-list-item-disabled-leading-icon-opacity, 0.38);
+}
+.mdc-list-item--disabled.mdc-list-item--with-trailing-icon .mdc-list-item__end {
+  color: var(--mat-list-list-item-disabled-trailing-icon-color, var(--mat-sys-on-surface));
+  opacity: var(--mat-list-list-item-disabled-trailing-icon-opacity, 0.38);
+}
+
+.mat-mdc-list-item.mat-mdc-list-item-both-leading-and-trailing, [dir=rtl] .mat-mdc-list-item.mat-mdc-list-item-both-leading-and-trailing {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.mdc-list-item.mdc-list-item--disabled .mdc-list-item__primary-text {
+  color: var(--mat-list-list-item-disabled-label-text-color, var(--mat-sys-on-surface));
+}
+
+.mdc-list-item:hover::before {
+  background-color: var(--mat-list-list-item-hover-state-layer-color, var(--mat-sys-on-surface));
+  opacity: var(--mat-list-list-item-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+
+.mdc-list-item.mdc-list-item--disabled::before {
+  background-color: var(--mat-list-list-item-disabled-state-layer-color, var(--mat-sys-on-surface));
+  opacity: var(--mat-list-list-item-disabled-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+
+.mdc-list-item:focus::before {
+  background-color: var(--mat-list-list-item-focus-state-layer-color, var(--mat-sys-on-surface));
+  opacity: var(--mat-list-list-item-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+
+.mdc-list-item--disabled .mdc-radio,
+.mdc-list-item--disabled .mdc-checkbox {
+  opacity: var(--mat-list-list-item-disabled-label-text-opacity, 0.3);
+}
+
+.mdc-list-item--with-leading-avatar .mat-mdc-list-item-avatar {
+  border-radius: var(--mat-list-list-item-leading-avatar-shape, var(--mat-sys-corner-full));
+  background-color: var(--mat-list-list-item-leading-avatar-color, var(--mat-sys-primary-container));
+}
+
+.mat-mdc-list-item-icon {
+  font-size: var(--mat-list-list-item-leading-icon-size, 24px);
+}
+
+@media (forced-colors: active) {
+  a.mdc-list-item--activated::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 0;
+    border-bottom: solid 10px;
+    border-radius: 10px;
+  }
+  a.mdc-list-item--activated [dir=rtl]::after {
+    right: auto;
+    left: 16px;
+  }
+}
+
+.mat-mdc-list-base {
+  display: block;
+}
+.mat-mdc-list-base .mdc-list-item__start,
+.mat-mdc-list-base .mdc-list-item__end,
+.mat-mdc-list-base .mdc-list-item__content {
+  pointer-events: auto;
+}
+
+.mat-mdc-list-item,
+.mat-mdc-list-option {
+  width: 100%;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+.mat-mdc-list-item:not(.mat-mdc-list-item-interactive),
+.mat-mdc-list-option:not(.mat-mdc-list-item-interactive) {
+  cursor: default;
+}
+.mat-mdc-list-item .mat-divider-inset,
+.mat-mdc-list-option .mat-divider-inset {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.mat-mdc-list-item .mat-mdc-list-item-avatar ~ .mat-divider-inset,
+.mat-mdc-list-option .mat-mdc-list-item-avatar ~ .mat-divider-inset {
+  margin-left: 72px;
+}
+[dir=rtl] .mat-mdc-list-item .mat-mdc-list-item-avatar ~ .mat-divider-inset,
+[dir=rtl] .mat-mdc-list-option .mat-mdc-list-item-avatar ~ .mat-divider-inset {
+  margin-right: 72px;
+}
+
+.mat-mdc-list-item-interactive::before {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.mat-mdc-list-item > .mat-focus-indicator {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  pointer-events: none;
+}
+.mat-mdc-list-item:focus-visible > .mat-focus-indicator::before {
+  content: "";
+}
+
+.mat-mdc-list-item.mdc-list-item--with-three-lines .mat-mdc-list-item-line.mdc-list-item__secondary-text {
+  white-space: nowrap;
+  line-height: normal;
+}
+.mat-mdc-list-item.mdc-list-item--with-three-lines .mat-mdc-list-item-unscoped-content.mdc-list-item__secondary-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+mat-action-list button {
+  background: none;
+  color: inherit;
+  border: none;
+  font: inherit;
+  outline: inherit;
+  -webkit-tap-highlight-color: transparent;
+  text-align: start;
+}
+mat-action-list button::-moz-focus-inner {
+  border: 0;
+}
+
+.mdc-list-item--with-leading-icon .mdc-list-item__start {
+  margin-inline-start: var(--mat-list-list-item-leading-icon-start-space, 16px);
+  margin-inline-end: var(--mat-list-list-item-leading-icon-end-space, 16px);
+}
+
+.mat-mdc-nav-list .mat-mdc-list-item {
+  border-radius: var(--mat-list-active-indicator-shape, var(--mat-sys-corner-full));
+  --mat-focus-indicator-border-radius: var(--mat-list-active-indicator-shape, var(--mat-sys-corner-full));
+}
+.mat-mdc-nav-list .mat-mdc-list-item.mdc-list-item--activated {
+  background-color: var(--mat-list-active-indicator-color, var(--mat-sys-secondary-container));
+}
+</style><style>[_nghost-ng-c1138769723]{display:block;padding:20px 0}.docs-example-viewer-wrapper[_ngcontent-ng-c1138769723]{border-radius:12px;border:1px solid var(--mat-sys-outline-variant)}.docs-example-viewer-wrapper[_ngcontent-ng-c1138769723]   h3[_ngcontent-ng-c1138769723]{margin-top:10px}.docs-example-viewer-title[_ngcontent-ng-c1138769723]{align-items:center;display:flex;justify-content:space-between;padding:16px 16px 0 24px;color:var(--mat-sys-on-surface-variant)}.docs-example-viewer-actions[_ngcontent-ng-c1138769723]{display:flex;align-items:center;gap:8px}.docs-example-viewer-source[_ngcontent-ng-c1138769723]   code-snippet[_ngcontent-ng-c1138769723]{border-bottom:1px solid var(--mat-sys-outline-variant)}.docs-example-viewer-body[_ngcontent-ng-c1138769723]{padding:16px 24px}.docs-button-bar[_ngcontent-ng-c1138769723]{float:right;padding:8px}code-snippet[_ngcontent-ng-c1138769723]{padding:20px}.docs-example-source[_ngcontent-ng-c1138769723]{padding:0;margin:0;border:none;background:none;overflow:auto}</style><style>button[_ngcontent-ng-c530723688] {
+  margin-right: 8px;
+}</style><style>section[_ngcontent-ng-c1709841888] {
+  display: flex;
+  align-items: center;
+}
+
+.example-label[_ngcontent-ng-c1709841888] {
+  font-size: 14px;
+  margin: 0 16px 0 8px;
+  min-width: 120px;
+}
+
+.example-button-row[_ngcontent-ng-c1709841888] {
+  max-width: 600px;
+}
+
+.example-button-row[_ngcontent-ng-c1709841888]   .mat-mdc-button-base[_ngcontent-ng-c1709841888] {
+  margin: 8px 8px 8px 0;
+}
+
+.example-flex-container[_ngcontent-ng-c1709841888] {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}</style><style>.mat-divider {
+  display: block;
+  margin: 0;
+  border-top-style: solid;
+  border-top-color: var(--mat-divider-color, var(--mat-sys-outline-variant));
+  border-top-width: var(--mat-divider-width, 1px);
+}
+.mat-divider.mat-divider-vertical {
+  border-top: 0;
+  border-right-style: solid;
+  border-right-color: var(--mat-divider-color, var(--mat-sys-outline-variant));
+  border-right-width: var(--mat-divider-width, 1px);
+}
+.mat-divider.mat-divider-inset {
+  margin-left: 80px;
+}
+[dir=rtl] .mat-divider.mat-divider-inset {
+  margin-left: auto;
+  margin-right: 80px;
+}
+</style><style>.mat-mdc-fab-base {
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: none;
+  fill: currentColor;
+  text-decoration: none;
+  cursor: pointer;
+  -moz-appearance: none;
+  -webkit-appearance: none;
+  overflow: visible;
+  transition: box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1), opacity 15ms linear 30ms, transform 270ms 0ms cubic-bezier(0, 0, 0.2, 1);
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.mat-mdc-fab-base .mat-mdc-button-ripple,
+.mat-mdc-fab-base .mat-mdc-button-persistent-ripple,
+.mat-mdc-fab-base .mat-mdc-button-persistent-ripple::before {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.mat-mdc-fab-base .mat-mdc-button-ripple {
+  overflow: hidden;
+}
+.mat-mdc-fab-base .mat-mdc-button-persistent-ripple::before {
+  content: "";
+  opacity: 0;
+}
+.mat-mdc-fab-base .mdc-button__label,
+.mat-mdc-fab-base .mat-icon {
+  z-index: 1;
+  position: relative;
+}
+.mat-mdc-fab-base .mat-focus-indicator {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  position: absolute;
+}
+.mat-mdc-fab-base:focus-visible > .mat-focus-indicator::before {
+  content: "";
+}
+.mat-mdc-fab-base._mat-animation-noopable {
+  transition: none !important;
+  animation: none !important;
+}
+.mat-mdc-fab-base::before {
+  position: absolute;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+}
+.mat-mdc-fab-base[hidden] {
+  display: none;
+}
+.mat-mdc-fab-base::-moz-focus-inner {
+  padding: 0;
+  border: 0;
+}
+.mat-mdc-fab-base:active, .mat-mdc-fab-base:focus {
+  outline: none;
+}
+.mat-mdc-fab-base:hover {
+  cursor: pointer;
+}
+.mat-mdc-fab-base > svg {
+  width: 100%;
+}
+.mat-mdc-fab-base .mat-icon, .mat-mdc-fab-base .material-icons {
+  transition: transform 180ms 90ms cubic-bezier(0, 0, 0.2, 1);
+  fill: currentColor;
+  will-change: transform;
+}
+.mat-mdc-fab-base .mat-focus-indicator::before {
+  margin: calc(calc(var(--mat-focus-indicator-border-width, 3px) + 2px) * -1);
+}
+.mat-mdc-fab-base[disabled], .mat-mdc-fab-base.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+}
+.mat-mdc-fab-base[disabled], .mat-mdc-fab-base[disabled]:focus, .mat-mdc-fab-base.mat-mdc-button-disabled, .mat-mdc-fab-base.mat-mdc-button-disabled:focus {
+  box-shadow: none;
+}
+.mat-mdc-fab-base.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+
+.mat-mdc-fab {
+  background-color: var(--mat-fab-container-color, var(--mat-sys-primary-container));
+  border-radius: var(--mat-fab-container-shape, var(--mat-sys-corner-large));
+  color: var(--mat-fab-foreground-color, var(--mat-sys-on-primary-container, inherit));
+  box-shadow: var(--mat-fab-container-elevation-shadow, var(--mat-sys-level3));
+}
+@media (hover: hover) {
+  .mat-mdc-fab:hover {
+    box-shadow: var(--mat-fab-hover-container-elevation-shadow, var(--mat-sys-level4));
+  }
+}
+.mat-mdc-fab:focus {
+  box-shadow: var(--mat-fab-focus-container-elevation-shadow, var(--mat-sys-level3));
+}
+.mat-mdc-fab:active, .mat-mdc-fab:focus:active {
+  box-shadow: var(--mat-fab-pressed-container-elevation-shadow, var(--mat-sys-level3));
+}
+.mat-mdc-fab[disabled], .mat-mdc-fab.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-fab-disabled-state-foreground-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+  background-color: var(--mat-fab-disabled-state-container-color, color-mix(in srgb, var(--mat-sys-on-surface) 12%, transparent));
+}
+.mat-mdc-fab.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+.mat-mdc-fab .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-fab-touch-target-size, 48px);
+  display: var(--mat-fab-touch-target-display, block);
+  left: 50%;
+  width: var(--mat-fab-touch-target-size, 48px);
+  transform: translate(-50%, -50%);
+}
+.mat-mdc-fab .mat-ripple-element {
+  background-color: var(--mat-fab-ripple-color, color-mix(in srgb, var(--mat-sys-on-primary-container) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-fab .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-fab-state-layer-color, var(--mat-sys-on-primary-container));
+}
+.mat-mdc-fab.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-fab-disabled-state-layer-color);
+}
+.mat-mdc-fab:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-fab-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-mdc-fab.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-fab.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-fab.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-fab-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-mdc-fab:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-fab-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+
+.mat-mdc-mini-fab {
+  width: 40px;
+  height: 40px;
+  background-color: var(--mat-fab-small-container-color, var(--mat-sys-primary-container));
+  border-radius: var(--mat-fab-small-container-shape, var(--mat-sys-corner-medium));
+  color: var(--mat-fab-small-foreground-color, var(--mat-sys-on-primary-container, inherit));
+  box-shadow: var(--mat-fab-small-container-elevation-shadow, var(--mat-sys-level3));
+}
+@media (hover: hover) {
+  .mat-mdc-mini-fab:hover {
+    box-shadow: var(--mat-fab-small-hover-container-elevation-shadow, var(--mat-sys-level4));
+  }
+}
+.mat-mdc-mini-fab:focus {
+  box-shadow: var(--mat-fab-small-focus-container-elevation-shadow, var(--mat-sys-level3));
+}
+.mat-mdc-mini-fab:active, .mat-mdc-mini-fab:focus:active {
+  box-shadow: var(--mat-fab-small-pressed-container-elevation-shadow, var(--mat-sys-level3));
+}
+.mat-mdc-mini-fab[disabled], .mat-mdc-mini-fab.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+  color: var(--mat-fab-small-disabled-state-foreground-color, color-mix(in srgb, var(--mat-sys-on-surface) 38%, transparent));
+  background-color: var(--mat-fab-small-disabled-state-container-color, color-mix(in srgb, var(--mat-sys-on-surface) 12%, transparent));
+}
+.mat-mdc-mini-fab.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+.mat-mdc-mini-fab .mat-mdc-button-touch-target {
+  position: absolute;
+  top: 50%;
+  height: var(--mat-fab-small-touch-target-size, 48px);
+  display: var(--mat-fab-small-touch-target-display);
+  left: 50%;
+  width: var(--mat-fab-small-touch-target-size, 48px);
+  transform: translate(-50%, -50%);
+}
+.mat-mdc-mini-fab .mat-ripple-element {
+  background-color: var(--mat-fab-small-ripple-color, color-mix(in srgb, var(--mat-sys-on-primary-container) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%), transparent));
+}
+.mat-mdc-mini-fab .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-fab-small-state-layer-color, var(--mat-sys-on-primary-container));
+}
+.mat-mdc-mini-fab.mat-mdc-button-disabled .mat-mdc-button-persistent-ripple::before {
+  background-color: var(--mat-fab-small-disabled-state-layer-color);
+}
+.mat-mdc-mini-fab:hover > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-fab-small-hover-state-layer-opacity, var(--mat-sys-hover-state-layer-opacity));
+}
+.mat-mdc-mini-fab.cdk-program-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-mini-fab.cdk-keyboard-focused > .mat-mdc-button-persistent-ripple::before, .mat-mdc-mini-fab.mat-mdc-button-disabled-interactive:focus > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-fab-small-focus-state-layer-opacity, var(--mat-sys-focus-state-layer-opacity));
+}
+.mat-mdc-mini-fab:active > .mat-mdc-button-persistent-ripple::before {
+  opacity: var(--mat-fab-small-pressed-state-layer-opacity, var(--mat-sys-pressed-state-layer-opacity));
+}
+
+.mat-mdc-extended-fab {
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  padding-left: 20px;
+  padding-right: 20px;
+  width: auto;
+  max-width: 100%;
+  line-height: normal;
+  box-shadow: var(--mat-fab-extended-container-elevation-shadow, var(--mat-sys-level3));
+  height: var(--mat-fab-extended-container-height, 56px);
+  border-radius: var(--mat-fab-extended-container-shape, var(--mat-sys-corner-large));
+  font-family: var(--mat-fab-extended-label-text-font, var(--mat-sys-label-large-font));
+  font-size: var(--mat-fab-extended-label-text-size, var(--mat-sys-label-large-size));
+  font-weight: var(--mat-fab-extended-label-text-weight, var(--mat-sys-label-large-weight));
+  letter-spacing: var(--mat-fab-extended-label-text-tracking, var(--mat-sys-label-large-tracking));
+}
+@media (hover: hover) {
+  .mat-mdc-extended-fab:hover {
+    box-shadow: var(--mat-fab-extended-hover-container-elevation-shadow, var(--mat-sys-level4));
+  }
+}
+.mat-mdc-extended-fab:focus {
+  box-shadow: var(--mat-fab-extended-focus-container-elevation-shadow, var(--mat-sys-level3));
+}
+.mat-mdc-extended-fab:active, .mat-mdc-extended-fab:focus:active {
+  box-shadow: var(--mat-fab-extended-pressed-container-elevation-shadow, var(--mat-sys-level3));
+}
+.mat-mdc-extended-fab[disabled], .mat-mdc-extended-fab.mat-mdc-button-disabled {
+  cursor: default;
+  pointer-events: none;
+}
+.mat-mdc-extended-fab[disabled], .mat-mdc-extended-fab[disabled]:focus, .mat-mdc-extended-fab.mat-mdc-button-disabled, .mat-mdc-extended-fab.mat-mdc-button-disabled:focus {
+  box-shadow: none;
+}
+.mat-mdc-extended-fab.mat-mdc-button-disabled-interactive {
+  pointer-events: auto;
+}
+[dir=rtl] .mat-mdc-extended-fab .mdc-button__label + .mat-icon, [dir=rtl] .mat-mdc-extended-fab .mdc-button__label + .material-icons,
+.mat-mdc-extended-fab > .mat-icon,
+.mat-mdc-extended-fab > .material-icons {
+  margin-left: -8px;
+  margin-right: 12px;
+}
+.mat-mdc-extended-fab .mdc-button__label + .mat-icon,
+.mat-mdc-extended-fab .mdc-button__label + .material-icons, [dir=rtl] .mat-mdc-extended-fab > .mat-icon, [dir=rtl] .mat-mdc-extended-fab > .material-icons {
+  margin-left: 12px;
+  margin-right: -8px;
+}
+.mat-mdc-extended-fab .mat-mdc-button-touch-target {
+  width: 100%;
+}
+</style></head>
+
+<body class="docs-app-background">
+  <material-docs-app ng-version="21.2.8"><app-cookie-popup _nghost-ng-c543503563=""><div _ngcontent-ng-c543503563="" class="docs-popup"> This site uses cookies from Google to deliver its services and to analyze traffic. <div _ngcontent-ng-c543503563="" class="docs-buttons"><a _ngcontent-ng-c543503563="" href="https://policies.google.com/technologies/cookies" mat-button="" target="_blank" rel="noopener" class="mdc-button mat-mdc-button-base mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="1"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">More details</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><button _ngcontent-ng-c543503563="" mat-button="" color="primary" class="mdc-button mat-mdc-button-base mat-mdc-button mat-primary" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="2"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Okay, got it</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button></div></div><!----></app-cookie-popup><app-navbar _nghost-ng-c3920750817=""><nav _ngcontent-ng-c3920750817="" aria-label="Top Toolbar" class="docs-navbar-header"><div _ngcontent-ng-c3920750817="" class="docs-skip-link-wrapper cdk-visually-hidden"><a _ngcontent-ng-c3920750817="" matbutton="elevated" color="accent" class="mdc-button mat-mdc-button-base mdc-button--raised mat-mdc-raised-button mat-accent" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="" data-brain-id="3"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label"> Skip to main content </span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></div><!----><a _ngcontent-ng-c3920750817="" matbutton="text" routerlink="/" aria-label="Angular Material" class="mdc-button mat-mdc-button-base mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="/" data-brain-id="4"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><app-logo _ngcontent-ng-c3920750817="" aria-hidden="true" matbuttonicon="" _nghost-ng-c3052461960=""><svg _ngcontent-ng-c3052461960="" x="0px" y="0px" width="960px" height="960px" viewBox="0 0 960 960"><polygon _ngcontent-ng-c3052461960="" points="562.6,109.8 804.1,629.5 829.2,233.1"></polygon><polygon _ngcontent-ng-c3052461960="" points="624.9,655.9 334.3,655.9 297.2,745.8 479.6,849.8 662,745.8"></polygon><polygon _ngcontent-ng-c3052461960="" points="384.1,539.3 575.2,539.3 479.6,307"></polygon><polygon _ngcontent-ng-c3052461960="" points="396.6,109.8 130,233.1 155.1,629.5"></polygon></svg></app-logo><span class="mdc-button__label"> Material <!----></span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><a _ngcontent-ng-c3920750817="" matbutton="text" routerlinkactive="docs-navbar-header-item-selected" class="mdc-button mat-mdc-button-base docs-navbar-hide-small mat-mdc-button mat-unthemed docs-navbar-header-item-selected" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="/components" data-brain-id="5"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Components</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><a _ngcontent-ng-c3920750817="" matbutton="text" routerlinkactive="docs-navbar-header-item-selected" class="mdc-button mat-mdc-button-base docs-navbar-hide-small mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="/cdk" data-brain-id="6"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">CDK</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><!----><a _ngcontent-ng-c3920750817="" matbutton="text" routerlink="guides" routerlinkactive="docs-navbar-header-item-selected" class="mdc-button mat-mdc-button-base docs-navbar-hide-small mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="/guides" data-brain-id="7"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Guides</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><div _ngcontent-ng-c3920750817="" class="docs-flex-spacer"></div><version-picker _ngcontent-ng-c3920750817=""><button mat-button="" aria-label="Select a version" mattooltip="Select a version of the documentation" class="mdc-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-mdc-menu-trigger mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" aria-haspopup="menu" aria-expanded="false" aria-describedby="cdk-describedby-message-ng-1-2" cdk-describedby-host="ng-1" data-brain-id="8"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><mat-icon role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">arrow_drop_down</mat-icon><span class="mdc-button__label"> 21.2.7 </span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><mat-menu xposition="before" class=""><!----></mat-menu></version-picker><theme-picker _ngcontent-ng-c3920750817=""><button mat-icon-button="" aria-label="Select a theme" mattooltip="Select a theme for the documentation" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-mdc-menu-trigger docs-theme-picker-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-haspopup="menu" aria-expanded="false" aria-describedby="cdk-describedby-message-ng-1-3" cdk-describedby-host="ng-1" data-brain-id="9"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">format_color_fill</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><mat-menu xposition="before" class=""><!----></mat-menu></theme-picker><a _ngcontent-ng-c3920750817="" matbutton="text" href="https://github.com/angular/components" aria-label="GitHub Repository" target="_blank" class="mdc-button mat-mdc-button-base docs-navbar-hide-small mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="10"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span _ngcontent-ng-c3920750817="" matbuttonicon=""></span><svg _ngcontent-ng-c3920750817="" viewBox="0 0 20 20" aria-hidden="true" class="docs-github-logo"><path _ngcontent-ng-c3920750817="" d="M10 0C4.477 0 0 4.477 0 10c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V19c0 .27.16.59.67.5C17.14 18.16 20 14.42 20 10A10 10 0 0 0 10 0z" fill="currentColor" fill-rule="evenodd"></path></svg><!----><span class="mdc-button__label"> GitHub </span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><a _ngcontent-ng-c3920750817="" maticonbutton="" href="https://github.com/angular/components" aria-label="GitHub Repository" target="_blank" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base docs-navbar-show-small mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered=""><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><svg _ngcontent-ng-c3920750817="" viewBox="0 0 20 20" aria-hidden="true" class="docs-github-logo"><path _ngcontent-ng-c3920750817="" d="M10 0C4.477 0 0 4.477 0 10c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V19c0 .27.16.59.67.5C17.14 18.16 20 14.42 20 10A10 10 0 0 0 10 0z" fill="currentColor" fill-rule="evenodd"></path></svg><!----><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></nav><nav _ngcontent-ng-c3920750817="" aria-label="Section Nav Bar" class="docs-navbar docs-navbar-show-small"><a _ngcontent-ng-c3920750817="" matbutton="text" class="mdc-button mat-mdc-button-base docs-navbar-link mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="/components"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Components</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><a _ngcontent-ng-c3920750817="" matbutton="text" class="mdc-button mat-mdc-button-base docs-navbar-link mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="/cdk"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">CDK</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a><!----><a _ngcontent-ng-c3920750817="" matbutton="text" routerlink="guides" class="mdc-button mat-mdc-button-base docs-navbar-link mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" href="/guides"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Guides</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></nav><!----></app-navbar><router-outlet></router-outlet><app-component-sidenav><mat-sidenav-container class="mat-drawer-container mat-sidenav-container docs-component-viewer-sidenav-container mat-drawer-transition"><!----><!----><mat-sidenav-content class="mat-drawer-content mat-sidenav-content"><div class="docs-component-sidenav-content"><component-page-header _nghost-ng-c248665727=""><header _ngcontent-ng-c248665727="" class="docs-component-page-header"><button _ngcontent-ng-c248665727="" mat-button="" class="mdc-button mat-mdc-button-base mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><mat-icon _ngcontent-ng-c248665727="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">menu</mat-icon><span class="mdc-button__label"> Menu </span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button></header></component-page-header><div class="docs-component-sidenav-inner-content"><main class="docs-component-sidenav-body-content"><app-component-nav><div class="docs-component-viewer-nav"><div class="docs-component-viewer-nav-content"><mat-nav-list role="navigation" class="mat-mdc-nav-list mat-mdc-list-base mdc-list" aria-disabled="false"><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/autocomplete" data-brain-id="11"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Autocomplete </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/badge" data-brain-id="12"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Badge </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/bottom-sheet" data-brain-id="13"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Bottom Sheet </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line docs-component-viewer-sidenav-item-selected mdc-list-item--activated" aria-disabled="false" href="/components/button" aria-current="page" data-brain-id="14"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Button </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/button-toggle" data-brain-id="15"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Button Toggle </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/card" data-brain-id="16"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Card </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/checkbox" data-brain-id="17"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Checkbox </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/chips" data-brain-id="18"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Chips </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/core" data-brain-id="19"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Core </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/datepicker" data-brain-id="20"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Datepicker </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/dialog" data-brain-id="21"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Dialog </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/divider" data-brain-id="22"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Divider </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/expansion" data-brain-id="23"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Expansion Panel </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/form-field" data-brain-id="24"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Form Field </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/grid-list" data-brain-id="25"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Grid List </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/icon" data-brain-id="26"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Icon </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/input" data-brain-id="27"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Input </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/list" data-brain-id="28"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> List </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/menu" data-brain-id="29"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Menu </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/paginator" data-brain-id="30"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Paginator </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/progress-bar" data-brain-id="31"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Progress Bar </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/progress-spinner" data-brain-id="32"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Progress Spinner </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/radio" data-brain-id="33"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Radio Button </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/ripple" data-brain-id="34"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Ripples </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/select" data-brain-id="35"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Select </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/sidenav" data-brain-id="36"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Sidenav </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/slide-toggle" data-brain-id="37"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Slide Toggle </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/slider" data-brain-id="38"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Slider </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/snack-bar" data-brain-id="39"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Snackbar </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/sort" data-brain-id="40"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Sort Header </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/stepper" data-brain-id="41"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Stepper </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/table" data-brain-id="42"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Table </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/tabs" data-brain-id="43"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Tabs </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/timepicker" data-brain-id="44"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Timepicker </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/toolbar" data-brain-id="45"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Toolbar </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/tooltip" data-brain-id="46"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Tooltip </span></span><div class="mat-focus-indicator"></div></a><!----><!----><a mat-list-item="" routerlinkactive="docs-component-viewer-sidenav-item-selected" class="mat-mdc-list-item mdc-list-item mat-mdc-list-item-interactive mat-mdc-list-item-single-line mdc-list-item--with-one-line" aria-disabled="false" href="/components/tree" data-brain-id="47"><span class="mdc-list-item__content"><span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text"> Tree </span></span><div class="mat-focus-indicator"></div></a><!----><!----></mat-nav-list></div><!----></div></app-component-nav><!----><router-outlet></router-outlet><app-component-viewer><div class="docs-component-viewer"><nav tabindex="-1" mat-tab-nav-bar="" mat-stretch-tabs="false" aria-label="Documentation Sections" id="component-viewer" focusonnavigation="" class="mat-mdc-tab-nav-bar mat-mdc-tab-header docs-component-viewer-tabbed-content docs-sticky-top mat-primary" role="tablist" style="outline: none;"><div mat-ripple="" class="mat-ripple mat-mdc-tab-header-pagination mat-mdc-tab-header-pagination-before mat-mdc-tab-header-pagination-disabled"><div class="mat-mdc-tab-header-pagination-chevron"></div></div><div class="mat-mdc-tab-link-container"><div class="mat-mdc-tab-list" style="transform: translateX(0px);"><div class="mat-mdc-tab-links"><a mat-tab-link="" routerlinkactive="" class="mdc-tab mat-mdc-tab-link mat-focus-indicator docs-component-viewer-section-tab" aria-controls="mat-tab-nav-panel-0" aria-disabled="false" aria-selected="false" id="mat-tab-link-0" tabindex="-1" role="tab" href="/components/button/overview" data-brain-id="48"><span class="mdc-tab__ripple"></span><div mat-ripple="" class="mat-ripple mat-mdc-tab-ripple"></div><span class="mdc-tab__content"><span class="mdc-tab__text-label">overview</span></span><span class="mdc-tab-indicator"><span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span></span></a><a mat-tab-link="" routerlinkactive="" class="mdc-tab mat-mdc-tab-link mat-focus-indicator docs-component-viewer-section-tab" aria-controls="mat-tab-nav-panel-0" aria-disabled="false" aria-selected="false" id="mat-tab-link-1" tabindex="-1" role="tab" href="/components/button/api" data-brain-id="49"><span class="mdc-tab__ripple"></span><div mat-ripple="" class="mat-ripple mat-mdc-tab-ripple"></div><span class="mdc-tab__content"><span class="mdc-tab__text-label">api</span></span><span class="mdc-tab-indicator"><span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span></span></a><a mat-tab-link="" routerlinkactive="" class="mdc-tab mat-mdc-tab-link mat-focus-indicator docs-component-viewer-section-tab" aria-controls="mat-tab-nav-panel-0" aria-disabled="false" aria-selected="false" id="mat-tab-link-2" tabindex="-1" role="tab" href="/components/button/styling" data-brain-id="50"><span class="mdc-tab__ripple"></span><div mat-ripple="" class="mat-ripple mat-mdc-tab-ripple"></div><span class="mdc-tab__content"><span class="mdc-tab__text-label">styling</span></span><span class="mdc-tab-indicator"><span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span></span></a><a mat-tab-link="" routerlinkactive="" class="mdc-tab mat-mdc-tab-link mat-focus-indicator docs-component-viewer-section-tab mdc-tab--active mdc-tab-indicator--active" aria-controls="mat-tab-nav-panel-0" aria-disabled="false" aria-selected="true" id="mat-tab-link-3" tabindex="0" role="tab" href="/components/button/examples" data-brain-id="51"><span class="mdc-tab__ripple"></span><div mat-ripple="" class="mat-ripple mat-mdc-tab-ripple"></div><span class="mdc-tab__content"><span class="mdc-tab__text-label">examples</span></span><span class="mdc-tab-indicator"><span class="mdc-tab-indicator__content mdc-tab-indicator__content--underline"></span></span></a><!----></div></div></div><div mat-ripple="" class="mat-ripple mat-mdc-tab-header-pagination mat-mdc-tab-header-pagination-after mat-mdc-tab-header-pagination-disabled"><div class="mat-mdc-tab-header-pagination-chevron"></div></div></nav><mat-tab-nav-panel role="tabpanel" class="mat-mdc-tab-nav-panel docs-component-viewer-content" id="mat-tab-nav-panel-0" aria-labelledby="mat-tab-link-3"><router-outlet></router-outlet><component-examples><span tabindex="-1" class="cdk-visually-hidden"> Examples for button </span><example-viewer view="demo" _nghost-ng-c1138769723="" id="button-disabled-interactive"><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-wrapper"><!----><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-title"><p _ngcontent-ng-c1138769723="">Interactive disabled buttons</p><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-actions"><button _ngcontent-ng-c1138769723="" mat-icon-button="" type="button" mattooltip="Copy link to example" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-label="Copy link to Interactive disabled buttons example to the clipboard" aria-describedby="cdk-describedby-message-ng-1-5" cdk-describedby-host="ng-1" data-brain-id="52"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1138769723="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">link</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><!----><button _ngcontent-ng-c1138769723="" mat-icon-button="" type="button" aria-label="View source" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-describedby="cdk-describedby-message-ng-1-6" cdk-describedby-host="ng-1" data-brain-id="53"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1138769723="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font"> code </mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><stackblitz-button _ngcontent-ng-c1138769723=""><button mat-icon-button="" type="button" aria-label="Edit this example in StackBlitz" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-describedby="cdk-describedby-message-ng-1-4" cdk-describedby-host="ng-1" data-brain-id="54"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">open_in_new</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----></stackblitz-button></div></div><!----><!----><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-body"><button-disabled-interactive-example _nghost-ng-c530723688=""><button _ngcontent-ng-c530723688="" matbutton="elevated" disabledinteractive="" mattooltip="This is a tooltip!" class="mdc-button mat-mdc-button-base mat-mdc-tooltip-trigger mdc-button--raised mat-mdc-raised-button mat-mdc-button-disabled mat-mdc-button-disabled-interactive mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" aria-disabled="true" aria-describedby="cdk-describedby-message-ng-1-9" cdk-describedby-host="ng-1" data-brain-id="55"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Disabled button allowing interactivity</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><button _ngcontent-ng-c530723688="" matbutton="elevated" disabled="true" mattooltip="This is a tooltip!" class="mdc-button mat-mdc-button-base mat-mdc-tooltip-trigger mdc-button--raised mat-mdc-raised-button mat-mdc-button-disabled mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" aria-describedby="cdk-describedby-message-ng-1-9" cdk-describedby-host="ng-1" data-brain-id="56"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Default disabled button</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----></button-disabled-interactive-example><!----><!----><!----></div><!----></div></example-viewer><example-viewer view="demo" _nghost-ng-c1138769723="" id="button-harness"><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-wrapper"><!----><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-title"><p _ngcontent-ng-c1138769723="">Testing with MatButtonHarness</p><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-actions"><button _ngcontent-ng-c1138769723="" mat-icon-button="" type="button" mattooltip="Copy link to example" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-label="Copy link to Testing with MatButtonHarness example to the clipboard" aria-describedby="cdk-describedby-message-ng-1-5" cdk-describedby-host="ng-1" data-brain-id="57"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1138769723="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">link</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><!----><button _ngcontent-ng-c1138769723="" mat-icon-button="" type="button" aria-label="View source" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-describedby="cdk-describedby-message-ng-1-6" cdk-describedby-host="ng-1" data-brain-id="58"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1138769723="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font"> code </mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><stackblitz-button _ngcontent-ng-c1138769723=""><button mat-icon-button="" type="button" aria-label="Edit this example in StackBlitz" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-describedby="cdk-describedby-message-ng-1-7" cdk-describedby-host="ng-1" data-brain-id="59"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">open_in_new</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----></stackblitz-button></div></div><!----><!----><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-body"><!----><div _ngcontent-ng-c1138769723="">This example contains tests. Open in Stackblitz to run the tests.</div><!----></div><!----></div></example-viewer><example-viewer view="demo" _nghost-ng-c1138769723="" id="button-overview"><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-wrapper"><!----><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-title"><p _ngcontent-ng-c1138769723="">Button overview</p><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-actions"><button _ngcontent-ng-c1138769723="" mat-icon-button="" type="button" mattooltip="Copy link to example" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-label="Copy link to Button overview example to the clipboard" aria-describedby="cdk-describedby-message-ng-1-5" cdk-describedby-host="ng-1" data-brain-id="60"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1138769723="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">link</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><!----><button _ngcontent-ng-c1138769723="" mat-icon-button="" type="button" aria-label="View source" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-describedby="cdk-describedby-message-ng-1-6" cdk-describedby-host="ng-1" data-brain-id="61"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1138769723="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font"> code </mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----><stackblitz-button _ngcontent-ng-c1138769723=""><button mat-icon-button="" type="button" aria-label="Edit this example in StackBlitz" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" aria-describedby="cdk-describedby-message-ng-1-8" cdk-describedby-host="ng-1" data-brain-id="62"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">open_in_new</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><!----></stackblitz-button></div></div><!----><!----><div _ngcontent-ng-c1138769723="" class="docs-example-viewer-body"><button-overview-example _nghost-ng-c1709841888=""><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Text</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><button _ngcontent-ng-c1709841888="" matbutton="" class="mdc-button mat-mdc-button-base mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="63"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Basic</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matbutton="" disabled="true" class="mdc-button mat-mdc-button-base mat-mdc-button mat-mdc-button-disabled mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="64"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Disabled</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><a _ngcontent-ng-c1709841888="" matbutton="" href="https://www.google.com/" target="_blank" class="mdc-button mat-mdc-button-base mat-mdc-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="65"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Link</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Elevated</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><button _ngcontent-ng-c1709841888="" matbutton="elevated" class="mdc-button mat-mdc-button-base mdc-button--raised mat-mdc-raised-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="66"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Basic</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matbutton="elevated" disabled="true" class="mdc-button mat-mdc-button-base mdc-button--raised mat-mdc-raised-button mat-mdc-button-disabled mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="67"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Disabled</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><a _ngcontent-ng-c1709841888="" matbutton="elevated" href="https://www.google.com/" target="_blank" class="mdc-button mat-mdc-button-base mdc-button--raised mat-mdc-raised-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="68"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Link</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Outlined</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><button _ngcontent-ng-c1709841888="" matbutton="outlined" class="mdc-button mat-mdc-button-base mdc-button--outlined mat-mdc-outlined-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="69"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Basic</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matbutton="outlined" disabled="true" class="mdc-button mat-mdc-button-base mdc-button--outlined mat-mdc-outlined-button mat-mdc-button-disabled mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="70"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Disabled</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><a _ngcontent-ng-c1709841888="" matbutton="outlined" href="https://www.google.com/" target="_blank" class="mdc-button mat-mdc-button-base mdc-button--outlined mat-mdc-outlined-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="71"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Link</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Filled</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><button _ngcontent-ng-c1709841888="" matbutton="filled" class="mdc-button mat-mdc-button-base mdc-button--unelevated mat-mdc-unelevated-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="72"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Basic</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matbutton="filled" disabled="true" class="mdc-button mat-mdc-button-base mdc-button--unelevated mat-mdc-unelevated-button mat-mdc-button-disabled mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="73"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Disabled</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><a _ngcontent-ng-c1709841888="" matbutton="filled" href="https://www.google.com/" target="_blank" class="mdc-button mat-mdc-button-base mdc-button--unelevated mat-mdc-unelevated-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="74"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Link</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Tonal</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><button _ngcontent-ng-c1709841888="" matbutton="tonal" class="mdc-button mat-mdc-button-base mat-tonal-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="75"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Basic</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matbutton="tonal" disabled="true" class="mdc-button mat-mdc-button-base mat-tonal-button mat-mdc-button-disabled mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="76"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Disabled</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><a _ngcontent-ng-c1709841888="" matbutton="tonal" href="https://www.google.com/" target="_blank" class="mdc-button mat-mdc-button-base mat-tonal-button mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="77"><span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mdc-button__label">Link</span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Icon</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><div _ngcontent-ng-c1709841888="" class="example-flex-container"><button _ngcontent-ng-c1709841888="" maticonbutton="" aria-label="Example icon button with a vertical three dot icon" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" data-brain-id="78"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">more_vert</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" maticonbutton="" disabled="true" aria-label="Example icon button with a open in new tab icon" class="mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-button-disabled mat-unthemed" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-centered="" mat-ripple-loader-disabled="" data-brain-id="79"><span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">open_in_new</mat-icon><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button></div></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Floating Action Button (FAB)</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><div _ngcontent-ng-c1709841888="" class="example-flex-container"><button _ngcontent-ng-c1709841888="" matfab="" aria-label="Example icon button with a delete icon" class="mdc-fab mat-mdc-fab-base mat-mdc-fab mat-mdc-button-base mat-accent" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="80"><span class="mat-mdc-button-persistent-ripple mdc-fab__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">delete</mat-icon><span class="mdc-button__label"></span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matfab="" disabled="true" aria-label="Example icon button with a heart icon" class="mdc-fab mat-mdc-fab-base mat-mdc-fab mat-mdc-button-base mat-accent mat-mdc-button-disabled" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="81"><span class="mat-mdc-button-persistent-ripple mdc-fab__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">favorite</mat-icon><span class="mdc-button__label"></span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button></div></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Mini FAB</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><div _ngcontent-ng-c1709841888="" class="example-flex-container"><button _ngcontent-ng-c1709841888="" matminifab="" aria-label="Example icon button with a menu icon" class="mdc-fab mat-mdc-fab-base mdc-fab--mini mat-mdc-mini-fab mat-mdc-button-base mat-accent" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="82"><span class="mat-mdc-button-persistent-ripple mdc-fab__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">menu</mat-icon><span class="mdc-button__label"></span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matminifab="" disabled="true" aria-label="Example icon button with a home icon" class="mdc-fab mat-mdc-fab-base mdc-fab--mini mat-mdc-mini-fab mat-mdc-button-base mat-accent mat-mdc-button-disabled" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="83"><span class="mat-mdc-button-persistent-ripple mdc-fab__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">home</mat-icon><span class="mdc-button__label"></span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button></div></div></section><mat-divider _ngcontent-ng-c1709841888="" role="separator" class="mat-divider mat-divider-horizontal" aria-orientation="horizontal"></mat-divider><section _ngcontent-ng-c1709841888=""><div _ngcontent-ng-c1709841888="" class="example-label">Extended FAB</div><div _ngcontent-ng-c1709841888="" class="example-button-row"><div _ngcontent-ng-c1709841888="" class="example-flex-container"><button _ngcontent-ng-c1709841888="" matfab="" extended="" class="mdc-fab mat-mdc-fab-base mat-mdc-fab mat-mdc-button-base mat-accent mdc-fab--extended mat-mdc-extended-fab" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="84"><span class="mat-mdc-button-persistent-ripple mdc-fab__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">favorite</mat-icon><span class="mdc-button__label"> Basic </span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><button _ngcontent-ng-c1709841888="" matfab="" extended="" disabled="true" class="mdc-fab mat-mdc-fab-base mat-mdc-fab mat-mdc-button-base mat-accent mat-mdc-button-disabled mdc-fab--extended mat-mdc-extended-fab" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" mat-ripple-loader-disabled="" data-brain-id="85"><span class="mat-mdc-button-persistent-ripple mdc-fab__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">favorite</mat-icon><span class="mdc-button__label"> Disabled </span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></button><a _ngcontent-ng-c1709841888="" matfab="" extended="" routerlink="." class="mdc-fab mat-mdc-fab-base mat-mdc-fab mat-mdc-button-base mat-accent mdc-fab--extended mat-mdc-extended-fab" mat-ripple-loader-uninitialized="" mat-ripple-loader-class-name="mat-mdc-button-ripple" data-brain-id="86"><span class="mat-mdc-button-persistent-ripple mdc-fab__ripple"></span><mat-icon _ngcontent-ng-c1709841888="" role="img" class="mat-icon notranslate material-icons mat-ligature-font mat-icon-no-color" aria-hidden="true" data-mat-icon-type="font">favorite</mat-icon><span class="mdc-button__label"> Link </span><span class="mat-focus-indicator"></span><span class="mat-mdc-button-touch-target"></span></a></div></div></section></button-overview-example><!----><!----><!----></div><!----></div></example-viewer><!----><!----></component-examples><!----></mat-tab-nav-panel></div></app-component-viewer><!----></main><app-footer class="docs-component-viewer-footer" _nghost-ng-c2446638793=""><footer _ngcontent-ng-c2446638793="" class="docs-footer"><div _ngcontent-ng-c2446638793="" class="docs-footer-list"><div _ngcontent-ng-c2446638793="" class="docs-footer-logo"><div _ngcontent-ng-c2446638793="" class="footer-logo"><app-logo _ngcontent-ng-c2446638793="" aria-hidden="true" _nghost-ng-c3052461960=""><svg _ngcontent-ng-c3052461960="" x="0px" y="0px" width="960px" height="960px" viewBox="0 0 960 960"><polygon _ngcontent-ng-c3052461960="" points="562.6,109.8 804.1,629.5 829.2,233.1"></polygon><polygon _ngcontent-ng-c3052461960="" points="624.9,655.9 334.3,655.9 297.2,745.8 479.6,849.8 662,745.8"></polygon><polygon _ngcontent-ng-c3052461960="" points="384.1,539.3 575.2,539.3 479.6,307"></polygon><polygon _ngcontent-ng-c3052461960="" points="396.6,109.8 130,233.1 155.1,629.5"></polygon></svg></app-logo><a _ngcontent-ng-c2446638793="" href="https://angular.dev" target="_blank" data-brain-id="87">Learn Angular</a></div></div><div _ngcontent-ng-c2446638793="" class="docs-footer-copyright"><div _ngcontent-ng-c2446638793=""><span _ngcontent-ng-c2446638793="">Powered by Google LLC ©2010-2026.</span><a _ngcontent-ng-c2446638793="" href="https://github.com/angular/components/blob/main/LICENSE" target="_blank" data-brain-id="88">Code licensed under an MIT-style License.</a><span _ngcontent-ng-c2446638793="">Documentation licensed under CC BY 4.0.</span></div></div></div></footer></app-footer></div></div></mat-sidenav-content><!----></mat-sidenav-container></app-component-sidenav><!----></material-docs-app>
+  <script>
+  // Note this is a customised version of the GA tracking snippet
+  // See the comments below for more info
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;
+  ~i.name.indexOf('NG_DEFER_BOOTSTRAP')|| // only load library if not running e2e tests
+  m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+  </script>
+<link rel="modulepreload" href="chunk-JULM7JLG.js"><link rel="modulepreload" href="chunk-G5V56A44.js"><link rel="modulepreload" href="chunk-QOEBTCOU.js"><link rel="modulepreload" href="chunk-FZUHWNGV.js"><link rel="modulepreload" href="chunk-BCFD732O.js"><link rel="modulepreload" href="chunk-EKJ4TMUC.js"><link rel="modulepreload" href="chunk-PUB6X27G.js"><link rel="modulepreload" href="chunk-Z4HJAQ3L.js"><link rel="modulepreload" href="chunk-FSJUNM6D.js"><link rel="modulepreload" href="chunk-ANYXDQSQ.js"><script src="polyfills-LKDCGJYC.js" type="module"></script><script src="main-ZEJJHJJD.js" type="module"></script>
+
+<div class="cdk-live-announcer-element cdk-visually-hidden" aria-atomic="true" aria-live="polite" id="cdk-live-announcer-0">Azure &amp; Blue theme selected.</div><div class="cdk-describedby-message-container cdk-visually-hidden" style="visibility: hidden;"><div id="cdk-describedby-message-ng-1-2" role="tooltip">Select a version of the documentation</div><div id="cdk-describedby-message-ng-1-3" role="tooltip">Select a theme for the documentation</div><div id="cdk-describedby-message-ng-1-4" role="tooltip">Edit Interactive disabled buttons example in StackBlitz</div><div id="cdk-describedby-message-ng-1-5" role="tooltip">Copy link to example</div><div id="cdk-describedby-message-ng-1-6" role="tooltip">View code</div><div id="cdk-describedby-message-ng-1-7" role="tooltip">Edit Testing with MatButtonHarness example in StackBlitz</div><div id="cdk-describedby-message-ng-1-8" role="tooltip">Edit Button overview example in StackBlitz</div><div id="cdk-describedby-message-ng-1-9" role="tooltip">This is a tooltip!</div></div></body></html>

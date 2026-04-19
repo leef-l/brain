@@ -46,6 +46,7 @@ func newBrowserHandler() *browserHandler {
 	for _, t := range browserTools {
 		reg.Register(t)
 	}
+	reg.Register(tool.NewNoteTool("browser"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-browser: load tool policy: %v\n", err)
@@ -161,7 +162,7 @@ When done, summarize what you observed and did.`
 	}
 
 	start := time.Now()
-	result := sidecar.RunAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns)
+	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
 
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "browser.execute",
@@ -206,6 +207,9 @@ func main() {
 	}
 }
 
+// buildRegistry 在 ExecutionSpec 约束下构建一份 registry。
+// 关键：复用 handler 的 h.browserTools（共享同一份 BrowserSession 持有），
+// 不每次重建；否则每次 tools/call 都会创建新的 Chromium 进程并泄漏旧会话。
 func (h *browserHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (tool.Registry, error) {
 	bounds, err := toolguard.NewBoundaries(spec)
 	if err != nil {
@@ -213,11 +217,10 @@ func (h *browserHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (too
 	}
 
 	var reg tool.Registry = tool.NewMemRegistry()
-	browserTools := tool.NewBrowserTools()
-	for _, t := range browserTools {
+	for _, t := range h.browserTools {
 		reg.Register(toolguard.WrapReadPolicy(tool.WrapSandbox(t, bounds.Sandbox), bounds.FilePolicy))
 	}
-	h.browserTools = browserTools
+	reg.Register(tool.NewNoteTool("browser"))
 
 	if cfg, err := toolpolicy.Load(""); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-browser: load tool policy: %v\n", err)

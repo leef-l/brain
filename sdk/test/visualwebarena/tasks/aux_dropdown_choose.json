@@ -1,0 +1,22 @@
+{
+  "id": "aux_dropdown_choose",
+  "category": "visual_state",
+  "site": "https://getbootstrap.com/docs/5.3/components/dropdowns/",
+  "goal": "Open a dropdown and choose 'Action' option.",
+  "max_turns": 8,
+  "visual_required": "aux",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Action"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "aux"
+  ]
+}

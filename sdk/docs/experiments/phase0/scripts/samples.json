@@ -1,0 +1,95 @@
+{
+  "samples": [
+    {
+      "id": "gitea_login",
+      "category": "login_simple",
+      "url": "https://demo.gitea.com/user/login",
+      "wait_for": "input[name='user_name'], input[name='username'], form",
+      "description": "Gitea demo站登录页,开源稳定"
+    },
+    {
+      "id": "discourse_login",
+      "category": "login_rich",
+      "url": "https://meta.discourse.org/login",
+      "wait_for": "form, input[type='email'], input[name='login']",
+      "description": "Discourse 登录页,含多字段+SSO"
+    },
+    {
+      "id": "saleor_product",
+      "category": "ecommerce",
+      "url": "https://demo.saleor.io/default-channel/products/apple-juice/",
+      "wait_for": "body",
+      "description": "Saleor 商品详情页,加购/收藏"
+    },
+    {
+      "id": "autoex_product",
+      "category": "ecommerce",
+      "url": "https://automationexercise.com/product_details/1",
+      "wait_for": "form, button, .product-information",
+      "description": "automationexercise 商品详情,加购+数量+评论"
+    },
+    {
+      "id": "adminlte_dashboard",
+      "category": "admin_structured",
+      "url": "https://adminlte.io/themes/v3/",
+      "wait_for": "body",
+      "description": "AdminLTE 标准后台 demo"
+    },
+    {
+      "id": "antd_pro_dashboard",
+      "category": "admin_freeform",
+      "url": "https://preview.pro.ant.design/dashboard/analysis",
+      "wait_for": "body",
+      "description": "Ant Design Pro 后台,高密度工具栏"
+    },
+    {
+      "id": "wikipedia_search",
+      "category": "search",
+      "url": "https://en.wikipedia.org/w/index.php?search=brain+agent&title=Special%3ASearch&fulltext=1",
+      "wait_for": "form, input[name='search']",
+      "description": "Wikipedia 搜索结果页,链接密集"
+    },
+    {
+      "id": "startpage_search",
+      "category": "search",
+      "url": "https://www.startpage.com/do/search?q=brain+agent",
+      "wait_for": "form, input[name='q'], input[name='query']",
+      "description": "Startpage 搜索结果页"
+    },
+    {
+      "id": "govuk_form",
+      "category": "form_simple",
+      "url": "https://design-system.service.gov.uk/patterns/addresses/",
+      "wait_for": "body",
+      "description": "GOV.UK 表单模式示例"
+    },
+    {
+      "id": "rjsf_form",
+      "category": "form_complex",
+      "url": "https://rjsf-team.github.io/react-jsonschema-form/",
+      "wait_for": "form",
+      "description": "react-jsonschema-form playground,动态表单(React)"
+    },
+    {
+      "id": "vue_element_admin",
+      "category": "framework_vue",
+      "url": "https://panjiachen.github.io/vue-element-admin/#/dashboard",
+      "wait_for": "body, .sidebar-container, .app-main",
+      "description": "Vue 2 + Element UI,中后台模板(Vue 框架覆盖)"
+    },
+    {
+      "id": "element_plus_buttons",
+      "category": "framework_vue",
+      "url": "https://element-plus.org/en-US/component/button.html",
+      "wait_for": "button, .el-button",
+      "description": "Vue 3 + Element Plus,官方组件库 demo(Vue3 框架覆盖)"
+    },
+    {
+      "id": "angular_material_button",
+      "category": "framework_angular",
+      "url": "https://material.angular.dev/components/button/examples",
+      "wait_for": "button, mat-button, body",
+      "description": "Angular Material 按钮示例(Angular 框架覆盖)"
+    }
+  ]
+}

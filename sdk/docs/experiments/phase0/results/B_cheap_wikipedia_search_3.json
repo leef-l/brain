@@ -1,0 +1,9 @@
+{
+  "combo": "B",
+  "role": "cheap",
+  "provider": "deepseek",
+  "page_id": "wikipedia_search",
+  "element_id": 3,
+  "predictions": [],
+  "skipped": "provider has no image support"
+}

@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "vue_element_admin",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4395,
+      "action_intent": "Click advertisement link served by Carbon ads",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 4056,
+      "action_intent": "Click advertisement link served by Carbon ads",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 4062,
+      "action_intent": "Navigate to external Carbon ad landing page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.85
+    }
+  ]
+}

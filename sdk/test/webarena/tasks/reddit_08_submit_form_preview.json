@@ -1,0 +1,11 @@
+{
+  "id": "reddit-submit-form-preview",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "Open /r/test/submit, fill title 'webarena benchmark probe' and body 'testing', and click 'preview' (do NOT submit). Verify a preview block rendered.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "dom_has", "value": ".preview" }
+  ],
+  "tags": ["reddit", "form", "phase3"]
+}

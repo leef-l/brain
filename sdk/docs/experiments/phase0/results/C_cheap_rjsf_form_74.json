@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "rjsf_form",
+  "element_id": 74,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3544,
+      "action_intent": "Enter a custom root field name for the form.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 3213,
+      "action_intent": "Enter a custom root property name for the form data.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.8
+    },
+    {
+      "run": 2,
+      "latency_ms": 3594,
+      "action_intent": "Enter a custom root property name for the form.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "vue_element_admin",
+  "element_id": 4,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2806,
+      "action_intent": "Click on a form UI element on login page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.6
+    },
+    {
+      "run": 1,
+      "latency_ms": 3384,
+      "action_intent": "Click on password input field or helper element",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "secondary",
+      "confidence": 0.6
+    },
+    {
+      "run": 2,
+      "latency_ms": 4455,
+      "action_intent": "Toggle password visibility on login form",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    }
+  ]
+}

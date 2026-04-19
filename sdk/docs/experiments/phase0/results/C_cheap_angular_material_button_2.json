@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "angular_material_button",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4360,
+      "action_intent": "Acknowledge and close a notification or dialog.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.9
+    },
+    {
+      "run": 1,
+      "latency_ms": 3009,
+      "action_intent": "Dismiss a notification or informational message.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 3006,
+      "action_intent": "Dismiss a notification or informational message.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    }
+  ]
+}

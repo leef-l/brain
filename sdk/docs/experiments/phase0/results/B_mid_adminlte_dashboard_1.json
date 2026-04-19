@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "adminlte_dashboard",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 9796,
+      "action_intent": "Click navigation link with no visible effect",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.75
+    },
+    {
+      "run": 1,
+      "latency_ms": 5397,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'e778ee872d2e76fa6039a61fe8b5db6b', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 7208,
+      "action_intent": "Toggle or expand a navigation menu element",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.7
+    }
+  ]
+}

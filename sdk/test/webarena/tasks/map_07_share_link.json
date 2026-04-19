@@ -1,0 +1,11 @@
+{
+  "id": "map-share-link",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "On openstreetmap.org, click the 'Share' icon in the right toolbar and verify the Share panel appeared with a 'Link' text field.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "dom_has", "value": "#short_input" }
+  ],
+  "tags": ["map", "share", "happy_path", "phase2"]
+}

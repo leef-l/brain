@@ -1,0 +1,22 @@
+{
+  "id": "aux_modal_confirm",
+  "category": "visual_state",
+  "site": "https://getbootstrap.com/docs/5.3/components/modal/",
+  "goal": "Open the 'Launch demo modal' dialog and click its Save button.",
+  "max_turns": 8,
+  "visual_required": "aux",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "Save"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "aux"
+  ]
+}

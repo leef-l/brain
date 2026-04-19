@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "autoex_product",
+  "element_id": 22,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5270,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'c6bc0105634b509cd691b6889dc8acbc', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 5260,
+      "action_intent": "Add the product to the shopping cart.",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3583,
+      "action_intent": "Add the product to shopping cart",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    }
+  ]
+}

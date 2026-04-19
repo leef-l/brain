@@ -1,0 +1,754 @@
+{
+  "page_id": "autoex_product",
+  "url": "https://automationexercise.com/product_details/1",
+  "category": "ecommerce",
+  "built_at": "2026-04-19T09:20:49Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 22,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Add to cart",
+        "href": null,
+        "bbox": {
+          "x": 1204,
+          "y": 316,
+          "w": 114,
+          "h": 33
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Add the product to the shopping cart",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "add the product to the shopping cart": 6,
+            "add the current product to the shopping cart": 3
+          },
+          "reversibility": {
+            "semi_reversible": 9
+          },
+          "risk_level": {
+            "safe_caution": 7,
+            "safe": 2
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Add the current product to the shopping cart",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Add the product to the shopping cart",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Add the current product to the shopping cart",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Add the product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Add the product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Add the product to the shopping cart",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Add the product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Add the product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Add the current product to the shopping cart.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "submit",
+        "name": "Submit",
+        "href": null,
+        "bbox": {
+          "x": 1230,
+          "y": 921,
+          "w": 68,
+          "h": 32
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Submit a product review",
+        "reversibility": "irreversible",
+        "risk_level": "safe_caution",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "submit a product review": 5,
+            "submit a product review with name, email, and comment": 3,
+            "submit the product review": 1
+          },
+          "reversibility": {
+            "irreversible": 9
+          },
+          "risk_level": {
+            "safe_caution": 8,
+            "external_effect": 1
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Submit a product review with name, email, and comment",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Submit a product review",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Submit a product review with name, email, and comment",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Submit the product review.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Submit a product review.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Submit a product review",
+          "reversibility": "irreversible",
+          "risk_level": "external_effect",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Submit a product review.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Submit a product review.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Submit a product review with name, email, and comment.",
+          "reversibility": "irreversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Signup / Login",
+        "href": "https://automationexercise.com/login",
+        "bbox": {
+          "x": 884,
+          "y": 40,
+          "w": 105,
+          "h": 20
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the signup or login page",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the signup or login page": 6,
+            "navigate to the login or signup page": 3
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the signup or login page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the signup or login page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the signup or login page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the Signup or Login page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the Signup or Login page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the signup or login page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the login or signup page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the login or signup page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the login or signup page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "number",
+        "name": "1",
+        "href": null,
+        "bbox": {
+          "x": 1098,
+          "y": 318,
+          "w": 50,
+          "h": 33
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Set the desired product quantity before adding to cart",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "set the desired product quantity before adding to cart": 2,
+            "set the quantity of the product to add to cart": 2,
+            "set the quantity of the product to add": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Set the desired product quantity before adding to cart",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Set the quantity of the product to add to cart",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Set the desired product quantity before adding to cart",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Set the desired purchase quantity.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Adjust product quantity before adding to cart.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Set the product quantity",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Set the quantity of the product to add.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Set the quantity of the product to add.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Set the quantity of the product to add to cart.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "Your Name",
+        "href": null,
+        "bbox": {
+          "x": 671,
+          "y": 652,
+          "w": 375,
+          "h": 36
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Enter reviewer name for the product review form",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "enter reviewer name for the product review form": 2,
+            "enter name for the product review": 2,
+            "enter their name for the review": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 7,
+            "primary": 2
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Enter reviewer name for the product review form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Enter name for the product review",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Enter reviewer name for the product review form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter their name for the review.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Enter name for the product review form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter name for the product review",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Enter the reviewer's name for the product review.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter the reviewer's name for a product review.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter your name for the product review form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "email",
+        "name": "Email Address",
+        "href": null,
+        "bbox": {
+          "x": 1073,
+          "y": 652,
+          "w": 375,
+          "h": 36
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Enter email address for the product review form",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "enter email address for the product review form": 3,
+            "enter email address for the product review": 2,
+            "enter their email address for the review": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 7,
+            "primary": 2
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Enter email address for the product review form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Enter email address for the product review",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Enter email address for the product review form",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter their email address for the review.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Enter email address for the product review form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter email address for the product review",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Enter the reviewer's email address for the product review.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter the reviewer's email address for a product review.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter your email address for the product review form.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    }
+  ]
+}

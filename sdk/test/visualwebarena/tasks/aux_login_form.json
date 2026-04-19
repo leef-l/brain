@@ -1,0 +1,22 @@
+{
+  "id": "aux_login_form",
+  "category": "visual_state",
+  "site": "https://demo.gitea.com/user/login",
+  "goal": "Log in as tester/tester123 and land on dashboard.",
+  "max_turns": 8,
+  "visual_required": "aux",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "dashboard"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "aux"
+  ]
+}

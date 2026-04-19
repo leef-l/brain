@@ -1,0 +1,12 @@
+{
+  "id": "reddit-open-top-post",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "Go to https://old.reddit.com/r/golang/top and open the top-ranked post of the week; verify the comments page loaded.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "url_contains", "value": "/r/golang/comments/" },
+    { "kind": "dom_has", "value": ".commentarea" }
+  ],
+  "tags": ["reddit", "navigation", "happy_path", "phase1"]
+}

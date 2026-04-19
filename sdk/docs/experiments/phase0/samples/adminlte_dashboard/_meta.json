@@ -1,0 +1,14 @@
+{
+  "id": "adminlte_dashboard",
+  "category": "admin_structured",
+  "description": "AdminLTE 标准后台 demo",
+  "url": "https://adminlte.io/themes/v3/",
+  "captured_at": "2026-04-19T08:53:44Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 72
+}

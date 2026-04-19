@@ -1,0 +1,11 @@
+{
+  "id": "reddit-sort-by-new",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "On https://old.reddit.com/r/webdev, change the sort order to 'new' by clicking the 'new' tab.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_matches", "value": "/r/webdev/new/?" }
+  ],
+  "tags": ["reddit", "filter", "happy_path", "phase2"]
+}

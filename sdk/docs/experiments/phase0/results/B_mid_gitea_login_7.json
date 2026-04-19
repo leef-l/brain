@@ -1,0 +1,29 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "gitea_login",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4177,
+      "error": "InternalServerError(\"Error code: 500 - {'id': '56dcc97fec7f81f3df4a17aaf00e2144', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 22902,
+      "action_intent": "Navigate to Gitea about page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3968,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'cbaca73859c81abd607654c4fa01543c', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    }
+  ]
+}

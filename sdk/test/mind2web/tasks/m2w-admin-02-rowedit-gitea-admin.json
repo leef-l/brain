@@ -1,0 +1,24 @@
+{
+  "id": "m2w-admin-02-rowedit-gitea-admin",
+  "category": "admin",
+  "site": "https://demo.gitea.com",
+  "goal": "On https://demo.gitea.com admin, open the edit form for any row and save a trivial change; verify a success alert or the row's updated value.",
+  "max_turns": 14,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "[role=\"alert\"], .success, .alert-success, .notification-success"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "admin",
+    "row_edit",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-admin-01-b",
+    "domain": "dev",
+    "subdomain": "gitea-admin"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "ddg-search-basic",
+  "category": "search",
+  "site": "https://duckduckgo.com",
+  "goal": "Go to duckduckgo.com, search for 'brain v3 agent framework', and return the title of the first organic result.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "url_contains", "value": "q=brain" }
+  ],
+  "tags": ["search", "phase1"]
+}

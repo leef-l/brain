@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "govuk_form",
+  "element_id": 6,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 25641,
+      "action_intent": "Search the Design System documentation",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 9798,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'df4afb331bfa4bb3993976ce0addae2e', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 12122,
+      "action_intent": "Search the Design System documentation",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

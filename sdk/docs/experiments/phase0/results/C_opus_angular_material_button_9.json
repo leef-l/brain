@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "angular_material_button",
+  "element_id": 9,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4198,
+      "action_intent": "Open a dropdown menu to select a documentation theme",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 4655,
+      "action_intent": "Open a dropdown menu to select a documentation theme",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 4801,
+      "action_intent": "Open a dropdown menu to select a documentation theme",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

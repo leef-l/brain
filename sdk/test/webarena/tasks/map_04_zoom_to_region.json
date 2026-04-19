@@ -1,0 +1,11 @@
+{
+  "id": "map-zoom-to-region",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "Navigate openstreetmap.org to the URL fragment for zoom 12 near London (approx lat 51.51 lon -0.12) and verify the map URL contains a #map=12/ prefix.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_matches", "value": "#map=12/" }
+  ],
+  "tags": ["map", "navigation", "happy_path", "phase1"]
+}

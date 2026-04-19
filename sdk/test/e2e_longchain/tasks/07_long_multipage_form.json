@@ -1,0 +1,23 @@
+{
+  "id": "07_long_multipage_form",
+  "description": "10 页分步表单填写(压测 context 传递 + token budget 临界点)",
+  "site": "https://demo.brain.local/wizard",
+  "max_turns": 20,
+  "token_budget": 90000,
+  "steps": [
+    { "name": "p1_personal",   "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 1 — personal info" },
+    { "name": "p2_address",    "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 2 — address" },
+    { "name": "p3_contact",    "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 3 — contact channels" },
+    { "name": "p4_employment", "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 4 — employment" },
+    { "name": "p5_income",     "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 5 — income" },
+    { "name": "p6_assets",     "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 6 — assets" },
+    { "name": "p7_liabilities","category": "form", "pattern_id": "submit_generic_form", "goal": "Page 7 — liabilities" },
+    { "name": "p8_references", "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 8 — references" },
+    { "name": "p9_disclosures","category": "form", "pattern_id": "submit_generic_form", "goal": "Page 9 — disclosures" },
+    { "name": "p10_submit",    "category": "form", "pattern_id": "submit_generic_form", "goal": "Page 10 — final submit" }
+  ],
+  "success": [
+    { "kind": "dom_contains", "value": "thank you" }
+  ],
+  "tags": ["longchain", "context_stress", "token_budget", "phase2"]
+}

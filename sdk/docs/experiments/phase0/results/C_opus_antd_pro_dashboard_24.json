@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "antd_pro_dashboard",
+  "element_id": 24,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4747,
+      "action_intent": "Filter dashboard data to show current month",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.92
+    },
+    {
+      "run": 1,
+      "latency_ms": 4327,
+      "action_intent": "Filter dashboard data to show current month",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.92
+    },
+    {
+      "run": 2,
+      "latency_ms": 4281,
+      "action_intent": "Filter dashboard data to show current month",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.92
+    }
+  ]
+}

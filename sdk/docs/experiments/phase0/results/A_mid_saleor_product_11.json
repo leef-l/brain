@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "saleor_product",
+  "element_id": 11,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3051,
+      "action_intent": "Add the product to the shopping bag",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 1770,
+      "action_intent": "Add the Apple Juice product to shopping bag",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2517,
+      "action_intent": "Add the product to the shopping bag",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.95
+    }
+  ]
+}

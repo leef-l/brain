@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "code",
   "name": "Code Brain",
-  "brain_version": "0.1.0",
+  "brain_version": "1.0.0",
   "description": "代码专家：文件读写、代码搜索、命令执行",
   "capabilities": [
     "file.read",
@@ -33,6 +33,13 @@
   "health": {
     "startup_timeout_ms": 3000,
     "heartbeat_timeout_ms": 30000,
-    "expected_methods": ["brain/execute", "brain/tools_list"]
+    "expected_methods": [
+      "brain/execute",
+      "brain/tools_list",
+      "brain/metrics"
+    ]
+  },
+  "compatibility": {
+    "min_kernel_version": "1.0.0"
   }
 }

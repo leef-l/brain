@@ -1,0 +1,55 @@
+{
+  "id": "05_adminlte_bulk_delete",
+  "description": "AdminLTE 登录 → 列表翻页 → 筛选 → 批量删除(auth + admin 复合)",
+  "site": "https://adminlte.io/demo",
+  "max_turns": 12,
+  "token_budget": 45000,
+  "steps": [
+    {
+      "name": "login",
+      "url_hint": "/login",
+      "category": "auth",
+      "pattern_id": "login_username_password",
+      "goal": "Log in with demo credentials"
+    },
+    {
+      "name": "open_users",
+      "url_hint": "/pages/users",
+      "category": "admin",
+      "pattern_id": "admin_table_pagination",
+      "goal": "Open users table"
+    },
+    {
+      "name": "next_page",
+      "url_hint": "/pages/users",
+      "category": "admin",
+      "pattern_id": "admin_table_next_page",
+      "goal": "Advance to page 2"
+    },
+    {
+      "name": "filter",
+      "url_hint": "/pages/users",
+      "category": "admin",
+      "pattern_id": "admin_filter_apply",
+      "goal": "Filter by role=guest"
+    },
+    {
+      "name": "bulk_delete",
+      "url_hint": "/pages/users",
+      "category": "admin",
+      "pattern_id": "admin_batch_action",
+      "goal": "Select all filtered rows and apply Delete batch action"
+    },
+    {
+      "name": "confirm_delete",
+      "url_hint": "/pages/users",
+      "category": "admin",
+      "pattern_id": "admin_row_delete_confirm",
+      "goal": "Confirm the deletion dialog"
+    }
+  ],
+  "success": [
+    { "kind": "dom_contains", "value": "deleted" }
+  ],
+  "tags": ["longchain", "admin_bulk", "phase2"]
+}

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/dashboard"
 	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/persistence"
+	"github.com/leef-l/brain/sdk/tool"
 )
 
 // runManagerAdapter adapts *runManager to dashboard.RunManager interface.
@@ -39,6 +42,71 @@ func (a *leaseProviderAdapter) ActiveLeases() []dashboard.LeaseSnapshot {
 	return out
 }
 
-func registerDashboardRoutes(mux *http.ServeMux, mgr *runManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *brainConfig, startTime time.Time, leaseManager *kernel.MemLeaseManager) *dashboard.WSHub {
-	return dashboard.RegisterRoutes(mux, &runManagerAdapter{mgr: mgr}, pool, bus, cfg, startTime, &leaseProviderAdapter{lm: leaseManager})
+// learningProviderAdapter 组合 PatternLibrary + LearningStore 给 Dashboard。
+// 复用 brain-v3 已有数据源,不缓存、不另建统计表。调用开销由 dashboard 端控制。
+type learningProviderAdapter struct {
+	patternLib *tool.PatternLibrary
+	learning   persistence.LearningStore
+}
+
+func (a *learningProviderAdapter) LearningOverview() dashboard.LearningOverview {
+	out := dashboard.LearningOverview{}
+	if a == nil {
+		return out
+	}
+	if a.patternLib != nil {
+		for _, p := range a.patternLib.List("") {
+			stat := dashboard.PatternStat{
+				ID:           p.ID,
+				Category:     p.Category,
+				Source:       p.Source,
+				MatchCount:   p.Stats.MatchCount,
+				SuccessCount: p.Stats.SuccessCount,
+				FailureCount: p.Stats.FailureCount,
+				SuccessRate:  p.Stats.SuccessRate(),
+			}
+			if !p.Stats.LastHitAt.IsZero() {
+				stat.LastHitAt = p.Stats.LastHitAt.UTC().Format(time.RFC3339)
+			}
+			out.Patterns = append(out.Patterns, stat)
+		}
+	}
+	if a.learning != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if sums, err := a.learning.ListDailySummaries(ctx, 14); err == nil {
+			for _, s := range sums {
+				out.Daily = append(out.Daily, dashboard.DailySummaryStat{
+					Date:        s.Date,
+					RunsTotal:   s.RunsTotal,
+					RunsFailed:  s.RunsFailed,
+					BrainCounts: s.BrainCounts,
+					SummaryText: s.SummaryText,
+				})
+			}
+		}
+		if seqs, err := a.learning.ListInteractionSequences(ctx, "", 500); err == nil {
+			// 按 brain_kind 聚合
+			byBrain := map[string]*dashboard.InteractionStat{}
+			for _, s := range seqs {
+				stat, ok := byBrain[s.BrainKind]
+				if !ok {
+					stat = &dashboard.InteractionStat{BrainKind: s.BrainKind}
+					byBrain[s.BrainKind] = stat
+				}
+				stat.Count++
+				if s.Outcome == "success" {
+					stat.Successes++
+				}
+			}
+			for _, s := range byBrain {
+				out.Interactions = append(out.Interactions, *s)
+			}
+		}
+	}
+	return out
+}
+
+func registerDashboardRoutes(mux *http.ServeMux, mgr *runManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *brainConfig, startTime time.Time, leaseManager *kernel.MemLeaseManager, learnP dashboard.LearningProvider) *dashboard.WSHub {
+	return dashboard.RegisterRoutes(mux, &runManagerAdapter{mgr: mgr}, pool, bus, cfg, startTime, &leaseProviderAdapter{lm: leaseManager}, learnP)
 }

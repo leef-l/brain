@@ -1,0 +1,11 @@
+{
+  "id": "opencart-add-to-cart",
+  "category": "ecommerce",
+  "site": "https://demo.opencart.com",
+  "goal": "Navigate to any product detail page and click 'Add to Cart'. Verify the cart count indicator changed.",
+  "max_turns": 10,
+  "success": [
+    { "kind": "dom_has", "value": "#cart" }
+  ],
+  "tags": ["ecommerce", "phase2"]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-03-navigate-duckduckgo",
+  "category": "misc",
+  "site": "https://duckduckgo.com",
+  "goal": "On https://duckduckgo.com homepage, follow the primary navigation to an 'about' or 'help' page and verify the URL changed.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)/(about|help|support|info|company)"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "navigate",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-01-3",
+    "domain": "search",
+    "subdomain": "duckduckgo"
+  }
+}

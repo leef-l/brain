@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "vue_element_admin",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2703,
+      "action_intent": "Click on Carbon ad to visit advertiser landing page",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2406,
+      "action_intent": "Click on external advertisement link",
+      "reversibility": "reversible",
+      "risk_level": "external_effect",
+      "flow_role": "secondary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 1704,
+      "action_intent": "Click on advertisement link",
+      "reversibility": "semi_reversible",
+      "risk_level": "external_effect",
+      "flow_role": "secondary",
+      "confidence": 0.85
+    }
+  ]
+}

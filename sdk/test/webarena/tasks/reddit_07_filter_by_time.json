@@ -1,0 +1,11 @@
+{
+  "id": "reddit-filter-by-time",
+  "category": "reddit",
+  "site": "https://old.reddit.com",
+  "goal": "On /r/rust/top, switch the time filter to 'past year' using the dropdown and verify the URL reflects t=year.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "url_contains", "value": "t=year" }
+  ],
+  "tags": ["reddit", "filter", "phase2"]
+}

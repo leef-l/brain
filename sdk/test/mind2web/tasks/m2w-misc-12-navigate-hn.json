@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-12-navigate-hn",
+  "category": "misc",
+  "site": "https://news.ycombinator.com",
+  "goal": "On https://news.ycombinator.com homepage, follow the primary navigation to an 'about' or 'help' page and verify the URL changed.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)/(about|help|support|info|company)"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "navigate",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-04-3",
+    "domain": "community",
+    "subdomain": "hn"
+  }
+}

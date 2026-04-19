@@ -1,0 +1,168 @@
+{
+  "page_id": "govuk_form",
+  "url": "https://design-system.service.gov.uk/patterns/addresses/",
+  "category": "form_simple",
+  "snapshot_file": "samples/govuk_form/snapshot.json",
+  "screenshot_file": "samples/govuk_form/screenshot.png",
+  "html_file": "samples/govuk_form/page.html",
+  "drafted_at": "2026-04-19T09:03:42Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 20,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Passwords",
+        "href": "https://design-system.service.gov.uk/patterns/passwords/",
+        "bbox": {
+          "x": 207,
+          "y": 701,
+          "w": 73,
+          "h": 23
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Passwords pattern page within the GOV.UK Design System",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "notes": "Sidebar navigation link among other pattern pages; standard internal link.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Accept analytics cookies",
+        "href": null,
+        "bbox": {
+          "x": 285,
+          "y": 204,
+          "w": 229,
+          "h": 38
+        }
+      },
+      "draft": {
+        "action_intent": "Accept the use of analytics cookies on the site",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "utility",
+        "notes": "Sets a cookie preference that enables analytics tracking. Reversible via cookie settings page, but tracking data already collected cannot be undone, hence semi_reversible.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Reject analytics cookies",
+        "href": null,
+        "bbox": {
+          "x": 525,
+          "y": 204,
+          "w": 222,
+          "h": 38
+        }
+      },
+      "draft": {
+        "action_intent": "Reject the use of analytics cookies on the site",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Sets cookie preference to reject analytics. Can be changed later via cookie settings, but the preference is persisted immediately.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 6,
+      "element": {
+        "tag": "input",
+        "role": "combobox",
+        "type": "text",
+        "name": "Search Design System",
+        "href": null,
+        "bbox": {
+          "x": 1085,
+          "y": 285,
+          "w": 370,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Search the GOV.UK Design System for a specific topic or component",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Combobox input for site-wide search; no state change, purely navigational/informational.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 46,
+      "element": {
+        "tag": "a",
+        "role": "tab",
+        "type": null,
+        "name": "HTML",
+        "href": "https://design-system.service.gov.uk/patterns/addresses/#multiple-text-inputs-addresses-example-open-html",
+        "bbox": {
+          "x": 506,
+          "y": 1577,
+          "w": 49,
+          "h": 25
+        }
+      },
+      "draft": {
+        "action_intent": "View the HTML source code for the multiple text inputs address example",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "secondary",
+        "notes": "Tab that reveals the HTML code snippet for the example. Stays on the same page via anchor/tab interaction.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 47,
+      "element": {
+        "tag": "a",
+        "role": "tab",
+        "type": null,
+        "name": "Nunjucks",
+        "href": "https://design-system.service.gov.uk/patterns/addresses/#multiple-text-inputs-addresses-example-open-nunjucks",
+        "bbox": {
+          "x": 609,
+          "y": 1577,
+          "w": 78,
+          "h": 25
+        }
+      },
+      "draft": {
+        "action_intent": "View the Nunjucks source code for the multiple text inputs address example",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "secondary",
+        "notes": "Tab that reveals the Nunjucks code snippet for the example. Stays on the same page via anchor/tab interaction.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

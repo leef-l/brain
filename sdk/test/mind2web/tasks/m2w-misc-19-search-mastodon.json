@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-19-search-mastodon",
+  "category": "misc",
+  "site": "https://mastodon.social",
+  "goal": "On https://mastodon.social, submit a search for the keyword 'privacy' and verify the results page URL carries the query.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)([?\u0026]q=|search)"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "search",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-07-1",
+    "domain": "social",
+    "subdomain": "mastodon"
+  }
+}

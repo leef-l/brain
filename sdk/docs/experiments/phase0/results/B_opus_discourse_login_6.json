@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "discourse_login",
+  "element_id": 6,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4043,
+      "action_intent": "Navigate to password reset flow for forgotten password",
+      "reversibility": "conditional",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.96
+    },
+    {
+      "run": 1,
+      "latency_ms": 4126,
+      "action_intent": "Navigate to password reset flow for forgotten password",
+      "reversibility": "conditional",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.96
+    },
+    {
+      "run": 2,
+      "latency_ms": 5059,
+      "action_intent": "Navigate to password reset flow for forgotten password",
+      "reversibility": "conditional",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.96
+    }
+  ]
+}

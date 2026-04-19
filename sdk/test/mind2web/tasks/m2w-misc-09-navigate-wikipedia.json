@@ -1,0 +1,23 @@
+{
+  "id": "m2w-misc-09-navigate-wikipedia",
+  "category": "misc",
+  "site": "https://www.wikipedia.org",
+  "goal": "On https://www.wikipedia.org homepage, follow the primary navigation to an 'about' or 'help' page and verify the URL changed.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)/(about|help|support|info|company)"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "navigate",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-misc-03-3",
+    "domain": "kb",
+    "subdomain": "wikipedia"
+  }
+}

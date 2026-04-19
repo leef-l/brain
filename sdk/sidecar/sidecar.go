@@ -148,7 +148,7 @@ func Run(handler BrainHandler) error {
 	// Catch-all for brain-specific methods via HandleMethod.
 	// Note: BidirRPC only dispatches registered methods, so we register
 	// a few common ones that brains might need.
-	for _, method := range []string{"brain/execute", "brain/plan", "brain/verify"} {
+	for _, method := range []string{"brain/execute", "brain/plan", "brain/verify", "brain/metrics", "brain/learn"} {
 		m := method // capture
 		rpc.Handle(m, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 			return handler.HandleMethod(ctx, m, params)

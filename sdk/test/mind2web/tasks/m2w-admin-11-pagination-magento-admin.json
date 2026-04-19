@@ -1,0 +1,24 @@
+{
+  "id": "m2w-admin-11-pagination-magento-admin",
+  "category": "admin",
+  "site": "https://magento.softwaretestingboard.com/admin",
+  "goal": "On the admin backend at https://magento.softwaretestingboard.com/admin, navigate to any resource list, go to page 2 of the table, and verify the URL or visible rows reflect the pagination change.",
+  "max_turns": 10,
+  "success": [
+    {
+      "kind": "url_matches",
+      "value": "(?i)([?\u0026](page|p)=2|/page/2)"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "admin",
+    "pagination",
+    "cross_site"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-admin-06-a",
+    "domain": "ecom",
+    "subdomain": "magento-admin"
+  }
+}

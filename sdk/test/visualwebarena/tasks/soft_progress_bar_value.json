@@ -1,0 +1,22 @@
+{
+  "id": "soft_progress_bar_value",
+  "category": "visual_state",
+  "site": "https://getbootstrap.com/docs/5.3/components/progress/",
+  "goal": "Report the aria-valuenow of the 50% progress bar.",
+  "max_turns": 8,
+  "visual_required": "soft",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "50"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "soft"
+  ]
+}

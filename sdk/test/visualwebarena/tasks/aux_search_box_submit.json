@@ -1,0 +1,22 @@
+{
+  "id": "aux_search_box_submit",
+  "category": "visual_state",
+  "site": "https://duckduckgo.com/",
+  "goal": "Search 'WebAssembly' and confirm results appear.",
+  "max_turns": 8,
+  "visual_required": "aux",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "WebAssembly"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "aux"
+  ]
+}

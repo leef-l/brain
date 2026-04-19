@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "angular_material_button",
+  "element_id": 9,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5445,
+      "action_intent": "Select a theme to change UI appearance",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 1413,
+      "action_intent": "Open theme selection dropdown",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 5727,
+      "action_intent": "Opens theme selection dropdown",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.95
+    }
+  ]
+}

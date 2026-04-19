@@ -1,0 +1,12 @@
+{
+  "id": "shopping-product-detail",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "Open any product listing on demo.opencart.com, click into a product detail page and verify the Add-to-Cart button is present.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "url_contains", "value": "product_id=" },
+    { "kind": "dom_has", "value": "#button-cart" }
+  ],
+  "tags": ["shopping", "navigation", "happy_path", "phase1"]
+}

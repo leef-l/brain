@@ -1,0 +1,22 @@
+{
+  "id": "canvas_d3_bar_chart",
+  "category": "canvas",
+  "site": "https://observablehq.com/@d3/bar-chart",
+  "goal": "Read the bar chart on the page and report which country has the tallest bar.",
+  "max_turns": 12,
+  "visual_required": "hard",
+  "modality": [
+    "canvas"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "China"
+    }
+  ],
+  "tags": [
+    "canvas",
+    "hard"
+  ]
+}

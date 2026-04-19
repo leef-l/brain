@@ -1,0 +1,33 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "rjsf_form",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4335,
+      "action_intent": "Select the Blank sample schema in the samples drawer",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.88
+    },
+    {
+      "run": 1,
+      "latency_ms": 4398,
+      "action_intent": "Select the Blank sample schema in the samples drawer",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.88
+    },
+    {
+      "run": 2,
+      "latency_ms": 2990,
+      "error": "RateLimitError(\"Error code: 429 - {'error': {'type': 'bad_response_status_code', 'message': 'bad response status code 429 (request id: 202604190954586153603638268d9d6xhetAIuz)'}, 'type': 'error'}\")"
+    }
+  ]
+}

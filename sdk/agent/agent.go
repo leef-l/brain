@@ -38,6 +38,11 @@ const (
 	// KindQuant is a specialist brain that runs trading strategies, risk
 	// management, and execution. See brains/quant/.
 	KindQuant Kind = "quant"
+
+	// KindDesktop is a specialist brain for OS-level automation outside the
+	// browser: file management, window control, keyboard shortcuts. See
+	// brains/desktop/.
+	KindDesktop Kind = "desktop"
 )
 
 // BuiltinKinds returns the set of built-in specialist brain kinds (excluding
@@ -51,6 +56,7 @@ func BuiltinKinds() []Kind {
 		KindFault,
 		KindData,
 		KindQuant,
+		KindDesktop,
 	}
 }
 

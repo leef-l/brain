@@ -1,0 +1,12 @@
+{
+  "id": "shopping-checkout-start",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "With a non-empty cart, click 'Checkout' from the cart page and reach the checkout entry page (login/register/guest selection).",
+  "max_turns": 8,
+  "success": [
+    { "kind": "url_contains", "value": "route=checkout/checkout" },
+    { "kind": "dom_has", "value": "#collapse-checkout-option" }
+  ],
+  "tags": ["shopping", "checkout", "phase3"]
+}

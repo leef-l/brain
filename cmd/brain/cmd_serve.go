@@ -314,8 +314,29 @@ func runServe(args []string) int {
 	// 创建全局事件总线，供 SSE 端点和运行时事件推送使用
 	globalEventBus := events.NewMemEventBus()
 	leaseManager := kernel.NewMemLeaseManager()
+
+	// Task #19: 启动外部进程钩子 runner,订阅 task.state.* 事件。配置在
+	// ~/.brain/hooks.json,不存在时 no-op,不影响 serve 启动。
+	if hookCfg, err := kernel.LoadHookConfig(""); err != nil {
+		fmt.Fprintf(os.Stderr, "brain serve: warning: hook config: %v\n", err)
+	} else if len(hookCfg.Hooks) > 0 {
+		hookRunner := kernel.NewHookRunner(globalEventBus, hookCfg, nil)
+		if err := hookRunner.Start(serveCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "brain serve: warning: hook runner start: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "brain serve: hook runner active (%d hooks)\n", len(hookCfg.Hooks))
+			defer hookRunner.Stop()
+		}
+	}
 	// 初始化自适应工具策略（B-5）
 	initAdaptiveToolPolicy(cfg)
+
+	// M6 学习闭环:让 anomalyInjectingTool 每次跑完就把结果回写给
+	// AdaptivePolicy,成功率低的工具会在下一轮 Evaluate 时被自动降权 / 禁用。
+	// 参照 SetInteractionSink 的进程级注入风格。
+	if globalAdaptivePolicy != nil {
+		tool.SetOutcomeSink(globalAdaptivePolicy)
+	}
 
 	capIndex := kernel.NewCapabilityIndex()
 
@@ -338,12 +359,35 @@ func runServe(args []string) int {
 		learner = kernel.NewLearningEngine()
 	}
 
+	// Task #13: 让 browser brain 的交互序列走 LearningEngine → LearningStore,
+	// 这样 ui_pattern_learn 的聚类就能从 SQLite 读到 InteractionSequence。
+	tool.SetInteractionSink(learner)
+
 	// 上下文引擎：注入 LLM Summarizer + SharedStore 持久化
 	ctxEngine := kernel.NewDefaultContextEngine()
 	if cfg != nil {
 		if session, err := openConfiguredProvider(cfg, "central", nil, "", "", "", ""); err == nil {
 			ctxEngine.Summarizer = session.Provider
 			ctxEngine.SummaryModel = session.Model
+		}
+	}
+
+	// Task #15: 每日对话总结 daemon。订阅 task.state.* 事件累积,跨零点调
+	// LLM 总结写 LearningStore.DailySummary。ctxEngine 已有 Summarizer 则
+	// 复用;缺少 LearningStore 时降级为 no-op。
+	if runtime.Stores != nil && runtime.Stores.LearningStore != nil {
+		summaryDaemon := kernel.NewSummaryDaemon(kernel.SummaryDaemonConfig{
+			Bus:          globalEventBus,
+			Runs:         runtime.Stores.RunStore,
+			Store:        runtime.Stores.LearningStore,
+			Summarizer:   ctxEngine.Summarizer,
+			SummaryModel: ctxEngine.SummaryModel,
+		})
+		if err := summaryDaemon.Start(serveCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "brain serve: warning: summary daemon start: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "brain serve: daily summary daemon active\n")
+			defer summaryDaemon.Stop()
 		}
 	}
 	if runtime.Stores != nil && runtime.Stores.SharedMessageStore != nil {
@@ -417,6 +461,12 @@ func runServe(args []string) int {
 		remotePool:   remotePool,
 		rootCtx:      serveCtx,
 	}
+
+	// Task #16: 人类接管协调器。工具层 human.request_takeover 阻塞等待,
+	// /v1/executions/{id}/resume|abort 唤醒。复用 TaskExecution.StatePaused +
+	// globalEventBus,不另造通知机制。
+	humanCoord := newHostHumanTakeoverCoordinator(mgr, globalEventBus)
+	tool.SetHumanTakeoverCoordinator(humanCoord)
 
 	mux := http.NewServeMux()
 
@@ -534,6 +584,10 @@ func runServe(args []string) int {
 			handleStopExecution(w, r, mgr, id)
 		case sub == "events" && r.Method == http.MethodGet:
 			handleExecutionEvents(w, r, mgr, id)
+		case sub == "resume" && r.Method == http.MethodPost:
+			handleResumeExecution(w, r, humanCoord, id)
+		case sub == "abort" && r.Method == http.MethodPost:
+			handleAbortExecution(w, r, humanCoord, id)
 		case sub == "" && r.Method == http.MethodGet:
 			handleGetExecution(w, r, mgr, id)
 		default:
@@ -543,7 +597,15 @@ func runServe(args []string) int {
 
 	// Dashboard API 路由
 	serverStart := time.Now().UTC()
-	wsHub := registerDashboardRoutes(mux, mgr, pool, globalEventBus, cfg, serverStart, leaseManager)
+	// Task #17: LearningProvider 聚合 PatternLibrary + LearningStore 供 Dashboard。
+	var learningProvider dashboard.LearningProvider
+	if runtime.Stores != nil && runtime.Stores.LearningStore != nil {
+		learningProvider = &learningProviderAdapter{
+			patternLib: tool.SharedPatternLibrary(),
+			learning:   runtime.Stores.LearningStore,
+		}
+	}
+	wsHub := registerDashboardRoutes(mux, mgr, pool, globalEventBus, cfg, serverStart, leaseManager, learningProvider)
 	if wsHub != nil {
 		wsHub.Start(context.Background())
 	}
@@ -774,6 +836,7 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		Mode:      kernel.ExecutionMode(req.Mode),
 		Lifecycle: kernel.LifecyclePolicy(req.Lifecycle),
 		Restart:   kernel.RestartPolicy(req.Restart),
+		Bus:       mgr.eventBus, // Task #19: 让 Transition 发事件到外部 hooks
 	})
 	entry := &runEntry{
 		ID:          runRec.ID,

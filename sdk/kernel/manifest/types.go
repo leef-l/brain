@@ -67,6 +67,10 @@ type PolicySpec struct {
 	TimeoutSeconds       int    `json:"timeout_seconds,omitempty"            yaml:"timeout_seconds,omitempty"`
 	MinApprovalLevel     string `json:"min_approval_level,omitempty"         yaml:"min_approval_level,omitempty"`
 	RequireHumanApproval string `json:"require_human_approval_above,omitempty" yaml:"require_human_approval_above,omitempty"`
+	ApprovalClass        string `json:"approval_class,omitempty"             yaml:"approval_class,omitempty"`
+	ApprovalMode         string `json:"approval_mode,omitempty"              yaml:"approval_mode,omitempty"`
+	SandboxProfile       string `json:"sandbox_profile,omitempty"            yaml:"sandbox_profile,omitempty"`
+	ToolScope            string `json:"tool_scope,omitempty"                 yaml:"tool_scope,omitempty"`
 }
 
 // CompatSpec 兼容性约束
@@ -77,7 +81,10 @@ type CompatSpec struct {
 
 // HealthSpec 健康检查配置
 type HealthSpec struct {
-	PingIntervalSeconds int `json:"ping_interval_seconds,omitempty" yaml:"ping_interval_seconds,omitempty"`
-	PingTimeoutSeconds  int `json:"ping_timeout_seconds,omitempty"  yaml:"ping_timeout_seconds,omitempty"`
-	MaxMissedPings      int `json:"max_missed_pings,omitempty"      yaml:"max_missed_pings,omitempty"`
+	PingIntervalSeconds   int      `json:"ping_interval_seconds,omitempty"   yaml:"ping_interval_seconds,omitempty"`
+	PingTimeoutSeconds    int      `json:"ping_timeout_seconds,omitempty"    yaml:"ping_timeout_seconds,omitempty"`
+	MaxMissedPings        int      `json:"max_missed_pings,omitempty"        yaml:"max_missed_pings,omitempty"`
+	StartupTimeoutMs      int      `json:"startup_timeout_ms,omitempty"      yaml:"startup_timeout_ms,omitempty"`
+	HeartbeatTimeoutMs    int      `json:"heartbeat_timeout_ms,omitempty"    yaml:"heartbeat_timeout_ms,omitempty"`
+	ExpectedMethods       []string `json:"expected_methods,omitempty"        yaml:"expected_methods,omitempty"`
 }

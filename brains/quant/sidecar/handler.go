@@ -15,6 +15,7 @@ import (
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
+	"github.com/leef-l/brain/sdk/toolpolicy"
 
 	brain "github.com/leef-l/brain"
 )
@@ -56,10 +57,18 @@ func NewHandler(qb *quant.QuantBrain, accounts map[string]*quant.Account, logger
 	// Phase 4: backtest
 	reg.Register(newBacktestStartTool(qb))
 
+	var filtered tool.Registry = reg
+	if cfg, err := toolpolicy.Load(""); err != nil {
+		logger.Warn("load tool policy failed", "err", err)
+		filtered = reg
+	} else {
+		filtered = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindQuant))...)
+	}
+
 	return &quantHandler{
 		qb:       qb,
 		accounts: accounts,
-		registry: reg,
+		registry: filtered,
 		learner:  quant.NewQuantBrainLearner(qb),
 		logger:   logger,
 	}
@@ -162,6 +171,8 @@ func (h *quantHandler) HandleMethod(ctx context.Context, method string, params j
 		return sidecar.DispatchToolCall(ctx, params, h.registry, nil)
 	case "brain/execute":
 		return h.handleExecute(ctx, params)
+	case "brain/metrics":
+		return h.learner.ExportMetrics(), nil
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}

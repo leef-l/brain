@@ -1,0 +1,655 @@
+{
+  "A/cheap": {
+    "combo": "A",
+    "role": "cheap",
+    "total_runs": 225,
+    "exact_accuracy": {
+      "reversibility": 0.929,
+      "risk_level": 0.902,
+      "flow_role": 0.72
+    },
+    "intent_semantic_accuracy": 0.693,
+    "mean_confidence": 0.921,
+    "confidence_calibration": {
+      "0.7": 0.778,
+      "0.8": 0.758,
+      "0.9": 0.875
+    },
+    "stability_fraction": 0.76,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.5,
+        "intent": 0.333
+      },
+      "framework_angular": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.778,
+        "intent": 1.0
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 1.0,
+        "intent": 0.889
+      },
+      "ecommerce": {
+        "reversibility": 0.861,
+        "risk_level": 0.806,
+        "flow_role": 0.667,
+        "intent": 0.833
+      },
+      "login_rich": {
+        "reversibility": 0.667,
+        "risk_level": 0.556,
+        "flow_role": 0.778,
+        "intent": 0.778
+      },
+      "framework_vue": {
+        "reversibility": 0.939,
+        "risk_level": 0.879,
+        "flow_role": 0.758,
+        "intent": 0.636
+      },
+      "login_simple": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.4,
+        "intent": 0.6
+      },
+      "form_simple": {
+        "reversibility": 0.833,
+        "risk_level": 0.833,
+        "flow_role": 0.778,
+        "intent": 1.0
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.6,
+        "intent": 0.4
+      },
+      "search": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.806,
+        "intent": 0.5
+      }
+    }
+  },
+  "A/mid": {
+    "combo": "A",
+    "role": "mid",
+    "total_runs": 225,
+    "exact_accuracy": {
+      "reversibility": 0.907,
+      "risk_level": 0.916,
+      "flow_role": 0.596
+    },
+    "intent_semantic_accuracy": 0.742,
+    "mean_confidence": 0.917,
+    "confidence_calibration": {
+      "0.5": 0.667,
+      "0.6": 0.667,
+      "0.7": 0.667,
+      "0.8": 0.75,
+      "0.9": 0.82,
+      "1.0": 0.879
+    },
+    "stability_fraction": 0.52,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.389,
+        "intent": 0.278
+      },
+      "framework_angular": {
+        "reversibility": 0.944,
+        "risk_level": 1.0,
+        "flow_role": 0.611,
+        "intent": 0.833
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.278,
+        "intent": 1.0
+      },
+      "ecommerce": {
+        "reversibility": 0.944,
+        "risk_level": 0.861,
+        "flow_role": 0.556,
+        "intent": 0.944
+      },
+      "login_rich": {
+        "reversibility": 0.556,
+        "risk_level": 0.5,
+        "flow_role": 0.667,
+        "intent": 0.944
+      },
+      "framework_vue": {
+        "reversibility": 0.879,
+        "risk_level": 0.939,
+        "flow_role": 0.727,
+        "intent": 0.667
+      },
+      "login_simple": {
+        "reversibility": 0.867,
+        "risk_level": 1.0,
+        "flow_role": 0.333,
+        "intent": 0.533
+      },
+      "form_simple": {
+        "reversibility": 0.944,
+        "risk_level": 0.833,
+        "flow_role": 0.611,
+        "intent": 0.944
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.533,
+        "intent": 0.333
+      },
+      "search": {
+        "reversibility": 0.917,
+        "risk_level": 1.0,
+        "flow_role": 0.861,
+        "intent": 0.722
+      }
+    }
+  },
+  "A/opus": {
+    "combo": "A",
+    "role": "opus",
+    "total_runs": 225,
+    "exact_accuracy": {
+      "reversibility": 0.92,
+      "risk_level": 0.929,
+      "flow_role": 0.787
+    },
+    "intent_semantic_accuracy": 0.898,
+    "mean_confidence": 0.888,
+    "confidence_calibration": {
+      "0.4": 1.0,
+      "0.5": 0.818,
+      "0.6": 1.0,
+      "0.7": 1.0,
+      "0.8": 0.746,
+      "0.9": 0.873,
+      "1.0": 0.95
+    },
+    "stability_fraction": 0.92,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.778,
+        "intent": 0.667
+      },
+      "framework_angular": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.333,
+        "intent": 1.0
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.944,
+        "intent": 1.0
+      },
+      "ecommerce": {
+        "reversibility": 0.917,
+        "risk_level": 0.889,
+        "flow_role": 0.722,
+        "intent": 1.0
+      },
+      "login_rich": {
+        "reversibility": 0.5,
+        "risk_level": 0.667,
+        "flow_role": 1.0,
+        "intent": 1.0
+      },
+      "framework_vue": {
+        "reversibility": 0.909,
+        "risk_level": 0.909,
+        "flow_role": 0.818,
+        "intent": 0.727
+      },
+      "login_simple": {
+        "reversibility": 0.8,
+        "risk_level": 1.0,
+        "flow_role": 0.4,
+        "intent": 0.6
+      },
+      "form_simple": {
+        "reversibility": 1.0,
+        "risk_level": 0.833,
+        "flow_role": 0.833,
+        "intent": 1.0
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.8,
+        "intent": 1.0
+      },
+      "search": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 1.0,
+        "intent": 0.944
+      }
+    }
+  },
+  "B/mid": {
+    "combo": "B",
+    "role": "mid",
+    "total_runs": 177,
+    "exact_accuracy": {
+      "reversibility": 0.927,
+      "risk_level": 0.91,
+      "flow_role": 0.565
+    },
+    "intent_semantic_accuracy": 0.802,
+    "mean_confidence": 0.914,
+    "confidence_calibration": {
+      "0.5": 0.667,
+      "0.6": 0.889,
+      "0.7": 0.867,
+      "0.8": 0.721,
+      "0.9": 0.819,
+      "1.0": 0.822
+    },
+    "stability_fraction": 0.615,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.333,
+        "intent": 0.417
+      },
+      "framework_angular": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.471,
+        "intent": 0.824
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.294,
+        "intent": 1.0
+      },
+      "ecommerce": {
+        "reversibility": 0.963,
+        "risk_level": 0.778,
+        "flow_role": 0.556,
+        "intent": 0.926
+      },
+      "login_rich": {
+        "reversibility": 0.462,
+        "risk_level": 0.462,
+        "flow_role": 0.615,
+        "intent": 0.846
+      },
+      "framework_vue": {
+        "reversibility": 0.852,
+        "risk_level": 0.963,
+        "flow_role": 0.778,
+        "intent": 0.778
+      },
+      "login_simple": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.3,
+        "intent": 0.7
+      },
+      "form_simple": {
+        "reversibility": 1.0,
+        "risk_level": 0.818,
+        "flow_role": 0.545,
+        "intent": 1.0
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.857,
+        "intent": 0.5
+      },
+      "search": {
+        "reversibility": 0.966,
+        "risk_level": 1.0,
+        "flow_role": 0.621,
+        "intent": 0.828
+      }
+    }
+  },
+  "B/opus": {
+    "combo": "B",
+    "role": "opus",
+    "total_runs": 207,
+    "exact_accuracy": {
+      "reversibility": 0.928,
+      "risk_level": 0.942,
+      "flow_role": 0.734
+    },
+    "intent_semantic_accuracy": 0.821,
+    "mean_confidence": 0.904,
+    "confidence_calibration": {
+      "0.3": 0.833,
+      "0.4": 0.667,
+      "0.5": 0.667,
+      "0.6": 1.0,
+      "0.7": 1.0,
+      "0.8": 0.833,
+      "0.9": 0.846,
+      "1.0": 0.942
+    },
+    "stability_fraction": 0.986,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.667,
+        "intent": 0.5
+      },
+      "framework_angular": {
+        "reversibility": 0.833,
+        "risk_level": 1.0,
+        "flow_role": 0.5,
+        "intent": 1.0
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.667,
+        "intent": 1.0
+      },
+      "ecommerce": {
+        "reversibility": 1.0,
+        "risk_level": 0.917,
+        "flow_role": 0.722,
+        "intent": 1.0
+      },
+      "login_rich": {
+        "reversibility": 0.5,
+        "risk_level": 0.5,
+        "flow_role": 1.0,
+        "intent": 0.611
+      },
+      "framework_vue": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.727,
+        "intent": 0.818
+      },
+      "login_simple": {
+        "reversibility": 0.8,
+        "risk_level": 1.0,
+        "flow_role": 0.4,
+        "intent": 0.6
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.8,
+        "intent": 0.6
+      },
+      "search": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.917,
+        "intent": 0.917
+      }
+    }
+  },
+  "C/cheap": {
+    "combo": "C",
+    "role": "cheap",
+    "total_runs": 225,
+    "exact_accuracy": {
+      "reversibility": 0.916,
+      "risk_level": 0.916,
+      "flow_role": 0.64
+    },
+    "intent_semantic_accuracy": 0.787,
+    "mean_confidence": 0.933,
+    "confidence_calibration": {
+      "0.8": 0.806,
+      "0.9": 0.826
+    },
+    "stability_fraction": 0.8,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.556,
+        "intent": 0.5
+      },
+      "framework_angular": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.611,
+        "intent": 1.0
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.833,
+        "intent": 1.0
+      },
+      "ecommerce": {
+        "reversibility": 0.833,
+        "risk_level": 0.861,
+        "flow_role": 0.528,
+        "intent": 0.972
+      },
+      "login_rich": {
+        "reversibility": 0.5,
+        "risk_level": 0.5,
+        "flow_role": 0.722,
+        "intent": 0.722
+      },
+      "framework_vue": {
+        "reversibility": 0.909,
+        "risk_level": 0.909,
+        "flow_role": 0.727,
+        "intent": 0.727
+      },
+      "login_simple": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.333,
+        "intent": 0.6
+      },
+      "form_simple": {
+        "reversibility": 0.944,
+        "risk_level": 0.889,
+        "flow_role": 0.778,
+        "intent": 0.944
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.6,
+        "intent": 0.4
+      },
+      "search": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.667,
+        "intent": 0.778
+      }
+    }
+  },
+  "C/mid": {
+    "combo": "C",
+    "role": "mid",
+    "total_runs": 219,
+    "exact_accuracy": {
+      "reversibility": 0.909,
+      "risk_level": 0.904,
+      "flow_role": 0.507
+    },
+    "intent_semantic_accuracy": 0.767,
+    "mean_confidence": 0.946,
+    "confidence_calibration": {
+      "0.6": 0.778,
+      "0.7": 1.0,
+      "0.8": 0.765,
+      "0.9": 0.733,
+      "1.0": 0.865
+    },
+    "stability_fraction": 0.652,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.438,
+        "intent": 0.438
+      },
+      "framework_angular": {
+        "reversibility": 0.941,
+        "risk_level": 1.0,
+        "flow_role": 0.353,
+        "intent": 0.882
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.056,
+        "intent": 1.0
+      },
+      "ecommerce": {
+        "reversibility": 0.857,
+        "risk_level": 0.8,
+        "flow_role": 0.571,
+        "intent": 0.943
+      },
+      "login_rich": {
+        "reversibility": 0.556,
+        "risk_level": 0.5,
+        "flow_role": 0.667,
+        "intent": 0.667
+      },
+      "framework_vue": {
+        "reversibility": 0.906,
+        "risk_level": 1.0,
+        "flow_role": 0.562,
+        "intent": 0.719
+      },
+      "login_simple": {
+        "reversibility": 0.8,
+        "risk_level": 1.0,
+        "flow_role": 0.133,
+        "intent": 0.6
+      },
+      "form_simple": {
+        "reversibility": 1.0,
+        "risk_level": 0.706,
+        "flow_role": 0.588,
+        "intent": 0.824
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.733,
+        "intent": 0.467
+      },
+      "search": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.667,
+        "intent": 0.833
+      }
+    }
+  },
+  "C/opus": {
+    "combo": "C",
+    "role": "opus",
+    "total_runs": 223,
+    "exact_accuracy": {
+      "reversibility": 0.919,
+      "risk_level": 0.942,
+      "flow_role": 0.749
+    },
+    "intent_semantic_accuracy": 0.834,
+    "mean_confidence": 0.914,
+    "confidence_calibration": {
+      "0.4": 1.0,
+      "0.5": 1.0,
+      "0.6": 1.0,
+      "0.8": 0.778,
+      "0.9": 0.821,
+      "1.0": 0.957
+    },
+    "stability_fraction": 0.986,
+    "by_category": {
+      "admin_structured": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.833,
+        "intent": 0.667
+      },
+      "framework_angular": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.333,
+        "intent": 1.0
+      },
+      "admin_freeform": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.333,
+        "intent": 1.0
+      },
+      "ecommerce": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 0.657,
+        "intent": 1.0
+      },
+      "login_rich": {
+        "reversibility": 0.333,
+        "risk_level": 0.5,
+        "flow_role": 1.0,
+        "intent": 0.5
+      },
+      "framework_vue": {
+        "reversibility": 0.909,
+        "risk_level": 0.97,
+        "flow_role": 0.667,
+        "intent": 0.879
+      },
+      "login_simple": {
+        "reversibility": 0.8,
+        "risk_level": 1.0,
+        "flow_role": 0.6,
+        "intent": 0.6
+      },
+      "form_simple": {
+        "reversibility": 1.0,
+        "risk_level": 0.833,
+        "flow_role": 1.0,
+        "intent": 0.833
+      },
+      "form_complex": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 1.0,
+        "intent": 0.786
+      },
+      "search": {
+        "reversibility": 1.0,
+        "risk_level": 1.0,
+        "flow_role": 1.0,
+        "intent": 0.833
+      }
+    }
+  }
+}

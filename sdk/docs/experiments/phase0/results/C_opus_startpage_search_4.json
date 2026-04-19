@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "startpage_search",
+  "element_id": 4,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4320,
+      "action_intent": "Clear the current text from the search input field",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.97
+    },
+    {
+      "run": 1,
+      "latency_ms": 4234,
+      "action_intent": "Clear the current text from the search input field",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.97
+    },
+    {
+      "run": 2,
+      "latency_ms": 4150,
+      "action_intent": "Clear the current text from the search input field",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.97
+    }
+  ]
+}

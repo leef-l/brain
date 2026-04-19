@@ -1,0 +1,292 @@
+<!DOCTYPE html><html lang="en-US" data-theme="gitea-auto" data-gitea-theme-dark="false"><head>
+	<meta http-equiv="Content-Security-Policy" content="default-src * data:;script-src * 'nonce-2edb5d44f4967939ffba7b5ca1cf46c5';style-src * 'unsafe-inline';">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Sign In - Gitea: Git with a cup of tea</title>
+	<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiR2l0ZWE6IEdpdCB3aXRoIGEgY3VwIG9mIHRlYSIsInNob3J0X25hbWUiOiJHaXRlYTogR2l0IHdpdGggYSBjdXAgb2YgdGVhIiwic3RhcnRfdXJsIjoiaHR0cHM6Ly9kZW1vLmdpdGVhLmNvbS8iLCJpY29ucyI6W3sic3JjIjoiaHR0cHM6Ly9kZW1vLmdpdGVhLmNvbS9hc3NldHMvaW1nL2xvZ28ucG5nIiwidHlwZSI6ImltYWdlL3BuZyIsInNpemVzIjoiNTEyeDUxMiJ9LHsic3JjIjoiaHR0cHM6Ly9kZW1vLmdpdGVhLmNvbS9hc3NldHMvaW1nL2xvZ28uc3ZnIiwidHlwZSI6ImltYWdlL3N2Zyt4bWwiLCJzaXplcyI6IjUxMng1MTIifV19">
+	<meta name="author" content="Gitea - Git with a cup of tea">
+	<meta name="description" content="Gitea (Git with a cup of tea) is a painless self-hosted Git service written in Go">
+	<meta name="keywords" content="go,git,self-hosted,gitea">
+	<meta name="referrer" content="same-origin">
+
+
+	<link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+	<link rel="alternate icon" href="/assets/img/favicon.png" type="image/png">
+	
+	<meta property="og:title" content="Gitea: Git with a cup of tea">
+	<meta property="og:type" content="website">
+	<meta property="og:image" content="/assets/img/logo.png">
+	<meta property="og:url" content="https://demo.gitea.com">
+	<meta property="og:description" content="Gitea (Git with a cup of tea) is a painless self-hosted Git service written in Go">
+
+<meta property="og:site_name" content="Gitea: Git with a cup of tea">
+
+	<link rel="stylesheet" href="/assets/css/index.BJgcbEac.css">
+<link rel="stylesheet" href="/assets/css/theme-gitea-auto.DGTmr6jR.css">
+
+	
+<script nonce="2edb5d44f4967939ffba7b5ca1cf46c5">
+	
+	window.addEventListener('error', function(e) {window._globalHandlerErrors=window._globalHandlerErrors||[]; window._globalHandlerErrors.push(e);});
+	window.addEventListener('unhandledrejection', function(e) {window._globalHandlerErrors=window._globalHandlerErrors||[]; window._globalHandlerErrors.push(e);});
+	window.config = {
+		appUrl: 'https:\/\/demo.gitea.com',
+		appSubUrl: '',
+		assetUrlPrefix: '\/assets',
+		runModeIsProd:  true ,
+		customEmojis: {"codeberg":":codeberg:","git":":git:","gitea":":gitea:","github":":github:","gitlab":":gitlab:","gogs":":gogs:"},
+		pageData: {},
+		notificationSettings: {"EventSourceUpdateTime":0,"MaxTimeout":60000,"MinTimeout":10000,"TimeoutStep":10000}, 
+		enableTimeTracking:  true ,
+		mermaidMaxSourceCharacters:  50000 ,
+		sharedWorkerUri: '\/assets\/js\/eventsource.sharedworker.Dug1twio.js',
+		
+		i18n: {
+			copy_success: "Copied!",
+			copy_error: "Copy failed",
+			error_occurred: "An error occurred",
+			remove_label_str: "Remove item \"%s\"",
+			modal_confirm: "Confirm",
+			modal_cancel: "Cancel",
+			more_items: "More items",
+		},
+	};
+	
+	window.config.pageData = window.config.pageData || {};
+</script>
+<script nonce="2edb5d44f4967939ffba7b5ca1cf46c5" src="/assets/js/iife.1UIb9dvh.js" onerror="alert('Failed to load asset file from ' + this.src + '. Please make sure the asset files can be accessed.')"></script>
+
+	
+</head>
+<body>
+	    <div class="ui container" id="noscript-warning">  
+        <div id="noscript-padding">                          
+<strong>                                                     THIS IS A TEST INSTANCE ONLY! REPOSITORIES CAN BE DELETED AT ANY TIME!                                                    
+</strong>                                                    
+</div>                                                       
+</div>                                                       
+<style>                                                                                   
+body {                                                       
+padding-top:30px                                             
+}                                                            
+#noscript-padding {                                          
+}                                                                                                                      #noscript-warning {                                          
+max-width:100%;                                             
+margin-bottom:1.9em;                                         
+font-family: sans-serif;                                     
+position: fixed;                                         
+top: 0;                                                  
+left: 0;                                                 
+width: 100%;                                             
+z-index: 5050;                                           
+text-align: center;                                      
+font-weight: bold;                                       
+font-size: 120%;                                         
+color: #111;                                             
+background-color: #fa8072;                               
+padding: 5px 0                                           
+}                                                            
+</style>  
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.location.pathname == '/user/login') {
+        var element = document.querySelector('.oauth-login-link');
+        if (element) {
+            window.location.href = '/user/oauth2/Gitea.Com';
+        }
+    }
+});
+</script> 
+
+
+	<div class="full height">
+		<noscript>This website requires JavaScript.</noscript>
+
+		
+
+		
+			<nav id="navbar" aria-label="Navigation Bar">
+	<div class="navbar-left">
+		
+		<a class="item" id="navbar-logo" href="/" aria-label="Home" data-brain-id="1">
+			<img width="30" height="30" src="/assets/img/logo.svg" alt="Logo" aria-hidden="true">
+		</a>
+
+		
+		<div class="ui secondary menu navbar-mobile-right only-mobile">
+			
+
+			<button class="item ui icon mini button tw-m-0" id="navbar-expand-toggle" aria-label="Navigation Menu"><svg viewBox="0 0 16 16" class="svg octicon-three-bars" aria-hidden="true" width="16" height="16"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75m0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75M1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5"></path></svg></button>
+		</div>
+
+		
+		
+			<a class="item" href="/explore/repos" data-brain-id="2">Explore</a>
+		
+
+		
+
+		
+			<a class="item" target="_blank" href="https://docs.gitea.com" data-brain-id="3">Help</a>
+		
+	</div>
+
+	
+	<div class="navbar-right">
+		
+			
+			<a class="item active" rel="nofollow" href="/user/login" data-brain-id="4">
+				<svg viewBox="0 0 16 16" class="svg octicon-sign-in" aria-hidden="true" width="16" height="16"><path d="M2 2.75C2 1.784 2.784 1 3.75 1h2.5a.75.75 0 0 1 0 1.5h-2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h2.5a.75.75 0 0 1 0 1.5h-2.5A1.75 1.75 0 0 1 2 13.25Zm6.56 4.5h5.69a.75.75 0 0 1 0 1.5H8.56l1.97 1.97a.749.749 0 0 1-.326 1.275.75.75 0 0 1-.734-.215L6.22 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.749.749 0 0 1 1.275.326.75.75 0 0 1-.215.734Z"></path></svg>
+				<span class="tw-ml-1">Sign In</span>
+			</a>
+		
+	</div>
+
+	
+	
+</nav>
+
+
+
+
+		
+
+
+
+<div role="main" aria-label="Sign In" class="page-content user signin">
+	<div class="ui middle very relaxed page grid">
+		
+		<div class="column tw-flex tw-flex-col tw-gap-4 tw-max-w-2xl tw-m-auto">
+			<div class="ui container fluid">
+	
+	
+	
+	<h4 class="ui top attached header center">
+		
+			Sign In
+		
+	</h4>
+	<div class="ui attached segment">
+		
+		
+		
+		
+			<div id="external-login-navigator" class="tw-py-1 tw-flex tw-flex-col tw-gap-3">
+	
+		
+		<a class="ui button external-login-link tw-gap-3" data-require-appurl-check="true" rel="nofollow" href="/user/oauth2/Gitea.Com" data-brain-id="5">
+			<svg viewBox="0 0 640 640" class="svg gitea-gitea" aria-hidden="true" width="24" height="24"><path fill="#fff" d="m395.9 484.2-126.9-61c-12.5-6-17.9-21.2-11.8-33.8l61-126.9c6-12.5 21.2-17.9 33.8-11.8 17.2 8.3 27.1 13 27.1 13l-.1-109.2 16.7-.1.1 117.1s57.4 24.2 83.1 40.1c3.7 2.3 10.2 6.8 12.9 14.4 2.1 6.1 2 13.1-1 19.3l-61 126.9c-6.2 12.7-21.4 18.1-33.9 12"></path><g fill="#609926"><path d="M622.7 149.8c-4.1-4.1-9.6-4-9.6-4s-117.2 6.6-177.9 8c-13.3.3-26.5.6-39.6.7v117.2c-5.5-2.6-11.1-5.3-16.6-7.9 0-36.4-.1-109.2-.1-109.2-29 .4-89.2-2.2-89.2-2.2s-141.4-7.1-156.8-8.5c-9.8-.6-22.5-2.1-39 1.5-8.7 1.8-33.5 7.4-53.8 26.9C-4.9 212.4 6.6 276.2 8 285.8c1.7 11.7 6.9 44.2 31.7 72.5 45.8 56.1 144.4 54.8 144.4 54.8s12.1 28.9 30.6 55.5c25 33.1 50.7 58.9 75.7 62 63 0 188.9-.1 188.9-.1s12 .1 28.3-10.3c14-8.5 26.5-23.4 26.5-23.4S547 483 565 451.5c5.5-9.7 10.1-19.1 14.1-28 0 0 55.2-117.1 55.2-231.1-1.1-34.5-9.6-40.6-11.6-42.6M125.6 353.9c-25.9-8.5-36.9-18.7-36.9-18.7S69.6 321.8 60 295.4c-16.5-44.2-1.4-71.2-1.4-71.2s8.4-22.5 38.5-30c13.8-3.7 31-3.1 31-3.1s7.1 59.4 15.7 94.2c7.2 29.2 24.8 77.7 24.8 77.7s-26.1-3.1-43-9.1m300.3 107.6s-6.1 14.5-19.6 15.4c-5.8.4-10.3-1.2-10.3-1.2s-.3-.1-5.3-2.1l-112.9-55s-10.9-5.7-12.8-15.6c-2.2-8.1 2.7-18.1 2.7-18.1L322 273s4.8-9.7 12.2-13c.6-.3 2.3-1 4.5-1.5 8.1-2.1 18 2.8 18 2.8L467.4 315s12.6 5.7 15.3 16.2c1.9 7.4-.5 14-1.8 17.2-6.3 15.4-55 113.1-55 113.1"></path><path d="M326.8 380.1c-8.2.1-15.4 5.8-17.3 13.8s2 16.3 9.1 20c7.7 4 17.5 1.8 22.7-5.4 5.1-7.1 4.3-16.9-1.8-23.1l24-49.1c1.5.1 3.7.2 6.2-.5 4.1-.9 7.1-3.6 7.1-3.6 4.2 1.8 8.6 3.8 13.2 6.1 4.8 2.4 9.3 4.9 13.4 7.3.9.5 1.8 1.1 2.8 1.9 1.6 1.3 3.4 3.1 4.7 5.5 1.9 5.5-1.9 14.9-1.9 14.9-2.3 7.6-18.4 40.6-18.4 40.6-8.1-.2-15.3 5-17.7 12.5-2.6 8.1 1.1 17.3 8.9 21.3s17.4 1.7 22.5-5.3c5-6.8 4.6-16.3-1.1-22.6 1.9-3.7 3.7-7.4 5.6-11.3 5-10.4 13.5-30.4 13.5-30.4.9-1.7 5.7-10.3 2.7-21.3-2.5-11.4-12.6-16.7-12.6-16.7-12.2-7.9-29.2-15.2-29.2-15.2s0-4.1-1.1-7.1c-1.1-3.1-2.8-5.1-3.9-6.3 4.7-9.7 9.4-19.3 14.1-29-4.1-2-8.1-4-12.2-6.1-4.8 9.8-9.7 19.7-14.5 29.5-6.7-.1-12.9 3.5-16.1 9.4-3.4 6.3-2.7 14.1 1.9 19.8z"></path></g></svg> Sign in with Gitea.Com
+		</a>
+	
+	
+	
+</div>
+
+		
+	</div>
+</div>
+
+
+<div class="ui container fluid">
+	<div class="ui attached segment header top tw-max-w-2xl tw-m-auto tw-flex tw-flex-col tw-items-center">
+		
+			<div id="webauthn-error" class="ui negative message tw-hidden">
+	<div class="header">Could not read your security key.</div>
+	<div id="webauthn-error-msg" class="tw-pt-2"></div>
+	<div class="tw-hidden">
+		<div data-webauthn-error-msg="browser">Your browser does not currently support WebAuthn.</div>
+		<div data-webauthn-error-msg="unknown">An unknown error occurred. Please retry.</div>
+		<div data-webauthn-error-msg="insecure">WebAuthn only supports secure connections. For testing over HTTP, you can use the origin "localhost" or "127.0.0.1".</div>
+		<div data-webauthn-error-msg="unable-to-process">The server could not process your request.</div>
+		<div data-webauthn-error-msg="duplicated">The security key is not permitted for this request. Please make sure that the key is not already registered.</div>
+		<div data-webauthn-error-msg="empty">You must set a name for this key.</div>
+		<div data-webauthn-error-msg="timeout">Timeout reached before your key could be read. Please reload this page and retry.</div>
+	</div>
+</div>
+
+			<a class="signin-passkey" data-brain-id="6">Sign in with a passkey</a>
+		
+
+		
+	</div>
+</div>
+
+
+		</div>
+	</div>
+</div>
+
+
+		
+	</div>
+	
+	<footer class="page-footer" role="group" aria-label="Footer">
+	<div class="left-links" role="contentinfo" aria-label="About Software">
+		
+			<a target="_blank" href="https://about.gitea.com" data-brain-id="7">Powered by Gitea</a>
+		
+		
+			<span>
+			Version:
+			
+				1.27.0+dev-53-gea6280da75
+			
+			</span>
+		
+		
+			<span>
+				Page: <strong>1116ms</strong>
+				Template: <strong>1ms</strong>
+			</span>
+		
+		
+	</div>
+	<div class="right-links" role="group" aria-label="Links">
+		<div class="ui dropdown custom" id="footer-theme-selector" tabindex="0" role="menu" aria-haspopup="" aria-controls="_aria_dropdown_menu_0" aria-expanded="false" data-brain-id="8">
+			<span class="default-text"><div class="theme-menu-item" data-tooltip-content=""><svg viewBox="490 490 820 820" class="svg gitea-eclipse" aria-hidden="true" width="16" height="16"><path d="M866.7 582.1A321.3 321.3 0 0 0 738.6 623a317.3 317.3 0 0 0-109.1 108.5A418 418 0 0 0 609 772a335.3 335.3 0 0 0-19.6 71.5 205.2 205.2 0 0 0-2.8 45c0 25.8.2 29.3 2.8 45 4.1 25.4 9.9 46.4 19.6 71.5a314.2 314.2 0 0 0 111.6 137.3A306.8 306.8 0 0 0 893 1196a308.6 308.6 0 0 0 303.6-262.5c2.6-15.7 2.8-19.2 2.8-45s-.2-29.3-2.8-45A335.3 335.3 0 0 0 1177 772a314.2 314.2 0 0 0-111.6-137.3A308.3 308.3 0 0 0 918 582c-13-1.1-38.2-1.1-51.3.1M747 663.5l-2.4 16.7c-4 26.4-4.9 41.1-4.3 65.3a323.7 323.7 0 0 0 37.2 145c18.2 36 41.3 66.6 72 95.5a346.4 346.4 0 0 0 208.5 93.1l18 1.6 4.5.5-8.5 8a259.3 259.3 0 0 1-141.5 65.8 281 281 0 0 1-123.9-11.4 267.2 267.2 0 0 1-181.7-269.9c2-27.6 5.7-47.6 13.3-70.7a281.2 281.2 0 0 1 46.4-85c8-10.1 28-30.2 37.9-38.1 13.8-11.1 24.5-18.3 24.5-16.4"></path></svg> Auto </div></span>
+			<div class="menu theme-menu" tabindex="-1" id="_aria_dropdown_menu_0" role=""></div>
+		</div>
+		<div class="ui dropdown upward" tabindex="0" role="menu" aria-haspopup="" aria-controls="_aria_dropdown_menu_1" aria-expanded="false" data-brain-id="9">
+			<span class="flex-text-inline"><svg viewBox="0 0 16 16" class="svg octicon-globe" aria-hidden="true" width="14" height="14"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0M5.78 8.75a9.64 9.64 0 0 0 1.363 4.177q.383.64.857 1.215c.245-.296.551-.705.857-1.215A9.64 9.64 0 0 0 10.22 8.75Zm4.44-1.5a9.64 9.64 0 0 0-1.363-4.177c-.307-.51-.612-.919-.857-1.215a10 10 0 0 0-.857 1.215A9.64 9.64 0 0 0 5.78 7.25Zm-5.944 1.5H1.543a6.51 6.51 0 0 0 4.666 5.5q-.184-.271-.352-.552c-.715-1.192-1.437-2.874-1.581-4.948m-2.733-1.5h2.733c.144-2.074.866-3.756 1.58-4.948q.18-.295.353-.552a6.51 6.51 0 0 0-4.666 5.5m10.181 1.5c-.144 2.074-.866 3.756-1.58 4.948q-.18.296-.353.552a6.51 6.51 0 0 0 4.666-5.5Zm2.733-1.5a6.51 6.51 0 0 0-4.666-5.5q.184.272.353.552c.714 1.192 1.436 2.874 1.58 4.948Z"></path></svg> English</span>
+			<div class="menu language-menu" tabindex="-1" id="_aria_dropdown_menu_1" role="">
+				<a lang="id-ID" data-url="/?lang=id-ID" class="item " id="_aria_dropdown_item_2" role="menuitem" tabindex="-1">Bahasa Indonesia</a>
+				<a lang="de-DE" data-url="/?lang=de-DE" class="item " id="_aria_dropdown_item_3" role="menuitem" tabindex="-1">Deutsch</a>
+				<a lang="en-US" data-url="/?lang=en-US" class="item selected" id="_aria_dropdown_item_4" role="menuitem" tabindex="-1">English</a>
+				<a lang="es-ES" data-url="/?lang=es-ES" class="item " id="_aria_dropdown_item_5" role="menuitem" tabindex="-1">Español</a>
+				<a lang="fr-FR" data-url="/?lang=fr-FR" class="item " id="_aria_dropdown_item_6" role="menuitem" tabindex="-1">Français</a>
+				<a lang="ga-IE" data-url="/?lang=ga-IE" class="item " id="_aria_dropdown_item_7" role="menuitem" tabindex="-1">Gaeilge</a>
+				<a lang="it-IT" data-url="/?lang=it-IT" class="item " id="_aria_dropdown_item_8" role="menuitem" tabindex="-1">Italiano</a>
+				<a lang="lv-LV" data-url="/?lang=lv-LV" class="item " id="_aria_dropdown_item_9" role="menuitem" tabindex="-1">Latviešu</a>
+				<a lang="hu-HU" data-url="/?lang=hu-HU" class="item " id="_aria_dropdown_item_10" role="menuitem" tabindex="-1">Magyar nyelv</a>
+				<a lang="nl-NL" data-url="/?lang=nl-NL" class="item " id="_aria_dropdown_item_11" role="menuitem" tabindex="-1">Nederlands</a>
+				<a lang="pl-PL" data-url="/?lang=pl-PL" class="item " id="_aria_dropdown_item_12" role="menuitem" tabindex="-1">Polski</a>
+				<a lang="pt-PT" data-url="/?lang=pt-PT" class="item " id="_aria_dropdown_item_13" role="menuitem" tabindex="-1">Português de Portugal</a>
+				<a lang="pt-BR" data-url="/?lang=pt-BR" class="item " id="_aria_dropdown_item_14" role="menuitem" tabindex="-1">Português do Brasil</a>
+				<a lang="fi-FI" data-url="/?lang=fi-FI" class="item " id="_aria_dropdown_item_15" role="menuitem" tabindex="-1">Suomi</a>
+				<a lang="sv-SE" data-url="/?lang=sv-SE" class="item " id="_aria_dropdown_item_16" role="menuitem" tabindex="-1">Svenska</a>
+				<a lang="tr-TR" data-url="/?lang=tr-TR" class="item " id="_aria_dropdown_item_17" role="menuitem" tabindex="-1">Türkçe</a>
+				<a lang="cs-CZ" data-url="/?lang=cs-CZ" class="item " id="_aria_dropdown_item_18" role="menuitem" tabindex="-1">Čeština</a>
+				<a lang="el-GR" data-url="/?lang=el-GR" class="item " id="_aria_dropdown_item_19" role="menuitem" tabindex="-1">Ελληνικά</a>
+				<a lang="bg-BG" data-url="/?lang=bg-BG" class="item " id="_aria_dropdown_item_20" role="menuitem" tabindex="-1">Български</a>
+				<a lang="ru-RU" data-url="/?lang=ru-RU" class="item " id="_aria_dropdown_item_21" role="menuitem" tabindex="-1">Русский</a>
+				<a lang="uk-UA" data-url="/?lang=uk-UA" class="item " id="_aria_dropdown_item_22" role="menuitem" tabindex="-1">Українська</a>
+				<a lang="fa-IR" data-url="/?lang=fa-IR" class="item " id="_aria_dropdown_item_23" role="menuitem" tabindex="-1">فارسی</a>
+				<a lang="ml-IN" data-url="/?lang=ml-IN" class="item " id="_aria_dropdown_item_24" role="menuitem" tabindex="-1">മലയാളം</a>
+				<a lang="ja-JP" data-url="/?lang=ja-JP" class="item " id="_aria_dropdown_item_25" role="menuitem" tabindex="-1">日本語</a>
+				<a lang="zh-CN" data-url="/?lang=zh-CN" class="item " id="_aria_dropdown_item_26" role="menuitem" tabindex="-1">简体中文</a>
+				<a lang="zh-TW" data-url="/?lang=zh-TW" class="item " id="_aria_dropdown_item_27" role="menuitem" tabindex="-1">繁體中文（台灣）</a>
+				<a lang="zh-HK" data-url="/?lang=zh-HK" class="item " id="_aria_dropdown_item_28" role="menuitem" tabindex="-1">繁體中文（香港）</a>
+				<a lang="ko-KR" data-url="/?lang=ko-KR" class="item " id="_aria_dropdown_item_29" role="menuitem" tabindex="-1">한국어</a>
+				</div>
+		</div>
+		<a href="/assets/licenses.txt" data-brain-id="10">Licenses</a>
+		<a href="/api/swagger" data-brain-id="11">API</a>
+		
+	</div>
+</footer>
+
+	<script nonce="2edb5d44f4967939ffba7b5ca1cf46c5" type="module" src="/assets/js/index.lY87shuM.js" onerror="alert('Failed to load asset file from ' + this.src + '. Please make sure the asset files can be accessed.')"></script>
+	
+
+
+
+</body></html>

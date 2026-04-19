@@ -1,0 +1,754 @@
+{
+  "page_id": "govuk_form",
+  "url": "https://design-system.service.gov.uk/patterns/addresses/",
+  "category": "form_simple",
+  "built_at": "2026-04-19T09:23:28Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 6,
+      "element": {
+        "tag": "input",
+        "role": "combobox",
+        "type": "text",
+        "name": "Search Design System",
+        "href": null,
+        "bbox": {
+          "x": 1085,
+          "y": 285,
+          "w": 370,
+          "h": 40
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Search the Design System documentation for specific content",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "search the design system documentation for specific content": 3,
+            "search for content within the design system website": 3,
+            "search the design system documentation": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Search the Design System documentation for specific content",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Search the Design System documentation for specific content",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Search the Design System documentation for specific content",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Search the Design System documentation",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Search the Design System documentation for relevant content.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Search the design system documentation for content.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Search for content within the Design System website.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Search for content within the Design System website.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Search for content within the Design System website.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Passwords",
+        "href": "https://design-system.service.gov.uk/patterns/passwords/",
+        "bbox": {
+          "x": 207,
+          "y": 701,
+          "w": 73,
+          "h": 23
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Passwords pattern page",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the passwords pattern page": 4,
+            "navigate to the passwords pattern documentation page": 2,
+            "navigate to the page about designing password inputs": 2
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Passwords pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Passwords pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Passwords pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the Passwords pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the Passwords pattern documentation page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the Passwords pattern documentation page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the page about designing password inputs.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the page about designing password inputs.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the page about designing password input fields.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Payment card details",
+        "href": "https://design-system.service.gov.uk/patterns/payment-card-details/",
+        "bbox": {
+          "x": 242,
+          "y": 736,
+          "w": 143,
+          "h": 23
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Navigate to the Payment card details pattern page",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "navigate to the payment card details pattern page": 4,
+            "navigate to the payment card details pattern documentation page": 2,
+            "navigate to the page about designing payment card input forms": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Navigate to the Payment card details pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Navigate to the Payment card details pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Navigate to the Payment card details pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to the Payment card details pattern page",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to the Payment card details pattern documentation page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to the Payment card details pattern documentation page.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to the page about designing payment card input forms.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to the page about designing payment card detail inputs.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to the page about designing payment card detail input fields.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Accept analytics cookies",
+        "href": null,
+        "bbox": {
+          "x": 285,
+          "y": 204,
+          "w": 229,
+          "h": 38
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Accept analytics cookies on the site",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "accept analytics cookies on the site": 3,
+            "accept the use of analytics cookies on the website": 3,
+            "accept analytics cookies": 1
+          },
+          "reversibility": {
+            "semi_reversible": 9
+          },
+          "risk_level": {
+            "safe_caution": 9
+          },
+          "flow_role": {
+            "primary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Accept analytics cookies on the site",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Accept analytics cookies on the site",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Accept analytics cookies on the site",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Accept analytics cookies",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Accept analytics cookies to enable tracking on the site.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Accept analytics cookies and set consent preference.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Accept the use of analytics cookies on the website.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Accept the use of analytics cookies on the website.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Accept the use of analytics cookies on the website.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Reject analytics cookies",
+        "href": null,
+        "bbox": {
+          "x": 525,
+          "y": 204,
+          "w": 222,
+          "h": 38
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Reject analytics cookies on the site",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "secondary",
+        "consensus": {
+          "action_intent": {
+            "reject analytics cookies on the site": 3,
+            "reject the use of analytics cookies on the website": 3,
+            "reject analytics cookies": 1
+          },
+          "reversibility": {
+            "semi_reversible": 9
+          },
+          "risk_level": {
+            "safe_caution": 9
+          },
+          "flow_role": {
+            "secondary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Reject analytics cookies on the site",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Reject analytics cookies on the site",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Reject analytics cookies on the site",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Reject analytics cookies",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Reject analytics cookies to disable tracking on the site.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Reject analytics cookies and set consent preference.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Reject the use of analytics cookies on the website.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Reject the use of analytics cookies on the website.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Reject the use of analytics cookies on the website.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "element": {
+        "tag": "a",
+        "role": "tab",
+        "type": null,
+        "name": "HTML",
+        "href": "https://design-system.service.gov.uk/patterns/addresses/#multiple-text-inputs-addresses-example-open-html",
+        "bbox": {
+          "x": 506,
+          "y": 1577,
+          "w": 49,
+          "h": 25
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Switch to the HTML tab to view the code example",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "consensus": {
+          "action_intent": {
+            "switch to the html tab to view the code example": 3,
+            "switch to the html code tab": 1,
+            "switch to the html code view tab for the address example": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "navigation": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Switch to the HTML tab to view the code example",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Switch to the HTML tab to view the code example",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Switch to the HTML tab to view the code example",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Switch to the HTML code tab",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Switch to the HTML code view tab for the address example.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Switch to view the HTML code example tab.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Switch the code example view to show HTML markup.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Switch the code example view to show the HTML implementation.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Switch the code example view to show HTML syntax.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "navigation"
+        }
+      ]
+    }
+  ]
+}

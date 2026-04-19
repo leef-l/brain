@@ -1,0 +1,23 @@
+{
+  "id": "soft_aria_button_label",
+  "category": "canvas",
+  "site": "https://plotly.com/javascript/bar-charts/",
+  "goal": "Click the 'Download plot as png' button using its aria-label.",
+  "max_turns": 10,
+  "visual_required": "soft",
+  "modality": [
+    "canvas",
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "png"
+    }
+  ],
+  "tags": [
+    "canvas",
+    "soft"
+  ]
+}

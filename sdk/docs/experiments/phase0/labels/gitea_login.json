@@ -1,0 +1,142 @@
+{
+  "page_id": "gitea_login",
+  "url": "https://demo.gitea.com/user/login",
+  "category": "login_simple",
+  "snapshot_file": "samples/gitea_login/snapshot.json",
+  "screenshot_file": "samples/gitea_login/screenshot.png",
+  "html_file": "samples/gitea_login/page.html",
+  "drafted_at": "2026-04-19T09:03:30Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 1,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Home",
+        "href": "https://demo.gitea.com/",
+        "bbox": {
+          "x": 38,
+          "y": 55,
+          "w": 56,
+          "h": 36
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Gitea home/landing page.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "Standard site logo/home link in the top navigation bar.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 2,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Explore",
+        "href": "https://demo.gitea.com/explore/repos",
+        "bbox": {
+          "x": 110,
+          "y": 55,
+          "w": 79,
+          "h": 36
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the public repository exploration page to browse available repositories.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "notes": "Leaves the login page; user can return via browser back or Sign In link.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 3,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Help",
+        "href": "https://docs.gitea.com/",
+        "bbox": {
+          "x": 184,
+          "y": 55,
+          "w": 58,
+          "h": 36
+        }
+      },
+      "draft": {
+        "action_intent": "Open the Gitea documentation site for help and guidance.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Links to external docs.gitea.com domain. Could be considered cross_page_nav since it leaves the site entirely, but utility fits better as a support/help resource.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 6,
+      "element": {
+        "tag": "div",
+        "role": "menu",
+        "type": null,
+        "name": "Auto",
+        "href": null,
+        "bbox": {
+          "x": 1170,
+          "y": 882,
+          "w": 56,
+          "h": 16
+        }
+      },
+      "draft": {
+        "action_intent": "Open a dropdown menu to change the site's color theme (e.g., light, dark, auto).",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Theme preference is typically stored in a cookie or local storage and can be changed back at any time. Label says 'Auto' indicating current selection.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 7,
+      "element": {
+        "tag": "div",
+        "role": "menu",
+        "type": null,
+        "name": "English",
+        "href": null,
+        "bbox": {
+          "x": 1246,
+          "y": 882,
+          "w": 68,
+          "h": 16
+        }
+      },
+      "draft": {
+        "action_intent": "Open a dropdown menu to change the site's display language.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Language preference is stored client-side or in session and can be reverted. Current selection is 'English'.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

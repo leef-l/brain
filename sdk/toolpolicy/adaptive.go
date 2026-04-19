@@ -32,6 +32,16 @@ type EvalRequest struct {
 	TaskType  string
 	Mode      string
 	Scopes    []string
+
+	// BrowserStage 仅在 BrainKind=="browser" 时有意义,按语义理解阶段
+	// 切换曝露给 LLM 的工具集合:
+	//   - "new_page":     新页面,优先 snapshot + understand
+	//   - "known_flow":   疑似已知流程,优先 pattern_match / pattern_exec
+	//   - "destructive":  即将动破坏性操作,加 visual_inspect 做视觉复核
+	//   - "fallback":     understand/pattern 都不够用,开放 visual_inspect
+	//                      + screenshot + eval
+	// 空字符串或未知值退回通用 "run.browser" 作用域。
+	BrowserStage string
 }
 
 // toolRecord 记录单个工具在特定 taskType 下的执行统计。
@@ -197,6 +207,14 @@ func (p *DefaultAdaptivePolicy) effectiveConfig() *Config {
 }
 
 func (p *DefaultAdaptivePolicy) inferScopes(req EvalRequest) []string {
+	base := p.inferBaseScopes(req)
+	if req.BrainKind == "browser" && req.BrowserStage != "" {
+		base = append(base, ToolScopesForBrowserStage(req.BrowserStage)...)
+	}
+	return base
+}
+
+func (p *DefaultAdaptivePolicy) inferBaseScopes(req EvalRequest) []string {
 	if req.Mode == "chat" {
 		return ToolScopesForChat(req.BrainKind, "")
 	}

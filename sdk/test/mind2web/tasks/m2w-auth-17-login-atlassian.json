@@ -1,0 +1,23 @@
+{
+  "id": "m2w-auth-17-login-atlassian",
+  "category": "auth",
+  "site": "https://accounts.atlassian.com",
+  "goal": "Navigate to https://accounts.atlassian.com/login, sign in with the provided credentials ($credentials.email / $credentials.password), land on an authenticated page and verify the logout link or user menu is visible.",
+  "max_turns": 10,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "a[href*=\"logout\" i], [data-user-profile], .user-menu"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "login",
+    "cross_site_auth"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-auth-09-a",
+    "domain": "saas",
+    "subdomain": "atlassian"
+  }
+}

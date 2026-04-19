@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "autoex_product",
+  "element_id": 27,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5675,
+      "action_intent": "Submit a product review with name, email, and text",
+      "reversibility": "irreversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.92
+    },
+    {
+      "run": 1,
+      "latency_ms": 5405,
+      "action_intent": "Submit a product review with name, email, and text",
+      "reversibility": "irreversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.92
+    },
+    {
+      "run": 2,
+      "latency_ms": 6194,
+      "action_intent": "Submit a product review with name, email, and text",
+      "reversibility": "irreversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.92
+    }
+  ]
+}

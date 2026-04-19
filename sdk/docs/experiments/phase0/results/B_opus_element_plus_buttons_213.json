@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "element_plus_buttons",
+  "element_id": 213,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 6644,
+      "action_intent": "Demonstrates a Search button in the Element Plus component library",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.82
+    },
+    {
+      "run": 1,
+      "latency_ms": 7433,
+      "action_intent": "Demonstrates a Search button in the Element Plus component library",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.82
+    },
+    {
+      "run": 2,
+      "latency_ms": 6383,
+      "action_intent": "Demonstrates a Search button in the Element Plus component library",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.82
+    }
+  ]
+}

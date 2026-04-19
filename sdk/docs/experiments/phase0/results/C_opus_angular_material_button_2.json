@@ -1,0 +1,37 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "angular_material_button",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4172,
+      "action_intent": "Dismiss or acknowledge a cookie/consent notice",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 4117,
+      "action_intent": "Dismiss or acknowledge a cookie/consent notice",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.88
+    },
+    {
+      "run": 2,
+      "latency_ms": 4074,
+      "action_intent": "Dismiss or acknowledge a cookie/consent notice",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.85
+    }
+  ]
+}

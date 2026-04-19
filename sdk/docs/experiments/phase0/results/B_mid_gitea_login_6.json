@@ -1,0 +1,33 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "gitea_login",
+  "element_id": 6,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3929,
+      "error": "InternalServerError(\"Error code: 500 - {'id': 'd135d82328ec1cdaf413b8d202399cd2', 'error': {'message': 'model engine error', 'type': 'runtime_error', 'param': None, 'code': '20057'}}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 4106,
+      "action_intent": "Sign in using a passkey authentication method",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3212,
+      "action_intent": "Sign in using a passkey authentication method",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    }
+  ]
+}

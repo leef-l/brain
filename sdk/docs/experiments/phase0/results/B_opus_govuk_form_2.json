@@ -1,0 +1,25 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "govuk_form",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5836,
+      "error": "BadRequestError(\"Error code: 400 - {'error': {'type': '<nil>', 'message': 'invalid message sequence: the conversation contains orphaned tool results or malformed messages. Please start a new conversation. (request id: 2026041909490123223353470piVtAB) (request id: 202604190949011435109238268d9d6d5fODQ2o) (request id: 20260419094900711080218268d9d6AXSgLaBy)'}, 'type': 'error'}\")"
+    },
+    {
+      "run": 1,
+      "latency_ms": 5824,
+      "error": "BadRequestError(\"Error code: 400 - {'error': {'type': '<nil>', 'message': 'invalid message sequence: the conversation contains orphaned tool results or malformed messages. Please start a new conversation. (request id: 20260419094906882831480AxEEygWT) (request id: 202604190949067894335058268d9d6b4g6lU8L) (request id: 202604190949055169215928268d9d6z6N44UbV)'}, 'type': 'error'}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 5426,
+      "error": "BadRequestError(\"Error code: 400 - {'error': {'type': '<nil>', 'message': 'invalid message sequence: the conversation contains orphaned tool results or malformed messages. Please start a new conversation. (request id: 20260419094912775783418uQS5gNTa) (request id: 202604190949126887280968268d9d6R0aHzyKa) (request id: 202604190949113953886528268d9d6EhM6rmno)'}, 'type': 'error'}\")"
+    }
+  ]
+}

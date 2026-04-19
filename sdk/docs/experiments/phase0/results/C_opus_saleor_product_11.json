@@ -1,0 +1,33 @@
+{
+  "combo": "C",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "saleor_product",
+  "element_id": 11,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 4476,
+      "action_intent": "Add Apple Juice product to the shopping bag",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.97
+    },
+    {
+      "run": 1,
+      "latency_ms": 2960,
+      "error": "RateLimitError(\"Error code: 429 - {'error': {'type': 'bad_response_status_code', 'message': 'bad response status code 429 (request id: 202604190954564585035618268d9d6pgh56MU8)'}, 'type': 'error'}\")"
+    },
+    {
+      "run": 2,
+      "latency_ms": 5605,
+      "action_intent": "Add Apple Juice product to the shopping bag",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.97
+    }
+  ]
+}

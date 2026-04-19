@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "antd_pro_dashboard",
+  "element_id": 7,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2965,
+      "action_intent": "Navigate to the Analysis dashboard page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.92
+    },
+    {
+      "run": 1,
+      "latency_ms": 3063,
+      "action_intent": "Navigate to the Analysis dashboard page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.92
+    },
+    {
+      "run": 2,
+      "latency_ms": 3179,
+      "action_intent": "Navigate to the Analysis dashboard page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.92
+    }
+  ]
+}

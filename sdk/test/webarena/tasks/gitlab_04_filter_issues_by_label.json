@@ -1,0 +1,12 @@
+{
+  "id": "gitlab-filter-issues-by-label",
+  "category": "gitlab",
+  "site": "https://gitlab.com",
+  "goal": "On gitlab.com/gitlab-org/gitlab/-/issues, apply a Label filter 'documentation' using the filtered-search bar.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "url_contains", "value": "label_name" },
+    { "kind": "url_contains", "value": "documentation" }
+  ],
+  "tags": ["gitlab", "filter", "phase2"]
+}

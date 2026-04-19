@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "govuk_form",
+  "element_id": 21,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 1857,
+      "action_intent": "Navigate to the payment card details pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 1666,
+      "action_intent": "Navigate to payment card details pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 1.0
+    },
+    {
+      "run": 2,
+      "latency_ms": 1705,
+      "action_intent": "Navigate to payment card details pattern page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 1.0
+    }
+  ]
+}

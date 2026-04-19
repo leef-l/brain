@@ -1,0 +1,761 @@
+{
+  "page_id": "vue_element_admin",
+  "url": "https://panjiachen.github.io/vue-element-admin/#/dashboard",
+  "category": "framework_vue",
+  "built_at": "2026-04-19T09:31:38Z",
+  "providers": [
+    "squarefaceicon",
+    "tencent",
+    "deepseek"
+  ],
+  "runs_per_model": 3,
+  "elements": [
+    {
+      "id": 8,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Login",
+        "href": null,
+        "bbox": {
+          "x": 720,
+          "y": 393,
+          "w": 450,
+          "h": 36
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Submit login credentials to authenticate into the admin dashboard",
+        "reversibility": "semi_reversible",
+        "risk_level": "safe_caution",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "submit login credentials to authenticate into the admin dashboard": 3,
+            "submit login credentials to authenticate": 2,
+            "submit login credentials to authenticate and access the dashboard": 1
+          },
+          "reversibility": {
+            "conditional": 4,
+            "semi_reversible": 5
+          },
+          "risk_level": {
+            "safe_caution": 9
+          },
+          "flow_role": {
+            "primary": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Submit login credentials to authenticate into the admin dashboard",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Submit login credentials to authenticate into the admin dashboard",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Submit login credentials to authenticate into the admin dashboard",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Submit login credentials to authenticate",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Submit login credentials to authenticate and access the dashboard.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Submit login credentials to authenticate.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Submit credentials to log into the admin dashboard.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Submit credentials to access the dashboard",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Submit login credentials to access the dashboard.",
+          "reversibility": "semi_reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "primary"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "password",
+        "name": "Password",
+        "href": null,
+        "bbox": {
+          "x": 716,
+          "y": 327,
+          "w": 381,
+          "h": 47
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Enter password for authentication",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "enter password for authentication": 4,
+            "enter a secret password for account authentication": 2,
+            "enter account password": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Enter password for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Enter password for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Enter password for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter account password",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Enter account password for login authentication.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter account password for authentication.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Enter a secret password for account authentication.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter password for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter a secret password for account authentication.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "element": {
+        "tag": "div",
+        "role": "button",
+        "type": null,
+        "name": "",
+        "href": null,
+        "bbox": {
+          "x": 936,
+          "y": 173,
+          "w": 18,
+          "h": 21
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Toggle password visibility or interact with a login form utility",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "consensus": {
+          "action_intent": {
+            "toggle password visibility or interact with a login form utility": 3,
+            "toggle password visibility": 2,
+            "close the login dialog and return to the previous view": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "utility": 7,
+            "escape": 2
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Toggle password visibility or interact with a login form utility",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Toggle password visibility or interact with a login form utility",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Toggle password visibility or interact with a login form utility",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Toggle password visibility",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Close the login dialog and return to the previous view.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Close the login dialog or modal.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "escape"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Toggle the visibility of the password text.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Toggle password visibility",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Toggle password visibility to check the entered text.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "Or connect with",
+        "href": null,
+        "bbox": {
+          "x": 875,
+          "y": 460,
+          "w": 139,
+          "h": 36
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Initiate login using a third-party social or external account",
+        "reversibility": "conditional",
+        "risk_level": "ambiguous",
+        "flow_role": "secondary",
+        "consensus": {
+          "action_intent": {
+            "initiate login using a third-party social or external account": 3,
+            "authenticate using a third-party service": 1,
+            "view third-party authentication options for alternative login": 1
+          },
+          "reversibility": {
+            "conditional": 5,
+            "reversible": 4
+          },
+          "risk_level": {
+            "safe_caution": 4,
+            "external_effect": 2,
+            "safe": 3
+          },
+          "flow_role": {
+            "secondary": 9
+          }
+        },
+        "included_in_experiment": false,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Initiate login using a third-party social or external account",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Initiate login using a third-party social or external account",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Initiate login using a third-party social or external account",
+          "reversibility": "conditional",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Authenticate using a third-party service",
+          "reversibility": "conditional",
+          "risk_level": "external_effect",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "View third-party authentication options for alternative login.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "View alternative social login connection options.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Initiate an alternative login method using a third-party service.",
+          "reversibility": "conditional",
+          "risk_level": "external_effect",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Choose alternative login method",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "secondary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Choose an alternative social login method.",
+          "reversibility": "reversible",
+          "risk_level": "safe_caution",
+          "flow_role": "secondary"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "element": {
+        "tag": "input",
+        "role": "input",
+        "type": "text",
+        "name": "Username",
+        "href": null,
+        "bbox": {
+          "x": 716,
+          "y": 254,
+          "w": 381,
+          "h": 47
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Enter username for authentication",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "primary",
+        "consensus": {
+          "action_intent": {
+            "enter username for authentication": 4,
+            "enter account username": 1,
+            "enter account username for login identification": 1
+          },
+          "reversibility": {
+            "reversible": 9
+          },
+          "risk_level": {
+            "safe": 9
+          },
+          "flow_role": {
+            "primary": 6,
+            "utility": 3
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Enter username for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Enter username for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Enter username for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Enter account username",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Enter account username for login identification.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Enter account username for authentication.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "primary"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Enter a username or email to identify the user account.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Enter username for authentication",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Enter a username or email for account identification.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "utility"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "",
+        "href": "https://srv.carbonads.net/ads/click/x/GTND427UCYBIKKJ7CAA4YKQUCASI423MCTYD4Z3JCASI5KJUCKSDC27KF6SD653NFTBIE27YCK7DEK3ECVBDEKJKC6SI52JMFTAI6K3EHJNCLSIZ",
+        "bbox": {
+          "x": 1225,
+          "y": 825,
+          "w": 130,
+          "h": 100
+        }
+      },
+      "ground_truth": {
+        "action_intent": "Click a Carbon advertisement link to visit an external sponsor page",
+        "reversibility": "reversible",
+        "risk_level": "external_effect",
+        "flow_role": "cross_page_nav",
+        "consensus": {
+          "action_intent": {
+            "click a carbon advertisement link to visit an external sponsor page": 2,
+            "navigate to an external advertisement website": 2,
+            "click on a carbon advertisement to visit the advertiser's page": 1
+          },
+          "reversibility": {
+            "reversible": 7,
+            "irreversible": 2
+          },
+          "risk_level": {
+            "external_effect": 8,
+            "safe": 1
+          },
+          "flow_role": {
+            "cross_page_nav": 9
+          }
+        },
+        "included_in_experiment": true,
+        "vote_count": 9
+      },
+      "votes": [
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 0,
+          "action_intent": "Click a Carbon advertisement link to visit an external sponsor page",
+          "reversibility": "reversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 1,
+          "action_intent": "Click on a Carbon advertisement to visit the advertiser's page",
+          "reversibility": "reversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "squarefaceicon",
+          "model": "claude-opus-4-6",
+          "run": 2,
+          "action_intent": "Click a Carbon advertisement link to visit an external sponsor page",
+          "reversibility": "reversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 0,
+          "action_intent": "Navigate to a sponsored advertisement",
+          "reversibility": "irreversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 1,
+          "action_intent": "Navigate to external advertiser landing page.",
+          "reversibility": "irreversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "tencent",
+          "model": "glm-5",
+          "run": 2,
+          "action_intent": "Navigate to an external sponsored advertisement link.",
+          "reversibility": "reversible",
+          "risk_level": "safe",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 0,
+          "action_intent": "Navigate to an external advertisement website.",
+          "reversibility": "reversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 1,
+          "action_intent": "Navigate to an external advertisement page",
+          "reversibility": "reversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-chat",
+          "run": 2,
+          "action_intent": "Navigate to an external advertisement website.",
+          "reversibility": "reversible",
+          "risk_level": "external_effect",
+          "flow_role": "cross_page_nav"
+        }
+      ]
+    }
+  ]
+}

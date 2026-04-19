@@ -1,0 +1,168 @@
+{
+  "page_id": "antd_pro_dashboard",
+  "url": "https://preview.pro.ant.design/dashboard/analysis",
+  "category": "admin_freeform",
+  "snapshot_file": "samples/antd_pro_dashboard/snapshot.json",
+  "screenshot_file": "samples/antd_pro_dashboard/screenshot.png",
+  "html_file": "samples/antd_pro_dashboard/page.html",
+  "drafted_at": "2026-04-19T09:02:41Z",
+  "drafted_by_model": "claude-opus-4-6",
+  "elements": [
+    {
+      "id": 22,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "今日",
+        "href": null,
+        "bbox": {
+          "x": 886,
+          "y": 377,
+          "w": 60,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Filter the sales ranking data to show only today's results.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Part of a date-range quick-select button group (今日/本周/本月/本年). Selecting another preset or using the date picker inputs reverts the filter.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 23,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "本周",
+        "href": null,
+        "bbox": {
+          "x": 946,
+          "y": 377,
+          "w": 60,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Filter the sales ranking data to show this week's results.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Same quick-select group as '今日'. Switching to another preset or custom date range reverses the action.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 24,
+      "element": {
+        "tag": "button",
+        "role": "button",
+        "type": "button",
+        "name": "本月",
+        "href": null,
+        "bbox": {
+          "x": 1006,
+          "y": 377,
+          "w": 60,
+          "h": 32
+        }
+      },
+      "draft": {
+        "action_intent": "Filter the sales ranking data to show this month's results.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "utility",
+        "notes": "Same quick-select group as '今日' and '本周'.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 3,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Welcome",
+        "href": "https://preview.pro.ant.design/welcome",
+        "bbox": {
+          "x": 70,
+          "y": 80,
+          "w": 84,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Welcome page of the admin dashboard.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "notes": "Standard sidebar navigation link. Browser back button returns to current page.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 7,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Analysis",
+        "href": "https://preview.pro.ant.design/dashboard/analysis",
+        "bbox": {
+          "x": 82,
+          "y": 216,
+          "w": 56,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Analysis page under the Dashboard section.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "navigation",
+        "notes": "This links to the current page (dashboard/analysis), so clicking it effectively reloads or is a no-op. Could be considered 'navigation' or 'utility'; flagging for reviewer.",
+        "reviewer_flag": true
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    },
+    {
+      "id": 9,
+      "element": {
+        "tag": "a",
+        "role": "a",
+        "type": null,
+        "name": "Monitor",
+        "href": "https://preview.pro.ant.design/dashboard/monitor",
+        "bbox": {
+          "x": 81,
+          "y": 260,
+          "w": 53,
+          "h": 40
+        }
+      },
+      "draft": {
+        "action_intent": "Navigate to the Monitor page under the Dashboard section.",
+        "reversibility": "reversible",
+        "risk_level": "safe",
+        "flow_role": "cross_page_nav",
+        "notes": "Standard sidebar navigation link to a sibling dashboard page.",
+        "reviewer_flag": false
+      },
+      "ground_truth": null,
+      "review_status": "pending"
+    }
+  ]
+}

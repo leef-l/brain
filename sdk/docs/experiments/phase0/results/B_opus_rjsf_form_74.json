@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "rjsf_form",
+  "element_id": 74,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 6247,
+      "action_intent": "Edit the root object ID or name for the JSON schema form",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.4
+    },
+    {
+      "run": 1,
+      "latency_ms": 5485,
+      "action_intent": "Edit the root object ID or key name for the JSON schema form",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.4
+    },
+    {
+      "run": 2,
+      "latency_ms": 6394,
+      "action_intent": "Edit the root object ID or name for the JSON schema form",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "utility",
+      "confidence": 0.45
+    }
+  ]
+}

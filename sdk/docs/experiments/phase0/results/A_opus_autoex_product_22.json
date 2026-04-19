@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "autoex_product",
+  "element_id": 22,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3394,
+      "action_intent": "Add this product to the shopping cart",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 2780,
+      "action_intent": "Add this product to the shopping cart",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 3554,
+      "action_intent": "Add this product to the shopping cart",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.95
+    }
+  ]
+}

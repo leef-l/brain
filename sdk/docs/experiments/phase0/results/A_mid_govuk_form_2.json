@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "govuk_form",
+  "element_id": 2,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3937,
+      "action_intent": "Reject analytics cookies",
+      "reversibility": "irreversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 2253,
+      "action_intent": "Reject analytics cookies",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe",
+      "flow_role": "primary",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 32824,
+      "action_intent": "Reject analytics cookies from the cookie consent banner",
+      "reversibility": "semi_reversible",
+      "risk_level": "safe_caution",
+      "flow_role": "primary",
+      "confidence": 0.85
+    }
+  ]
+}

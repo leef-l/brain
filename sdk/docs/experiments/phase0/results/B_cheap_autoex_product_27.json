@@ -1,0 +1,9 @@
+{
+  "combo": "B",
+  "role": "cheap",
+  "provider": "deepseek",
+  "page_id": "autoex_product",
+  "element_id": 27,
+  "predictions": [],
+  "skipped": "provider has no image support"
+}

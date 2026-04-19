@@ -177,9 +177,13 @@ func TestPrefixHeuristic_InferClass(t *testing.T) {
 		{"code.read_file", ApprovalReadonly},
 		{"quant.list_orders", ApprovalReadonly},
 		{"quant.get_position", ApprovalReadonly},
+		{"code.list_files", ApprovalReadonly},
+		{"code.note", ApprovalReadonly},
+		{"browser.note", ApprovalReadonly},
 
 		// L1: workspace-write
 		{"code.write_file", ApprovalWorkspaceWrite},
+		{"code.edit_file", ApprovalWorkspaceWrite},
 		{"code.patch_file", ApprovalWorkspaceWrite},
 		{"code.delete_file", ApprovalWorkspaceWrite},
 

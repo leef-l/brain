@@ -1,0 +1,22 @@
+{
+  "id": "canvas_flutter_counter",
+  "category": "canvas",
+  "site": "https://flutter.github.io/samples/rendering/simple_layout/",
+  "goal": "Increment the visible counter to exactly 5 clicks.",
+  "max_turns": 10,
+  "visual_required": "hard",
+  "modality": [
+    "canvas"
+  ],
+  "expected_visual_hit": true,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "5"
+    }
+  ],
+  "tags": [
+    "canvas",
+    "hard"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "aux_form_submit",
+  "category": "visual_state",
+  "site": "https://www.w3schools.com/html/html_forms.asp",
+  "goal": "Fill and submit the try-it form with name='Tim' and land on confirmation.",
+  "max_turns": 8,
+  "visual_required": "aux",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "submitted"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "aux"
+  ]
+}

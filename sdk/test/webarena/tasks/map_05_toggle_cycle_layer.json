@@ -1,0 +1,11 @@
+{
+  "id": "map-toggle-cycle-layer",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "On openstreetmap.org, open the layers panel (top-right icon) and enable the 'CyclOSM' cycling layer; verify the layer switcher shows it active.",
+  "max_turns": 7,
+  "success": [
+    { "kind": "dom_has", "value": "input[name='layer'][value='Y']" }
+  ],
+  "tags": ["map", "layers", "phase2"]
+}

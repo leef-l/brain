@@ -1,0 +1,12 @@
+{
+  "id": "gitlab-open-issue-detail",
+  "category": "gitlab",
+  "site": "https://gitlab.com",
+  "goal": "From any issue listing on gitlab-org/gitlab, click the first issue row and verify the issue detail page (comments + sidebar) loaded.",
+  "max_turns": 6,
+  "success": [
+    { "kind": "url_contains", "value": "/-/issues/" },
+    { "kind": "dom_has", "value": ".issue-sticky-header, .issuable-details" }
+  ],
+  "tags": ["gitlab", "navigation", "happy_path", "phase2"]
+}

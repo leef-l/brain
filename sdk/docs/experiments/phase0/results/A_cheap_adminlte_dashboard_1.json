@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "adminlte_dashboard",
+  "element_id": 1,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 3010,
+      "action_intent": "Navigate to home page or refresh current view",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.8
+    },
+    {
+      "run": 1,
+      "latency_ms": 3381,
+      "action_intent": "Navigate to the home page of the AdminLTE v3 theme site.",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 2868,
+      "action_intent": "Navigate to the homepage or refresh the current page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.8
+    }
+  ]
+}

@@ -30,6 +30,47 @@ type LeaseProvider interface {
 	ActiveLeases() []LeaseSnapshot
 }
 
+// PatternStat 是模式库中单个模式的 dashboard 视图。
+type PatternStat struct {
+	ID           string  `json:"id"`
+	Category     string  `json:"category"`
+	Source       string  `json:"source"`
+	MatchCount   int     `json:"match_count"`
+	SuccessCount int     `json:"success_count"`
+	FailureCount int     `json:"failure_count"`
+	SuccessRate  float64 `json:"success_rate"`
+	LastHitAt    string  `json:"last_hit_at,omitempty"`
+}
+
+// DailySummaryStat 是一天的总结简化视图。
+type DailySummaryStat struct {
+	Date        string `json:"date"`
+	RunsTotal   int    `json:"runs_total"`
+	RunsFailed  int    `json:"runs_failed"`
+	BrainCounts string `json:"brain_counts"`
+	SummaryText string `json:"summary_text,omitempty"`
+}
+
+// InteractionStat 是按 brain 维度的交互序列计数。
+type InteractionStat struct {
+	BrainKind string `json:"brain_kind"`
+	Count     int    `json:"count"`
+	Successes int    `json:"successes"`
+}
+
+// LearningOverview 是 /v1/dashboard/learning 的完整响应。
+type LearningOverview struct {
+	Patterns     []PatternStat      `json:"patterns"`
+	Daily        []DailySummaryStat `json:"daily"`
+	Interactions []InteractionStat  `json:"interactions"`
+}
+
+// LearningProvider 是学习成果数据源。cmd/brain 侧实现,组合
+// PatternLibrary + LearningStore。
+type LearningProvider interface {
+	LearningOverview() LearningOverview
+}
+
 type Overview struct {
 	Brains      int       `json:"brain_count"`
 	ActiveRuns  int       `json:"active_runs"`
@@ -157,6 +198,28 @@ func handleLeases(w http.ResponseWriter, _ *http.Request, lp LeaseProvider) {
 	})
 }
 
+func handleLearning(w http.ResponseWriter, _ *http.Request, lp LearningProvider) {
+	overview := LearningOverview{
+		Patterns:     []PatternStat{},
+		Daily:        []DailySummaryStat{},
+		Interactions: []InteractionStat{},
+	}
+	if lp != nil {
+		overview = lp.LearningOverview()
+		if overview.Patterns == nil {
+			overview.Patterns = []PatternStat{}
+		}
+		if overview.Daily == nil {
+			overview.Daily = []DailySummaryStat{}
+		}
+		if overview.Interactions == nil {
+			overview.Interactions = []InteractionStat{}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(overview)
+}
+
 func handleProviders(w http.ResponseWriter, _ *http.Request, cfg *config.Config) {
 	type providerDetail struct {
 		Name      string `json:"name"`
@@ -189,7 +252,8 @@ func handleProviders(w http.ResponseWriter, _ *http.Request, cfg *config.Config)
 
 // RegisterRoutes registers all /v1/dashboard/* routes.
 // Returns the WSHub so callers can start it with hub.Start(ctx).
-func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *config.Config, startTime time.Time, lp LeaseProvider) *WSHub {
+// learnP 允许为 nil(运行在无学习库的早期配置),对应端点返回空集。
+func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *config.Config, startTime time.Time, lp LeaseProvider, learnP LearningProvider) *WSHub {
 	wsHub := NewWSHub(bus)
 	mux.HandleFunc("/v1/dashboard/overview", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -237,6 +301,14 @@ func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrai
 			return
 		}
 		handleProviders(w, r, cfg)
+	})
+
+	mux.HandleFunc("/v1/dashboard/learning", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleLearning(w, r, learnP)
 	})
 
 	mux.HandleFunc("/v1/dashboard/ws", func(w http.ResponseWriter, r *http.Request) {

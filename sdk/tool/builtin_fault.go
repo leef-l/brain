@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -332,19 +334,125 @@ func (t *InjectLatencyTool) Execute(ctx context.Context, args json.RawMessage) (
 		}), nil
 
 	case "network":
-		// Report what tc command would be needed.
-		return faultOK(map[string]interface{}{
-			"type":      "network_latency",
-			"delay_ms":  actualDelay,
-			"jitter_ms": input.JitterMS,
-			"tc_add":    fmt.Sprintf("tc qdisc add dev eth0 root netem delay %dms %dms", input.DelayMS, input.JitterMS),
-			"tc_remove": "tc qdisc del dev eth0 root netem",
-			"note":      "network latency injection requires root. Run the tc commands manually or use startup type.",
-		}), nil
+		return executeNetworkLatency(ctx, input.Command, actualDelay, input.JitterMS, start)
 
 	default:
 		return faultErr("unknown type: %s (use startup or network)", input.Type), nil
 	}
+}
+
+// executeNetworkLatency 真实注入网络延迟（Linux tc netem）。
+// 能力不足时返回 status=unsupported（不伪装成 completed）。
+// 成功执行后自动清理 tc 规则，无论子命令成功失败。
+func executeNetworkLatency(ctx context.Context, command string, delayMS, jitterMS int, start time.Time) (*Result, error) {
+	// 能力检测：1. 必须是 Linux；2. 必须有 tc 可执行；3. 必须有 root
+	if runtime.GOOS != "linux" {
+		return faultUnsupported("network_latency", map[string]interface{}{
+			"reason": "tc netem only available on Linux",
+			"os":     runtime.GOOS,
+		}), nil
+	}
+	tcPath, err := exec.LookPath("tc")
+	if err != nil {
+		return faultUnsupported("network_latency", map[string]interface{}{
+			"reason": "tc binary not found (install iproute2)",
+		}), nil
+	}
+	if os.Geteuid() != 0 {
+		return faultUnsupported("network_latency", map[string]interface{}{
+			"reason": "tc netem requires root (euid != 0)",
+			"euid":   os.Geteuid(),
+		}), nil
+	}
+
+	// 选择默认网卡（RFC: 有 eth0 优先，否则取第一个非 lo 的 up 网卡）
+	iface := pickNetworkInterface()
+	if iface == "" {
+		return faultUnsupported("network_latency", map[string]interface{}{
+			"reason": "no usable network interface found",
+		}), nil
+	}
+
+	// 添加 netem 规则
+	addArgs := []string{"qdisc", "add", "dev", iface, "root", "netem", "delay", fmt.Sprintf("%dms", delayMS)}
+	if jitterMS > 0 {
+		addArgs = append(addArgs, fmt.Sprintf("%dms", jitterMS))
+	}
+	addCmd := exec.CommandContext(ctx, tcPath, addArgs...)
+	if out, addErr := addCmd.CombinedOutput(); addErr != nil {
+		return faultErr("tc qdisc add failed: %v (output: %s)", addErr, strings.TrimSpace(string(out))), nil
+	}
+
+	// 注册 cleanup（无论子命令是否出错都要清）
+	cleanup := func() error {
+		delCmd := exec.Command(tcPath, "qdisc", "del", "dev", iface, "root", "netem")
+		return delCmd.Run()
+	}
+	defer cleanup()
+
+	// 执行受延迟影响的命令
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	exitCode := 0
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+	}
+
+	return faultOK(map[string]interface{}{
+		"type":             "network_latency",
+		"interface":        iface,
+		"delay_ms":         delayMS,
+		"jitter_ms":        jitterMS,
+		"total_elapsed_ms": time.Since(start).Milliseconds(),
+		"exit_code":        exitCode,
+		"stdout":           truncate(stdout.String(), 2000),
+		"stderr":           truncate(stderr.String(), 2000),
+		"cleanup":          "tc rule removed",
+	}), nil
+}
+
+// pickNetworkInterface 选择用于 netem 注入的网卡。
+// 优先级：eth0 > 第一个非 lo 的网卡。
+func pickNetworkInterface() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	var fallback string
+	for _, iface := range ifaces {
+		if iface.Name == "lo" {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if iface.Name == "eth0" {
+			return "eth0"
+		}
+		if fallback == "" {
+			fallback = iface.Name
+		}
+	}
+	return fallback
+}
+
+// faultUnsupported 返回明确的 unsupported 状态（不伪装 completed）。
+func faultUnsupported(faultType string, details map[string]interface{}) *Result {
+	payload := map[string]interface{}{
+		"status": "unsupported",
+		"type":   faultType,
+	}
+	for k, v := range details {
+		payload[k] = v
+	}
+	data, _ := json.Marshal(payload)
+	return &Result{Output: data, IsError: true}
 }
 
 // ---------------------------------------------------------------------------
@@ -376,6 +484,52 @@ func (t *KillProcessTool) Schema() Schema {
 	}
 }
 
+// 系统关键进程硬编码 deny-list。即使 LLM 被 prompt-inject，这些名称/低 PID
+// 也会被代码层面拒绝，不依赖 system prompt 的常识提示。
+var killProcessDenyNames = map[string]bool{
+	"init": true, "systemd": true, "sshd": true, "kthreadd": true,
+	"kernel": true, "dbus-daemon": true, "NetworkManager": true, "udev": true,
+	"udevd": true, "systemd-journald": true, "systemd-udevd": true,
+	"systemd-logind": true, "systemd-networkd": true, "systemd-resolved": true,
+	"cron": true, "crond": true, "rsyslogd": true, "agetty": true, "getty": true,
+	"login": true, "chronyd": true, "ntpd": true, "dockerd": true, "containerd": true,
+	"launchd": true, "WindowServer": true, "loginwindow": true,
+	"wininit": true, "winlogon": true, "csrss": true, "smss": true, "services": true,
+	"lsass": true, "svchost": true, "System": true, "Registry": true,
+}
+
+// isProtectedProcess 判断一个 PID 是否属于受保护的系统关键进程。
+// 规则：
+//   - PID < 100：内核线程区间，全部拒杀
+//   - PID == 1：init/launchd，拒杀
+//   - 进程名在 killProcessDenyNames 中：拒杀
+//   - 进程名前缀为 kernel/systemd/：拒杀
+func isProtectedProcess(ctx context.Context, pid int) (bool, string) {
+	if pid < 100 {
+		return true, fmt.Sprintf("pid %d is in kernel/init range (<100)", pid)
+	}
+	if pid == os.Getpid() {
+		return true, "refusing to kill self"
+	}
+	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
+	if err != nil {
+		return false, ""
+	}
+	name := strings.TrimSpace(string(out))
+	base := name
+	if i := strings.LastIndexByte(base, '/'); i >= 0 {
+		base = base[i+1:]
+	}
+	if killProcessDenyNames[base] {
+		return true, fmt.Sprintf("process name %q is a protected system process", base)
+	}
+	lower := strings.ToLower(base)
+	if strings.HasPrefix(lower, "kernel") || strings.HasPrefix(lower, "systemd") {
+		return true, fmt.Sprintf("process name %q has protected prefix", base)
+	}
+	return false, ""
+}
+
 func (t *KillProcessTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
 		PID    *int   `json:"pid"`
@@ -392,19 +546,25 @@ func (t *KillProcessTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		signalName = "TERM"
 	}
 
+	// 按名称查找时先拒绝明显的系统进程名
+	if input.Name != "" {
+		lower := strings.ToLower(strings.TrimSpace(input.Name))
+		if killProcessDenyNames[lower] {
+			return faultErr("refused: %q is a protected system process", input.Name), nil
+		}
+	}
+
 	var pids []int
 
 	if input.PID != nil {
 		pids = append(pids, *input.PID)
 	} else if input.Name != "" {
-		// Find PIDs by name.
 		out, err := exec.CommandContext(ctx, "pgrep", "-f", input.Name).Output()
 		if err != nil {
 			return faultErr("pgrep %s: no matching processes", input.Name), nil
 		}
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil {
-				// Don't kill ourselves.
 				if pid != os.Getpid() {
 					pids = append(pids, pid)
 				}
@@ -419,6 +579,12 @@ func (t *KillProcessTool) Execute(ctx context.Context, args json.RawMessage) (*R
 
 	var results []map[string]interface{}
 	for _, pid := range pids {
+		if protected, reason := isProtectedProcess(ctx, pid); protected {
+			results = append(results, map[string]interface{}{
+				"pid": pid, "status": "refused", "reason": reason,
+			})
+			continue
+		}
 		proc, err := os.FindProcess(pid)
 		if err != nil {
 			results = append(results, map[string]interface{}{

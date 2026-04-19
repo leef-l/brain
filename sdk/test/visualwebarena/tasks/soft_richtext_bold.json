@@ -1,0 +1,22 @@
+{
+  "id": "soft_richtext_bold",
+  "category": "richtext",
+  "site": "https://quilljs.com/",
+  "goal": "Select the word 'Hello' in the editor and apply bold formatting.",
+  "max_turns": 10,
+  "visual_required": "soft",
+  "modality": [
+    "richtext"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "strong"
+    }
+  ],
+  "tags": [
+    "richtext",
+    "soft"
+  ]
+}

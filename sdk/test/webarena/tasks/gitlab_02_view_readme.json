@@ -1,0 +1,11 @@
+{
+  "id": "gitlab-view-readme",
+  "category": "gitlab",
+  "site": "https://gitlab.com",
+  "goal": "Open https://gitlab.com/gitlab-org/gitlab and scroll/jump to the README section; verify the README heading is rendered.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "dom_has", "value": "[data-qa-selector='blob_viewer_file_content'], .readme-holder" }
+  ],
+  "tags": ["gitlab", "navigation", "happy_path", "phase1"]
+}

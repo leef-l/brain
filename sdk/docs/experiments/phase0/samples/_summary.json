@@ -1,0 +1,118 @@
+{
+  "total": 13,
+  "ok": 3,
+  "results": [
+    {
+      "id": "gitea_login",
+      "category": "login_simple",
+      "description": "Gitea demo站登录页,开源稳定",
+      "url": "https://demo.gitea.com/user/login",
+      "captured_at": "2026-04-19T09:29:13Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "status": "wait_selector_timeout",
+      "error": null,
+      "element_count": 11
+    },
+    {
+      "id": "discourse_login",
+      "status": "skipped"
+    },
+    {
+      "id": "saleor_product",
+      "status": "skipped"
+    },
+    {
+      "id": "autoex_product",
+      "category": "ecommerce",
+      "description": "automationexercise 商品详情,加购+数量+评论",
+      "url": "https://automationexercise.com/product_details/1",
+      "captured_at": "2026-04-19T09:29:31Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "status": "wait_selector_timeout",
+      "error": null,
+      "element_count": 29
+    },
+    {
+      "id": "adminlte_dashboard",
+      "status": "skipped"
+    },
+    {
+      "id": "antd_pro_dashboard",
+      "status": "skipped"
+    },
+    {
+      "id": "wikipedia_search",
+      "status": "skipped"
+    },
+    {
+      "id": "startpage_search",
+      "category": "search",
+      "description": "Startpage 搜索结果页",
+      "url": "https://www.startpage.com/do/search?q=brain+agent",
+      "captured_at": "2026-04-19T09:29:49Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "status": "wait_selector_timeout",
+      "error": null,
+      "element_count": 97
+    },
+    {
+      "id": "govuk_form",
+      "status": "skipped"
+    },
+    {
+      "id": "rjsf_form",
+      "status": "skipped"
+    },
+    {
+      "id": "vue_element_admin",
+      "category": "framework_vue",
+      "description": "Vue 2 + Element UI,中后台模板(Vue 框架覆盖)",
+      "url": "https://panjiachen.github.io/vue-element-admin/#/dashboard",
+      "captured_at": "2026-04-19T09:29:52Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "status": "ok",
+      "error": null,
+      "element_count": 9
+    },
+    {
+      "id": "element_plus_buttons",
+      "category": "framework_vue",
+      "description": "Vue 3 + Element Plus,官方组件库 demo(Vue3 框架覆盖)",
+      "url": "https://element-plus.org/en-US/component/button.html",
+      "captured_at": "2026-04-19T09:29:57Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "status": "ok",
+      "error": null,
+      "element_count": 347
+    },
+    {
+      "id": "angular_material_button",
+      "category": "framework_angular",
+      "description": "Angular Material 按钮示例(Angular 框架覆盖)",
+      "url": "https://material.angular.dev/components/button/examples",
+      "captured_at": "2026-04-19T09:30:00Z",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "status": "ok",
+      "error": null,
+      "element_count": 88
+    }
+  ]
+}

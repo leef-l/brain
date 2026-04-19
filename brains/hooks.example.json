@@ -1,0 +1,35 @@
+{
+  "_comment": "Task #19 外部进程钩子示例配置,放到 ~/.brain/hooks.json 生效",
+  "_env_vars": "钩子执行时注入 EVENT_TYPE / EXECUTION_ID / BRAIN_ID / FROM / TO",
+  "_event_types": [
+    "task.state.pending",
+    "task.state.running",
+    "task.state.waiting_tool",
+    "task.state.waiting_event",
+    "task.state.paused",
+    "task.state.draining",
+    "task.state.interrupted",
+    "task.state.restarting",
+    "task.state.completed",
+    "task.state.failed",
+    "task.state.canceled",
+    "task.state.crashed"
+  ],
+  "hooks": [
+    {
+      "on": "task.state.completed",
+      "command": "logger -t brain 'task $EXECUTION_ID ($BRAIN_ID) completed'"
+    },
+    {
+      "on": "task.state.failed",
+      "brain": "browser",
+      "command": "test -x ~/.brain/on_browser_fail.sh && ~/.brain/on_browser_fail.sh",
+      "timeout_ms": 5000
+    },
+    {
+      "on": "*",
+      "brain": "quant",
+      "command": "printf '%s %s %s\\n' \"$(date -Iseconds)\" \"$EVENT_TYPE\" \"$EXECUTION_ID\" >> ~/.brain/quant_audit.log"
+    }
+  ]
+}

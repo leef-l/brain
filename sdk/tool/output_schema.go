@@ -26,6 +26,38 @@ var (
   "required": ["bytes_written", "path"]
 }`)
 
+	editFileOutputSchema = json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "path":          { "type": "string" },
+    "replacements":  { "type": "integer" },
+    "bytes_written": { "type": "integer" }
+  },
+  "required": ["path", "replacements", "bytes_written"]
+}`)
+
+	listFilesOutputSchema = json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "paths":     { "type": "array", "items": { "type": "string" } },
+    "count":     { "type": "integer" },
+    "truncated": { "type": "boolean" }
+  },
+  "required": ["paths", "count", "truncated"]
+}`)
+
+	noteOutputSchema = json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "action": { "type": "string" },
+    "ok":     { "type": "boolean" },
+    "id":     { "type": "integer" },
+    "items":  { "type": "array" },
+    "note":   { "type": "string" }
+  },
+  "required": ["action", "ok"]
+}`)
+
 	deleteFileOutputSchema = json.RawMessage(`{
   "type": "object",
   "properties": {

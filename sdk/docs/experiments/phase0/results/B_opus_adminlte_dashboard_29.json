@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "opus",
+  "provider": "squarefaceicon",
+  "model": "claude-opus-4-6",
+  "page_id": "adminlte_dashboard",
+  "element_id": 29,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 6792,
+      "action_intent": "Navigate to the Search example page in the sidebar",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.78
+    },
+    {
+      "run": 1,
+      "latency_ms": 6733,
+      "action_intent": "Navigate to the Search example page in the sidebar",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.78
+    },
+    {
+      "run": 2,
+      "latency_ms": 5771,
+      "action_intent": "Navigate to the Search example page in the sidebar",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.78
+    }
+  ]
+}

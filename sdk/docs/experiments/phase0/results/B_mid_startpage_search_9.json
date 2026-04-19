@@ -1,0 +1,37 @@
+{
+  "combo": "B",
+  "role": "mid",
+  "provider": "tencent",
+  "model": "glm-5",
+  "page_id": "startpage_search",
+  "element_id": 9,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 5518,
+      "action_intent": "Navigate to Startpage homepage",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "cross_page_nav",
+      "confidence": 0.85
+    },
+    {
+      "run": 1,
+      "latency_ms": 3666,
+      "action_intent": "Navigate to Startpage homepage",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.85
+    },
+    {
+      "run": 2,
+      "latency_ms": 9784,
+      "action_intent": "Navigate to Startpage homepage",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "navigation",
+      "confidence": 0.95
+    }
+  ]
+}

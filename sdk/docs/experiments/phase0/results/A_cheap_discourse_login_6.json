@@ -1,0 +1,37 @@
+{
+  "combo": "A",
+  "role": "cheap",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "page_id": "discourse_login",
+  "element_id": 6,
+  "predictions": [
+    {
+      "run": 0,
+      "latency_ms": 2689,
+      "action_intent": "Navigate to password recovery page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.95
+    },
+    {
+      "run": 1,
+      "latency_ms": 3646,
+      "action_intent": "Navigate to password recovery page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.95
+    },
+    {
+      "run": 2,
+      "latency_ms": 2658,
+      "action_intent": "Navigate to password recovery page",
+      "reversibility": "reversible",
+      "risk_level": "safe",
+      "flow_role": "escape",
+      "confidence": 0.95
+    }
+  ]
+}

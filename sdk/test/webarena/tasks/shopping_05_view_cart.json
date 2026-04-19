@@ -1,0 +1,12 @@
+{
+  "id": "shopping-view-cart",
+  "category": "shopping",
+  "site": "https://demo.opencart.com",
+  "goal": "After adding any product to cart on demo.opencart.com, click the cart icon and navigate to the full Shopping Cart page.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "url_contains", "value": "route=checkout/cart" },
+    { "kind": "dom_has", "value": "table.table-bordered" }
+  ],
+  "tags": ["shopping", "cart", "phase2"]
+}

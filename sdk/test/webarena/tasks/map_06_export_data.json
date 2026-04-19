@@ -1,0 +1,12 @@
+{
+  "id": "map-export-data",
+  "category": "map",
+  "site": "https://www.openstreetmap.org",
+  "goal": "On openstreetmap.org, click 'Export' in the top toolbar and verify the export pane (with 'Manually select a different area' link) appeared.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_contains", "value": "export" },
+    { "kind": "dom_has", "value": "#export_overpass" }
+  ],
+  "tags": ["map", "export", "phase2"]
+}

@@ -334,8 +334,8 @@ func (s *BrowserSession) attachToTarget(ctx context.Context, targetID string) er
 	s.targetID = targetID
 	s.mu.Unlock()
 
-	// Enable necessary domains on this session.
-	for _, domain := range []string{"Page", "DOM", "Runtime", "Network", "Input"} {
+	// Enable necessary domains on this session. Input domain has no .enable method.
+	for _, domain := range []string{"Page", "DOM", "Runtime", "Network"} {
 		if err := s.client.CallSession(ctx, result.SessionID, domain+".enable", nil, nil); err != nil {
 			// Some domains may not be available — log but don't fail.
 			fmt.Fprintf(os.Stderr, "cdp: enable %s: %v\n", domain, err)

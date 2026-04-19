@@ -1,0 +1,22 @@
+{
+  "id": "soft_canvas_tooltip",
+  "category": "canvas",
+  "site": "https://observablehq.com/@d3/line-chart",
+  "goal": "Hover over the line chart and extract the tooltip's date label.",
+  "max_turns": 10,
+  "visual_required": "soft",
+  "modality": [
+    "canvas"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "2020"
+    }
+  ],
+  "tags": [
+    "canvas",
+    "soft"
+  ]
+}

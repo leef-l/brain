@@ -1,0 +1,23 @@
+{
+  "id": "m2w-auth-22-logout-quora",
+  "category": "auth",
+  "site": "https://www.quora.com",
+  "goal": "Starting from an authenticated session on https://www.quora.com, click the logout / sign-out link and verify the login form reappears.",
+  "max_turns": 8,
+  "success": [
+    {
+      "kind": "dom_has",
+      "value": "input[type=\"password\"], a[href*=\"login\" i]"
+    }
+  ],
+  "tags": [
+    "mind2web",
+    "logout",
+    "cross_site_auth"
+  ],
+  "metadata": {
+    "annotation_id": "mind2web-auth-11-b",
+    "domain": "qa",
+    "subdomain": "quora"
+  }
+}

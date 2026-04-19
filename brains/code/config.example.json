@@ -10,10 +10,13 @@
     "",
     "注册工具：",
     "  code.read_file   — 读取文件内容",
-    "  code.write_file  — 写入/创建文件",
+    "  code.write_file  — 写入/创建文件（整文件写入）",
+    "  code.edit_file   — 精确字符串替换编辑（推荐用于小改，省 token）",
+    "  code.list_files  — glob 列出文件路径（支持 **/*.go 等模式）",
     "  code.delete_file — 删除文件",
-    "  code.search      — 搜索文件内容",
+    "  code.search      — 搜索文件内容（支持上下文 -A/-B、multiline）",
     "  code.shell_exec  — 执行 shell 命令",
+    "  code.note        — Scratchpad / TODO 列表（复杂任务先 plan 再执行）",
     "",
     "执行预算（通过 RPC ExecuteRequest 传入）：",
     "  budget.max_turns: 10（默认）"
@@ -21,7 +24,7 @@
 
   "tool_profiles": {
     "coding_safe": {
-      "include": ["code.read_file", "code.write_file", "code.search"],
+      "include": ["code.read_file", "code.list_files", "code.search", "code.write_file", "code.edit_file"],
       "exclude": ["code.shell_exec", "code.delete_file"]
     },
     "coding_full": {

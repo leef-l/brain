@@ -100,7 +100,50 @@
 
 ## 3. Pro 版应该卖什么
 
-Pro 版建议卖的是下面 5 类能力。
+Pro 版建议卖的是下面 **6 类能力**(**2026-04-20 更新**:新增"语义理解"作为核心差异化)。
+
+### 3.0 语义理解层(核心差异化,2026-04-20 新增)
+
+> 这是 Pro 版**最重要的商业化差异**。
+> 免费版是"**能操作浏览器**",Pro 版是"**能理解浏览器在做什么**"。
+>
+> 详细技术架构见:
+> - [`40-Browser-Brain语义理解架构`](./40-Browser-Brain语义理解架构.md)
+> - [`41-语义理解阶段0实验设计`](./41-语义理解阶段0实验设计.md)
+> - [`42-Browser-Brain异常感知层设计`](./42-Browser-Brain异常感知层设计.md)
+
+语义理解层包含三大工具,适合整包销售:
+
+**(a) 元素语义理解 `browser_pro.understand`**
+- 为每个可交互元素推断 `intent / reversibility / risk / flow_role / predicted_network`
+- 基于站点预处理缓存,Pro 版附带云端模式库
+- 价值:让 Agent 从"按结构操作"升级为"按意图操作",任务成功率提升 30-50%
+
+**(b) UI 模式库 `browser_pro.patterns`**
+- 跨会话积累可复用模式(登录/结算/搜索/加购...)
+- 熟悉页面秒级执行,不熟悉页面回落到 LLM 推理
+- 价值:重复任务的 turn 数从 10+ 降到 1-2,成本下降 80%+
+- **差异化护城河**:使用越多,模式库越强,客户越离不开
+
+**(c) 异常感知层 `browser_pro.anomaly`**
+- 自动识别 modal、错误、登录过期、captcha、风控、白屏六类异常
+- 分级处理,不可自动时老实上报
+- 价值:真实网页交互 30-40% 的 turn 花在异常处理上,这层直接决定 Agent 生产可用性
+
+**商业化组合**:
+```json
+{
+  "features": {
+    "browser-pro.semantic_understanding": true,    // a
+    "browser-pro.pattern_library": true,           // b
+    "browser-pro.anomaly_awareness": true          // c
+  }
+}
+```
+
+三个可独立售卖,也可打包"智能包"。**建议第一期主推**,因为它的价值 LLM 用户能立刻感受到(成功率、效率、成本)。
+
+---
 
 ### 3.1 证据与调试能力
 
@@ -309,30 +352,39 @@ Pro 版新增“工程化能力”：
 
 ## 7. 推荐的 Pro 首发功能包
 
-如果只做第一批收费功能，我建议不要铺太大，先做 3 组最值钱的。
+**2026-04-20 更新**:先做 **4 组**最值钱的,**智能包放在最前**(核心差异化)。
 
-### 7.1 证据包
+### 7.1 智能包(最优先,核心差异化)
+
+- `browser_pro.understand`       — 元素语义理解
+- `browser_pro.patterns_match`   — UI 模式匹配
+- `browser_pro.patterns_learn`   — 模式学习(从成功交互沉淀)
+- `browser_pro.anomaly_check`    — 异常感知
+
+**为什么放第一**:这是**用户立刻能感受到差异**的包——Pro 版 Agent 完成同样任务 turn 数减半、成功率提升、能处理免费版卡住的异常页面。其他三个包是"企业深度用户"才关心的,这个包是"所有用户都关心"的。
+
+### 7.2 证据包
 
 - `browser_pro.console_logs`
 - `browser_pro.network_capture`
 - `browser_pro.har_export`
 - `browser_pro.page_snapshot`
 
-### 7.2 断言包
+### 7.3 断言包
 
 - `browser_pro.assert_visible`
 - `browser_pro.assert_text`
 - `browser_pro.assert_url`
 - `browser_pro.assert_network`
 
-### 7.3 会话包
+### 7.4 会话包
 
 - `browser_pro.session_save`
 - `browser_pro.session_load`
 - `browser_pro.cookies_get`
 - `browser_pro.cookies_set`
 
-这是最适合第一阶段商业化的 12 个能力。
+这是最适合第一阶段商业化的 **16** 个能力(智能 4 + 证据 4 + 断言 4 + 会话 4)。
 
 ---
 
@@ -344,6 +396,7 @@ Pro 版新增“工程化能力”：
 {
   "allowed_brains": ["browser-pro"],
   "features": {
+    "browser-pro.intelligence": true,
     "browser-pro.evidence": true,
     "browser-pro.assertions": true,
     "browser-pro.sessions": true
@@ -355,6 +408,7 @@ Pro 版新增“工程化能力”：
 
 例如：
 
+- `browser-pro.intelligence = true` → 注册 understand/patterns/anomaly(**智能包,核心差异化**)
 - `browser-pro.evidence = true` → 注册 trace/network/snapshot
 - `browser-pro.assertions = true` → 注册 assert 系列
 - `browser-pro.sessions = true` → 注册 session/cookies/storage 系列
@@ -363,8 +417,13 @@ Pro 版新增“工程化能力”：
 
 ## 9. 一句话边界
 
-`brain-browser` 免费版负责“把浏览器用起来”；  
-`brain-browser-pro` 负责“把浏览器自动化做成可审计、可断言、可复现、可企业落地的产品能力”。
+`brain-browser` 免费版负责"**把浏览器用起来**"——结构感知 + 动作执行。
+`brain-browser-pro` 负责"**把浏览器用对**"——语义理解 + 模式复用 + 异常感知 + 企业级证据/断言/会话。
+
+更精准地说(**2026-04-20 补充**):
+- 免费版做 **L1-L3**(视觉/符号/语法)
+- Pro 版做 **L4-L8**(流程/状态/后果/风险/意图对齐)
+- **L9(世界模型)是 AGI 问题,两版都做不到**,但 Pro 版通过模式库和云端知识库**逼近**它
 
 如果按 v3 长期架构表达：
 

@@ -1,0 +1,12 @@
+{
+  "id": "gitlab-issues-list",
+  "category": "gitlab",
+  "site": "https://gitlab.com",
+  "goal": "From gitlab.com/gitlab-org/gitlab, click the 'Issues' sidebar item and verify the issue list view loaded.",
+  "max_turns": 5,
+  "success": [
+    { "kind": "url_contains", "value": "/-/issues" },
+    { "kind": "dom_has", "value": ".issues-list, [data-testid='issuable-list']" }
+  ],
+  "tags": ["gitlab", "navigation", "happy_path", "phase1"]
+}

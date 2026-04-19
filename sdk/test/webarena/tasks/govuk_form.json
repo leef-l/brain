@@ -1,0 +1,11 @@
+{
+  "id": "govuk-form-simple",
+  "category": "form",
+  "site": "https://design-system.service.gov.uk",
+  "goal": "Open the 'Text input' component example page and fill the demo input with 'hello'.",
+  "max_turns": 8,
+  "success": [
+    { "kind": "url_contains", "value": "text-input" }
+  ],
+  "tags": ["form", "phase1"]
+}

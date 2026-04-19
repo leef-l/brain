@@ -1,0 +1,14 @@
+{
+  "id": "element_plus_buttons",
+  "category": "framework_vue",
+  "description": "Vue 3 + Element Plus,官方组件库 demo(Vue3 框架覆盖)",
+  "url": "https://element-plus.org/en-US/component/button.html",
+  "captured_at": "2026-04-19T09:29:57Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "status": "ok",
+  "error": null,
+  "element_count": 347
+}

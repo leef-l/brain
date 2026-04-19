@@ -1,0 +1,22 @@
+{
+  "id": "soft_visualstate_loading",
+  "category": "visual_state",
+  "site": "https://httpstat.us/",
+  "goal": "Trigger a slow 200 response and confirm a loading indicator was visible.",
+  "max_turns": 8,
+  "visual_required": "soft",
+  "modality": [
+    "visual_state"
+  ],
+  "expected_visual_hit": false,
+  "success": [
+    {
+      "kind": "text_contains",
+      "value": "OK"
+    }
+  ],
+  "tags": [
+    "visual_state",
+    "soft"
+  ]
+}
