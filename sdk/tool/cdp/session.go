@@ -31,10 +31,10 @@ type BrowserSession struct {
 
 // browserTarget is a CDP target (tab/page).
 type browserTarget struct {
-	ID                 string `json:"id"`
-	Type               string `json:"type"`
-	Title              string `json:"title"`
-	URL                string `json:"url"`
+	ID                   string `json:"id"`
+	Type                 string `json:"type"`
+	Title                string `json:"title"`
+	URL                  string `json:"url"`
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
@@ -384,8 +384,10 @@ func browserCandidates() []string {
 			// Chromium
 			"chromium-browser",
 			"chromium",
+			"ungoogled-chromium",
 			"/usr/bin/chromium-browser",
 			"/usr/bin/chromium",
+			"/usr/bin/ungoogled-chromium",
 			"/snap/bin/chromium",
 			// Edge
 			"microsoft-edge-stable",
@@ -450,4 +452,3 @@ func isPortFree(port int) bool {
 	conn.Close()
 	return false
 }
-
