@@ -197,10 +197,16 @@ func NewBrowserTools() []Tool {
 	// to browser.click / browser.type also get anomaly injection. M5 also
 	// needs human.request_takeover so on_anomaly=human_intervention can route
 	// through the coordinator without depending on a host-level registry.
+	takeoverTool := NewHumanRequestTakeoverTool()
 	siblings := make([]Tool, 0, len(out)+1)
 	siblings = append(siblings, out...)
-	siblings = append(siblings, NewHumanRequestTakeoverTool())
+	siblings = append(siblings, takeoverTool)
 	patternExec.setSiblings(siblings)
+	// 把 takeover 工具也暴露给 browser 的主 registry,否则 browser Agent
+	// Loop / planner 看不见这个工具,LLM 永远不会主动调它。是学习闭环
+	// 的关键补丁:没有这一步,遇到滑块 LLM 只会在回答里"假装接管",
+	// 不会真的阻塞 run 去录制用户操作。
+	out = append(out, takeoverTool)
 	return out
 }
 
