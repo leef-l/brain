@@ -27,7 +27,15 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 		"to browse/search/read normal web pages when a browser specialist is available. " +
 		"For opening websites, searching the web, reading page content, clicking web UI, or collecting web results, " +
 		"use the browser specialist via `central.delegate` instead. " +
-		"If browser delegation fails, report that browser failure directly; do NOT fall back to shell_exec HTTP fetches, and do NOT substitute verifier.browser_action for normal user web tasks.\n"
+		"If browser delegation fails, report that browser failure directly; do NOT fall back to shell_exec HTTP fetches, and do NOT substitute verifier.browser_action for normal user web tasks.\n" +
+		"ABSOLUTELY FORBIDDEN: do NOT use write_file to create Playwright / Selenium / Puppeteer / requests / " +
+		"urllib / axios scripts as a workaround for browser tasks. If the browser specialist fails or looks " +
+		"incomplete, call `central.delegate` to the browser brain AGAIN with a more explicit instruction, " +
+		"or use `human.request_takeover` via the browser brain. Never write a Python/JS automation script to " +
+		"simulate what the browser brain should do — the user's environment runs THIS system, not your ad-hoc scripts.\n" +
+		"If the browser brain reports success but the user says the action didn't happen, DO NOT claim success — " +
+		"trust the user, re-delegate with explicit step-by-step instructions (URL, exact selectors or visible field " +
+		"labels, exact values to type, and explicit 'take a snapshot after each step' requirement).\n"
 
 	switch mode {
 	case env.ModePlan:

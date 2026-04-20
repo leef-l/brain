@@ -448,7 +448,14 @@ func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar
 	diaglog.Logf("browser", "executeWithPerception: instruction=%s caller=%v", req.Instruction, h.caller != nil)
 
 	// Step 1: Try pattern_match on current page (if already navigated).
+	// 登录/敏感表单任务跳过 pattern 复用:旧 pattern 可能固化了旧账号密码
+	// 或空值,会导致"报告成功但实际没填写"的假象。每次登录都走 LLM planner
+	// 生成新 plan,把用户给的具体值原样传进 browser.type。
 	matchTool, hasMatch := registry.Lookup("browser.pattern_match")
+	if hasMatch && isSensitiveFormTask(req.Instruction) {
+		diaglog.Logf("browser", "skip pattern_match: instruction looks like a login/sensitive form task")
+		hasMatch = false
+	}
 	if hasMatch {
 		matchArgs, _ := json.Marshal(map[string]interface{}{"limit": 3})
 		matchResult, err := matchTool.Execute(ctx, matchArgs)
@@ -667,6 +674,17 @@ func parseLLMPlanText(text string) (*llmPlan, error) {
 // On success, the plan is persisted as a learned pattern for future reuse.
 func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Registry, plan *llmPlan, instruction string) *sidecar.ExecuteResult {
 	diaglog.Logf("browser", "LLM plan: url=%s category=%s steps=%d", plan.URL, plan.Category, len(plan.Steps))
+
+	// Sensitive form (login/payment/2FA) task 必须至少包含一个 browser.type
+	// 步骤。有些 LLM 会生成只有 open+snapshot 的空 plan,然后返回"已完成"
+	// 骗用户。这种 plan 直接视为失败,让上层 Agent 重试并写更明确的指令。
+	if isSensitiveFormTask(instruction) && !stepHasTool(plan, "browser.type") {
+		diaglog.Logf("browser", "sensitive task but plan has no browser.type step; rejecting as failed")
+		return &sidecar.ExecuteResult{
+			Status: "failed",
+			Error:  "plan lacks browser.type step for a login/sensitive task; cannot fulfil the user request",
+		}
+	}
 
 	// Open URL if LLM specified one.
 	if plan.URL != "" {
@@ -967,6 +985,26 @@ func wantsVisibleBrowser(instruction string) bool {
 		"可视化", "看得到", "看到操作", "看到你的操作", "打开浏览器",
 		"visible browser", "not headless", "non-headless", "headed",
 		"show me the browser", "watch the browser", "show browser",
+	}
+	for _, n := range needles {
+		if strings.Contains(s, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSensitiveFormTask 粗略判断 instruction 是否涉及登录/敏感表单。
+// 命中这些关键词的任务不走 pattern_match 复用,强制重新规划,避免旧
+// pattern 里的旧账号密码或空值导致"报告成功但其实没填"。
+func isSensitiveFormTask(instruction string) bool {
+	s := strings.ToLower(instruction)
+	needles := []string{
+		"登录", "登陆", "注册", "账号", "帐号", "账户", "密码",
+		"口令", "验证码", "短信验证", "支付", "付款", "转账",
+		"login", "log in", "sign in", "register", "signup",
+		"sign up", "password", "passwd", "payment", "pay ",
+		"username", "user name", "otp", "verify",
 	}
 	for _, n := range needles {
 		if strings.Contains(s, strings.ToLower(n)) {
