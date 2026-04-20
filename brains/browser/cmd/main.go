@@ -837,7 +837,14 @@ summaryDone:
 	// 自动调 human.request_takeover 挂起等人类处理,避免 AI 反复失败
 	// 消耗上下文。已经请求过接管的调用走正常返回路径,由 coordinator 决定
 	// resume/abort。
-	if shouldRequestTakeover(plan, summary) && !stepHasTool(plan, "human.request_takeover") {
+	// 登录任务的 post-check:plan 跑完了但最终页面仍然像是登录页
+	// (URL 含 login/signin/auth,或 summary 里还能看到"密码"/"password"
+	// 输入框文字),说明登录实际失败了。把 shouldRequestTakeover 触发
+	// 条件扩大一份,让 human takeover 至少被考虑一次。
+	if isSensitiveFormTask(instruction) && stillOnLoginPage(summary) {
+		diaglog.Logf("browser", "sensitive task post-check: still on login/auth page, forcing takeover request")
+	}
+	if (shouldRequestTakeover(plan, summary) || (isSensitiveFormTask(instruction) && stillOnLoginPage(summary))) && !stepHasTool(plan, "human.request_takeover") {
 		if takeoverTool, ok := registry.Lookup("human.request_takeover"); ok {
 			// 附一张截图给人类看。
 			var shotB64 string
@@ -867,7 +874,34 @@ summaryDone:
 			}())
 			if tRes != nil && !tRes.IsError {
 				summary += "\n\n[Human takeover: " + string(tRes.Output) + "]"
+				// takeover 回来后重新采集页面状态,让下面的 stillOnLoginPage
+				// 判断用最新 snapshot。
+				if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
+					snapArgs, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 2000})
+					if sr, err := snapshotTool.Execute(ctx, snapArgs); err == nil && sr != nil {
+						var parsed struct {
+							Title   string `json:"title"`
+							URL     string `json:"url"`
+							Content string `json:"content"`
+						}
+						if json.Unmarshal(sr.Output, &parsed) == nil && parsed.Content != "" {
+							summary = fmt.Sprintf("Title: %s\nURL: %s\n\n%s",
+								parsed.Title, parsed.URL, parsed.Content)
+						}
+					}
+				}
 			}
+		}
+	}
+
+	// 最终判 failed:登录任务做完(也许带 takeover)后页面仍是登录页
+	// 说明登录没真正成功,返回 failed 触发 executeWithPerception 的
+	// fallbackAgentLoop —— 多轮 LLM Agent 会基于最新 snapshot 重新规划。
+	if isSensitiveFormTask(instruction) && stillOnLoginPage(summary) {
+		diaglog.Logf("browser", "executeLLMPlan: still on login page after plan+takeover, returning failed")
+		return &sidecar.ExecuteResult{
+			Status: "failed",
+			Error:  "login did not succeed; still on login/auth page after plan execution",
 		}
 	}
 
@@ -988,6 +1022,39 @@ func wantsVisibleBrowser(instruction string) bool {
 	}
 	for _, n := range needles {
 		if strings.Contains(s, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+// stillOnLoginPage 根据最终 summary(text snapshot 的 Title+URL+Content)
+// 粗略判断 plan 跑完后页面是否仍停在登录/认证页。典型特征:
+//   - URL 路径含 /login /signin /auth
+//   - 页面有"密码"/"password"/"登录"/"Sign in"之类的提示文本
+//   - 页面有"登录失败"/"invalid password" 等错误提示
+// 命中任一就当登录失败,交给 takeover 路径让用户接管。
+func stillOnLoginPage(summary string) bool {
+	if summary == "" {
+		return false
+	}
+	low := strings.ToLower(summary)
+	urlSignals := []string{
+		"/login", "/signin", "/sign-in", "/auth", "/account/login",
+		"login.html", "login.php", "/admin#", "/admin ", "/admin\n",
+	}
+	for _, s := range urlSignals {
+		if strings.Contains(low, s) {
+			return true
+		}
+	}
+	textSignals := []string{
+		"密码", "登录失败", "账号错误", "账户错误", "password is required",
+		"please log in", "please sign in", "invalid credentials",
+		"incorrect password", "incorrect username",
+	}
+	for _, s := range textSignals {
+		if strings.Contains(low, strings.ToLower(s)) {
 			return true
 		}
 	}
