@@ -555,6 +555,15 @@ RULES:
 - The "category" field helps the system learn and reuse this plan for similar tasks.
 - For search: type the query into the search box, then use browser.press_key with key "Enter" to submit (more reliable than clicking the search button). After pressing Enter, add browser.wait with condition "load" to wait for results.
 - After any click or key press that triggers navigation, add browser.wait with condition "load" before taking a snapshot.
+- For LOGIN tasks: ALWAYS include browser.type steps for every credential the user provided. Typical plan for "账号/密码/登录":
+    1) browser.open (url)
+    2) browser.snapshot (mode=interactive to locate input fields)
+    3) browser.type (selector of username field, text="<user-provided username>")
+    4) browser.type (selector of password field, text="<user-provided password>")
+    5) browser.click (selector of login button) OR browser.press_key (Enter)
+    6) browser.wait (condition=load)
+    7) browser.snapshot (mode=text)
+  NEVER skip the type steps — the user EXPECTS login to be attempted. Pass the exact string the user gave you; never replace it with placeholders like $username, ${password}, <admin>, etc.
 - For slider CAPTCHA (滑块验证 / 拖动滑块 / slide-to-verify): FIRST take a snapshot with mode="interactive" to locate the slider handle and the slider track's end coordinates. THEN use browser.drag with from_selector/to_selector (or coordinates). Typical selectors: ".slider-button", ".captcha-slider", ".nc_iconfont", ".verify-move-block". DO NOT use browser.click on the slider — a click is not a drag and the captcha will not pass.
 - If the captcha page is still present after the drag attempt, call human.request_takeover with reason="slider_failed" and guidance="请手动完成滑块验证，完成后点击 resume". DO NOT keep retrying drag blindly.
 - Output ONLY the JSON object, no explanation.`

@@ -171,7 +171,8 @@ func RunChat(args []string) int {
 
 	running := false
 	activity := &Activity{}
-	lastProgressSecond := int64(-1)
+	var lastProgressSecond int64 = -1
+	_ = lastProgressSecond
 	session := term.NewLineReadSession(kb, 0)
 	session.History = LoadHistory()
 	session.HistoryIndex = len(session.History)
@@ -213,18 +214,21 @@ func RunChat(args []string) int {
 				DetachPromptFrame(session)
 				PrintDiffPreviewBlock(ev.PreviewLines)
 			}
-			if running && activity.Apply(ev) {
-				RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+			// running 期间不再每条 progress 都 rerender 整个 prompt frame。
+			// 频繁的 clear+redraw 会把流式 LLM 输出反复"清掉+重写",在窄终端
+			// 上造成文字重复叠加。仅应用内部状态,不碰终端。
+			if running {
+				activity.Apply(ev)
 			}
 			continue
 
 		case <-progressTicker.C:
+			// LLM 正在输出时不要每秒 rerender prompt frame(同上理由)。
+			// 耗时显示等 run 结束时再刷新,用户看到的是"稳定输出 + 最终状态",
+			// 而不是每秒抖一次的 prompt 框。
 			if running && activity.Running() {
 				sec := int64(time.Since(activity.StartedAt) / time.Second)
-				if sec != lastProgressSecond {
-					lastProgressSecond = sec
-					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
-				}
+				lastProgressSecond = sec
 			}
 			continue
 
