@@ -30,3 +30,37 @@ func TestNormalizeElementBox(t *testing.T) {
 		t.Fatalf("center = (%v,%v), want (25,40)", got.CenterX, got.CenterY)
 	}
 }
+
+func TestLooksLikeSliderDrag(t *testing.T) {
+	from := &elementGeometry{Width: 24, Height: 24, CenterY: 50}
+	to := &elementGeometry{Left: 10, Top: 35, Right: 210, Bottom: 65, Width: 200, Height: 30, CenterY: 50}
+	if !looksLikeSliderDrag(from, to) {
+		t.Fatal("looksLikeSliderDrag() = false, want true")
+	}
+}
+
+func TestComputeDragDestinationAutoUsesSliderStrategy(t *testing.T) {
+	from := &elementGeometry{Width: 24, Height: 24, CenterY: 50}
+	to := &elementGeometry{Left: 10, Top: 35, Right: 210, Bottom: 65, Width: 200, Height: 30, CenterY: 50}
+	x, y, err := computeDragDestination("auto", from, to)
+	if err != nil {
+		t.Fatalf("computeDragDestination() err = %v", err)
+	}
+	if x <= to.CenterX {
+		t.Fatalf("x = %v, want value near right edge", x)
+	}
+	if y != from.CenterY {
+		t.Fatalf("y = %v, want %v", y, from.CenterY)
+	}
+}
+
+func TestComputeDragDestinationCenter(t *testing.T) {
+	to := &elementGeometry{CenterX: 90, CenterY: 45}
+	x, y, err := computeDragDestination("center", nil, to)
+	if err != nil {
+		t.Fatalf("computeDragDestination() err = %v", err)
+	}
+	if x != 90 || y != 45 {
+		t.Fatalf("got (%v,%v), want (90,45)", x, y)
+	}
+}

@@ -903,14 +903,17 @@ func (t *browserDragTool) Risk() Risk   { return RiskMedium }
 func (t *browserDragTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Drag an element from one position to another. Supports selector or coordinates.",
+		Description: "Drag an element from one position to another. Supports ids from browser.snapshot, selectors, or explicit coordinates. Can auto-compute end coordinates for slider-like targets.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
+    "from_id": { "type": "integer", "description": "data-brain-id of element to drag (preferred over selector)" },
     "from_selector": { "type": "string", "description": "CSS selector of element to drag" },
+    "to_id": { "type": "integer", "description": "data-brain-id of drop target / slider track (preferred over selector)" },
     "to_selector": { "type": "string", "description": "CSS selector of drop target" },
     "from_x": { "type": "number" }, "from_y": { "type": "number" },
     "to_x": { "type": "number" }, "to_y": { "type": "number" },
+    "strategy": { "type": "string", "description": "auto (default), center, or slider. auto infers slider-like targets and computes a more realistic end point." },
     "steps": { "type": "integer", "description": "Number of intermediate mouse move steps (default: 10)" }
   }
 }`),
@@ -928,12 +931,15 @@ func (t *browserDragTool) Schema() Schema {
 
 func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
+		FromID       int      `json:"from_id"`
 		FromSelector string   `json:"from_selector"`
+		ToID         int      `json:"to_id"`
 		ToSelector   string   `json:"to_selector"`
 		FromX        *float64 `json:"from_x"`
 		FromY        *float64 `json:"from_y"`
 		ToX          *float64 `json:"to_x"`
 		ToY          *float64 `json:"to_y"`
+		Strategy     string   `json:"strategy"`
 		Steps        int      `json:"steps"`
 		Human        *bool    `json:"human"`
 	}
@@ -946,11 +952,11 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		return errResult("no browser session: %v", err), nil
 	}
 
-	fromX, fromY, err := resolveCoordinates(ctx, sess, input.FromSelector, input.FromX, input.FromY)
+	fromX, fromY, fromGeom, err := resolveDragPoint(ctx, sess, input.FromID, input.FromSelector, input.FromX, input.FromY)
 	if err != nil {
 		return errResult("from: %v", err), nil
 	}
-	toX, toY, err := resolveCoordinates(ctx, sess, input.ToSelector, input.ToX, input.ToY)
+	toX, toY, _, err := resolveDragDestination(ctx, sess, input, fromGeom)
 	if err != nil {
 		return errResult("to: %v", err), nil
 	}
@@ -1750,6 +1756,110 @@ func normalizeElementBox(box [4]float64) elementGeometry {
 		CenterX: x + w/2,
 		CenterY: y + h/2,
 	}
+}
+
+func resolveDragPoint(ctx context.Context, sess *cdp.BrowserSession, id int, selector string, x, y *float64) (float64, float64, *elementGeometry, error) {
+	if x != nil && y != nil {
+		return *x, *y, nil, nil
+	}
+	if id > 0 || strings.TrimSpace(selector) != "" {
+		geom, _, err := resolveElementGeometry(ctx, sess, id, selector)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		return geom.CenterX, geom.CenterY, &geom, nil
+	}
+	return 0, 0, nil, fmt.Errorf("provide id, selector, or both x,y coordinates")
+}
+
+func resolveDragDestination(ctx context.Context, sess *cdp.BrowserSession, input struct {
+	FromID       int      `json:"from_id"`
+	FromSelector string   `json:"from_selector"`
+	ToID         int      `json:"to_id"`
+	ToSelector   string   `json:"to_selector"`
+	FromX        *float64 `json:"from_x"`
+	FromY        *float64 `json:"from_y"`
+	ToX          *float64 `json:"to_x"`
+	ToY          *float64 `json:"to_y"`
+	Strategy     string   `json:"strategy"`
+	Steps        int      `json:"steps"`
+	Human        *bool    `json:"human"`
+}, fromGeom *elementGeometry) (float64, float64, *elementGeometry, error) {
+	if input.ToX != nil && input.ToY != nil {
+		return *input.ToX, *input.ToY, nil, nil
+	}
+	toGeom, _, err := resolveElementGeometry(ctx, sess, input.ToID, input.ToSelector)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	strategy := strings.TrimSpace(strings.ToLower(input.Strategy))
+	if strategy == "" {
+		strategy = "auto"
+	}
+	x, y, err := computeDragDestination(strategy, fromGeom, &toGeom)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	return x, y, &toGeom, nil
+}
+
+func computeDragDestination(strategy string, fromGeom, toGeom *elementGeometry) (float64, float64, error) {
+	if toGeom == nil {
+		return 0, 0, fmt.Errorf("target geometry unavailable")
+	}
+	switch strategy {
+	case "center":
+		return toGeom.CenterX, toGeom.CenterY, nil
+	case "slider":
+		return computeSliderDestination(fromGeom, toGeom)
+	case "auto":
+		if looksLikeSliderDrag(fromGeom, toGeom) {
+			return computeSliderDestination(fromGeom, toGeom)
+		}
+		return toGeom.CenterX, toGeom.CenterY, nil
+	default:
+		return 0, 0, fmt.Errorf("unknown strategy: %s (use auto, center, or slider)", strategy)
+	}
+}
+
+func looksLikeSliderDrag(fromGeom, toGeom *elementGeometry) bool {
+	if fromGeom == nil || toGeom == nil {
+		return false
+	}
+	if toGeom.Width <= fromGeom.Width*1.5 {
+		return false
+	}
+	if toGeom.Height <= 0 || fromGeom.Height <= 0 {
+		return false
+	}
+	verticalGap := math.Abs(fromGeom.CenterY - toGeom.CenterY)
+	return verticalGap <= math.Max(fromGeom.Height, toGeom.Height)
+}
+
+func computeSliderDestination(fromGeom, toGeom *elementGeometry) (float64, float64, error) {
+	if fromGeom == nil || toGeom == nil {
+		return 0, 0, fmt.Errorf("slider strategy requires both source and target geometry")
+	}
+	margin := math.Max(2, fromGeom.Width*0.08)
+	x := toGeom.Right - fromGeom.Width/2 - margin
+	minX := toGeom.Left + fromGeom.Width/2
+	if x < minX {
+		x = minX
+	}
+	y := fromGeom.CenterY
+	minY := toGeom.Top + math.Min(fromGeom.Height, toGeom.Height)/2
+	maxY := toGeom.Bottom - math.Min(fromGeom.Height, toGeom.Height)/2
+	if maxY < minY {
+		y = toGeom.CenterY
+	} else {
+		if y < minY {
+			y = minY
+		}
+		if y > maxY {
+			y = maxY
+		}
+	}
+	return x, y, nil
 }
 
 // focusElement focuses a DOM element by selector.

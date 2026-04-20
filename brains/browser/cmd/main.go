@@ -651,8 +651,8 @@ Key tools:
 - browser.wait: {"condition": "load"} — wait for page load (valid: visible, hidden, load, idle, js). Prefer "load" over "idle" as idle may timeout on pages with continuous network activity.
 - browser.eval: {"expression": "..."} — run JavaScript to extract data
 - browser.screenshot: {"full_page": true} — save a PNG to ~/.brain/screenshots/. Only use when the user explicitly asks for a visual/screenshot; do NOT use screenshot to read text content.
-- browser.geometry: {"id":123} or {"selector":"..."} — read an element's bounding box / edges / center. USE THIS before browser.drag on slider CAPTCHA to compute reliable drag coordinates.
-- browser.drag: {"from_selector":"...","to_selector":"..."} or {"from_x":..,"from_y":..,"to_x":..,"to_y":..} — press and hold then drag. USE THIS for slider CAPTCHA (滑块验证), slider captchas, drag-and-drop puzzles, range sliders. Human-like trajectory (easeInOut + jitter) is enabled by default.
+- browser.geometry: {"id":123} or {"selector":"..."} — read an element's bounding box / edges / center. Useful for debugging or explicit geometry inspection.
+- browser.drag: {"from_id"| "from_selector"|coords, "to_id"| "to_selector"|coords, "strategy":"auto|center|slider"} — press and hold then drag. USE THIS for slider CAPTCHA (滑块验证), slider captchas, drag-and-drop puzzles, range sliders. Human-like trajectory (easeInOut + jitter) is enabled by default. With strategy="auto" (default), if the target looks like a slider track the tool computes a more realistic end coordinate automatically.
 - browser.hover: {"selector": "..."} — hover an element (triggers tooltips, dropdown menus).
 - browser.scroll: {"direction":"down","amount":500} — scroll the page.
 - human.request_takeover: {"reason":"captcha|slider_failed|session_expired|payment|other", "guidance":"text for the human"} — HAND OFF to a human operator when automation can't proceed. Agent pauses until the human resumes or aborts via WebUI/CLI. USE THIS as the final step when: (a) a slider/image/click CAPTCHA keeps failing after browser.drag, (b) you hit phone SMS / payment / 2FA, (c) you tried 3+ distinct strategies with no progress. The human's actions are recorded and become a learned pattern for future runs.
@@ -676,7 +676,7 @@ RULES:
     6) browser.wait (condition=load)
     7) browser.snapshot (mode=text)
   NEVER skip the type steps — the user EXPECTS login to be attempted. Pass the exact string the user gave you; never replace it with placeholders like $username, ${password}, <admin>, etc.
-- For slider CAPTCHA (滑块验证 / 拖动滑块 / slide-to-verify): FIRST take a snapshot with mode="interactive" to locate the slider handle and the slider track. THEN call browser.geometry on the handle and on the track/end target to compute exact coordinates. THEN use browser.drag with coordinates. Typical selectors: ".slider-button", ".captcha-slider", ".nc_iconfont", ".verify-move-block", "[name='captcha-action']". DO NOT use browser.click on the slider — a click is not a drag and the captcha will not pass.
+- For slider CAPTCHA (滑块验证 / 拖动滑块 / slide-to-verify): FIRST take a snapshot with mode="interactive" to locate the slider handle and the slider track. THEN use browser.drag with the handle as source and the track as target; the tool can auto-compute a realistic end coordinate for slider-like targets. Use browser.geometry only when you need to inspect/debug the boxes explicitly. Typical selectors: ".slider-button", ".captcha-slider", ".nc_iconfont", ".verify-move-block", "[name='captcha-action']". DO NOT use browser.click on the slider — a click is not a drag and the captcha will not pass.
 - If the captcha page is still present after the drag attempt, call human.request_takeover with reason="slider_failed" and guidance="请手动完成滑块验证，完成后点击 resume". DO NOT keep retrying drag blindly.
 - Output ONLY the JSON object, no explanation.`
 
@@ -1308,19 +1308,21 @@ Tools:
   - browser.type(id|selector, text): type text into an input
   - browser.press_key(key): e.g. "Enter", "Escape"
   - browser.wait(condition=load|visible|idle)
-  - browser.drag(from_selector|from_x,from_y, to_selector|to_x,to_y): press-and-drag.
-      USE THIS for slider CAPTCHA (滑块验证), drag-and-drop puzzles, range sliders.
+  - browser.drag(from_id|from_selector|from_x,from_y, to_id|to_selector|to_x,to_y, strategy):
+      press-and-drag. USE THIS for slider CAPTCHA (滑块验证), drag-and-drop
+      puzzles, range sliders. strategy="auto" (default) auto-detects slider-like
+      targets and computes a more realistic end coordinate.
       DO NOT use browser.click on a slider — slider must be dragged.
   - browser.geometry(id|selector): read bounding box / edges / center for an element.
-      USE THIS before browser.drag on slider CAPTCHA to compute stable start/end coordinates.
+      Useful for explicit geometry inspection when browser.drag auto mode is not enough.
   - browser.eval(expression): run JavaScript to read/extract data.
   - browser.screenshot(full_page=true): save a PNG (user visible file).
   - human.request_takeover(reason, guidance): HAND OFF to a human operator.
       CALL THIS — IT IS A REAL TOOL, NOT A METAPHOR. You MUST emit a tool_use
       block with name="human.request_takeover", not a text reply describing it.
       CALL THIS IMMEDIATELY WHEN (do NOT waste turns trying):
-        * A slider CAPTCHA is still present AFTER you used browser.geometry +
-          browser.drag and made no progress.
+        * A slider CAPTCHA is still present AFTER you used browser.drag and
+          made no progress.
         * SMS / phone verification / 2FA prompt appears
         * Image CAPTCHA ("select all crosswalks" etc.) appears
         * You tried 3+ distinct strategies with no progress
