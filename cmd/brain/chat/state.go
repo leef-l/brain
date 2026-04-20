@@ -206,6 +206,7 @@ func (s *State) SwitchMode(m env.PermissionMode) {
 
 	if s.Orchestrator != nil {
 		s.Registry.Register(NewBrainManageTool(s.Orchestrator))
+		s.Registry.Register(NewStartHumanDemoTool(s.Orchestrator, s.Env, s.HumanCoord))
 	}
 
 	// brain.memory_recall 让 LLM 查询 ~/.brain/brain.db 里的 ui_patterns /

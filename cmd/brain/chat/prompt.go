@@ -38,12 +38,12 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 		"labels, exact values to type, and explicit 'take a snapshot after each step' requirement).\n" +
 		"HUMAN TAKEOVER PROTOCOL (CRITICAL):\n" +
 		"When the user says '我来操作' / '让我操作' / '我手动' / '我自己完成' / '你观察我' / '学习我的操作' / " +
-		"'I will do it' / 'watch me' / 'I'll handle it' — you MUST delegate to the browser brain with an " +
-		"instruction that ASKS IT TO CALL `human.request_takeover`. NEVER just type a reply pretending you are " +
-		"learning — only the browser brain's human.request_takeover tool can actually record the user's actions. " +
-		"Example delegate instruction: \"请立即调用 human.request_takeover(reason=user_demo, guidance='用户要亲自演示操作，" +
-		"请保持浏览器窗口打开并等待 resume') 挂起，让人类在当前页面演示操作，人类完成后会调 /resume。\" " +
-		"Do this delegate RIGHT NOW in the same turn the user asks to take over — do not answer in text first.\n"
+		"'启动人工学习' / '启动人工演示' / 'I will do it' / 'watch me' / 'I'll handle it' — prefer the explicit " +
+		"`central.start_human_demo` tool when it is available. If that tool is unavailable, delegate to the browser " +
+		"brain with an instruction that ASKS IT TO CALL `human.request_takeover`. NEVER just type a reply pretending " +
+		"you are learning — only real human takeover recording can learn the user's actions. If you call " +
+		"`central.start_human_demo`, pass the exact task URL when the current website is known; do NOT leave it blank " +
+		"and accidentally start on an unrelated stale page.\n"
 
 	switch mode {
 	case env.ModePlan:
@@ -97,7 +97,7 @@ var BrainDescriptions = map[agent.Kind]string{
 }
 
 func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) string {
-	if orch == nil || (!RegistryHasTool(reg, "central.delegate") && !RegistryHasTool(reg, "central.brain_manage")) {
+	if orch == nil || (!RegistryHasTool(reg, "central.delegate") && !RegistryHasTool(reg, "central.brain_manage") && !RegistryHasTool(reg, "central.start_human_demo")) {
 		return ""
 	}
 
@@ -118,6 +118,9 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	prompt += fmt.Sprintf("Available specialists: %s.\n\n", strings.Join(names, ", "))
 	if RegistryHasTool(reg, "central.brain_manage") {
 		prompt += "For specialist lifecycle requests such as 'start browser brain', 'stop code brain', 'show brain status', or '启动/停止/查看大脑状态', use `central.brain_manage` instead of `central.delegate`. Starting a brain is process management, not a delegated task.\n\n"
+	}
+	if RegistryHasTool(reg, "central.start_human_demo") {
+		prompt += "For explicit human-demonstration / forced-learning requests such as '我来操作你学习', '我演示给你看', '进入人工学习模式', or 'start human demo', use `central.start_human_demo`. It opens a headed browser flow and triggers real `human.request_takeover` recording instead of relying on the browser model to remember to ask.\n\n"
 	}
 	if RegistryHasTool(reg, "central.delegate") {
 		prompt += "Use the `central.delegate` tool to delegate tasks to the appropriate specialist:\n"
@@ -168,10 +171,11 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 
 	prompt += "\nWhen you receive a task:\n"
 	prompt += "1. For specialist lifecycle requests (start/stop/list brains), use `central.brain_manage`\n"
-	prompt += "2. For trading/data queries, use the specialist tools directly\n"
-	prompt += "3. For any website opening, web search, page reading, or browser interaction task, delegate to the browser brain instead of using shell_exec + curl/wget\n"
-	prompt += "4. After code changes, delegate verification to the verifier brain\n"
-	prompt += "5. Summarize the results to the user\n\n"
+	prompt += "2. For explicit human-demo / forced-learning requests, use `central.start_human_demo`\n"
+	prompt += "3. For trading/data queries, use the specialist tools directly\n"
+	prompt += "4. For any website opening, web search, page reading, or browser interaction task, delegate to the browser brain instead of using shell_exec + curl/wget\n"
+	prompt += "5. After code changes, delegate verification to the verifier brain\n"
+	prompt += "6. Summarize the results to the user\n\n"
 	prompt += "Never treat shell_exec HTTP fetches as a substitute for browser delegation on normal web tasks.\n"
 	prompt += "If browser delegation fails, report the browser failure clearly instead of retrying the same web task through shell_exec, curl, wget, or verifier.browser_action.\n"
 	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n\n"

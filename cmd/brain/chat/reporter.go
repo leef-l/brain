@@ -145,6 +145,21 @@ func (a *Activity) RenderLines() []string {
 	return lines
 }
 
+func (a *Activity) StatusLine() string {
+	if a == nil || !a.Running() {
+		return ""
+	}
+	status := fmt.Sprintf("Working (%s", formatElapsed(time.Since(a.StartedAt)))
+	switch {
+	case a.CurrentTool != "":
+		status += " · tool " + a.CurrentTool
+	case a.Status != "":
+		status += " · " + strings.ToLower(a.Status)
+	}
+	status += " · Esc to interrupt)"
+	return status
+}
+
 type LiveReporter struct {
 	Ch      chan<- ProgressEvent
 	Workdir string

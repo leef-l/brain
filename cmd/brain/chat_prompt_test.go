@@ -112,12 +112,16 @@ func TestBuildOrchestratorPrompt_IncludesBrainLifecycleGuidance(t *testing.T) {
 
 	reg := tool.NewMemRegistry()
 	reg.Register(promptTestTool{name: "central.brain_manage"})
+	reg.Register(promptTestTool{name: "central.start_human_demo"})
 	env := newExecutionEnvironment(t.TempDir(), modeAcceptEdits, nil, nil, false)
 	registerDelegateToolForEnvironment(reg, orch, env)
 
 	prompt := buildOrchestratorPrompt(orch, reg)
 	if !strings.Contains(prompt, "use `central.brain_manage` instead of `central.delegate`") {
 		t.Fatalf("expected lifecycle management guidance, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "use `central.start_human_demo`") {
+		t.Fatalf("expected human demo guidance, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "set `render_mode` to `headed`") {
 		t.Fatalf("expected headed render_mode guidance, got %q", prompt)

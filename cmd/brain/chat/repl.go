@@ -224,6 +224,7 @@ func RunChat(args []string) int {
 	running := false
 	activity := &Activity{}
 	var lastProgressSecond int64 = -1
+	lastTerminalActivity := time.Now()
 	_ = lastProgressSecond
 	session := term.NewLineReadSession(kb, 0)
 	session.History = LoadHistory()
@@ -266,6 +267,7 @@ func RunChat(args []string) int {
 			case "resolved":
 				PrintResolved(ev.Response)
 			}
+			lastTerminalActivity = time.Now()
 			if !running {
 				RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
 			}
@@ -290,16 +292,25 @@ func RunChat(args []string) int {
 					PrintDiffPreviewBlock(ev.PreviewLines)
 				}
 				activity.Apply(ev)
+				lastTerminalActivity = time.Now()
 			}
 			continue
 
 		case <-progressTicker.C:
-			// LLM 正在输出时不做任何终端写操作。秒数不刷新比"每秒闪一下
-			// 引发重影"更可忍受。下一轮会从架构层面换掉这个多行 prompt
-			// frame 方案。
 			if running && activity.Running() {
 				sec := int64(time.Since(activity.StartedAt) / time.Second)
-				lastProgressSecond = sec
+				if sec != lastProgressSecond {
+					lastProgressSecond = sec
+					// 当这一秒内没有任何新流式事件时，主动打一行轻量心跳，
+					// 让用户看到 Working 时钟持续前进，而不是必须按回车
+					// 才触发一次重绘。
+					if time.Since(lastTerminalActivity) >= time.Second {
+						if line := activity.StatusLine(); line != "" {
+							fmt.Printf("\033[2m  %s\033[0m\n", line)
+							lastTerminalActivity = time.Now()
+						}
+					}
+				}
 			}
 			continue
 
