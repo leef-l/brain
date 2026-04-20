@@ -20,6 +20,7 @@ import (
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
+	"github.com/leef-l/brain/sdk/tool"
 )
 
 func RunChat(args []string) int {
@@ -123,6 +124,9 @@ func RunChat(args []string) int {
 
 	kb := term.LoadKeybindings()
 
+	humanCoord := NewChatHumanCoordinator()
+	tool.SetHumanTakeoverCoordinator(humanCoord)
+
 	state := &State{
 		Cfg:          cfg,
 		BrainID:      *brainID,
@@ -133,6 +137,7 @@ func RunChat(args []string) int {
 		Orchestrator: orch,
 		ApprovalCh:   make(chan env.ApprovalRequest),
 		RunTimeout:   timeout,
+		HumanCoord:   humanCoord,
 	}
 	state.SwitchMode(mode)
 

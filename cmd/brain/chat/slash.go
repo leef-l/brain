@@ -34,8 +34,56 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /brain             List specialist brains and status")
 		fmt.Println("  /brain start <kind> Start a specialist brain sidecar")
 		fmt.Println("  /brain stop <kind>  Stop a running sidecar (or 'all')")
+		fmt.Println("  /resume [note]     Signal the waiting agent to continue after human takeover")
+		fmt.Println("  /abort  [note]     Tell the waiting agent to give up this step")
 		fmt.Println("  /keys              Show keybindings config path")
 		fmt.Println("  /exit              Exit chat")
+		fmt.Println()
+		return true, false
+
+	case cmd == "/resume" || strings.HasPrefix(cmd, "/resume "):
+		if state.HumanCoord == nil {
+			fmt.Println("  \033[33mNo human takeover in progress.\033[0m")
+			fmt.Println()
+			return true, false
+		}
+		if _, ok := state.HumanCoord.Pending(); !ok {
+			fmt.Println("  \033[33mNo human takeover is waiting for resume.\033[0m")
+			fmt.Println()
+			return true, false
+		}
+		note := ""
+		if len(input) > len("/resume") {
+			note = strings.TrimSpace(input[len("/resume"):])
+		}
+		if state.HumanCoord.Resume(note) {
+			fmt.Println("  \033[32m✓ Resumed — agent will continue.\033[0m")
+		} else {
+			fmt.Println("  \033[33mFailed to deliver resume signal.\033[0m")
+		}
+		fmt.Println()
+		return true, false
+
+	case cmd == "/abort" || strings.HasPrefix(cmd, "/abort "):
+		if state.HumanCoord == nil {
+			fmt.Println("  \033[33mNo human takeover in progress.\033[0m")
+			fmt.Println()
+			return true, false
+		}
+		if _, ok := state.HumanCoord.Pending(); !ok {
+			fmt.Println("  \033[33mNo human takeover is waiting.\033[0m")
+			fmt.Println()
+			return true, false
+		}
+		note := ""
+		if len(input) > len("/abort") {
+			note = strings.TrimSpace(input[len("/abort"):])
+		}
+		if state.HumanCoord.Abort(note) {
+			fmt.Println("  \033[33m✗ Aborted — agent will give up this step.\033[0m")
+		} else {
+			fmt.Println("  \033[33mFailed to deliver abort signal.\033[0m")
+		}
 		fmt.Println()
 		return true, false
 

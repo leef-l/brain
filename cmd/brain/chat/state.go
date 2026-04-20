@@ -46,6 +46,10 @@ type State struct {
 	SessionApprovedTools   map[string]bool
 	ApprovedMu             sync.Mutex
 	SessionApprovedSandbox map[string]bool
+
+	// Human takeover coordinator for this chat session(browser/其他 brain
+	// 遇到需要人工的场景时,工具会阻塞在这里等 /resume 或 /abort)。
+	HumanCoord *ChatHumanCoordinator
 }
 
 func (s *State) SetCancelRun(cancel context.CancelFunc) uint64 {
