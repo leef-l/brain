@@ -520,7 +520,20 @@ func (r *sseReader) mapSSEEvent(eventType string, data json.RawMessage) (StreamE
 				block.input.WriteString(input)
 			}
 			r.toolUse[start.Index] = block
-			return StreamEvent{}, false
+			// 先发一个"只带 tool_name + tool_use_id"的 delta,让下游
+			// runner 立刻建立 currentToolCall。这样即便某些第三方代理
+			// 不发 content_block_stop(导致 Input 从没 flush),也不会
+			// 出现 "stop_reason=tool_use without tool_use block" 错误;
+			// runner 在收到 input_json_delta 时会往 currentToolCall.Input
+			// append。
+			return StreamEvent{
+				Type: EventToolCallDelta,
+				Data: marshalRaw(map[string]interface{}{
+					"tool_use_id": block.toolUseID,
+					"tool_name":   block.toolName,
+					"input":       json.RawMessage("{}"),
+				}),
+			}, true
 		default:
 			return StreamEvent{}, false
 		}
