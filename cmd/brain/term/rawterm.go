@@ -518,21 +518,30 @@ func termCols() int {
 	return w
 }
 
-// returnToPromptRow 把光标从当前位置回到 prompt 行的第一列,并清除从
-// 那里到屏幕底部的所有内容。依赖 ed.LastRowsBelow(上次绘制后光标所
-// 在行相对 prompt 行的下移行数)。
-func returnToPromptRow(ed *LineEditor) {
-	if ed.LastRowsBelow > 0 {
-		fmt.Printf("\033[%dA", ed.LastRowsBelow)
+// clearCurrentAndBelow 清除光标所在行的末尾 + 之前内容占用的下方所有行。
+// 不做 \033[NA 上移(Windows CMD 在某些滚屏状态下该序列行为不可靠,
+// 会把光标移到屏幕上方错误位置;历史残影被留下,新内容又叠在底下,
+// 造成"多一行"的视觉 bug)。
+//
+// 策略:
+//   1. \r + \033[K:回到当前行首并清到行尾。
+//   2. 对上次绘制占用的每一个下方行,\n + \033[K:向下移一行再清。
+//   3. 再用 \033[NA 原路返回当前行首,作为新内容起点。
+// 这样整体光标位置不会飘到 prompt 上方,最坏情况是往下多了 N 行
+// 空行然后回来,不会误擦用户之前看到的输出。
+func clearCurrentAndBelow(ed *LineEditor) {
+	fmt.Print("\r\033[K")
+	for i := 0; i < ed.LastRowsBelow; i++ {
+		fmt.Print("\n\033[K")
 	}
-	fmt.Print("\r")
-	// \033[J:清除从光标到屏幕末尾的所有字符(含下方折行残影)。
-	fmt.Print("\033[J")
+	if ed.LastRowsBelow > 0 {
+		fmt.Printf("\033[%dA\r", ed.LastRowsBelow)
+	}
 	ed.LastRowsBelow = 0
 }
 
 func RedrawFull(ed *LineEditor) {
-	returnToPromptRow(ed)
+	clearCurrentAndBelow(ed)
 	if ed.PromptWidth > 0 {
 		fmt.Printf("\033[%dC", ed.PromptWidth)
 	}
@@ -543,9 +552,7 @@ func RedrawFull(ed *LineEditor) {
 	// 计算光标最终位置的行/列,供下次重绘使用。
 	cols := termCols()
 	totalW := ed.PromptWidth + ed.DisplayWidthRange(0, len(ed.Runes))
-	endRow, endCol := totalW/cols, totalW%cols
-	// 行尾正好填满时,终端可能还停在前一行末尾未换行 —— 不扣减,保留
-	// 保守估计。即便多算一行,returnToPromptRow 的 \033[J 会清干净。
+	endRow := totalW / cols
 
 	// 把光标从内容末尾移到 ed.Pos 的位置。
 	cursorW := ed.PromptWidth + ed.DisplayWidthRange(0, ed.Pos)
@@ -554,18 +561,16 @@ func RedrawFull(ed *LineEditor) {
 	if endRow > curRow {
 		fmt.Printf("\033[%dA", endRow-curRow)
 	}
-	// 用 \r + 绝对列前进 定位到目标列。
 	fmt.Print("\r")
 	if curCol > 0 {
 		fmt.Printf("\033[%dC", curCol)
 	}
 
 	ed.LastRowsBelow = endRow
-	_ = endCol
 }
 
 func RedrawClear(ed *LineEditor) {
-	returnToPromptRow(ed)
+	clearCurrentAndBelow(ed)
 }
 
 func MoveWordBack(ed *LineEditor) {
