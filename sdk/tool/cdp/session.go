@@ -273,21 +273,12 @@ func (s *BrowserSession) Close() error {
 
 // --- internal ---
 
-// defaultHeadless 根据运行环境推断默认是否启用 headless 模式。
-//   - Windows / macOS:有桌面环境 → false(有头)
-//   - Linux:有 DISPLAY 或 WAYLAND_DISPLAY → false,否则 true(服务器场景)
-// 用户可通过 BROWSER_HEADED / BROWSER_HEADLESS 显式覆盖。
+// defaultHeadless 返回默认 headless 策略。
+// 默认 true(后台运行,不打扰用户)。只有用户/上层显式要求"看到操作"时,
+// 通过 BROWSER_HEADED=1 环境变量切到有头模式,与大部分自动化工具一致
+// (Playwright/Puppeteer 的 launch() 默认也是 headless)。
 func defaultHeadless() bool {
-	switch runtime.GOOS {
-	case "windows", "darwin":
-		return false
-	case "linux":
-		if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
-			return false
-		}
-		return true
-	}
-	return false
+	return true
 }
 
 // waitForCDP polls the CDP /json/version endpoint until the browser is ready.

@@ -365,6 +365,16 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 		}, nil
 	}
 
+	// 用户意图探测:指令里包含"看到/给我看/可见浏览器"这类表达时,
+	// 切换到有头模式让用户观察操作过程。
+	// 已存在的 headless session 会被关闭,下次 get() 会用新的 env 重启
+	// 一个有头的 Chrome 窗口。
+	if wantsVisibleBrowser(req.Instruction) {
+		diaglog.Logf("browser", "detected visible-browser intent, switching to headed mode")
+		os.Setenv("BROWSER_HEADED", "1")
+		tool.CloseBrowserSession(h.browserTools)
+	}
+
 	registry, err := h.buildRegistry(req.Execution)
 	if err != nil {
 		return &sidecar.ExecuteResult{
@@ -733,6 +743,28 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		Summary: summary,
 		Turns:   1,
 	}
+}
+
+// wantsVisibleBrowser 粗略匹配用户"想看到浏览器操作"的意图。
+// 命中的场景:
+//   - 中文:"我要看到"/"给我看"/"让我看"/"打开浏览器"/"可见"/"看得到"
+//   - 英文:"visible"/"watch"/"show me"/"headed"/"not headless"
+// 这些词出现在 instruction 里就切到有头模式。宁可多开窗口,也不要
+// 让用户看不到自己明确要求的操作过程。
+func wantsVisibleBrowser(instruction string) bool {
+	s := strings.ToLower(instruction)
+	needles := []string{
+		"我要看到", "给我看", "让我看", "我要能看到", "可见浏览器",
+		"可视化", "看得到", "看到操作", "看到你的操作", "打开浏览器",
+		"visible browser", "not headless", "non-headless", "headed",
+		"show me the browser", "watch the browser", "show browser",
+	}
+	for _, n := range needles {
+		if strings.Contains(s, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
 }
 
 // saveScreenshotOutput decodes a browser.screenshot tool result and persists
