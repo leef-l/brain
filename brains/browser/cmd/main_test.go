@@ -54,6 +54,9 @@ func TestNewBrowserHandler_AppliesDelegateToolPolicy(t *testing.T) {
 	if _, ok := h.registry.Lookup("browser.open"); !ok {
 		t.Fatalf("browser.open should remain available")
 	}
+	if _, ok := h.registry.Lookup("browser.drag"); !ok {
+		t.Fatalf("browser.drag should remain available for slider CAPTCHA flows")
+	}
 	if _, ok := h.registry.Lookup("human.request_takeover"); !ok {
 		t.Fatalf("human.request_takeover should remain available even when delegate.browser only includes browser.*")
 	}
@@ -153,11 +156,17 @@ func TestWantsHeadedBrowser_PrefersStructuredSubtaskIntent(t *testing.T) {
 	}
 }
 
-func TestEnsureCriticalBrowserTools_ReaddsTakeoverTool(t *testing.T) {
+func TestEnsureCriticalBrowserTools_ReaddsCriticalBrowserTools(t *testing.T) {
 	reg := tool.NewMemRegistry()
 	reg.Register(tool.NewNoteTool("browser"))
+	browserTools := tool.NewBrowserTools()
+	defer tool.CloseBrowserSession(browserTools)
 
-	ensureCriticalBrowserTools(reg)
+	ensureCriticalBrowserTools(reg, browserTools)
+
+	if _, ok := reg.Lookup("browser.drag"); !ok {
+		t.Fatal("browser.drag missing after ensureCriticalBrowserTools")
+	}
 
 	if _, ok := reg.Lookup("human.request_takeover"); !ok {
 		t.Fatal("human.request_takeover missing after ensureCriticalBrowserTools")

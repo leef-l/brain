@@ -362,7 +362,7 @@ func newBrowserHandler(reloader *browserRuntimeReloader) *browserHandler {
 	} else {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindBrowser))...)
 	}
-	ensureCriticalBrowserTools(reg)
+	ensureCriticalBrowserTools(reg, browserTools)
 	return &browserHandler{
 		registry:     reg,
 		browserTools: browserTools,
@@ -1537,13 +1537,21 @@ func (h *browserHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (too
 	} else {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindBrowser))...)
 	}
-	ensureCriticalBrowserTools(reg)
+	ensureCriticalBrowserTools(reg, h.browserTools)
 	return reg, nil
 }
 
-func ensureCriticalBrowserTools(reg tool.Registry) {
+func ensureCriticalBrowserTools(reg tool.Registry, browserTools []tool.Tool) {
 	if reg == nil {
 		return
+	}
+	if _, ok := reg.Lookup("browser.drag"); !ok {
+		for _, t := range browserTools {
+			if t != nil && t.Name() == "browser.drag" {
+				reg.Register(t)
+				break
+			}
+		}
 	}
 	if _, ok := reg.Lookup("human.request_takeover"); !ok {
 		reg.Register(tool.NewHumanRequestTakeoverTool())
