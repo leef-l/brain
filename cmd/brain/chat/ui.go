@@ -242,15 +242,15 @@ func summarizeToolAction(toolName string, input json.RawMessage) string {
 }
 
 var toolLabelZh = map[string]string{
-	"data.get_candles":        "查询 K 线数据",
-	"data.get_snapshot":       "查询市场快照",
-	"data.get_feature_vector": "获取特征向量",
-	"data.provider_health":    "检查数据源健康",
-	"data.validation_stats":   "查询数据质量统计",
-	"data.backfill_status":    "查询回填进度",
-	"data.active_instruments": "查询活跃品种",
-	"data.replay_start":       "启动历史回放",
-	"data.replay_stop":        "停止历史回放",
+	"data.get_candles":         "查询 K 线数据",
+	"data.get_snapshot":        "查询市场快照",
+	"data.get_feature_vector":  "获取特征向量",
+	"data.provider_health":     "检查数据源健康",
+	"data.validation_stats":    "查询数据质量统计",
+	"data.backfill_status":     "查询回填进度",
+	"data.active_instruments":  "查询活跃品种",
+	"data.replay_start":        "启动历史回放",
+	"data.replay_stop":         "停止历史回放",
 	"quant.global_portfolio":   "查询全局投资组合",
 	"quant.global_risk_status": "查询全局风控状态",
 	"quant.strategy_weights":   "查询策略权重",
@@ -379,7 +379,7 @@ func HandleChatRunResult(state *State, provider llm.Provider, brainID string,
 		replyText = BuildToolCallSummary(rr.Result.FinalMessages)
 	}
 
-	if replyText != "" {
+	if shouldPrintAssistantReply(activity.Content.String(), replyText) {
 		PrintAssistantMessage(replyText)
 	}
 
@@ -409,6 +409,19 @@ func HandleChatRunResult(state *State, provider llm.Provider, brainID string,
 			queueLines = BuildPromptHeaderLines(activity, state.QueueDisplayLines(), *running)
 		}
 	}
+}
+
+func shouldPrintAssistantReply(streamedContent, replyText string) bool {
+	replyText = strings.TrimSpace(replyText)
+	if replyText == "" {
+		return false
+	}
+	// 正文已经在 running 期间通过 ProgressContent 实时打到终端时,
+	// 结束态不要再重复整段打印一次,否则 transcript 会出现两份内容。
+	if strings.TrimSpace(streamedContent) != "" {
+		return false
+	}
+	return true
 }
 
 func shouldShowResponseSelector(brainID, replyText string) bool {

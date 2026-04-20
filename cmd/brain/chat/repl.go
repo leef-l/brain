@@ -224,8 +224,6 @@ func RunChat(args []string) int {
 	running := false
 	activity := &Activity{}
 	var lastProgressSecond int64 = -1
-	lastTerminalActivity := time.Now()
-	heartbeatVisible := false
 	_ = lastProgressSecond
 	session := term.NewLineReadSession(kb, 0)
 	session.History = LoadHistory()
@@ -259,10 +257,6 @@ func RunChat(args []string) int {
 			// 收到 sidecar 反向 RPC 转过来的人工求助事件。running 期间
 			// prompt 已经 Detach,直接 Println 就显示到屏幕;非 running
 			// 时先 Detach 再画回来。
-			if heartbeatVisible {
-				fmt.Print("\r\033[2K")
-				heartbeatVisible = false
-			}
 			if !running {
 				DetachPromptFrame(session)
 			}
@@ -272,35 +266,22 @@ func RunChat(args []string) int {
 			case "resolved":
 				PrintResolved(ev.Response)
 			}
-			lastTerminalActivity = time.Now()
 			if !running {
 				RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
 			}
 			continue
 
 		case req := <-state.ApprovalCh:
-			if heartbeatVisible {
-				fmt.Print("\r\033[2K")
-				heartbeatVisible = false
-			}
 			HandleApprovalRequest(state, session, kb, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running, req, stdinCh, stdinErrCh)
 			continue
 
 		case rr := <-resultCh:
-			if heartbeatVisible {
-				fmt.Print("\r\033[2K")
-				heartbeatVisible = false
-			}
 			running = false
 			HandleChatRunResult(state, providerSession.Provider, *brainID, *maxTurns, session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), &running, rr, resultCh, progressCh, activity, stdinCh, stdinErrCh)
 			continue
 
 		case ev := <-progressCh:
 			if running {
-				if heartbeatVisible {
-					fmt.Print("\r\033[2K")
-					heartbeatVisible = false
-				}
 				// running 期间 prompt frame 已经 Detach(在 StartChatRun 之前),
 				// 流式事件直接 Println 到屏幕,用户实时看到 LLM 输出 / 工具
 				// 调用 / 结果。不再清屏重绘,不会产生重影;也不再静默吞事件。
@@ -309,7 +290,6 @@ func RunChat(args []string) int {
 					PrintDiffPreviewBlock(ev.PreviewLines)
 				}
 				activity.Apply(ev)
-				lastTerminalActivity = time.Now()
 			}
 			continue
 
@@ -318,25 +298,11 @@ func RunChat(args []string) int {
 				sec := int64(time.Since(activity.StartedAt) / time.Second)
 				if sec != lastProgressSecond {
 					lastProgressSecond = sec
-					// 当这一秒内没有任何新流式事件时，主动打一行轻量心跳，
-					// 让用户看到 Working 时钟持续前进。这里必须是单行覆盖，
-					// 不能追加历史行，否则会把屏幕刷满。
-					if time.Since(lastTerminalActivity) >= time.Second {
-						if line := activity.StatusLine(); line != "" {
-							fmt.Printf("\r\033[2K\033[2m  %s\033[0m", line)
-							heartbeatVisible = true
-							lastTerminalActivity = time.Now()
-						}
-					}
 				}
 			}
 			continue
 
 		case readErr := <-stdinErrCh:
-			if heartbeatVisible {
-				fmt.Print("\r\033[2K")
-				heartbeatVisible = false
-			}
 			DetachPromptFrame(session)
 			if readErr != nil && readErr != io.EOF {
 				fmt.Fprintf(os.Stderr, "brain chat: %v\n", readErr)
@@ -346,10 +312,6 @@ func RunChat(args []string) int {
 			return cli.ExitOK
 
 		case data := <-stdinCh:
-			if heartbeatVisible {
-				fmt.Print("\r\033[2K")
-				heartbeatVisible = false
-			}
 			line, action, done, err := session.Consume(data)
 			if err != nil {
 				DetachPromptFrame(session)
