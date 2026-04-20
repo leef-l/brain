@@ -430,12 +430,42 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 		}, nil
 	}
 
+	// 启动整 run 的 DOM 事件录制。覆盖 AI 自己做的 type/click + 人类在
+	// takeover 期间做的 drag/click。run 结束时按"最终是否真的成功"决定
+	// 是否落盘:成功才写 pattern,失败轨迹丢弃。这就是用户要的"整个流程
+	// 成功才学习"语义。
+	//
+	// 只对 sensitive / slider 类任务开录制(登录/支付/有滑块),避免所有
+	// 普通浏览场景都录制增加开销。
+	var fullRunRec *tool.FullRunRecorder
+	if isSensitiveFormTask(req.Instruction) || hasSliderKeyword(req.Instruction) {
+		fullRunRec = tool.StartFullRunRecorder(ctx, "browser-run", "browser", req.Instruction, "")
+	}
+
 	start := time.Now()
 	result := h.executeWithPerception(ctx, &req, registry)
 
+	// 判定本次 run 是否"真的成功":
+	//  1. result.Status == "completed"
+	//  2. AND 对登录类任务,最终 summary 不再停在登录页(用 stillOnLoginPage
+	//     反向判断)
+	// 满足才把录制写盘成 UIPattern,下次同域名任务能直接重放。
+	truelySuccess := result.Status == "completed"
+	if truelySuccess && isSensitiveFormTask(req.Instruction) && stillOnLoginPage(result.Summary) {
+		truelySuccess = false
+	}
+	if fullRunRec != nil {
+		fullRunRec.FinalizePersist(ctx, truelySuccess, false)
+		if truelySuccess {
+			diaglog.Logf("browser", "full run demo persisted: learning this successful flow")
+		} else {
+			diaglog.Logf("browser", "full run discarded: task not truly successful")
+		}
+	}
+
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "browser.execute",
-		Success:   result.Status == "completed",
+		Success:   truelySuccess,
 		Duration:  time.Since(start),
 		ToolCalls: result.Turns,
 	})

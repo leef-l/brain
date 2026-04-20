@@ -223,6 +223,76 @@ func (r *humanActionRecorder) stop() {
 	<-r.done
 }
 
+// ---------------------------------------------------------------------------
+// FullRunRecorder — 录制整个 browser.execute 的真人 DOM 操作
+// ---------------------------------------------------------------------------
+
+// FullRunRecorder 封装一个已启动的 humanActionRecorder,让 browser sidecar
+// 在 handleExecute 入口处就启动录制,在 run 结束时根据"是否真的成功"决定
+// 是否落盘成 HumanDemoSequence。
+//
+// 对比原 takeover 场景:takeover 只录"人类接管期间"那一段;FullRunRecorder
+// 录"整个 run 从头到尾"的所有 DOM 事件,包含 AI 做的 type/click 和人类做
+// 的 drag/click,任务最终登录成功时整条合并写盘,形成一条可完整重放的
+// pattern。
+type FullRunRecorder struct {
+	inner *humanActionRecorder
+}
+
+// StartFullRunRecorder 在 run 入口启动 CDP 事件录制。ctx 会贯穿整个 run,
+// run 结束时调 FinalizePersist 决定是否写盘。nil 表示工厂未配置,调用方
+// 正常继续(只是不学习)。
+func StartFullRunRecorder(ctx context.Context, runID, brainKind, goal, url string) *FullRunRecorder {
+	r := startHumanRecorder(ctx, runID, brainKind, goal, url)
+	if r == nil {
+		return nil
+	}
+	return &FullRunRecorder{inner: r}
+}
+
+// FinalizePersist 停止录制。success=true 时把 actions 写到 HumanDemoSink,
+// success=false 则丢弃(失败的流程没有学习价值,避免把错误轨迹固化成
+// pattern)。auto=true 时 sink 写完立刻转成 UIPattern 进库,无需人工审批。
+func (r *FullRunRecorder) FinalizePersist(ctx context.Context, success bool, auto bool) {
+	if r == nil || r.inner == nil {
+		return
+	}
+	r.inner.stop()
+	if !success {
+		return
+	}
+	actions := r.inner.snapshotDemo()
+	if len(actions) == 0 {
+		return
+	}
+	sink := currentHumanDemoSink()
+	if sink == nil {
+		return
+	}
+	actionsJSON, err := json.Marshal(actions)
+	if err != nil {
+		return
+	}
+	seq := &persistence.HumanDemoSequence{
+		RunID:      r.inner.runID,
+		BrainKind:  r.inner.brainKind,
+		Goal:       r.inner.goal,
+		Site:       r.inner.site,
+		URL:        r.inner.lastURL,
+		Actions:    actionsJSON,
+		Approved:   auto || demoAutoApprove(),
+		RecordedAt: time.Now().UTC(),
+	}
+	_ = sink.SaveHumanDemoSequence(ctx, seq)
+	if seq.Approved {
+		if p := ConvertDemoToPattern(seq, actions); p != nil {
+			if lib := SharedPatternLibrary(); lib != nil {
+				_ = lib.Upsert(ctx, p)
+			}
+		}
+	}
+}
+
 // snapshotDemo 拷一份已合并的 actions 给调用方写库。
 func (r *humanActionRecorder) snapshotDemo() []RecordedAction {
 	r.mu.Lock()
