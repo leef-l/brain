@@ -36,6 +36,8 @@ var (
 	writer io.Writer
 	closer io.Closer
 	logger *slog.Logger
+
+	discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 )
 
 func Enabled(category string) bool {
@@ -51,8 +53,11 @@ func Enabled(category string) bool {
 
 func Logger(category string, attrs ...slog.Attr) *slog.Logger {
 	c := load()
-	if !c.enabled || !Enabled(category) {
-		return slog.New(slog.NewTextHandler(io.Discard, nil))
+	if !c.enabled {
+		return discardLogger
+	}
+	if len(c.categories) > 0 && !c.categories["all"] && !c.categories[normalizeCategory(category)] {
+		return discardLogger
 	}
 
 	mu.Lock()
@@ -165,8 +170,8 @@ func ensureWriterLocked(c config) io.Writer {
 		path = defaultLogPath()
 	}
 	if path != "" {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 			if err == nil {
 				closer = f
 				writers = append(writers, f)
@@ -194,9 +199,6 @@ func defaultLogPath() string {
 }
 
 func log(category string, level slog.Level, msg string, args ...any) {
-	if !Enabled(category) {
-		return
-	}
 	Logger(category).Log(context.Background(), level, msg, args...)
 }
 

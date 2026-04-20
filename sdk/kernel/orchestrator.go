@@ -552,7 +552,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 			Status: "failed",
 			Error:  fmt.Sprintf("start sidecar %s: %v", req.TargetKind, err),
 			Usage:  SubtaskUsage{Duration: time.Since(start)},
-		}, nil
+		}, err
 	}
 
 	// Get the RPC session.
@@ -563,7 +563,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 			Status: "failed",
 			Error:  "agent does not implement RPCAgent",
 			Usage:  SubtaskUsage{Duration: time.Since(start)},
-		}, nil
+		}, fmt.Errorf("agent does not implement RPCAgent")
 	}
 
 	rpc, ok := rpcAgent.RPC().(protocol.BidirRPC)
@@ -573,7 +573,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 			Status: "failed",
 			Error:  "agent RPC is not BidirRPC",
 			Usage:  SubtaskUsage{Duration: time.Since(start)},
-		}, nil
+		}, fmt.Errorf("agent RPC is not BidirRPC")
 	}
 
 	// 如果配置了 ContextEngine，在发送给下游 brain 之前装配上下文。
@@ -808,6 +808,10 @@ func (o *Orchestrator) poolRemoveBrain(kind agent.Kind) {
 	if rm, ok := o.pool.(brainRemover); ok {
 		rm.RemoveBrain(kind)
 	}
+	// 清理旧 RPC session 的反向 handler 注册记录，
+	// 避免已移除的 sidecar 的 RPC 对象泄漏。
+	// 重新启动的 sidecar 会在 registerReverseHandlers 中重新注册。
+	o.reverseHandlersRegistered = make(map[protocol.BidirRPC]struct{})
 }
 
 // CollectMetrics 主动从所有运行中的 sidecar 拉取 brain/metrics 指标。

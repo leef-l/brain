@@ -441,6 +441,10 @@ func (a *pipeAgent) Shutdown(ctx context.Context) error {
 }
 
 func buildFreshSidecarBinary(kind agent.Kind) (string, error) {
+	if os.Getenv("BRAIN_DEV_BUILD") != "1" {
+		return "", nil
+	}
+
 	projectRoot, err := findModuleRoot()
 	if err != nil || projectRoot == "" {
 		return "", err
@@ -785,20 +789,19 @@ func injectSidecarPersistenceEnv(env []string) []string {
 	}
 
 	entries := sidecarPersistenceEnvEntries("")
-	if !hasDBPath {
-		env = append(env, entries[0])
+	needed := map[string]bool{
+		envBrainDBPath + "=":        !hasDBPath,
+		envUIPatternDBPath + "=":    !hasPatternDB,
+		envPersistenceDriver + "=":  !hasDriver,
+		envPersistenceDSN + "=":     !hasDSN,
+		envBrowserRuntimeSync + "=": !hasSyncFile,
 	}
-	if !hasPatternDB {
-		env = append(env, entries[1])
-	}
-	if !hasDriver {
-		env = append(env, entries[2])
-	}
-	if !hasDSN {
-		env = append(env, entries[3])
-	}
-	if !hasSyncFile && len(entries) > 4 {
-		env = append(env, entries[4])
+	for _, e := range entries {
+		for prefix, want := range needed {
+			if want && strings.HasPrefix(e, prefix) {
+				env = append(env, e)
+			}
+		}
 	}
 	return env
 }

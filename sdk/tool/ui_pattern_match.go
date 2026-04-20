@@ -485,6 +485,9 @@ func (d patternExecDeps) Get(id string) *UIPattern {
 }
 
 func (d patternExecDeps) AnomalyTemplates() AnomalyTemplateSource {
+	if d.templates == nil {
+		return SharedAnomalyTemplateLibrary()
+	}
 	return d.templates
 }
 
@@ -497,7 +500,7 @@ func sharedPatternExecGetter() patternExecGetter {
 			}
 			return lib.GetAny(id)
 		}),
-		templates: SharedAnomalyTemplateLibrary(),
+		templates: nil,
 	}
 }
 

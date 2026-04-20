@@ -228,7 +228,7 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 				}
 			}
 		}
-		if r.PreTurnHook != nil {
+		if r.PreTurnHook != nil && r.PreTurnStateHook == nil {
 			newTools, hookErr := r.PreTurnHook(ctx, run, run.CurrentTurn)
 			if hookErr != nil {
 				turn.End(r.now())
@@ -591,24 +591,26 @@ func (r *Runner) executeSingleTool(ctx context.Context, run *Run, turn *Turn, re
 	// Execute the tool.
 	result, execErr := t.Execute(ctx, tb.Input)
 	if execErr != nil {
+		errMsg, _ := json.Marshal(fmt.Sprintf("tool execution failed: %v", execErr))
 		if r.ToolObserver != nil {
-			r.ToolObserver.OnToolEnd(ctx, run, turn, tb.ToolName, false, json.RawMessage(fmt.Sprintf(`"exec error: %v"`, execErr)))
+			r.ToolObserver.OnToolEnd(ctx, run, turn, tb.ToolName, false, json.RawMessage(errMsg))
 		}
 		return llm.ContentBlock{
 			Type:      "tool_result",
 			ToolUseID: tb.ToolUseID,
-			Output:    json.RawMessage(fmt.Sprintf(`"tool execution failed: %v"`, execErr)),
+			Output:    json.RawMessage(errMsg),
 			IsError:   true,
 		}
 	}
 	if result == nil {
+		errMsg, _ := json.Marshal(fmt.Sprintf("tool %s returned nil result", tb.ToolName))
 		if r.ToolObserver != nil {
-			r.ToolObserver.OnToolEnd(ctx, run, turn, tb.ToolName, false, json.RawMessage(fmt.Sprintf(`"tool %s returned nil result"`, tb.ToolName)))
+			r.ToolObserver.OnToolEnd(ctx, run, turn, tb.ToolName, false, json.RawMessage(errMsg))
 		}
 		return llm.ContentBlock{
 			Type:      "tool_result",
 			ToolUseID: tb.ToolUseID,
-			Output:    json.RawMessage(fmt.Sprintf(`"tool %s returned nil result"`, tb.ToolName)),
+			Output:    json.RawMessage(errMsg),
 			IsError:   true,
 		}
 	}

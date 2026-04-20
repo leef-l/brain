@@ -1821,10 +1821,11 @@ func marshalTextContent(text string) json.RawMessage {
 
 // marshalToolOutput wraps a tool's raw output in a content array.
 func marshalToolOutput(output json.RawMessage) json.RawMessage {
-	if json.Valid(output) {
-		return json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, output))
+	if !json.Valid(output) {
+		return marshalTextContent(string(output))
 	}
-	return marshalTextContent(string(output))
+	escaped, _ := json.Marshal(string(output))
+	return json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, escaped))
 }
 
 // newBrowserStageHook 返回一个 loop.PreTurnStateHook,它按 P3.5 规则在每 turn 前
@@ -1851,6 +1852,7 @@ func newBrowserStageHook(registry tool.Registry) func(ctx context.Context, run *
 
 	// scope 是 run.browser.<stage>,对应 DefaultBrowserStageProfiles 的 active_tools
 	// 绑定(即 run.browser.new_page → browser_new_page profile)。
+	// Runner calls PreTurnStateHook serially — no mutex needed.
 	lastStage := ""
 
 	return func(ctx context.Context, _ *loop.Run, turnIndex int) (*loop.PreTurnState, error) {

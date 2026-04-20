@@ -31,7 +31,8 @@ func classifyHTTPError(provider string, statusCode int, errType string, message 
 	case statusCode >= 500 && statusCode <= 599:
 		return brainerrors.New(brainerrors.CodeLLMUpstream5xx,
 			brainerrors.WithMessage(text))
-	case statusCode == http.StatusRequestEntityTooLarge || statusCode == http.StatusBadRequest && looksLikeContextOverflow(message):
+	case statusCode == http.StatusRequestEntityTooLarge,
+		statusCode == http.StatusBadRequest && looksLikeContextOverflow(message):
 		return brainerrors.New(brainerrors.CodeLLMContextOverflow,
 			brainerrors.WithMessage(text))
 	default:
@@ -41,7 +42,7 @@ func classifyHTTPError(provider string, statusCode int, errType string, message 
 
 func looksLikeContextOverflow(message string) bool {
 	msg := strings.ToLower(strings.TrimSpace(message))
-	return strings.Contains(msg, "context") && strings.Contains(msg, "limit") ||
+	return (strings.Contains(msg, "context") && strings.Contains(msg, "limit")) ||
 		strings.Contains(msg, "context window") ||
 		strings.Contains(msg, "maximum context length") ||
 		strings.Contains(msg, "prompt is too long") ||

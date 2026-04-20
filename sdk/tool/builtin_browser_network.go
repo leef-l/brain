@@ -174,6 +174,9 @@ func (b *netBuf) add(e *netEntry) {
 		b.entries = append(b.entries, e)
 	} else {
 		old := b.entries[b.index]
+		if old.InFlight {
+			b.inflight--
+		}
 		delete(b.byID, old.ID)
 		b.entries[b.index] = e
 		b.index = (b.index + 1) % b.capacity

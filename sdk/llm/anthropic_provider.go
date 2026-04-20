@@ -309,7 +309,7 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*
 		Input    json.RawMessage `json:"input"`
 	}
 	if err := json.Unmarshal(ar.Content, &rawBlocks); err != nil {
-		return nil, fmt.Errorf("invalid anthropic content: %w; body=%s", err, string(rawBody))
+		return nil, fmt.Errorf("invalid anthropic content: %w; body=%s", err, truncateBody(rawBody, 512))
 	}
 	for _, rb := range rawBlocks {
 		cb := ContentBlock{Type: rb.Type}
@@ -328,10 +328,18 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*
 		resp.Content = append(resp.Content, cb)
 	}
 	if err := ValidateToolUseResponse("anthropic", resp); err != nil {
-		return nil, fmt.Errorf("%w; body=%s", err, string(rawBody))
+		return nil, fmt.Errorf("%w; body=%s", err, truncateBody(rawBody, 512))
 	}
 
 	return resp, nil
+}
+
+// truncateBody returns b as string, truncated to at most n bytes.
+func truncateBody(b []byte, n int) string {
+	if len(b) <= n {
+		return string(b)
+	}
+	return string(b[:n]) + "...[truncated]"
 }
 
 // ---------------------------------------------------------------------------

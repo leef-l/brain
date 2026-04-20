@@ -102,7 +102,11 @@ func WriteBrowserRuntimeProjectionFile(path string, projection BrowserRuntimePro
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // ReadBrowserRuntimeProjectionFile loads the latest browser runtime projection
