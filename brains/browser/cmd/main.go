@@ -543,6 +543,7 @@ Key tools:
 - browser.drag: {"from_selector":"...","to_selector":"..."} or {"from_x":..,"from_y":..,"to_x":..,"to_y":..} — press and hold then drag. USE THIS for slider CAPTCHA (滑块验证), slider captchas, drag-and-drop puzzles, range sliders. Human-like trajectory (easeInOut + jitter) is enabled by default.
 - browser.hover: {"selector": "..."} — hover an element (triggers tooltips, dropdown menus).
 - browser.scroll: {"direction":"down","amount":500} — scroll the page.
+- human.request_takeover: {"reason":"captcha|slider_failed|session_expired|payment|other", "guidance":"text for the human"} — HAND OFF to a human operator when automation can't proceed. Agent pauses until the human resumes or aborts via WebUI/CLI. USE THIS as the final step when: (a) a slider/image/click CAPTCHA keeps failing after browser.drag, (b) you hit phone SMS / payment / 2FA, (c) you tried 3+ distinct strategies with no progress. The human's actions are recorded and become a learned pattern for future runs.
 
 RULES:
 - To read page content (search results, article text, prices, numbers), use browser.snapshot with mode="text".
@@ -555,6 +556,7 @@ RULES:
 - For search: type the query into the search box, then use browser.press_key with key "Enter" to submit (more reliable than clicking the search button). After pressing Enter, add browser.wait with condition "load" to wait for results.
 - After any click or key press that triggers navigation, add browser.wait with condition "load" before taking a snapshot.
 - For slider CAPTCHA (滑块验证 / 拖动滑块 / slide-to-verify): FIRST take a snapshot with mode="interactive" to locate the slider handle and the slider track's end coordinates. THEN use browser.drag with from_selector/to_selector (or coordinates). Typical selectors: ".slider-button", ".captcha-slider", ".nc_iconfont", ".verify-move-block". DO NOT use browser.click on the slider — a click is not a drag and the captcha will not pass.
+- If the captcha page is still present after the drag attempt, call human.request_takeover with reason="slider_failed" and guidance="请手动完成滑块验证，完成后点击 resume". DO NOT keep retrying drag blindly.
 - Output ONLY the JSON object, no explanation.`
 
 	userMsg := "Instruction: " + instruction
@@ -734,6 +736,45 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 	if lastTool != "browser.screenshot" && len(screenshotPaths) > 0 {
 		summary += "\n\n[Screenshots saved: " + strings.Join(screenshotPaths, ", ") + "]"
 	}
+	// 兜底:如果 plan 里做过拖动/点击登录等交互,但页面仍停留在验证码
+	// 特征页上(URL 含 captcha/verify,或 title 含"安全验证"/"验证码"),
+	// 自动调 human.request_takeover 挂起等人类处理,避免 AI 反复失败
+	// 消耗上下文。已经请求过接管的调用走正常返回路径,由 coordinator 决定
+	// resume/abort。
+	if shouldRequestTakeover(plan, summary) && !stepHasTool(plan, "human.request_takeover") {
+		if takeoverTool, ok := registry.Lookup("human.request_takeover"); ok {
+			// 附一张截图给人类看。
+			var shotB64 string
+			if screenshotTool, ok := registry.Lookup("browser.screenshot"); ok {
+				sa, _ := json.Marshal(map[string]interface{}{})
+				if sr, err := screenshotTool.Execute(ctx, sa); err == nil && sr != nil {
+					var s struct {
+						Data string `json:"data"`
+					}
+					json.Unmarshal(sr.Output, &s)
+					shotB64 = s.Data
+				}
+			}
+			pageURL, _ := extractPageMetaFromSummary(summary)
+			tReq, _ := json.Marshal(map[string]interface{}{
+				"reason":     detectTakeoverReason(summary),
+				"guidance":   "自动化无法通过当前页面(验证码/登录),请手动完成后点击 Resume 继续。",
+				"url":        pageURL,
+				"screenshot": shotB64,
+			})
+			tRes, tErr := takeoverTool.Execute(ctx, tReq)
+			diaglog.Logf("browser", "auto human takeover: err=%v output=%.200s", tErr, func() string {
+				if tRes != nil {
+					return string(tRes.Output)
+				}
+				return ""
+			}())
+			if tRes != nil && !tRes.IsError {
+				summary += "\n\n[Human takeover: " + string(tRes.Output) + "]"
+			}
+		}
+	}
+
 	diaglog.Logf("browser", "executeLLMPlan: lastTool=%s summary len=%d preview=%.200s", lastTool, len(summary), summary)
 	if len(summary) > 8192 {
 		summary = summary[:8192] + "...[truncated]"
@@ -747,6 +788,78 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		Summary: summary,
 		Turns:   1,
 	}
+}
+
+// shouldRequestTakeover 判断本次 plan 执行后是否应自动请求人类接管。
+// 典型场景:plan 里调过 drag / click / press_key(说明尝试了交互),
+// 但页面最终停在验证码/安全验证页上。
+func shouldRequestTakeover(plan *llmPlan, summary string) bool {
+	interacted := false
+	for _, s := range plan.Steps {
+		switch s.Tool {
+		case "browser.drag", "browser.click", "browser.press_key", "browser.type":
+			interacted = true
+		}
+	}
+	if !interacted {
+		return false
+	}
+	low := strings.ToLower(summary)
+	signals := []string{
+		"captcha", "wappass.baidu", "/verify", "/sorry/", "recaptcha",
+		"安全验证", "验证码", "滑块验证", "人机验证", "拖动滑块", "行为验证",
+	}
+	for _, sig := range signals {
+		if strings.Contains(low, strings.ToLower(sig)) {
+			return true
+		}
+	}
+	return false
+}
+
+// detectTakeoverReason 把页面特征粗分为 reason 枚举,供 coordinator/日志用。
+func detectTakeoverReason(summary string) string {
+	low := strings.ToLower(summary)
+	switch {
+	case strings.Contains(low, "滑块") || strings.Contains(low, "slider"):
+		return "slider_failed"
+	case strings.Contains(low, "captcha") || strings.Contains(low, "recaptcha") || strings.Contains(low, "验证码"):
+		return "captcha"
+	case strings.Contains(low, "登录") || strings.Contains(low, "login") || strings.Contains(low, "session"):
+		return "session_expired"
+	default:
+		return "other"
+	}
+}
+
+// stepHasTool 判断 plan 是否已经显式带了某个工具(避免重复调用)。
+func stepHasTool(plan *llmPlan, tool string) bool {
+	for _, s := range plan.Steps {
+		if s.Tool == tool {
+			return true
+		}
+	}
+	return false
+}
+
+// extractPageMetaFromSummary 从我们组装的 "Title: x\nURL: y\n\n..." 里
+// 抽出 URL,供 takeover 请求用。
+func extractPageMetaFromSummary(summary string) (url, title string) {
+	for _, line := range strings.SplitN(summary, "\n", 3) {
+		if strings.HasPrefix(line, "URL: ") {
+			url = strings.TrimPrefix(line, "URL: ")
+		}
+		if strings.HasPrefix(line, "Page URL: ") {
+			url = strings.TrimPrefix(line, "Page URL: ")
+		}
+		if strings.HasPrefix(line, "Title: ") {
+			title = strings.TrimPrefix(line, "Title: ")
+		}
+		if strings.HasPrefix(line, "Page Title: ") {
+			title = strings.TrimPrefix(line, "Page Title: ")
+		}
+	}
+	return
 }
 
 // wantsVisibleBrowser 粗略匹配用户"想看到浏览器操作"的意图。
