@@ -76,11 +76,18 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 			"(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 	}
 
-	// 头模式开关:默认 headless(适合服务器/CI),用户想看到浏览器操作时
-	// 设置 BROWSER_HEADLESS=false(等价:BROWSER_HEADED=1)启用有头模式。
-	headless := true
+	// 头模式开关:
+	//   - 有 DISPLAY / WAYLAND_DISPLAY(桌面环境,Linux/macOS)或运行在
+	//     Windows(Windows 无 DISPLAY 但总有桌面)时默认有头,用户能看
+	//     到浏览器全过程,与 Playwright/Selenium 行为一致。
+	//   - 服务器/CI 场景(无 DISPLAY 的 Linux)默认 headless。
+	//   - 可用 BROWSER_HEADLESS=1 强制 headless,BROWSER_HEADED=1 强制有头,
+	//     显式设置优先级高于自动探测。
+	headless := defaultHeadless()
 	if v := os.Getenv("BROWSER_HEADLESS"); v != "" {
 		switch v {
+		case "1", "true", "True", "TRUE", "yes", "Yes", "YES":
+			headless = true
 		case "0", "false", "False", "FALSE", "no", "No", "NO":
 			headless = false
 		}
@@ -89,6 +96,8 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 		switch v {
 		case "1", "true", "True", "TRUE", "yes", "Yes", "YES":
 			headless = false
+		case "0", "false", "False", "FALSE", "no", "No", "NO":
+			headless = true
 		}
 	}
 
@@ -263,6 +272,23 @@ func (s *BrowserSession) Close() error {
 }
 
 // --- internal ---
+
+// defaultHeadless 根据运行环境推断默认是否启用 headless 模式。
+//   - Windows / macOS:有桌面环境 → false(有头)
+//   - Linux:有 DISPLAY 或 WAYLAND_DISPLAY → false,否则 true(服务器场景)
+// 用户可通过 BROWSER_HEADED / BROWSER_HEADLESS 显式覆盖。
+func defaultHeadless() bool {
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		return false
+	case "linux":
+		if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
+			return false
+		}
+		return true
+	}
+	return false
+}
 
 // waitForCDP polls the CDP /json/version endpoint until the browser is ready.
 func (s *BrowserSession) waitForCDP(ctx context.Context) error {
