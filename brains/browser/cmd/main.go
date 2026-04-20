@@ -534,24 +534,26 @@ func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar
 	// call。
 	if isSensitiveFormTask(req.Instruction) || hasSliderKeyword(req.Instruction) {
 		diaglog.Logf("browser", "sensitive/slider task, going straight to agent loop")
-		return h.fallbackAgentLoop(ctx, req, registry)
+		return h.fallbackAgentLoop(ctx, req, registry, "")
 	}
 
 	diaglog.Logf("browser", "no pattern matched, calling LLM planner, snapshot_len=%d", len(pageSnapshot))
-	plan, err := h.planWithLLM(ctx, req.Instruction, pageSnapshot, registry)
+	plan, err := h.planWithLLM(ctx, req.Instruction, pageSnapshot, "", registry)
 	if err == nil {
 		diaglog.Logf("browser", "LLM plan ok: url=%s steps=%d", plan.URL, len(plan.Steps))
 		result := h.executeLLMPlan(ctx, registry, plan, req.Instruction)
 		if result.Status == "completed" {
 			return result
 		}
-		diaglog.Logf("browser", "LLM plan execution failed: %s, falling back to agent loop", result.Error)
+		feedback := extractRecentInteractionFeedback(result)
+		diaglog.Logf("browser", "LLM plan execution failed: %s, falling back to agent loop (feedback=%q)", result.Error, feedback)
+		return h.fallbackAgentLoop(ctx, req, registry, feedback)
 	} else {
 		diaglog.Logf("browser", "LLM planning failed: %v, falling back to agent loop", err)
 	}
 
 	// Step 3 (fallback): Multi-turn agent loop as last resort.
-	return h.fallbackAgentLoop(ctx, req, registry)
+	return h.fallbackAgentLoop(ctx, req, registry, "")
 }
 
 // hasSliderKeyword 识别 instruction 是否提到滑块/验证码等需要多轮交互
@@ -622,7 +624,7 @@ type llmPlan struct {
 }
 
 // planWithLLM calls LLM once to generate a full execution plan.
-func (h *browserHandler) planWithLLM(ctx context.Context, instruction, pageSnapshot string, registry tool.Registry) (*llmPlan, error) {
+func (h *browserHandler) planWithLLM(ctx context.Context, instruction, pageSnapshot, feedback string, registry tool.Registry) (*llmPlan, error) {
 	toolList := sidecar.RegistryToolNames(registry)
 
 	systemPrompt := `You are a browser operation planner. Given a user instruction and the current page state, output a JSON plan.
@@ -683,6 +685,9 @@ RULES:
 	userMsg := "Instruction: " + instruction
 	if pageSnapshot != "" {
 		userMsg += "\n\nCurrent page state:\n" + pageSnapshot
+	}
+	if strings.TrimSpace(feedback) != "" {
+		userMsg += "\n\nRecent interaction feedback:\n" + feedback
 	}
 
 	provider := sidecar.NewKernelLLMProvider(h.caller, "browser-planner")
@@ -927,6 +932,9 @@ summaryDone:
 	}
 	if dragPostCheckNeedsAttention(lastDragPostCheck) {
 		summary += "\n\n[Drag post-check: verification not confirmed after drag]"
+		if detail := formatDragPostCheckFeedback(lastDragPostCheck); detail != "" {
+			summary += "\n" + detail
+		}
 	}
 	// 兜底:如果 plan 里做过拖动/点击登录等交互,但页面仍停留在验证码
 	// 特征页上(URL 含 captcha/verify,或 title 含"安全验证"/"验证码"),
@@ -997,6 +1005,7 @@ summaryDone:
 		diaglog.Logf("browser", "executeLLMPlan: still on login page after plan+takeover, returning failed")
 		return &sidecar.ExecuteResult{
 			Status: "failed",
+			Summary: summary,
 			Error:  "login did not succeed; still on login/auth page after plan execution",
 		}
 	}
@@ -1072,6 +1081,77 @@ func dragPostCheckNeedsAttention(post map[string]interface{}) bool {
 		return !verified
 	}
 	return false
+}
+
+func formatDragPostCheckFeedback(post map[string]interface{}) string {
+	if len(post) == 0 {
+		return ""
+	}
+	var parts []string
+	if verified, ok := post["verified"].(bool); ok {
+		parts = append(parts, fmt.Sprintf("verified=%t", verified))
+	}
+	if moved, ok := post["source_moved"].(bool); ok {
+		parts = append(parts, fmt.Sprintf("source_moved=%t", moved))
+	}
+	if dist, ok := numericField(post, "movement_distance"); ok {
+		parts = append(parts, fmt.Sprintf("movement_distance=%.1f", dist))
+	}
+	if dist, ok := numericField(post, "distance_to_expected"); ok {
+		parts = append(parts, fmt.Sprintf("distance_to_expected=%.1f", dist))
+	}
+	if hint, ok := post["success_hint"].(bool); ok {
+		parts = append(parts, fmt.Sprintf("success_hint=%t", hint))
+	}
+	if text, ok := post["success_text"].(string); ok && strings.TrimSpace(text) != "" {
+		parts = append(parts, "success_text="+strings.TrimSpace(text))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "The last browser.drag did not confirm success (" + strings.Join(parts, ", ") + "). Avoid repeating the same drag blindly; inspect the slider/track again, adjust the drag target/strategy, or request human.request_takeover if still blocked."
+}
+
+func numericField(m map[string]interface{}, key string) (float64, bool) {
+	v, ok := m[key]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func extractRecentInteractionFeedback(result *sidecar.ExecuteResult) string {
+	if result == nil {
+		return ""
+	}
+	if note := feedbackFromSummary(result.Summary); note != "" {
+		return note
+	}
+	if strings.Contains(strings.ToLower(result.Error), "drag post-check") {
+		return strings.TrimSpace(result.Error)
+	}
+	return ""
+}
+
+func feedbackFromSummary(summary string) string {
+	if !strings.Contains(summary, "[Drag post-check:") {
+		return ""
+	}
+	return "The last browser.drag did not confirm success. The latest page snapshot still suggested the verification/login flow was incomplete. Do not repeat the same drag blindly; inspect the current slider state first, then adjust the drag attempt or request human.request_takeover."
 }
 
 // detectTakeoverReason 把页面特征粗分为 reason 枚举,供 coordinator/日志用。
@@ -1321,7 +1401,7 @@ func extractDomainPattern(rawURL string) string {
 
 // fallbackAgentLoop is the last-resort strategy: multi-turn LLM agent loop.
 // Only used when both pattern_exec and single-shot LLM planning fail.
-func (h *browserHandler) fallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry) *sidecar.ExecuteResult {
+func (h *browserHandler) fallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, feedback string) *sidecar.ExecuteResult {
 	if h.caller == nil {
 		return &sidecar.ExecuteResult{Status: "failed", Error: "no LLM proxy available"}
 	}
@@ -1381,11 +1461,11 @@ Be efficient: perceive, act, verify (snapshot), report. Do not take unnecessary 
 	if req.Budget != nil && req.Budget.MaxTurns > 0 {
 		maxTurns = req.Budget.MaxTurns
 	}
-	return h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, maxTurns, true)
+	return h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, maxTurns, true, feedback)
 }
 
-func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, systemPrompt string, maxTurns int, allowAutoTakeover bool) *sidecar.ExecuteResult {
-	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, systemPrompt string, maxTurns int, allowAutoTakeover bool, feedback string) *sidecar.ExecuteResult {
+	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, mergeLoopContextText(req.Context, feedback))
 	// budget 耗尽 = LLM 卡在循环里还没调 takeover,我们兜底自动调一次让
 	// 用户接管。关键：/resume 后必须在同一个 delegated run 里继续执行，
 	// 不能把“已恢复接管”伪装成 completed 然后把问题抛回 central。
@@ -1409,7 +1489,7 @@ func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.
 	switch outcome {
 	case "resumed":
 		diaglog.Logf("browser", "human takeover resumed; continuing same delegated run")
-		resumed := h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, max(6, min(12, maxTurns/2)), false)
+		resumed := h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, max(6, min(12, maxTurns/2)), false, "")
 		if resumed == nil {
 			return &sidecar.ExecuteResult{
 				Status: "failed",
@@ -1431,6 +1511,39 @@ func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.
 		}
 		return result
 	}
+}
+
+func mergeLoopContextText(existing json.RawMessage, feedback string) json.RawMessage {
+	feedback = strings.TrimSpace(feedback)
+	if feedback == "" {
+		return existing
+	}
+	text := "Recent interaction feedback:\n" + feedback
+	if base := strings.TrimSpace(summarizeLoopContext(existing)); base != "" {
+		text = base + "\n\n" + text
+	}
+	raw, err := json.Marshal(map[string]string{"text": text})
+	if err != nil {
+		return existing
+	}
+	return raw
+}
+
+func summarizeLoopContext(raw json.RawMessage) string {
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return asString
+	}
+	var asMap map[string]interface{}
+	if err := json.Unmarshal(raw, &asMap); err == nil {
+		if s, ok := asMap["text"].(string); ok && s != "" {
+			return s
+		}
+		if s, ok := asMap["summary"].(string); ok && s != "" {
+			return s
+		}
+	}
+	return string(raw)
 }
 
 func parseTakeoverOutcome(res *tool.Result) (outcome string, note string) {

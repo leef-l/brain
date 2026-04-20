@@ -209,7 +209,7 @@ func TestRunFallbackAgentLoop_ContinuesAfterHumanResume(t *testing.T) {
 
 	h := &browserHandler{}
 	req := &sidecar.ExecuteRequest{Instruction: "登录后台并完成滑块"}
-	got := h.runFallbackAgentLoop(context.Background(), req, reg, "browser prompt", 30, true)
+	got := h.runFallbackAgentLoop(context.Background(), req, reg, "browser prompt", 30, true, "")
 	if got == nil {
 		t.Fatal("runFallbackAgentLoop() = nil")
 	}
@@ -227,6 +227,36 @@ func TestRunFallbackAgentLoop_ContinuesAfterHumanResume(t *testing.T) {
 	}
 }
 
+func TestRunFallbackAgentLoop_PassesRecentInteractionFeedbackIntoContext(t *testing.T) {
+	prev := runBrowserAgentLoop
+	t.Cleanup(func() { runBrowserAgentLoop = prev })
+
+	var gotContext json.RawMessage
+	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ int, extra json.RawMessage) *sidecar.ExecuteResult {
+		gotContext = append(json.RawMessage(nil), extra...)
+		return &sidecar.ExecuteResult{Status: "completed", Summary: "ok", Turns: 1}
+	}
+
+	h := &browserHandler{}
+	req := &sidecar.ExecuteRequest{
+		Instruction: "处理滑块登录",
+		Context:     json.RawMessage(`{"text":"Coordinator context"}`),
+	}
+	feedback := "The last browser.drag did not confirm success."
+	got := h.runFallbackAgentLoop(context.Background(), req, tool.NewMemRegistry(), "browser prompt", 8, false, feedback)
+	if got == nil || got.Status != "completed" {
+		t.Fatalf("runFallbackAgentLoop() = %+v, want completed result", got)
+	}
+
+	text := summarizeLoopContext(gotContext)
+	if !strings.Contains(text, "Coordinator context") {
+		t.Fatalf("merged context = %q, want original coordinator context", text)
+	}
+	if !strings.Contains(text, feedback) {
+		t.Fatalf("merged context = %q, want feedback note", text)
+	}
+}
+
 func TestShouldRequestTakeover_WhenDragPostCheckUnverified(t *testing.T) {
 	plan := &llmPlan{
 		Steps: []plannedStep{
@@ -238,6 +268,29 @@ func TestShouldRequestTakeover_WhenDragPostCheckUnverified(t *testing.T) {
 	}
 	if !shouldRequestTakeover(plan, "Title: Login\nURL: /admin/#/auth/login", post) {
 		t.Fatal("shouldRequestTakeover() = false, want true when drag post-check is unverified")
+	}
+}
+
+func TestFormatDragPostCheckFeedback_IncludesUsefulSignals(t *testing.T) {
+	post := map[string]interface{}{
+		"verified":             false,
+		"source_moved":         true,
+		"movement_distance":    182.5,
+		"distance_to_expected": 24.0,
+		"success_hint":         false,
+		"success_text":         "请按住滑块拖动",
+	}
+	got := formatDragPostCheckFeedback(post)
+	for _, want := range []string{
+		"verified=false",
+		"source_moved=true",
+		"movement_distance=182.5",
+		"distance_to_expected=24.0",
+		"success_text=请按住滑块拖动",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("feedback = %q, want substring %q", got, want)
+		}
 	}
 }
 
