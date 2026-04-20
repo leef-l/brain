@@ -3,6 +3,7 @@ package chat
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -94,6 +95,26 @@ func RunChat(args []string) int {
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 				kernel.WithLearningEngine(kernel.NewLearningEngine()),
 			)
+			// 把 sidecar 反向 RPC 的人工求助请求桥接到 tool 包注入的协调器
+			// (见 RunChat 末尾的 tool.SetHumanTakeoverCoordinator):
+			// sidecar -> kernel reverse RPC -> 这里 -> chat coord -> /resume 解锁。
+			orch.SetHumanTakeoverHandler(func(ctx context.Context, callerKind string, params json.RawMessage) (interface{}, error) {
+				coord := tool.CurrentHumanTakeoverCoordinator()
+				if coord == nil {
+					return tool.HumanTakeoverResponse{
+						Outcome: tool.HumanOutcomeAborted,
+						Note:    "no human coordinator configured in chat host",
+					}, nil
+				}
+				var req tool.HumanTakeoverRequest
+				if err := json.Unmarshal(params, &req); err != nil {
+					return nil, fmt.Errorf("unmarshal HumanTakeoverRequest: %w", err)
+				}
+				if req.BrainKind == "" {
+					req.BrainKind = callerKind
+				}
+				return coord.RequestTakeover(ctx, req), nil
+			})
 		}
 	}
 	defer func() {
@@ -203,6 +224,19 @@ func RunChat(args []string) int {
 
 		select {
 		case <-sigCh:
+			continue
+
+		case ev := <-humanCoord.Events():
+			// 收到 sidecar 反向 RPC 转过来的人工求助事件:先把多行 prompt
+			// frame 擦掉(避免提示被 prompt 覆盖),再把求助内容打到屏幕。
+			DetachPromptFrame(session)
+			switch ev.Kind {
+			case "requested":
+				PrintRequested(ev.Request)
+			case "resolved":
+				PrintResolved(ev.Response)
+			}
+			RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
 			continue
 
 		case req := <-state.ApprovalCh:

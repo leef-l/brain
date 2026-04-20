@@ -377,6 +377,9 @@ func (h *browserHandler) ToolSchemas() []tool.Schema {
 // SetKernelCaller implements sidecar.RichBrainHandler.
 func (h *browserHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	h.caller = caller
+	// 把 sidecar 里 human.request_takeover 的本地 coord 替换成反向 RPC 桥,
+	// 求助信号会一路透传到 kernel 进程的协调器(serve HTTP / chat slash)。
+	tool.SetHumanTakeoverCoordinator(sidecar.NewHumanTakeoverBridge(caller))
 }
 
 func (h *browserHandler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {

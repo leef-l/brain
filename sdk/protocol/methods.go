@@ -107,6 +107,14 @@ const (
 	MethodBrainMetrics = "brain/metrics"
 )
 
+// Human takeover — sidecar→host direction.
+// sidecar 侧的 human.request_takeover 工具通过此方法把求助请求转发给
+// kernel 进程的协调器(serve 走 HTTP,chat 走 ChatHumanCoordinator),
+// 阻塞等待人类 /resume 或 /abort。sidecar 拿到 outcome 后返回给 Agent。
+const (
+	MethodHumanRequestTakeover = "human/request_takeover"
+)
+
 // Observability methods — 20-协议规格.md §10.1 (sidecar→host
 // notifications).
 const (

@@ -83,6 +83,13 @@ func SetHumanTakeoverCoordinator(c HumanTakeoverCoordinator) {
 	takeoverImpl = c
 }
 
+// CurrentHumanTakeoverCoordinator 暴露当前进程已注入的协调器,供
+// kernel 反向 RPC handler 直接访问。nil 表示主机侧没注入(sidecar
+// 会收到 aborted/no_coordinator)。
+func CurrentHumanTakeoverCoordinator() HumanTakeoverCoordinator {
+	return currentTakeover()
+}
+
 func currentTakeover() HumanTakeoverCoordinator {
 	takeoverMu.RLock()
 	defer takeoverMu.RUnlock()
@@ -618,8 +625,16 @@ func (t *HumanRequestTakeoverTool) Execute(ctx context.Context, args json.RawMes
 	// 启动 DOM 事件录制(工厂缺失 → 返回 nil,只记标记)。
 	humanRec := startHumanRecorder(ctx, runID, brainKind, goal, in.URL)
 
-	// 阻塞等待,尊重 ctx 取消
-	resp := coord.RequestTakeover(ctx, req)
+	// 阻塞等待,尊重 ctx 取消 + 可选 timeout_sec。
+	// 0 = 无超时,>0 表示最多等这么久,到点后 ctx.Done 导致 coord 返回
+	// aborted;用户在窗口期内 resume/abort 一切正常。
+	waitCtx := ctx
+	if in.TimeoutSec > 0 {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, time.Duration(in.TimeoutSec)*time.Second)
+		defer cancel()
+	}
+	resp := coord.RequestTakeover(waitCtx, req)
 
 	// 停止录制并落盘(best-effort,不影响 Agent 拿到 outcome)。
 	if humanRec != nil {

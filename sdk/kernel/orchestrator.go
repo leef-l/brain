@@ -152,6 +152,10 @@ type Orchestrator struct {
 	// per-session and idempotent.
 	reverseHandlersRegistered map[protocol.BidirRPC]struct{}
 
+	// humanTakeoverHandler 由上层(cmd/brain)注入,收到 sidecar 反向
+	// RPC 的求助请求时转发给真正的协调器。
+	humanTakeoverHandler HumanTakeoverHandler
+
 	mu sync.Mutex
 }
 
@@ -795,6 +799,32 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 		o.learner.IngestBrainMetrics(metrics)
 		return map[string]string{"status": "ok"}, nil
 	})
+
+	// 人工求助反向 RPC:sidecar 的 human.request_takeover 工具通过
+	// HumanTakeoverBridge 把请求送到这里,我们转给上层注入的 handler
+	// (cmd/brain 在 serve/chat 启动时注入,指向真正的协调器),阻塞等
+	// /resume 或 /abort。未注入时返回 aborted。
+	rpc.Handle(protocol.MethodHumanRequestTakeover, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		handler := o.humanTakeoverHandler
+		if handler == nil {
+			return map[string]string{
+				"outcome": "aborted",
+				"note":    "no human takeover handler registered in host",
+			}, nil
+		}
+		return handler(ctx, string(callerKind), params)
+	})
+}
+
+// HumanTakeoverHandler 由上层(cmd/brain)实现,收到 sidecar 反向 RPC 后
+// 调真正的协调器并返回 {outcome, note}。避免 kernel 直接依赖 sdk/tool。
+type HumanTakeoverHandler func(ctx context.Context, callerKind string, params json.RawMessage) (interface{}, error)
+
+// SetHumanTakeoverHandler 注入 handler。多次调用取最后一次。nil 清空。
+func (o *Orchestrator) SetHumanTakeoverHandler(h HumanTakeoverHandler) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.humanTakeoverHandler = h
 }
 
 // poolRemoveBrain removes a sidecar from the pool (if pool supports it).

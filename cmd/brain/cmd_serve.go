@@ -533,6 +533,7 @@ func runServe(args []string) int {
 	var startupOrch *kernel.Orchestrator
 	if pool != nil {
 		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{})
+		installHumanTakeoverBridge(startupOrch)
 	}
 	runtime.Kernel.ToolRegistry = buildManagedRegistry(cfg, env, "central", func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, startupOrch, env)
@@ -1148,6 +1149,7 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			kernel.WithLearningEngine(mgr.learner),
 			kernel.WithContextEngine(mgr.ctxEngine),
 		)
+		installHumanTakeoverBridge(orch)
 	}
 
 	runReg := buildManagedRegistry(cfg, env, req.Brain, func(reg tool.Registry) {
