@@ -404,7 +404,7 @@ func (p *OpenAIProvider) toResponse(ar *openaiResponse) (*ChatResponse, error) {
 		switch choice.FinishReason {
 		case "stop":
 			resp.StopReason = "end_turn"
-		case "tool_calls":
+		case "tool_calls", "function_call":
 			resp.StopReason = "tool_use"
 		case "length":
 			resp.StopReason = "max_tokens"
@@ -436,6 +436,13 @@ func (p *OpenAIProvider) toResponse(ar *openaiResponse) (*ChatResponse, error) {
 				ToolName:  restoreToolName(tc.Function.Name),
 				Input:     json.RawMessage(tc.Function.Arguments),
 			})
+		}
+
+		// 兼容阿里云 qwen / 其他 OpenAI-compatible 代理:message.tool_calls 非空
+		// 但 finish_reason="stop" 的情况,runner 按 StopReason=="tool_use" 才
+		// dispatch tool,这里强制矫正,避免 tool call 被丢弃。
+		if len(choice.Message.ToolCalls) > 0 && resp.StopReason != "tool_use" {
+			resp.StopReason = "tool_use"
 		}
 	}
 

@@ -478,7 +478,9 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 
 // executeWithPerception implements the two-tier execution strategy.
 func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry) *sidecar.ExecuteResult {
-	diaglog.Logf("browser", "executeWithPerception: instruction=%s caller=%v", req.Instruction, h.caller != nil)
+	diaglog.Logf("browser", "executeWithPerception: instruction=%s caller=%v sensitive=%v slider=%v",
+		req.Instruction, h.caller != nil,
+		isSensitiveFormTask(req.Instruction), hasSliderKeyword(req.Instruction))
 
 	// Step 1: Try pattern_match on current page (if already navigated).
 	// 登录/敏感表单任务跳过 pattern 复用:旧 pattern 可能固化了旧账号密码

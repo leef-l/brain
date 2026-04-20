@@ -751,11 +751,26 @@ Return per-field outcome (matched / not_found / error).`,
 
 func (t *browserFillFormTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input struct {
-		Fields map[string]interface{} `json:"fields"`
-		Submit bool                   `json:"submit"`
+		Fields   map[string]interface{} `json:"fields"`
+		FormData map[string]interface{} `json:"form_data"` // 常见别名
+		Form     map[string]interface{} `json:"form"`      // 常见别名
+		Data     map[string]interface{} `json:"data"`      // 常见别名
+		Submit   bool                   `json:"submit"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return errResult("invalid arguments: %v", err), nil
+	}
+	// 兼容 LLM 常用的别名(form_data / form / data 等都当作 fields 处理)。
+	// 不同模型对同一工具的参数命名有漂移,我们宽容接受避免卡 "fields is required"
+	// 然后整个 plan fallthrough 到 agent loop 浪费 turn 预算。
+	if len(input.Fields) == 0 {
+		if len(input.FormData) > 0 {
+			input.Fields = input.FormData
+		} else if len(input.Form) > 0 {
+			input.Fields = input.Form
+		} else if len(input.Data) > 0 {
+			input.Fields = input.Data
+		}
 	}
 	if len(input.Fields) == 0 {
 		return errResult("fields is required and must not be empty"), nil

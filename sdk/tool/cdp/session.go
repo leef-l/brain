@@ -122,12 +122,16 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 		"--metrics-recording-only",
 		"--safebrowsing-disable-auto-update",
 		"--window-size=1920,1080",
-		// 反爬规避:禁用 AutomationControlled 特性,不再在 UA-CH 里暴露自动化标识。
-		"--disable-blink-features=AutomationControlled",
 		// 隐藏 Chrome 自动化信息横幅("您使用的是不受支持的命令行标记...")。
 		"--disable-infobars",
-		"--no-default-browser-check",
 		"about:blank",
+	}
+	// 反爬规避:只在 headless 模式下加 --disable-blink-features=Automation
+	// Controlled。Chrome 新版(110+)在有头模式下会把这个标记当"不受支持",
+	// 反而在顶部弹警告横幅挤占页面。headless 场景看不到 UI 没这问题,
+	// 且反爬价值最大,继续保留。
+	if headless {
+		args = append(args[:len(args)-1], "--disable-blink-features=AutomationControlled", "about:blank")
 	}
 	// 只有在 Linux 服务器(无桌面) / headless 场景下才用 --no-sandbox。
 	// Windows/macOS 有头场景加上它会触发可见的警告横幅。
