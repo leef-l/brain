@@ -958,7 +958,7 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 	if err != nil {
 		return errResult("from: %v", err), nil
 	}
-	toX, toY, _, err := resolveDragDestination(ctx, sess, input, fromGeom)
+	toX, toY, toGeom, err := resolveDragDestination(ctx, sess, input, fromGeom)
 	if err != nil {
 		return errResult("to: %v", err), nil
 	}
@@ -1032,9 +1032,11 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		"type": "mouseReleased", "x": toX, "y": toY, "button": "left", "clickCount": 1,
 	}, nil)
 
+	postCheck := inspectPostDragState(ctx, sess, input, fromGeom, toGeom, toX, toY)
+
 	return okResult(map[string]interface{}{
 		"status": "ok", "from": [2]float64{fromX, fromY}, "to": [2]float64{toX, toY},
-		"human": human, "steps": steps,
+		"human": human, "steps": steps, "post_check": postCheck,
 	}), nil
 }
 
@@ -1938,6 +1940,99 @@ func computeSliderDestination(fromGeom, toGeom *elementGeometry) (float64, float
 		}
 	}
 	return x, y, nil
+}
+
+func inspectPostDragState(ctx context.Context, sess *cdp.BrowserSession, input browserDragInput, fromGeom, toGeom *elementGeometry, expectedX, expectedY float64) map[string]interface{} {
+	_ = toGeom
+	check := map[string]interface{}{
+		"verified":             false,
+		"source_moved":         false,
+		"movement_distance":    0.0,
+		"distance_to_expected": -1.0,
+		"success_hint":         false,
+		"success_text":         "",
+	}
+
+	if fromGeom == nil {
+		return check
+	}
+
+	// 给前端一点时间提交拖动后的状态更新。
+	time.Sleep(180 * time.Millisecond)
+
+	currentGeom, ok := rereadDragSourceGeometry(ctx, sess, input)
+	if ok {
+		movement := math.Hypot(currentGeom.CenterX-fromGeom.CenterX, currentGeom.CenterY-fromGeom.CenterY)
+		distanceToExpected := math.Hypot(currentGeom.CenterX-expectedX, currentGeom.CenterY-expectedY)
+		check["movement_distance"] = movement
+		check["distance_to_expected"] = distanceToExpected
+		sourceMoved := movement >= math.Max(4, fromGeom.Width*0.2)
+		check["source_moved"] = sourceMoved
+		if sourceMoved && distanceToExpected <= math.Max(12, fromGeom.Width) {
+			check["verified"] = true
+		}
+	}
+
+	if okHint, text := detectDragSuccessHint(ctx, sess); okHint {
+		check["success_hint"] = true
+		check["success_text"] = text
+		check["verified"] = true
+	}
+
+	return check
+}
+
+func rereadDragSourceGeometry(ctx context.Context, sess *cdp.BrowserSession, input browserDragInput) (*elementGeometry, bool) {
+	switch {
+	case input.FromID > 0:
+		geom, _, err := resolveElementGeometry(ctx, sess, input.FromID, "")
+		if err == nil {
+			return &geom, true
+		}
+	case strings.TrimSpace(input.FromSelector) != "":
+		geom, _, err := resolveElementGeometry(ctx, sess, 0, input.FromSelector)
+		if err == nil {
+			return &geom, true
+		}
+	}
+	return nil, false
+}
+
+func detectDragSuccessHint(ctx context.Context, sess *cdp.BrowserSession) (bool, string) {
+	js := `(function(){
+		var text = (document.body && document.body.innerText ? document.body.innerText : "").replace(/\s+/g, " ").trim();
+		var hints = ["验证通过", "验证成功", "success", "verified", "passed"];
+		for (var i = 0; i < hints.length; i++) {
+			var idx = text.toLowerCase().indexOf(hints[i].toLowerCase());
+			if (idx >= 0) {
+				return JSON.stringify({ok:true, text:text.slice(Math.max(0, idx - 20), Math.min(text.length, idx + 40))});
+			}
+		}
+		return JSON.stringify({ok:false, text:""});
+	})()`
+	var result struct {
+		Result struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"result"`
+	}
+	if err := sess.Exec(ctx, "Runtime.evaluate", map[string]interface{}{
+		"expression":    js,
+		"returnByValue": true,
+	}, &result); err != nil {
+		return false, ""
+	}
+	var s string
+	if err := json.Unmarshal(result.Result.Value, &s); err != nil {
+		return false, ""
+	}
+	var payload struct {
+		OK   bool   `json:"ok"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(s), &payload); err != nil {
+		return false, ""
+	}
+	return payload.OK, payload.Text
 }
 
 // focusElement focuses a DOM element by selector.

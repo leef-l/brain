@@ -221,6 +221,17 @@ var (
       "items": { "type": "number" },
       "minItems": 2,
       "maxItems": 2
+    },
+    "post_check": {
+      "type": "object",
+      "properties": {
+        "verified": { "type": "boolean" },
+        "source_moved": { "type": "boolean" },
+        "movement_distance": { "type": "number" },
+        "distance_to_expected": { "type": "number" },
+        "success_hint": { "type": "boolean" },
+        "success_text": { "type": "string" }
+      }
     }
   },
   "required": ["status", "from", "to"]

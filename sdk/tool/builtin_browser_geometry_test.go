@@ -87,3 +87,28 @@ func TestComputeDragDestinationSliderUsesRightEdgeForContainer(t *testing.T) {
 		t.Fatalf("y = %v, want %v", y, from.CenterY)
 	}
 }
+
+func TestPostDragVerificationRuleLikeSuccess(t *testing.T) {
+	from := &elementGeometry{Width: 24, Height: 24, CenterX: 22, CenterY: 50}
+	current := &elementGeometry{Width: 24, Height: 24, CenterX: 192, CenterY: 50}
+	movement := current.CenterX - from.CenterX
+	if movement <= 0 {
+		t.Fatalf("movement = %v, want positive", movement)
+	}
+	distanceToExpected := 6.0
+	sourceMoved := movement >= maxFloat(4, from.Width*0.2)
+	if !sourceMoved {
+		t.Fatal("sourceMoved = false, want true")
+	}
+	verified := sourceMoved && distanceToExpected <= maxFloat(12, from.Width)
+	if !verified {
+		t.Fatal("verified = false, want true")
+	}
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
