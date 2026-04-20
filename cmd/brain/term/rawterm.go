@@ -12,7 +12,7 @@ import (
 type InputAction int
 
 const (
-	ActionEnter  InputAction = iota
+	ActionEnter InputAction = iota
 	ActionQueue
 	ActionCycle
 	ActionCancel
@@ -34,11 +34,12 @@ type LineEditor struct {
 }
 
 type LineReadSession struct {
-	Kb      *Keybindings
-	Ed      *LineEditor
-	Pending []byte
-	Pasting bool
-	History []string
+	Kb       *Keybindings
+	Ed       *LineEditor
+	Pending  []byte
+	Pasting  bool
+	MuteEcho bool
+	History  []string
 
 	HistoryIndex int
 
@@ -123,12 +124,12 @@ func (s *LineReadSession) Consume(chunk []byte) (line string, action InputAction
 		}
 
 		if ch == cycleCh {
-			RedrawClear(s.Ed)
+			s.redrawClear()
 			return "", ActionCycle, true, nil
 		}
 		if cancelCh != 0x03 && ch == cancelCh {
 			line := s.Ed.String()
-			RedrawClear(s.Ed)
+			s.redrawClear()
 			return line, ActionCancel, true, nil
 		}
 		if ch == quitCh {
@@ -157,7 +158,7 @@ func (s *LineReadSession) Consume(chunk []byte) (line string, action InputAction
 			s.LeaveHistoryBrowse()
 			w := s.Ed.Backspace()
 			if w > 0 {
-				RedrawFull(s.Ed)
+				s.redrawFull()
 			}
 			data = data[1:]
 			continue
@@ -183,7 +184,7 @@ func (s *LineReadSession) Consume(chunk []byte) (line string, action InputAction
 			if s.Ed.Pos > 0 {
 				s.Ed.Runes = s.Ed.Runes[s.Ed.Pos:]
 				s.Ed.Pos = 0
-				RedrawFull(s.Ed)
+				s.redrawFull()
 			}
 			data = data[1:]
 			continue
@@ -192,7 +193,7 @@ func (s *LineReadSession) Consume(chunk []byte) (line string, action InputAction
 			s.LeaveHistoryBrowse()
 			if s.Ed.Pos < len(s.Ed.Runes) {
 				s.Ed.Runes = s.Ed.Runes[:s.Ed.Pos]
-				RedrawFull(s.Ed)
+				s.redrawFull()
 			}
 			data = data[1:]
 			continue
@@ -221,14 +222,16 @@ func (s *LineReadSession) Consume(chunk []byte) (line string, action InputAction
 			// fast path:追加一个字符,光标 == 末尾。追加后若跨越终端
 			// 宽度,同步更新 LastEndRow 和 LastCursorRow(它们相等,
 			// 因为光标就在末尾),下次清屏才能找到真正的 prompt 首行。
-			fmt.Print(string(r))
+			if !s.MuteEcho {
+				fmt.Print(string(r))
+			}
 			cols := termCols()
 			totalW := s.Ed.PromptWidth + s.Ed.DisplayWidthRange(0, len(s.Ed.Runes))
 			row := totalW / cols
 			s.Ed.LastEndRow = row
 			s.Ed.LastCursorRow = row
 		} else {
-			RedrawFull(s.Ed)
+			s.redrawFull()
 		}
 		data = data[size:]
 	}
@@ -285,6 +288,20 @@ func (s *LineReadSession) BrowseHistoryNext() bool {
 func (s *LineReadSession) ReplaceInput(text string) {
 	s.Ed.Runes = []rune(text)
 	s.Ed.Pos = len(s.Ed.Runes)
+	s.redrawFull()
+}
+
+func (s *LineReadSession) redrawClear() {
+	if s == nil || s.MuteEcho {
+		return
+	}
+	RedrawClear(s.Ed)
+}
+
+func (s *LineReadSession) redrawFull() {
+	if s == nil || s.MuteEcho {
+		return
+	}
 	RedrawFull(s.Ed)
 }
 
@@ -533,11 +550,11 @@ func termCols() int {
 //     清到 LastEndRow,否则末尾行及其后的旧内容残留,就是"重影"。
 //
 // 步骤:
-//   1. 按 LastCursorRow 上移到 prompt 起始行(\033[NA 仅用于上移到我们
-//      确知已经打出过内容的行,不会越界到 prompt 之前)。
-//   2. \r + \033[K 清 prompt 起始行。
-//   3. 对剩下的 LastEndRow 行,\n + \033[K 逐行往下清。
-//   4. \033[NA 原路回到 prompt 起始行首,作为新内容起点。
+//  1. 按 LastCursorRow 上移到 prompt 起始行(\033[NA 仅用于上移到我们
+//     确知已经打出过内容的行,不会越界到 prompt 之前)。
+//  2. \r + \033[K 清 prompt 起始行。
+//  3. 对剩下的 LastEndRow 行,\n + \033[K 逐行往下清。
+//  4. \033[NA 原路回到 prompt 起始行首,作为新内容起点。
 func clearCurrentAndBelow(ed *LineEditor) {
 	if ed.LastCursorRow > 0 {
 		fmt.Printf("\033[%dA", ed.LastCursorRow)

@@ -228,6 +228,7 @@ func RunChat(args []string) int {
 	session := term.NewLineReadSession(kb, 0)
 	session.History = LoadHistory()
 	session.HistoryIndex = len(session.History)
+	session.MuteEcho = false
 	promptHeaderLines := func() []string {
 		currentInput := strings.TrimSpace(session.Editor().String())
 		completions := SlashCompletionLines(currentInput)
@@ -245,6 +246,7 @@ func RunChat(args []string) int {
 				ResetStreamClock()
 				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, queued, resultCh, progressCh)
 				running = true
+				session.MuteEcho = true
 				// running 期间不画 prompt,让事件实时 Println。
 			}
 		}
@@ -277,7 +279,9 @@ func RunChat(args []string) int {
 
 		case rr := <-resultCh:
 			running = false
+			session.MuteEcho = false
 			HandleChatRunResult(state, providerSession.Provider, *brainID, *maxTurns, session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), &running, rr, resultCh, progressCh, activity, stdinCh, stdinErrCh)
+			session.MuteEcho = running
 			continue
 
 		case ev := <-progressCh:
@@ -352,6 +356,7 @@ func RunChat(args []string) int {
 						fmt.Println("  \033[1;33m! Cancelled\033[0m")
 						fmt.Println()
 						running = false
+						session.MuteEcho = false
 						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
 					} else {
 						resetPromptInput(session)
@@ -375,6 +380,7 @@ func RunChat(args []string) int {
 					fmt.Println("  \033[1;33m! Cancelled\033[0m")
 					fmt.Println()
 					running = false
+					session.MuteEcho = false
 					RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
 				} else if input != "" {
 					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
@@ -432,6 +438,7 @@ func RunChat(args []string) int {
 				ResetStreamClock()
 				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, input, resultCh, progressCh)
 				running = true
+				session.MuteEcho = true
 				// running 期间不再画 prompt frame:让 LLM 流式输出、tool 调用、
 				// takeover 提示等事件实时追加到屏幕底部,不被 frame 清屏干扰。
 				// HandleChatRunResult 里 run 结束会 RenderPromptFrame 重画一个
