@@ -898,6 +898,20 @@ func (t *browserHoverTool) Execute(ctx context.Context, args json.RawMessage) (*
 
 type browserDragTool struct{ holder *browserSessionHolder }
 
+type browserDragInput struct {
+	FromID       int      `json:"from_id"`
+	FromSelector string   `json:"from_selector"`
+	ToID         int      `json:"to_id"`
+	ToSelector   string   `json:"to_selector"`
+	FromX        *float64 `json:"from_x"`
+	FromY        *float64 `json:"from_y"`
+	ToX          *float64 `json:"to_x"`
+	ToY          *float64 `json:"to_y"`
+	Strategy     string   `json:"strategy"`
+	Steps        int      `json:"steps"`
+	Human        *bool    `json:"human"`
+}
+
 func (t *browserDragTool) Name() string { return "browser.drag" }
 func (t *browserDragTool) Risk() Risk   { return RiskMedium }
 func (t *browserDragTool) Schema() Schema {
@@ -930,19 +944,7 @@ func (t *browserDragTool) Schema() Schema {
 }
 
 func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
-	var input struct {
-		FromID       int      `json:"from_id"`
-		FromSelector string   `json:"from_selector"`
-		ToID         int      `json:"to_id"`
-		ToSelector   string   `json:"to_selector"`
-		FromX        *float64 `json:"from_x"`
-		FromY        *float64 `json:"from_y"`
-		ToX          *float64 `json:"to_x"`
-		ToY          *float64 `json:"to_y"`
-		Strategy     string   `json:"strategy"`
-		Steps        int      `json:"steps"`
-		Human        *bool    `json:"human"`
-	}
+	var input browserDragInput
 	if err := json.Unmarshal(args, &input); err != nil {
 		return errResult("invalid arguments: %v", err), nil
 	}
@@ -1758,6 +1760,78 @@ func normalizeElementBox(box [4]float64) elementGeometry {
 	}
 }
 
+func inferSliderTrackGeometry(ctx context.Context, sess *cdp.BrowserSession, id int, selector string) (*elementGeometry, error) {
+	sourceSelector := ""
+	switch {
+	case id > 0:
+		sourceSelector = fmt.Sprintf(`[data-brain-id="%d"]`, id)
+	case strings.TrimSpace(selector) != "":
+		sourceSelector = selector
+	default:
+		return nil, fmt.Errorf("cannot infer target without source id or selector")
+	}
+
+	js := fmt.Sprintf(`(function(){
+		var source = document.querySelector(%q);
+		if(!source) return null;
+		var src = source.getBoundingClientRect();
+		var candidates = [];
+		function pushCandidate(el, scoreBase) {
+			if (!el || !el.getBoundingClientRect) return;
+			var r = el.getBoundingClientRect();
+			if (r.width <= 0 || r.height <= 0) return;
+			if (r.width <= src.width * 1.5) return;
+			var verticalGap = Math.abs((src.y + src.height/2) - (r.y + r.height/2));
+			if (verticalGap > Math.max(src.height, r.height) * 1.5) return;
+			var score = scoreBase + r.width - verticalGap * 2 - Math.abs(r.height - src.height);
+			candidates.push({x:r.x,y:r.y,w:r.width,h:r.height,score:score});
+		}
+		var current = source;
+		for (var depth = 0; depth < 5 && current; depth++) {
+			var parent = current.parentElement;
+			if (!parent) break;
+			pushCandidate(parent, 100 - depth * 10);
+			var children = parent.children || [];
+			for (var i = 0; i < children.length; i++) {
+				var child = children[i];
+				if (child === current) continue;
+				pushCandidate(child, 60 - depth * 10);
+			}
+			current = parent;
+		}
+		if (!candidates.length) return null;
+		candidates.sort(function(a,b){ return b.score - a.score; });
+		return JSON.stringify(candidates[0]);
+	})()`, sourceSelector)
+
+	var result struct {
+		Result struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"result"`
+	}
+	if err := sess.Exec(ctx, "Runtime.evaluate", map[string]interface{}{
+		"expression":    js,
+		"returnByValue": true,
+	}, &result); err != nil {
+		return nil, err
+	}
+	var s string
+	if err := json.Unmarshal(result.Result.Value, &s); err != nil || strings.TrimSpace(s) == "" {
+		return nil, fmt.Errorf("could not infer slider target geometry from source")
+	}
+	var box struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+		W float64 `json:"w"`
+		H float64 `json:"h"`
+	}
+	if err := json.Unmarshal([]byte(s), &box); err != nil {
+		return nil, fmt.Errorf("parse inferred target geometry: %v", err)
+	}
+	geom := normalizeElementBox([4]float64{box.X, box.Y, box.W, box.H})
+	return &geom, nil
+}
+
 func resolveDragPoint(ctx context.Context, sess *cdp.BrowserSession, id int, selector string, x, y *float64) (float64, float64, *elementGeometry, error) {
 	if x != nil && y != nil {
 		return *x, *y, nil, nil
@@ -1772,35 +1846,39 @@ func resolveDragPoint(ctx context.Context, sess *cdp.BrowserSession, id int, sel
 	return 0, 0, nil, fmt.Errorf("provide id, selector, or both x,y coordinates")
 }
 
-func resolveDragDestination(ctx context.Context, sess *cdp.BrowserSession, input struct {
-	FromID       int      `json:"from_id"`
-	FromSelector string   `json:"from_selector"`
-	ToID         int      `json:"to_id"`
-	ToSelector   string   `json:"to_selector"`
-	FromX        *float64 `json:"from_x"`
-	FromY        *float64 `json:"from_y"`
-	ToX          *float64 `json:"to_x"`
-	ToY          *float64 `json:"to_y"`
-	Strategy     string   `json:"strategy"`
-	Steps        int      `json:"steps"`
-	Human        *bool    `json:"human"`
-}, fromGeom *elementGeometry) (float64, float64, *elementGeometry, error) {
+func resolveDragDestination(ctx context.Context, sess *cdp.BrowserSession, input browserDragInput, fromGeom *elementGeometry) (float64, float64, *elementGeometry, error) {
 	if input.ToX != nil && input.ToY != nil {
 		return *input.ToX, *input.ToY, nil, nil
-	}
-	toGeom, _, err := resolveElementGeometry(ctx, sess, input.ToID, input.ToSelector)
-	if err != nil {
-		return 0, 0, nil, err
 	}
 	strategy := strings.TrimSpace(strings.ToLower(input.Strategy))
 	if strategy == "" {
 		strategy = "auto"
 	}
-	x, y, err := computeDragDestination(strategy, fromGeom, &toGeom)
+	var (
+		toGeom *elementGeometry
+		err    error
+	)
+	if input.ToID > 0 || strings.TrimSpace(input.ToSelector) != "" {
+		var geom elementGeometry
+		geom, _, err = resolveElementGeometry(ctx, sess, input.ToID, input.ToSelector)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		toGeom = &geom
+	} else if strategy == "auto" || strategy == "slider" {
+		toGeom, err = inferSliderTrackGeometry(ctx, sess, input.FromID, input.FromSelector)
+		if err != nil && strategy == "slider" {
+			return 0, 0, nil, err
+		}
+	}
+	if toGeom == nil {
+		return 0, 0, nil, fmt.Errorf("provide to target (id, selector, or x,y), or use strategy=auto/slider with a draggable source element")
+	}
+	x, y, err := computeDragDestination(strategy, fromGeom, toGeom)
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	return x, y, &toGeom, nil
+	return x, y, toGeom, nil
 }
 
 func computeDragDestination(strategy string, fromGeom, toGeom *elementGeometry) (float64, float64, error) {

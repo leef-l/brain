@@ -64,3 +64,26 @@ func TestComputeDragDestinationCenter(t *testing.T) {
 		t.Fatalf("got (%v,%v), want (90,45)", x, y)
 	}
 }
+
+func TestLooksLikeSliderDragAllowsTallerContainerTarget(t *testing.T) {
+	from := &elementGeometry{Width: 24, Height: 24, CenterY: 50}
+	to := &elementGeometry{Left: 10, Top: 20, Right: 210, Bottom: 80, Width: 200, Height: 60, CenterY: 50}
+	if !looksLikeSliderDrag(from, to) {
+		t.Fatal("looksLikeSliderDrag() = false, want true for container-like slider target")
+	}
+}
+
+func TestComputeDragDestinationSliderUsesRightEdgeForContainer(t *testing.T) {
+	from := &elementGeometry{Width: 24, Height: 24, CenterY: 50}
+	to := &elementGeometry{Left: 10, Top: 20, Right: 210, Bottom: 80, Width: 200, Height: 60, CenterY: 50}
+	x, y, err := computeDragDestination("slider", from, to)
+	if err != nil {
+		t.Fatalf("computeDragDestination() err = %v", err)
+	}
+	if x <= 180 {
+		t.Fatalf("x = %v, want near right edge of container target", x)
+	}
+	if y != from.CenterY {
+		t.Fatalf("y = %v, want %v", y, from.CenterY)
+	}
+}
