@@ -29,7 +29,7 @@ func (t staticResultTool) Execute(context.Context, json.RawMessage) (*tool.Resul
 	return t.result, nil
 }
 
-func TestNewBrowserHandler_AppliesDelegateToolPolicy(t *testing.T) {
+func TestNewBrowserHandler_KeepsFullBrowserToolset(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	data := `{
   "tool_profiles": {
@@ -48,8 +48,8 @@ func TestNewBrowserHandler_AppliesDelegateToolPolicy(t *testing.T) {
 	t.Setenv("BRAIN_CONFIG", configPath)
 
 	h := newBrowserHandler(nil)
-	if _, ok := h.registry.Lookup("browser.eval"); ok {
-		t.Fatalf("browser.eval should be filtered out")
+	if _, ok := h.registry.Lookup("browser.eval"); !ok {
+		t.Fatalf("browser.eval should remain available")
 	}
 	if _, ok := h.registry.Lookup("browser.open"); !ok {
 		t.Fatalf("browser.open should remain available")
@@ -58,7 +58,7 @@ func TestNewBrowserHandler_AppliesDelegateToolPolicy(t *testing.T) {
 		t.Fatalf("browser.drag should remain available for slider CAPTCHA flows")
 	}
 	if _, ok := h.registry.Lookup("human.request_takeover"); !ok {
-		t.Fatalf("human.request_takeover should remain available even when delegate.browser only includes browser.*")
+		t.Fatalf("human.request_takeover should remain available")
 	}
 }
 

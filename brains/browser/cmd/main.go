@@ -40,7 +40,6 @@ import (
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/tool/cdp"
 	"github.com/leef-l/brain/sdk/toolguard"
-	"github.com/leef-l/brain/sdk/toolpolicy"
 )
 
 const envBrainDBPath = "BRAIN_DB_PATH"
@@ -356,12 +355,6 @@ func newBrowserHandler(reloader *browserRuntimeReloader) *browserHandler {
 		reg.Register(t)
 	}
 	reg.Register(tool.NewNoteTool("browser"))
-
-	if cfg, err := toolpolicy.Load(""); err != nil {
-		fmt.Fprintf(os.Stderr, "brain-browser: load tool policy: %v\n", err)
-	} else {
-		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindBrowser))...)
-	}
 	ensureCriticalBrowserTools(reg, browserTools)
 	return &browserHandler{
 		registry:     reg,
@@ -1531,12 +1524,6 @@ func (h *browserHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (too
 		reg.Register(toolguard.WrapReadPolicy(tool.WrapSandbox(t, bounds.Sandbox), bounds.FilePolicy))
 	}
 	reg.Register(tool.NewNoteTool("browser"))
-
-	if cfg, err := toolpolicy.Load(""); err != nil {
-		fmt.Fprintf(os.Stderr, "brain-browser: load tool policy: %v\n", err)
-	} else {
-		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindBrowser))...)
-	}
 	ensureCriticalBrowserTools(reg, h.browserTools)
 	return reg, nil
 }

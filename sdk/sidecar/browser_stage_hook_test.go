@@ -60,24 +60,23 @@ func hookNameSet(t *testing.T, ctx context.Context, reg tool.Registry) map[strin
 }
 
 func TestBrowserStageHookFirstTurnNewPage(t *testing.T) {
-	// No recorder bound → no signals → new_page stage.
+	// No recorder bound → no signals → new_page stage, but tools remain full-set.
 	reg := buildStubBrowserRegistry()
 	state := hookState(t, context.Background(), reg)
 	names := map[string]bool{}
 	for _, tl := range state.Tools {
 		names[tl.Name] = true
 	}
-	if !names["browser.snapshot"] {
-		t.Errorf("new_page should include browser.snapshot; got %v", names)
+	for _, must := range []string{
+		"browser.snapshot", "browser.drag", "browser.visual_inspect",
+		"browser.eval", "human.request_takeover",
+	} {
+		if !names[must] {
+			t.Errorf("full toolset should include %s; got %v", must, names)
+		}
 	}
-	if !names["browser.drag"] {
-		t.Errorf("new_page should include browser.drag; got %v", names)
-	}
-	if !names["human.request_takeover"] {
-		t.Errorf("new_page should include human.request_takeover; got %v", names)
-	}
-	if names["browser.visual_inspect"] {
-		t.Errorf("new_page should NOT include browser.visual_inspect; got %v", names)
+	if len(names) != len(reg.List()) {
+		t.Fatalf("tool count = %d, want %d", len(names), len(reg.List()))
 	}
 	if state.ToolChoice != "browser.open" {
 		t.Fatalf("first browser turn tool_choice=%q, want browser.open", state.ToolChoice)
@@ -92,14 +91,13 @@ func TestBrowserStageHookHighScoreKnownFlow(t *testing.T) {
 	tool.RecordPatternMatchScore(ctx, 0.9)
 
 	names := hookNameSet(t, ctx, reg)
-	if !names["browser.pattern_match"] || !names["browser.pattern_exec"] {
-		t.Errorf("known_flow should keep pattern_* tools; got %v", names)
-	}
-	if !names["browser.drag"] || !names["human.request_takeover"] {
-		t.Errorf("known_flow should keep drag + takeover; got %v", names)
-	}
-	if names["browser.sitemap"] {
-		t.Errorf("known_flow profile should drop browser.sitemap; got %v", names)
+	for _, must := range []string{
+		"browser.pattern_match", "browser.pattern_exec", "browser.drag",
+		"human.request_takeover", "browser.sitemap",
+	} {
+		if !names[must] {
+			t.Errorf("known_flow should still expose %s; got %v", must, names)
+		}
 	}
 }
 
@@ -113,15 +111,17 @@ func TestBrowserStageHookConsecutiveErrorsFallback(t *testing.T) {
 	tool.RecordTurnOutcome(ctx, "error")
 
 	names := hookNameSet(t, ctx, reg)
-	if !names["browser.eval"] || !names["browser.visual_inspect"] {
-		t.Errorf("fallback should open eval + visual_inspect; got %v", names)
-	}
-	if !names["browser.drag"] || !names["human.request_takeover"] {
-		t.Errorf("fallback should keep drag + takeover; got %v", names)
+	for _, must := range []string{
+		"browser.eval", "browser.visual_inspect", "browser.drag",
+		"human.request_takeover", "browser.sitemap",
+	} {
+		if !names[must] {
+			t.Errorf("fallback should still expose %s; got %v", must, names)
+		}
 	}
 }
 
-func TestBrowserStageHookRebuildsTurnRegistry(t *testing.T) {
+func TestBrowserStageHookKeepsFullTurnRegistry(t *testing.T) {
 	reg := buildStubBrowserRegistry()
 	ctx := context.Background()
 	tool.BindRecorder(ctx, "r4", "browser", "demo")
@@ -132,14 +132,16 @@ func TestBrowserStageHookRebuildsTurnRegistry(t *testing.T) {
 	if state.Registry == nil {
 		t.Fatal("expected turn registry override")
 	}
-	if _, ok := state.Registry.Lookup("browser.pattern_exec"); !ok {
-		t.Fatalf("known_flow turn registry should keep browser.pattern_exec")
-	}
-	if _, ok := state.Registry.Lookup("browser.sitemap"); ok {
-		t.Fatalf("known_flow turn registry should drop browser.sitemap")
+	for _, original := range reg.List() {
+		if _, ok := state.Registry.Lookup(original.Name()); !ok {
+			t.Fatalf("turn registry missing %s", original.Name())
+		}
 	}
 	if len(state.Registry.List()) != len(state.Tools) {
 		t.Fatalf("turn registry/schema mismatch: registry=%d tools=%d", len(state.Registry.List()), len(state.Tools))
+	}
+	if len(state.Registry.List()) != len(reg.List()) {
+		t.Fatalf("turn registry count = %d, want %d", len(state.Registry.List()), len(reg.List()))
 	}
 }
 
@@ -163,7 +165,7 @@ func TestBrowserStageHookStickyOnEmptyDecision(t *testing.T) {
 	}
 
 	// Turn 2: mid-score (0.5) → decider returns "" (keep previous). Hook
-	// should reuse lastStage=known_flow, yielding the same filtered set.
+	// should reuse lastStage=known_flow, but tool set remains the same full set.
 	tool.RecordPatternMatchScore(ctx, 0.5)
 	tool.RecordTurnOutcome(ctx, "ok")
 	second, _ := hook(ctx, &loop.Run{}, 2)

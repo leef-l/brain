@@ -1830,32 +1830,36 @@ func marshalToolOutput(output json.RawMessage) json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, escaped))
 }
 
-// newBrowserStageHook 返回一个 loop.PreTurnStateHook,它按 P3.5 规则在每 turn 前
-// 自动决定 BrowserStage,并通过 AdaptivePolicy.Evaluate 重建本轮 registry。
+// newBrowserStageHook 返回一个 loop.PreTurnStateHook。它仍按 P3.5 规则在每
+// turn 前自动决定 BrowserStage,但不再据此裁剪工具集。
 //
-// 触发输入来自 SequenceRecorder 的三条信号:
+// 浏览器大脑必须始终拥有完整 browser.* 工具集;否则像滑块验证码、拖拽、
+// 视觉检查这类能力会在某些 turn 被“按阶段隐藏”,导致模型误判为工具不存在。
+// 因此 stage 现在只用于轻量引导(例如首轮优先 browser.open),不再影响
+// schema 暴露面和真实 dispatch 面。
+//
+// 触发输入仍来自 SequenceRecorder 的三条信号:
 //   - 最近 pattern_match top score(browser.pattern_match 写入)
 //   - 最近 turn outcome 窗口("error" 由 stderrToolObserver 在非 pattern_exec
 //     工具失败时写入;pattern_exec 自身在执行器里写)
 //   - PendingApprovalClass(保留口子,当前 hook 不预判下一步动作 class,
 //     所以恒为 "")
 //
-// 决策返回空字符串("保持上一轮")时,hook 沿用前一轮缓存的 stage 继续过滤,
-// 避免抖动。第一轮没有上一轮——按 DecideBrowserStage 的规则 4:无 pattern_match
-// 数据 → new_page。
-//
-// base registry 不变;hook 每轮在其上调用 AdaptivePolicy.Evaluate 生成一份
-// 过滤后的 turn-scoped registry,让 schema 暴露面和真实 dispatch 面一致。
+// 决策返回空字符串("保持上一轮")时,hook 沿用前一轮缓存的 stage,避免
+// tool_choice 在边界分数附近抖动。第一轮没有上一轮——按
+// DecideBrowserStage 的规则 4:无 pattern_match 数据 → new_page。
 func newBrowserStageHook(registry tool.Registry) func(ctx context.Context, run *loop.Run, turnIndex int) (*loop.PreTurnState, error) {
-	// profiles + policy 预构好一份,避免每 turn 重建。
-	cfg := &toolpolicy.Config{}
-	toolpolicy.MergeBrowserStageProfiles(cfg)
-	policy := toolpolicy.NewAdaptivePolicy(cfg)
-
-	// scope 是 run.browser.<stage>,对应 DefaultBrowserStageProfiles 的 active_tools
-	// 绑定(即 run.browser.new_page → browser_new_page profile)。
 	// Runner calls PreTurnStateHook serially — no mutex needed.
 	lastStage := ""
+	tools := make([]llm.ToolSchema, 0, len(registry.List()))
+	for _, t := range registry.List() {
+		s := t.Schema()
+		tools = append(tools, llm.ToolSchema{
+			Name:        s.Name,
+			Description: s.Description,
+			InputSchema: s.InputSchema,
+		})
+	}
 
 	return func(ctx context.Context, _ *loop.Run, turnIndex int) (*loop.PreTurnState, error) {
 		in := toolpolicy.DecisionInput{
@@ -1875,27 +1879,9 @@ func newBrowserStageHook(registry tool.Registry) func(ctx context.Context, run *
 		}
 		lastStage = stage
 
-		filtered := policy.Evaluate(toolpolicy.EvalRequest{
-			Mode:         "run",
-			BrainKind:    "browser",
-			BrowserStage: stage,
-		}, registry)
-		if filtered == nil {
-			return nil, nil
-		}
-
-		tools := make([]llm.ToolSchema, 0, len(filtered.List()))
-		for _, t := range filtered.List() {
-			s := t.Schema()
-			tools = append(tools, llm.ToolSchema{
-				Name:        s.Name,
-				Description: s.Description,
-				InputSchema: s.InputSchema,
-			})
-		}
 		return &loop.PreTurnState{
 			Tools:      tools,
-			Registry:   filtered,
+			Registry:   registry,
 			ToolChoice: browserStageToolChoice(stage, turnIndex),
 		}, nil
 	}
