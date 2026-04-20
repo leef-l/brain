@@ -4,11 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/tool/cdp"
+)
+
+// 包级别别名避免和其他文件冲突。
+var (
+	osGetenv = os.Getenv
+	urlParse = url.Parse
 )
 
 // Task #16/#13 — 人类接管模式 + 真人 DOM 操作录制(P3.3)。
@@ -375,6 +384,8 @@ func siteFromURL(raw string) string {
 
 // persistDemoSequence 把 takeover 期间收集的 actions 存到 HumanDemoSink。
 // Approved 默认 false,ops 审批后改 true。空序列不落盘。
+// 当 BRAIN_AUTO_APPROVE_DEMOS=1 时自动 approve 并立即转化为 UIPattern,
+// 实现"人类教一次 -> 下次自动重放"的闭环。
 func persistDemoSequence(ctx context.Context, r *humanActionRecorder) {
 	if r == nil {
 		return
@@ -388,6 +399,7 @@ func persistDemoSequence(ctx context.Context, r *humanActionRecorder) {
 	if err != nil {
 		return
 	}
+	auto := demoAutoApprove()
 	seq := &persistence.HumanDemoSequence{
 		RunID:      r.runID,
 		BrainKind:  r.brainKind,
@@ -395,11 +407,109 @@ func persistDemoSequence(ctx context.Context, r *humanActionRecorder) {
 		Site:       r.site,
 		URL:        r.lastURL,
 		Actions:    actionsJSON,
-		Approved:   false,
+		Approved:   auto,
 		RecordedAt: time.Now().UTC(),
 	}
 	// 错误不 fail 工具 —— takeover 已经走完,写库失败只是学习素材丢一条。
 	_ = sink.SaveHumanDemoSequence(ctx, seq)
+
+	// 自动审批场景:demo 立即转 ui_pattern,用户手动教的这次操作下次就能
+	// 自动重放(典型:滑块验证、首次登录)。生产环境应保持人工审批,默认
+	// auto=false。
+	if auto {
+		if p := ConvertDemoToPattern(seq, actions); p != nil {
+			if lib := SharedPatternLibrary(); lib != nil {
+				_ = lib.Upsert(ctx, p)
+			}
+		}
+	}
+}
+
+// demoAutoApprove 读环境变量决定 demo 是否自动 approved + 立即转 pattern。
+// 设置 BRAIN_AUTO_APPROVE_DEMOS=1 / true / yes 开启。默认关闭(生产场景
+// 要求人工审批,避免把错误操作固化成 pattern)。
+func demoAutoApprove() bool {
+	switch strings.ToLower(osGetenv("BRAIN_AUTO_APPROVE_DEMOS")) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// ConvertDemoToPattern 把一条 HumanDemoSequence + RecordedAction 列表
+// 转换成可重放的 UIPattern。返回 nil 表示数据不足(缺 actions / URL)。
+//
+// 转化规则:
+//   - ID:"human_demo_<run_id>_<ns>"(跟 learned_* 区分来源)
+//   - Category:browser_demo
+//   - AppliesWhen.URLPattern:从 seq.URL 派生(同 host)
+//   - ActionSequence:RecordedAction 按顺序复制到 ActionStep,
+//       params 里剔除 _human/ts 等调试字段
+//   - Source:"human_demo"
+//   - Enabled:true
+func ConvertDemoToPattern(seq *persistence.HumanDemoSequence, actions []RecordedAction) *UIPattern {
+	if seq == nil || len(actions) == 0 {
+		return nil
+	}
+	if seq.URL == "" {
+		return nil
+	}
+	steps := make([]ActionStep, 0, len(actions))
+	for _, a := range actions {
+		if a.Tool == "" {
+			continue
+		}
+		params := map[string]interface{}{}
+		for k, v := range a.Params {
+			switch k {
+			case "_human", "ts", "kind": // 调试/来源字段,不进 pattern
+				continue
+			}
+			params[k] = v
+		}
+		steps = append(steps, ActionStep{
+			Tool:       a.Tool,
+			TargetRole: a.ElementRole,
+			Params:     params,
+		})
+	}
+	if len(steps) == 0 {
+		return nil
+	}
+	urlPattern := extractDemoURLPattern(seq.URL)
+	// id 基于 seq.RecordedAt 而非 time.Now(),这样:
+	//   1. 每条 demo 对应一个确定 id,实时转化路径和启动 backfill 扫到
+	//      同一条时产出相同 id,Upsert 幂等
+	//   2. 不同 demo(不同 RecordedAt)自然有不同 id,不会相互覆盖
+	ts := seq.RecordedAt
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	id := fmt.Sprintf("human_demo_%s_%d", seq.RunID, ts.UnixNano())
+	desc := seq.Goal
+	if desc == "" {
+		desc = "Human demonstration for " + seq.URL
+	}
+	return &UIPattern{
+		ID:             id,
+		Category:       "browser_demo",
+		Description:    desc,
+		AppliesWhen:    MatchCondition{URLPattern: urlPattern},
+		ActionSequence: steps,
+		Source:         "human_demo",
+		Enabled:        true,
+	}
+}
+
+// extractDemoURLPattern 从一个具体 URL 派生"同域"的正则模式,让 pattern
+// 能在同站点的相似页面上命中。例:https://x.com/a/login → (?i)^https?://x\.com
+func extractDemoURLPattern(raw string) string {
+	u, err := urlParse(raw)
+	if err != nil || u == nil || u.Host == "" {
+		return ""
+	}
+	host := strings.ReplaceAll(u.Host, ".", `\.`)
+	return `(?i)^https?://` + host
 }
 
 // ---------------------------------------------------------------------------

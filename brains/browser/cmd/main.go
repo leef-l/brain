@@ -299,7 +299,51 @@ func configureBrowserRuntime(ctx context.Context) (*persistence.ClosableStores, 
 		return stores, reloader, err
 	}
 	reloader.store = stores.LearningStore
+
+	// 启动时扫描一次 approved 但还没转 ui_patterns 的 human demo,
+	// 自动转化成可重放 pattern。best-effort:失败只打日志不拦启动。
+	if n, err := backfillApprovedDemosToPatterns(ctx, stores.LearningStore); err == nil && n > 0 {
+		diaglog.Logf("browser", "backfill: converted %d approved human demo(s) into ui_patterns", n)
+	}
+
 	return stores, reloader, nil
+}
+
+// backfillApprovedDemosToPatterns 把已 approved 但 pattern 库里还没有
+// 对应条目的 human demo 序列补转成 UIPattern。幂等:pattern.ID 用确定
+// 性规则(human_demo_<run_id>_<recorded_ts>),重复 upsert 不会造成多份。
+func backfillApprovedDemosToPatterns(ctx context.Context, store persistence.LearningStore) (int, error) {
+	if store == nil {
+		return 0, nil
+	}
+	lib := tool.SharedPatternLibrary()
+	if lib == nil {
+		return 0, nil
+	}
+	demos, err := store.ListHumanDemoSequences(ctx, true)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, seq := range demos {
+		if seq == nil || len(seq.Actions) == 0 {
+			continue
+		}
+		var actions []tool.RecordedAction
+		if err := json.Unmarshal(seq.Actions, &actions); err != nil {
+			continue
+		}
+		p := tool.ConvertDemoToPattern(seq, actions)
+		if p == nil {
+			continue
+		}
+		// ConvertDemoToPattern 已经用 seq.RecordedAt 作为 id 来源,
+		// backfill 多次扫到同一条会 upsert 到同一 pattern,幂等。
+		if err := lib.Upsert(ctx, p); err == nil {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func newBrowserHandler(reloader *browserRuntimeReloader) *browserHandler {
