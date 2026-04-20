@@ -218,7 +218,7 @@ func RunChat(args []string) int {
 				PrintUserMessage(queued)
 				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, queued, resultCh, progressCh)
 				running = true
-				RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+				// running 期间不画 prompt,让事件实时 Println。
 			}
 		}
 
@@ -227,16 +227,21 @@ func RunChat(args []string) int {
 			continue
 
 		case ev := <-humanCoord.Events():
-			// 收到 sidecar 反向 RPC 转过来的人工求助事件:先把多行 prompt
-			// frame 擦掉(避免提示被 prompt 覆盖),再把求助内容打到屏幕。
-			DetachPromptFrame(session)
+			// 收到 sidecar 反向 RPC 转过来的人工求助事件。running 期间
+			// prompt 已经 Detach,直接 Println 就显示到屏幕;非 running
+			// 时先 Detach 再画回来。
+			if !running {
+				DetachPromptFrame(session)
+			}
 			switch ev.Kind {
 			case "requested":
 				PrintRequested(ev.Request)
 			case "resolved":
 				PrintResolved(ev.Response)
 			}
-			RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+			if !running {
+				RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+			}
 			continue
 
 		case req := <-state.ApprovalCh:
@@ -249,14 +254,14 @@ func RunChat(args []string) int {
 			continue
 
 		case ev := <-progressCh:
-			if running && len(ev.PreviewLines) > 0 {
-				DetachPromptFrame(session)
-				PrintDiffPreviewBlock(ev.PreviewLines)
-			}
-			// running 期间不再每条 progress 都 rerender 整个 prompt frame。
-			// 频繁的 clear+redraw 会把流式 LLM 输出反复"清掉+重写",在窄终端
-			// 上造成文字重复叠加。仅应用内部状态,不碰终端。
 			if running {
+				// running 期间 prompt frame 已经 Detach(在 StartChatRun 之前),
+				// 流式事件直接 Println 到屏幕,用户实时看到 LLM 输出 / 工具
+				// 调用 / 结果。不再清屏重绘,不会产生重影;也不再静默吞事件。
+				StreamProgressEvent(ev)
+				if len(ev.PreviewLines) > 0 {
+					PrintDiffPreviewBlock(ev.PreviewLines)
+				}
 				activity.Apply(ev)
 			}
 			continue
@@ -399,7 +404,10 @@ func RunChat(args []string) int {
 				PrintUserMessage(input)
 				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, input, resultCh, progressCh)
 				running = true
-				RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+				// running 期间不再画 prompt frame:让 LLM 流式输出、tool 调用、
+				// takeover 提示等事件实时追加到屏幕底部,不被 frame 清屏干扰。
+				// HandleChatRunResult 里 run 结束会 RenderPromptFrame 重画一个
+				// 干净的新 prompt 行。
 			}
 		}
 	}
