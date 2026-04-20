@@ -102,6 +102,9 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 	}
 
 	// Launch browser.
+	// 基础参数对所有平台生效。--no-sandbox 和 --disable-gpu 仅 headless /
+	// 服务器 Linux 需要,Windows/macOS 有头模式不加,避免 Chrome 弹出
+	// "不受支持的命令行标记"横幅挤压页面。
 	args := []string{
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		fmt.Sprintf("--user-data-dir=%s", userDir),
@@ -118,11 +121,18 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 		"--disable-translate",
 		"--metrics-recording-only",
 		"--safebrowsing-disable-auto-update",
-		"--no-sandbox",
 		"--window-size=1920,1080",
 		// 反爬规避:禁用 AutomationControlled 特性,不再在 UA-CH 里暴露自动化标识。
 		"--disable-blink-features=AutomationControlled",
+		// 隐藏 Chrome 自动化信息横幅("您使用的是不受支持的命令行标记...")。
+		"--disable-infobars",
+		"--no-default-browser-check",
 		"about:blank",
+	}
+	// 只有在 Linux 服务器(无桌面) / headless 场景下才用 --no-sandbox。
+	// Windows/macOS 有头场景加上它会触发可见的警告横幅。
+	if headless || runtime.GOOS == "linux" {
+		args = append([]string{"--no-sandbox"}, args...)
 	}
 	if headless {
 		// headless=new:Chrome 109+ 的新版 headless,支持扩展/文件上传等特性,
