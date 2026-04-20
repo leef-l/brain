@@ -675,19 +675,40 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		}
 	}
 
-	// Wait briefly for dynamic content (e.g. AJAX search results) to render
-	// before taking the final snapshot.
-	time.Sleep(2 * time.Second)
-
 	summary := string(lastOutput)
 
-	// 根据 plan 的最后一步类型决定 summary 策略:
-	//   screenshot / eval:保留原始输出(截图 base64 或 JS 返回值)
-	//   其他:追加 text-mode snapshot,让 central 拿到人类可读的页面文本
 	lastTool := ""
 	if n := len(plan.Steps); n > 0 {
 		lastTool = plan.Steps[n-1].Tool
 	}
+
+	// 只在 plan 里有可能触发页面变化的交互(click/press_key/drag/type/
+	// submit)时才等待动态内容渲染,缩到 500ms。纯读页面(open+snapshot
+	// 这种)不用 sleep,直接出结果。
+	if planHasNavigationStep(plan) {
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// fast path:最后一步已经是 browser.snapshot mode=text,直接复用
+	// lastOutput 不再多调一次工具。
+	if lastTool == "browser.snapshot" {
+		var lastParsed struct {
+			Mode    string `json:"mode"`
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal(lastOutput, &lastParsed); err == nil &&
+			lastParsed.Mode == "text" && lastParsed.Content != "" {
+			summary = fmt.Sprintf("Title: %s\nURL: %s\n\n%s",
+				lastParsed.Title, lastParsed.URL, lastParsed.Content)
+			goto summaryDone
+		}
+	}
+
+	// 根据 plan 的最后一步类型决定 summary 策略:
+	//   screenshot / eval:保留原始输出(截图 base64 或 JS 返回值)
+	//   其他:追加 text-mode snapshot,让 central 拿到人类可读的页面文本
 	if lastTool != "browser.eval" && lastTool != "browser.screenshot" {
 		// 非 eval / screenshot 场景:追加 text-mode snapshot,让 central
 		// 拿到人类可读的页面文本而不是原始 JSON。
@@ -731,6 +752,7 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		}
 	}
 
+summaryDone:
 	// 如果 plan 中间步骤截图了(但最后一步不是 screenshot),在 summary 末尾
 	// 附加截图路径提示,避免截图被"悄悄丢失"。
 	if lastTool != "browser.screenshot" && len(screenshotPaths) > 0 {
@@ -788,6 +810,20 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		Summary: summary,
 		Turns:   1,
 	}
+}
+
+// planHasNavigationStep 判断 plan 里是否可能触发页面变化,用来决定
+// 收尾处要不要等 500ms 让动态内容渲染完再做 snapshot。
+// 纯读页面(open 后直接 snapshot)不用等,节省时间。
+func planHasNavigationStep(plan *llmPlan) bool {
+	for _, s := range plan.Steps {
+		switch s.Tool {
+		case "browser.click", "browser.press_key", "browser.drag",
+			"browser.type", "browser.submit":
+			return true
+		}
+	}
+	return false
 }
 
 // shouldRequestTakeover 判断本次 plan 执行后是否应自动请求人类接管。
