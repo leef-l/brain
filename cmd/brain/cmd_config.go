@@ -11,6 +11,7 @@ import (
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/sdk/cli"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/persistence"
 )
 
 // Type aliases — allow existing code to keep using old names.
@@ -218,6 +219,19 @@ func runConfigInit(_ []string) int {
 
 	config.WriteExamples(dir)
 
+	// 初始化 SQLite brain.db:Open 会 CREATE TABLE IF NOT EXISTS 所有表,
+	// 即便是空库也能让后续 memory_recall 工具立刻可用,不用等第一次 run。
+	dbPath := filepath.Join(dir, "brain.db")
+	dbCreated := false
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		dbCreated = true
+	}
+	if stores, err := persistence.Open("sqlite", dbPath); err != nil {
+		fmt.Fprintf(os.Stderr, "brain config init: 初始化 %s 失败: %v\n", dbPath, err)
+	} else {
+		_ = stores.Close()
+	}
+
 	if configExists {
 		fmt.Fprintf(os.Stdout, "配置文件已存在: %s（未修改）\n", path)
 		fmt.Fprintf(os.Stdout, "已更新示例文件:\n")
@@ -230,6 +244,11 @@ func runConfigInit(_ []string) int {
 	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "quant-brain.example.yaml"))
 	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "central-brain.example.yaml"))
 	fmt.Fprintf(os.Stdout, "  %s\n", filepath.Join(dir, "config-reference.example.yaml"))
+	if dbCreated {
+		fmt.Fprintf(os.Stdout, "  %s (SQLite,已初始化)\n", dbPath)
+	} else {
+		fmt.Fprintf(os.Stdout, "  %s (SQLite,已存在)\n", dbPath)
+	}
 	fmt.Fprintln(os.Stdout, "")
 
 	if !configExists {

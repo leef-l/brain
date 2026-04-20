@@ -115,6 +115,15 @@ const (
 	MethodHumanRequestTakeover = "human/request_takeover"
 )
 
+// Progress events — sidecar→host direction, fire-and-forget (notification).
+// 专家大脑在 Agent Loop / plan 执行过程中,每调一个 tool 就发一条 brain/progress
+// 事件,kernel 转发给 chat REPL 作为流式进度。
+// Kind 取值:tool_start / tool_end / turn / content 等。这是 UX 层事件,
+// 丢失不影响业务正确性,用最普通的 RPC notify(无需返回值)。
+const (
+	MethodBrainProgress = "brain/progress"
+)
+
 // Observability methods — 20-协议规格.md §10.1 (sidecar→host
 // notifications).
 const (

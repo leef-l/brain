@@ -91,6 +91,11 @@ func StreamProgressEvent(ev ProgressEvent) {
 	}
 }
 
+// trimForDisplay 去掉首尾空白并截断到 n 字符(供 ProgressHandler 用)。
+func trimForDisplay(s string, n int) string {
+	return truncate(s, n)
+}
+
 func truncate(s string, n int) string {
 	s = strings.TrimSpace(s)
 	if n <= 0 || len(s) <= n {

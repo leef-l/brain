@@ -109,6 +109,11 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		}
 	}
 
+	// 实时进度标记:delegate 到专家大脑的调用通常 20-60 秒,中间没有流式
+	// 输出,用户看到就是"Run: central.delegate ... [长时间无响应] ... Done"。
+	// 先打一行可见的"正在委托给 X 大脑"让用户知道系统在动。
+	fmt.Printf("\033[2m    → delegating to %s brain (may take 20-60s)...\033[0m\n", input.TargetKind)
+
 	result, err := t.Orchestrator.Delegate(ctx, req)
 	if err != nil {
 		return &tool.Result{

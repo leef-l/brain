@@ -208,6 +208,17 @@ func (s *State) SwitchMode(m env.PermissionMode) {
 		s.Registry.Register(NewBrainManageTool(s.Orchestrator))
 	}
 
+	// brain.memory_recall 让 LLM 查询 ~/.brain/brain.db 里的 ui_patterns /
+	// human_demo_sequences / learning_profiles,用户问"读取上下文记忆 / 你
+	// 学过什么 / 有没有这个站的 pattern"时直接调这个而不是去 workdir 找
+	// memory/*.md 文件。store 可能是 nil(mock provider / 无持久化场景),
+	// lib 也可能 nil,工具内部对 nil 安全,返回空列表不报错。
+	if rt, _ := deps.NewDefaultCLIRuntime(s.BrainID); rt != nil && rt.Stores != nil {
+		s.Registry.Register(tool.NewMemoryRecallTool(rt.Stores.LearningStore, tool.SharedPatternLibrary()))
+	} else {
+		s.Registry.Register(tool.NewMemoryRecallTool(nil, tool.SharedPatternLibrary()))
+	}
+
 	s.Registry = filterRegistryWithConfig(s.Registry, s.Cfg, toolpolicy.ToolScopesForChat(s.BrainID, string(m))...)
 	s.Opts.Tools = BuildToolSchemas(s.Registry)
 

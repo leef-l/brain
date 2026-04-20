@@ -156,6 +156,11 @@ type Orchestrator struct {
 	// RPC 的求助请求时转发给真正的协调器。
 	humanTakeoverHandler HumanTakeoverHandler
 
+	// brainProgressHandler 由 cmd/brain 注入,把 sidecar 的 brain/progress
+	// 事件(tool_start / tool_end 等)转给 chat 的 progressCh,实现流式
+	// 透传子任务进度。
+	brainProgressHandler BrainProgressHandler
+
 	mu sync.Mutex
 }
 
@@ -814,6 +819,27 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 		}
 		return handler(ctx, string(callerKind), params)
 	})
+
+	// 专家大脑的细粒度进度事件(tool_start / tool_end / turn / content)。
+	// 转给上层注入的 handler,让 chat REPL 流式打印 subtask 进度。
+	rpc.Handle(protocol.MethodBrainProgress, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		h := o.brainProgressHandler
+		if h != nil {
+			h(ctx, string(callerKind), params)
+		}
+		return map[string]string{"ok": "1"}, nil
+	})
+}
+
+// BrainProgressHandler 由 cmd/brain 层注入,收到 sidecar 反向 RPC 的
+// brain/progress 事件后把它转给 chat 的 progressCh。
+type BrainProgressHandler func(ctx context.Context, callerKind string, params json.RawMessage)
+
+// SetBrainProgressHandler 注入 handler。nil 清空,等价于丢弃事件。
+func (o *Orchestrator) SetBrainProgressHandler(h BrainProgressHandler) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.brainProgressHandler = h
 }
 
 // HumanTakeoverHandler 由上层(cmd/brain)实现,收到 sidecar 反向 RPC 后

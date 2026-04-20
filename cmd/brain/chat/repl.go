@@ -95,6 +95,32 @@ func RunChat(args []string) int {
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 				kernel.WithLearningEngine(kernel.NewLearningEngine()),
 			)
+			// 专家 sidecar 的 brain/progress 事件直接打到屏幕,让用户能
+			// 实时看到 subtask 里每个 tool 的 start/end,避免 central.delegate
+			// 长时间静默的尴尬。
+			orch.SetBrainProgressHandler(func(ctx context.Context, callerKind string, params json.RawMessage) {
+				var ev struct {
+					Kind     string `json:"kind"`
+					ToolName string `json:"tool_name"`
+					Args     string `json:"args"`
+					Detail   string `json:"detail"`
+					OK       bool   `json:"ok"`
+				}
+				if err := json.Unmarshal(params, &ev); err != nil {
+					return
+				}
+				switch ev.Kind {
+				case "tool_start":
+					fmt.Printf("\033[2m      [%s] %s.Run: %s\033[0m\n", callerKind, callerKind, trimForDisplay(ev.ToolName+" "+ev.Args, 140))
+				case "tool_end":
+					if ev.OK {
+						fmt.Printf("\033[2m      [%s] %s.Done: %s %s\033[0m\n", callerKind, callerKind, ev.ToolName, trimForDisplay(ev.Detail, 140))
+					} else {
+						fmt.Printf("\033[31m      [%s] %s.Fail: %s — %s\033[0m\n", callerKind, callerKind, ev.ToolName, trimForDisplay(ev.Detail, 140))
+					}
+				}
+			})
+
 			// 把 sidecar 反向 RPC 的人工求助请求桥接到 tool 包注入的协调器
 			// (见 RunChat 末尾的 tool.SetHumanTakeoverCoordinator):
 			// sidecar -> kernel reverse RPC -> 这里 -> chat coord -> /resume 解锁。

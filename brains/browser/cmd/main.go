@@ -380,6 +380,9 @@ func (h *browserHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	// 把 sidecar 里 human.request_takeover 的本地 coord 替换成反向 RPC 桥,
 	// 求助信号会一路透传到 kernel 进程的协调器(serve HTTP / chat slash)。
 	tool.SetHumanTakeoverCoordinator(sidecar.NewHumanTakeoverBridge(caller))
+	// 初始化 sidecar→host 的进度通知通道,后续 tool call / turn 通过
+	// sidecar.EmitProgress 推到 kernel,再由 chat REPL 流式打印。
+	sidecar.SetProgressContext(caller, string(agent.KindBrowser))
 }
 
 func (h *browserHandler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
@@ -770,17 +773,30 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 	var screenshotPaths []string
 	for i, step := range plan.Steps {
 		diaglog.Logf("browser", "plan step %d/%d: %s params=%v", i+1, len(plan.Steps), step.Tool, step.Params)
+		argsRaw, _ := json.Marshal(step.Params)
+		sidecar.EmitProgress(ctx, sidecar.ProgressEvent{
+			Kind:     "tool_start",
+			ToolName: step.Tool,
+			Args:     string(argsRaw),
+		})
 		t, ok := registry.Lookup(step.Tool)
 		if !ok {
+			sidecar.EmitProgress(ctx, sidecar.ProgressEvent{
+				Kind: "tool_end", ToolName: step.Tool, OK: false,
+				Detail: "tool not found",
+			})
 			return &sidecar.ExecuteResult{
 				Status: "failed",
 				Error:  fmt.Sprintf("step %d: tool %s not found", i+1, step.Tool),
 				Turns:  0,
 			}
 		}
-		args, _ := json.Marshal(step.Params)
-		result, err := t.Execute(ctx, args)
+		result, err := t.Execute(ctx, argsRaw)
 		if err != nil {
+			sidecar.EmitProgress(ctx, sidecar.ProgressEvent{
+				Kind: "tool_end", ToolName: step.Tool, OK: false,
+				Detail: err.Error(),
+			})
 			return &sidecar.ExecuteResult{
 				Status: "failed",
 				Error:  fmt.Sprintf("step %d (%s): %v", i+1, step.Tool, err),
@@ -790,6 +806,18 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		if result != nil {
 			lastOutput = result.Output
 			diaglog.Logf("browser", "plan step %d/%d result: isError=%v output=%.200s", i+1, len(plan.Steps), result.IsError, string(result.Output))
+			okFlag := !result.IsError
+			detail := ""
+			if len(result.Output) > 0 {
+				s := string(result.Output)
+				if len(s) > 160 {
+					s = s[:160] + "…"
+				}
+				detail = s
+			}
+			sidecar.EmitProgress(ctx, sidecar.ProgressEvent{
+				Kind: "tool_end", ToolName: step.Tool, OK: okFlag, Detail: detail,
+			})
 			if result.IsError {
 				return &sidecar.ExecuteResult{
 					Status: "failed",
