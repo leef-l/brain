@@ -693,6 +693,15 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 				})
 			}
 			if len(r.pending) > 0 {
+				// 必须把 StopReason=tool_use 的 MessageDelta 也 enqueue,
+				// 不能直接 return stopReason,否则 runner.go:320 检查
+				// resp.StopReason != "tool_use" 会丢弃 tool call。
+				r.pending = append(r.pending, StreamEvent{
+					Type: EventMessageDelta,
+					Data: marshalRaw(struct {
+						StopReason string `json:"stop_reason,omitempty"`
+					}{StopReason: "tool_use"}),
+				})
 				ev := r.pending[0]
 				r.pending = r.pending[1:]
 				return ev, true
