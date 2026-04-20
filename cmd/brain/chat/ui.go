@@ -87,7 +87,8 @@ func RenderPromptFrame(session *term.LineReadSession, mode env.PermissionMode,
 
 	// 重新画完 prompt frame 后,光标在 prompt 行起点,行占用计数清零,
 	// 避免上条输入残留的值干扰下次 RedrawFull 的回退/清屏逻辑。
-	session.Ed.LastRowsBelow = 0
+	session.Ed.LastEndRow = 0
+	session.Ed.LastCursorRow = 0
 }
 
 func RerenderPromptFrame(session *term.LineReadSession, mode env.PermissionMode,

@@ -24,9 +24,13 @@ type LineEditor struct {
 	Runes       []rune
 	Pos         int
 	PromptWidth int
-	// 上次 RedrawFull 画完后,光标所在行相对 prompt 行的偏移(即已占用的
-	// 终端行数 - 1)。用于长内容折行时正确回退并清屏避免残影。
-	LastRowsBelow int
+	// LastEndRow:上次 RedrawFull 后内容末尾所在行相对 prompt 起始行的
+	// 偏移(0=同一行,1=第二行,...)。用于清屏时算要清的行数。
+	LastEndRow int
+	// LastCursorRow:上次 RedrawFull 后光标所在行相对 prompt 起始行的偏移。
+	// 光标不一定在末尾行(Pos 可以在内容中间),清屏前要按这个值先上移回
+	// prompt 首行,再从那里清到屏幕底。
+	LastCursorRow int
 }
 
 type LineReadSession struct {
@@ -214,14 +218,15 @@ func (s *LineReadSession) Consume(chunk []byte) (line string, action InputAction
 		s.LeaveHistoryBrowse()
 		s.Ed.Insert(r)
 		if s.Ed.Pos == len(s.Ed.Runes) {
-			// fast path:追加一个字符。如果追加后恰好跨越终端宽度,
-			// 更新 LastRowsBelow 让下次 returnToPromptRow 能正确回
-			// 退并清掉折行残影。
+			// fast path:追加一个字符,光标 == 末尾。追加后若跨越终端
+			// 宽度,同步更新 LastEndRow 和 LastCursorRow(它们相等,
+			// 因为光标就在末尾),下次清屏才能找到真正的 prompt 首行。
 			fmt.Print(string(r))
 			cols := termCols()
 			totalW := s.Ed.PromptWidth + s.Ed.DisplayWidthRange(0, len(s.Ed.Runes))
-			s.Ed.LastRowsBelow = totalW / cols
-			// 行尾正好填满时光标可能没真正换行,保守估计不扣减。
+			row := totalW / cols
+			s.Ed.LastEndRow = row
+			s.Ed.LastCursorRow = row
 		} else {
 			RedrawFull(s.Ed)
 		}
@@ -518,26 +523,34 @@ func termCols() int {
 	return w
 }
 
-// clearCurrentAndBelow 清除光标所在行的末尾 + 之前内容占用的下方所有行。
-// 不做 \033[NA 上移(Windows CMD 在某些滚屏状态下该序列行为不可靠,
-// 会把光标移到屏幕上方错误位置;历史残影被留下,新内容又叠在底下,
-// 造成"多一行"的视觉 bug)。
+// clearCurrentAndBelow 把光标先回到 prompt 起始行,然后清除该行到屏幕底
+// 部(包括上次绘制占用的所有下方行)。
 //
-// 策略:
-//   1. \r + \033[K:回到当前行首并清到行尾。
-//   2. 对上次绘制占用的每一个下方行,\n + \033[K:向下移一行再清。
-//   3. 再用 \033[NA 原路返回当前行首,作为新内容起点。
-// 这样整体光标位置不会飘到 prompt 上方,最坏情况是往下多了 N 行
-// 空行然后回来,不会误擦用户之前看到的输出。
+// 必须处理两个独立的"行偏移":
+//   - LastCursorRow:上次绘制后光标所在行(可能在内容中间,例如用户按了
+//     Home/方向键让 Pos < len(Runes))。进入 clear 时光标就在这一行。
+//   - LastEndRow:上次绘制的内容末尾行。清屏时要确保从 prompt 行一路
+//     清到 LastEndRow,否则末尾行及其后的旧内容残留,就是"重影"。
+//
+// 步骤:
+//   1. 按 LastCursorRow 上移到 prompt 起始行(\033[NA 仅用于上移到我们
+//      确知已经打出过内容的行,不会越界到 prompt 之前)。
+//   2. \r + \033[K 清 prompt 起始行。
+//   3. 对剩下的 LastEndRow 行,\n + \033[K 逐行往下清。
+//   4. \033[NA 原路回到 prompt 起始行首,作为新内容起点。
 func clearCurrentAndBelow(ed *LineEditor) {
+	if ed.LastCursorRow > 0 {
+		fmt.Printf("\033[%dA", ed.LastCursorRow)
+	}
 	fmt.Print("\r\033[K")
-	for i := 0; i < ed.LastRowsBelow; i++ {
+	for i := 0; i < ed.LastEndRow; i++ {
 		fmt.Print("\n\033[K")
 	}
-	if ed.LastRowsBelow > 0 {
-		fmt.Printf("\033[%dA\r", ed.LastRowsBelow)
+	if ed.LastEndRow > 0 {
+		fmt.Printf("\033[%dA\r", ed.LastEndRow)
 	}
-	ed.LastRowsBelow = 0
+	ed.LastEndRow = 0
+	ed.LastCursorRow = 0
 }
 
 func RedrawFull(ed *LineEditor) {
@@ -566,7 +579,8 @@ func RedrawFull(ed *LineEditor) {
 		fmt.Printf("\033[%dC", curCol)
 	}
 
-	ed.LastRowsBelow = endRow
+	ed.LastEndRow = endRow
+	ed.LastCursorRow = curRow
 }
 
 func RedrawClear(ed *LineEditor) {

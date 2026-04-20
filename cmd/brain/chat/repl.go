@@ -223,9 +223,9 @@ func RunChat(args []string) int {
 			continue
 
 		case <-progressTicker.C:
-			// LLM 正在输出时不要每秒 rerender prompt frame(同上理由)。
-			// 耗时显示等 run 结束时再刷新,用户看到的是"稳定输出 + 最终状态",
-			// 而不是每秒抖一次的 prompt 框。
+			// LLM 正在输出时不做任何终端写操作。秒数不刷新比"每秒闪一下
+			// 引发重影"更可忍受。下一轮会从架构层面换掉这个多行 prompt
+			// frame 方案。
 			if running && activity.Running() {
 				sec := int64(time.Since(activity.StartedAt) / time.Second)
 				lastProgressSecond = sec
@@ -374,7 +374,8 @@ func resetPromptInput(session *term.LineReadSession) {
 	// 重置行占用计数:新的 prompt 行从 0 行残留开始,下次 RedrawFull
 	// 不会再去清理上一条输入留下的"多行残影"(那些已经不在新 prompt
 	// 附近了,清了会破坏历史输出)。
-	session.Ed.LastRowsBelow = 0
+	session.Ed.LastEndRow = 0
+	session.Ed.LastCursorRow = 0
 }
 
 func startAsyncStdinReader() (<-chan []byte, <-chan error) {
