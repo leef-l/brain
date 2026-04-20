@@ -55,10 +55,18 @@ REM fixed binaries
 call :add_binary "brain" ".\cmd\brain"
 call :add_binary "brain-central" ".\central\cmd"
 
-REM Pattern 1: brains\<name>\cmd\main.go -> brain-<name>
+REM Pattern 1: brains\<name>\cmd\main.go
+REM   若同目录存在 brain-<name>-sidecar\ 子目录(data/quant 这种双模式),
+REM     cmd\main.go 是独立运行入口 -> brain-<name>(不带 sidecar)
+REM   否则 cmd\main.go 就是 sidecar 入口 -> brain-<name>-sidecar
+REM     与 brain.json manifest 的 entrypoint 字段一致,便于 Kernel 定位。
 for /d %%d in ("%root_dir%\brains\*") do (
     if exist "%%d\cmd\main.go" (
-        call :add_binary "brain-%%~nxd" ".\brains\%%~nxd\cmd"
+        if exist "%%d\cmd\brain-%%~nxd-sidecar\main.go" (
+            call :add_binary "brain-%%~nxd" ".\brains\%%~nxd\cmd"
+        ) else (
+            call :add_binary "brain-%%~nxd-sidecar" ".\brains\%%~nxd\cmd"
+        )
     )
 )
 

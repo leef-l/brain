@@ -37,11 +37,19 @@ declare -a binaries=(
 )
 
 # --- auto-discover specialist brains under brains/ ---
-# Pattern 1: brains/<name>/cmd/main.go  → brain-<name>
+# Pattern 1: brains/<name>/cmd/main.go
+#   若同目录存在 brain-<name>-sidecar/ 子目录(data/quant 这种双模式),
+#     则 cmd/main.go 是独立运行入口 → brain-<name>(不带 sidecar)
+#   否则 cmd/main.go 就是 sidecar 入口 → brain-<name>-sidecar
+#     与 brain.json manifest 的 entrypoint 字段一致,便于 Kernel 定位。
 for main in "${root_dir}"/brains/*/cmd/main.go; do
   [[ -f "${main}" ]] || continue
   name="$(basename "$(dirname "$(dirname "${main}")")")"
-  binaries+=("brain-${name}=./brains/${name}/cmd")
+  if [[ -d "${root_dir}/brains/${name}/cmd/brain-${name}-sidecar" ]]; then
+    binaries+=("brain-${name}=./brains/${name}/cmd")
+  else
+    binaries+=("brain-${name}-sidecar=./brains/${name}/cmd")
+  fi
 done
 
 # Pattern 2: brains/<parent>/<sub>/cmd/main.go  → brain-<parent>-<sub>
@@ -55,9 +63,8 @@ for main in "${root_dir}"/brains/*/*/cmd/main.go; do
 done
 
 # Pattern 3: brains/<name>/cmd/brain-<name>-sidecar/main.go → brain-<name>-sidecar
-# These are specialist brain sidecar binaries launched by the Kernel via
-# stdio JSON-RPC. Directory is named brain-<name>-sidecar so that
-# `go install` produces the correct binary name.
+# 双模式大脑(data/quant):cmd/main.go 是独立入口,cmd/brain-<name>-sidecar/main.go
+# 才是 Kernel 通过 stdio JSON-RPC 启动的 sidecar 入口。
 for main in "${root_dir}"/brains/*/cmd/brain-*-sidecar/main.go; do
   [[ -f "${main}" ]] || continue
   bin="$(basename "$(dirname "${main}")")"          # brain-<name>-sidecar
