@@ -404,11 +404,13 @@ func TestBrowserRuntimeReloader_MaybeRefreshReloadsAnomalyTemplates(t *testing.T
 		t.Fatalf("NewPatternLibrary pattern writer: %v", err)
 	}
 	if err := patternWriter.Upsert(context.Background(), &tool.UIPattern{
-		ID:       "reloaded_variant",
-		Category: "auth",
-		Source:   "learned",
-		Enabled:  true,
-		Pending:  true,
+		ID:             "reloaded_variant",
+		Category:       "auth",
+		Source:         "learned",
+		AppliesWhen:    tool.MatchCondition{Has: []string{"input[type=\"password\"]"}},
+		ActionSequence: []tool.ActionStep{{Tool: "browser.click", Params: map[string]interface{}{"selector": "button"}}},
+		Enabled:        true,
+		Pending:        true,
 	}); err != nil {
 		patternWriter.Close()
 		t.Fatalf("pattern Upsert added: %v", err)

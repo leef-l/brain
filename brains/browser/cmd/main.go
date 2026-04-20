@@ -382,7 +382,6 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 		ToolCalls: result.Turns,
 	})
 
-	tool.CloseBrowserSession(h.browserTools)
 	return result, nil
 }
 
@@ -406,7 +405,10 @@ func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar
 			if patternID != "" {
 				result := h.executePattern(ctx, registry, patternID, req)
 				diaglog.Logf("browser", "pattern_exec result: status=%s error=%s", result.Status, result.Error)
-				return result
+				if result.Status == "completed" {
+					return result
+				}
+				h.deleteLearnedPattern(ctx, patternID)
 			}
 		}
 	}
@@ -432,6 +434,7 @@ func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar
 	diaglog.Logf("browser", "no pattern matched, calling LLM planner, snapshot_len=%d", len(pageSnapshot))
 	plan, err := h.planWithLLM(ctx, req.Instruction, pageSnapshot, registry)
 	if err == nil {
+		diaglog.Logf("browser", "LLM plan ok: url=%s steps=%d", plan.URL, len(plan.Steps))
 		result := h.executeLLMPlan(ctx, registry, plan, req.Instruction)
 		if result.Status == "completed" {
 			return result
@@ -520,15 +523,18 @@ Key tools:
 - browser.type: {"selector": "...", "text": "..."} — type text
 - browser.click: {"selector": "..."} — click element
 - browser.press_key: {"key": "Enter"} — press a key
-- browser.wait: {"condition": "network_idle"} — wait for page load
+- browser.wait: {"condition": "load"} — wait for page load (valid: visible, hidden, load, idle, js). Prefer "load" over "idle" as idle may timeout on pages with continuous network activity.
 - browser.eval: {"expression": "..."} — run JavaScript to extract data
 
 RULES:
 - Use browser.snapshot (NOT screenshot) to read page content.
-- End with browser.snapshot or browser.eval to capture the result.
-- Keep the plan SHORT — typically 4-8 steps.
+- The LAST step MUST be browser.snapshot or browser.eval to capture the final result data.
+- Keep the plan SHORT — typically 3-6 steps.
 - The "url" field is for the initial page — do NOT include browser.open in steps if you set url.
+- Do NOT add browser.wait after setting the "url" field — the URL open already waits for page load.
 - The "category" field helps the system learn and reuse this plan for similar tasks.
+- For search: type the query into the search box, then use browser.press_key with key "Enter" to submit (more reliable than clicking the search button). After pressing Enter, add browser.wait with condition "load" to wait for results.
+- After any click or key press that triggers navigation, add browser.wait with condition "load" before taking a snapshot.
 - Output ONLY the JSON object, no explanation.`
 
 	userMsg := "Instruction: " + instruction
@@ -588,11 +594,22 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 	if plan.URL != "" {
 		openTool, ok := registry.Lookup("browser.open")
 		if ok {
+			diaglog.Logf("browser", "executeLLMPlan: opening url=%s", plan.URL)
 			openArgs, _ := json.Marshal(map[string]string{"url": plan.URL})
-			if _, err := openTool.Execute(ctx, openArgs); err != nil {
+			result, err := openTool.Execute(ctx, openArgs)
+			if err != nil {
+				diaglog.Logf("browser", "executeLLMPlan: open failed: %v", err)
 				return &sidecar.ExecuteResult{Status: "failed", Error: fmt.Sprintf("open %s: %v", plan.URL, err)}
 			}
+			diaglog.Logf("browser", "executeLLMPlan: open result isError=%v", result.IsError)
+			if result.IsError {
+				return &sidecar.ExecuteResult{Status: "failed", Error: fmt.Sprintf("open %s: %s", plan.URL, string(result.Output))}
+			}
+		} else {
+			diaglog.Logf("browser", "executeLLMPlan: browser.open tool not found in registry")
 		}
+	} else {
+		diaglog.Logf("browser", "executeLLMPlan: no URL in plan")
 	}
 
 	var lastOutput json.RawMessage
@@ -617,6 +634,7 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		}
 		if result != nil {
 			lastOutput = result.Output
+			diaglog.Logf("browser", "plan step %d/%d result: isError=%v output=%.200s", i+1, len(plan.Steps), result.IsError, string(result.Output))
 			if result.IsError {
 				return &sidecar.ExecuteResult{
 					Status: "failed",
@@ -627,7 +645,23 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		}
 	}
 
+	// Wait briefly for dynamic content (e.g. AJAX search results) to render
+	// before taking the final snapshot.
+	time.Sleep(2 * time.Second)
+
 	summary := string(lastOutput)
+
+	// Always capture a text-mode snapshot for the summary so that the
+	// central brain receives human-readable page content instead of raw
+	// interactive-mode JSON (element IDs, coordinates, etc.).
+	if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
+		snapArgs, _ := json.Marshal(map[string]interface{}{"mode": "text"})
+		snapResult, snapErr := snapshotTool.Execute(ctx, snapArgs)
+		if snapErr == nil && snapResult != nil && len(snapResult.Output) > 0 {
+			summary = string(snapResult.Output)
+		}
+	}
+	diaglog.Logf("browser", "executeLLMPlan: summary len=%d preview=%.500s", len(summary), summary)
 	if len(summary) > 4096 {
 		summary = summary[:4096] + "...[truncated]"
 	}
@@ -676,16 +710,34 @@ func (h *browserHandler) learnFromPlan(ctx context.Context, plan *llmPlan, instr
 	}
 
 	// Use the URL as matching condition so similar URLs hit this pattern next time.
-	if plan.URL != "" {
-		pat.AppliesWhen = tool.MatchCondition{
-			URLPattern: extractDomainPattern(plan.URL),
-		}
+	if plan.URL == "" {
+		diaglog.Logf("browser", "skip saving learned pattern: no URL in plan")
+		return
+	}
+	pat.AppliesWhen = tool.MatchCondition{
+		URLPattern: extractDomainPattern(plan.URL),
 	}
 
 	if err := lib.Upsert(ctx, pat); err != nil {
 		diaglog.Logf("browser", "failed to save learned pattern: %v", err)
 	} else {
 		diaglog.Logf("browser", "learned pattern %s (category=%s) from: %s", pat.ID, category, instruction)
+	}
+}
+
+func (h *browserHandler) deleteLearnedPattern(ctx context.Context, patternID string) {
+	lib := tool.SharedPatternLibrary()
+	if lib == nil {
+		return
+	}
+	p := lib.Get(patternID)
+	if p == nil || p.Source != "learned" {
+		return
+	}
+	if err := lib.Delete(ctx, patternID); err != nil {
+		diaglog.Logf("browser", "failed to delete learned pattern %s: %v", patternID, err)
+	} else {
+		diaglog.Logf("browser", "deleted failed learned pattern %s", patternID)
 	}
 }
 

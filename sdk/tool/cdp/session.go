@@ -74,7 +74,6 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 		fmt.Sprintf("--user-data-dir=%s", userDir),
 		"--no-first-run",
 		"--no-default-browser-check",
-		"--disable-background-networking",
 		"--disable-client-side-phishing-detection",
 		"--disable-default-apps",
 		"--disable-extensions",

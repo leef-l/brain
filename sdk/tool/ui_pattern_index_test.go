@@ -84,7 +84,8 @@ func TestCandidatePatternsFilterByBucket(t *testing.T) {
 	})
 	mustUpsert(t, lib, &UIPattern{
 		ID: "universal", Category: "nav", Source: "user",
-		AppliesWhen: MatchCondition{URLPattern: ``}, // any
+		AppliesWhen:    MatchCondition{Has: []string{"body"}},
+		ActionSequence: []ActionStep{{Tool: "browser.snapshot"}},
 	})
 	// 一个显式禁用的模式(落 /login 桶),验证过滤。
 	mustUpsert(t, lib, &UIPattern{

@@ -24,9 +24,19 @@ func newTestLib(t *testing.T) *PatternLibrary {
 	return lib
 }
 
+func testPattern(id, category, source string) *UIPattern {
+	return &UIPattern{
+		ID:             id,
+		Category:       category,
+		Source:         source,
+		AppliesWhen:    MatchCondition{Has: []string{"body"}},
+		ActionSequence: []ActionStep{{Tool: "browser.snapshot"}},
+	}
+}
+
 func TestUpsertDefaultsEnabledTrue(t *testing.T) {
 	lib := newTestLib(t)
-	p := &UIPattern{ID: "test-default", Category: "nav", Source: "user"}
+	p := testPattern("test-default", "nav", "user")
 	if err := lib.Upsert(context.Background(), p); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
@@ -41,7 +51,7 @@ func TestUpsertDefaultsEnabledTrue(t *testing.T) {
 
 func TestRecordExecutionAutoDisable(t *testing.T) {
 	lib := newTestLib(t)
-	p := &UIPattern{ID: "auto-off", Category: "form", Source: "user"}
+	p := testPattern("auto-off", "form", "user")
 	if err := lib.Upsert(context.Background(), p); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
@@ -92,7 +102,7 @@ func TestRecordExecutionAutoDisable(t *testing.T) {
 func TestAutoDisableNotTriggeredWithHighSuccessRate(t *testing.T) {
 	// 7 成功 + 5 失败 → rate ≈ 0.58,高于 0.3,不触发。
 	lib := newTestLib(t)
-	p := &UIPattern{ID: "mixed", Source: "user"}
+	p := testPattern("mixed", "", "user")
 	if err := lib.Upsert(context.Background(), p); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
@@ -110,7 +120,7 @@ func TestAutoDisableNotTriggeredWithHighSuccessRate(t *testing.T) {
 
 func TestSetEnabledManualReset(t *testing.T) {
 	lib := newTestLib(t)
-	p := &UIPattern{ID: "manual", Source: "user"}
+	p := testPattern("manual", "", "user")
 	if err := lib.Upsert(context.Background(), p); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
@@ -142,7 +152,7 @@ func TestReloadPreservesEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPatternLibrary: %v", err)
 	}
-	p := &UIPattern{ID: "persisted", Source: "user"}
+	p := testPattern("persisted", "", "user")
 	if err := lib.Upsert(context.Background(), p); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
@@ -181,7 +191,7 @@ func TestPatternLibraryReloadIfChangedObservesExternalWrites(t *testing.T) {
 	}
 	defer lib2.Close()
 
-	p := &UIPattern{ID: "external-write", Category: "auth", Source: "learned"}
+	p := &UIPattern{ID: "external-write", Category: "auth", Source: "learned", AppliesWhen: MatchCondition{Has: []string{"input"}}, ActionSequence: []ActionStep{{Tool: "browser.click"}}}
 	if err := lib2.Upsert(context.Background(), p); err != nil {
 		t.Fatalf("lib2.Upsert: %v", err)
 	}

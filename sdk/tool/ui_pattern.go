@@ -80,6 +80,10 @@ type MatchCondition struct {
 	TextContains  []string `json:"text_contains,omitempty"` // substrings anywhere in body
 }
 
+func (m *MatchCondition) IsEmpty() bool {
+	return m.URLPattern == "" && m.SiteHost == "" && len(m.Has) == 0 && len(m.HasNot) == 0 && len(m.TitleContains) == 0 && len(m.TextContains) == 0
+}
+
 // ElementDescriptor — multi-signal self-healing locator (RPA Object
 // Repository pattern). Matches are attempted in priority order:
 //  1. Exact match on role+name
@@ -476,6 +480,9 @@ func (lib *PatternLibrary) GetAny(id string) *UIPattern {
 func (lib *PatternLibrary) Upsert(ctx context.Context, p *UIPattern) error {
 	if p == nil || p.ID == "" {
 		return fmt.Errorf("pattern id required")
+	}
+	if len(p.ActionSequence) == 0 && p.AppliesWhen.IsEmpty() {
+		return fmt.Errorf("pattern %s has empty applies_when and no action_sequence, refusing to save", p.ID)
 	}
 	lib.mu.Lock()
 	defer lib.mu.Unlock()

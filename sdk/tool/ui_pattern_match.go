@@ -35,6 +35,9 @@ type PatternMatch struct {
 // 模式做完整 MatchCondition 评估,大库下单次耗时从 ~50ms 降到 ~5ms。
 func MatchPatterns(ctx context.Context, sess *cdp.BrowserSession, lib *PatternLibrary, category string) ([]*PatternMatch, error) {
 	pageURL, pageTitle := readPageMeta(ctx, sess)
+	if pageURL == "" || pageURL == "about:blank" {
+		return nil, nil
+	}
 	pageText := readBodyText(ctx, sess, 20_000)
 
 	ids := candidatePatterns(lib, pageURL, category)
@@ -119,8 +122,7 @@ func evaluateMatch(ctx context.Context, sess *cdp.BrowserSession, cond *MatchCon
 	}
 
 	if len(reasons) == 0 {
-		// No positive signals; treat as low-confidence match.
-		return true, "default"
+		return false, ""
 	}
 	return true, strings.Join(reasons, "+")
 }
