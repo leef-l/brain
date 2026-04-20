@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -926,6 +928,7 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		ToX          *float64 `json:"to_x"`
 		ToY          *float64 `json:"to_y"`
 		Steps        int      `json:"steps"`
+		Human        *bool    `json:"human"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return errResult("invalid arguments: %v", err), nil
@@ -945,9 +948,20 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		return errResult("to: %v", err), nil
 	}
 
+	// 默认启用人类化轨迹(抖动 + 加速减速 + 随机步长时间),对抗
+	// 滑块拼图验证码的 bot 检测。传 "human": false 禁用。
+	human := true
+	if input.Human != nil {
+		human = *input.Human
+	}
+
 	steps := input.Steps
 	if steps <= 0 {
-		steps = 10
+		if human {
+			steps = 35 + rand.Intn(20) // 35-54 步,更像人类
+		} else {
+			steps = 10
+		}
 	}
 
 	// Mouse down at source.
@@ -955,15 +969,47 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 		"type": "mousePressed", "x": fromX, "y": fromY, "button": "left", "clickCount": 1,
 	}, nil)
 
-	// Intermediate moves.
+	// 按下后短暂停顿(人类反应时间),再开始移动。
+	if human {
+		time.Sleep(time.Duration(80+rand.Intn(120)) * time.Millisecond)
+	}
+
+	dx := toX - fromX
+	dy := toY - fromY
 	for i := 1; i <= steps; i++ {
-		frac := float64(i) / float64(steps)
-		mx := fromX + (toX-fromX)*frac
-		my := fromY + (toY-fromY)*frac
+		t := float64(i) / float64(steps)
+		var frac float64
+		if human {
+			// easeInOutQuad:先加速后减速,模拟人类"快速启动、到目标
+			// 附近再精细微调"的动作曲线。
+			if t < 0.5 {
+				frac = 2 * t * t
+			} else {
+				frac = 1 - math.Pow(-2*t+2, 2)/2
+			}
+		} else {
+			frac = t
+		}
+		mx := fromX + dx*frac
+		my := fromY + dy*frac
+		if human {
+			// Y 轴微抖动(±2 像素),X 轴尾部微微过冲后回拉。
+			mx += (rand.Float64() - 0.5) * 1.2
+			my += (rand.Float64() - 0.5) * 2.5
+		}
 		sess.Exec(ctx, "Input.dispatchMouseEvent", map[string]interface{}{
 			"type": "mouseMoved", "x": mx, "y": my, "button": "left",
 		}, nil)
-		time.Sleep(10 * time.Millisecond)
+		if human {
+			time.Sleep(time.Duration(8+rand.Intn(22)) * time.Millisecond)
+		} else {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	// 到达终点后短停顿再释放(人类确认位置),模拟真实松手动作。
+	if human {
+		time.Sleep(time.Duration(100+rand.Intn(200)) * time.Millisecond)
 	}
 
 	// Mouse up at destination.
@@ -973,6 +1019,7 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 
 	return okResult(map[string]interface{}{
 		"status": "ok", "from": [2]float64{fromX, fromY}, "to": [2]float64{toX, toY},
+		"human": human, "steps": steps,
 	}), nil
 }
 

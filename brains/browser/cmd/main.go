@@ -540,6 +540,9 @@ Key tools:
 - browser.wait: {"condition": "load"} — wait for page load (valid: visible, hidden, load, idle, js). Prefer "load" over "idle" as idle may timeout on pages with continuous network activity.
 - browser.eval: {"expression": "..."} — run JavaScript to extract data
 - browser.screenshot: {"full_page": true} — save a PNG to ~/.brain/screenshots/. Only use when the user explicitly asks for a visual/screenshot; do NOT use screenshot to read text content.
+- browser.drag: {"from_selector":"...","to_selector":"..."} or {"from_x":..,"from_y":..,"to_x":..,"to_y":..} — press and hold then drag. USE THIS for slider CAPTCHA (滑块验证), slider captchas, drag-and-drop puzzles, range sliders. Human-like trajectory (easeInOut + jitter) is enabled by default.
+- browser.hover: {"selector": "..."} — hover an element (triggers tooltips, dropdown menus).
+- browser.scroll: {"direction":"down","amount":500} — scroll the page.
 
 RULES:
 - To read page content (search results, article text, prices, numbers), use browser.snapshot with mode="text".
@@ -551,6 +554,7 @@ RULES:
 - The "category" field helps the system learn and reuse this plan for similar tasks.
 - For search: type the query into the search box, then use browser.press_key with key "Enter" to submit (more reliable than clicking the search button). After pressing Enter, add browser.wait with condition "load" to wait for results.
 - After any click or key press that triggers navigation, add browser.wait with condition "load" before taking a snapshot.
+- For slider CAPTCHA (滑块验证 / 拖动滑块 / slide-to-verify): FIRST take a snapshot with mode="interactive" to locate the slider handle and the slider track's end coordinates. THEN use browser.drag with from_selector/to_selector (or coordinates). Typical selectors: ".slider-button", ".captcha-slider", ".nc_iconfont", ".verify-move-block". DO NOT use browser.click on the slider — a click is not a drag and the captcha will not pass.
 - Output ONLY the JSON object, no explanation.`
 
 	userMsg := "Instruction: " + instruction

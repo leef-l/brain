@@ -150,7 +150,15 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	prompt += "4. Summarize the results to the user\n\n"
 	prompt += "Never treat shell_exec HTTP fetches as a substitute for browser delegation on normal web tasks.\n"
 	prompt += "If browser delegation fails, report the browser failure clearly instead of retrying the same web task through shell_exec, curl, wget, or verifier.browser_action.\n"
-	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n"
+	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n\n"
+	prompt += "### IMPORTANT: Pass values verbatim to delegated specialists\n"
+	prompt += "When the user provides concrete values (usernames, passwords, URLs, search queries, phone numbers, etc.), " +
+		"pass them through to the specialist's `instruction` **verbatim**. " +
+		"Do NOT replace them with placeholder variables like `$credentials.email`, `${username}`, `<password>`, `{{user_input}}` — " +
+		"the specialist will type the string LITERALLY into the input field and the login/action will fail.\n" +
+		"Example — user says `账号：admin 密码：abc123`:\n" +
+		"  CORRECT: instruction=\"在账号框输入 admin，密码框输入 abc123，点击登录\"\n" +
+		"  WRONG:   instruction=\"在账号框输入 $credentials.email，密码框输入 $credentials.password，点击登录\"\n"
 
 	if notice := orch.DegradationNotice(); notice != "" {
 		prompt += "\n" + notice + "\n"
