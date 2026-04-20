@@ -131,7 +131,7 @@ func (h *browserSessionHolder) close() {
 }
 
 // ---------------------------------------------------------------------------
-// NewBrowserTools returns all 15 browser tools sharing a single session.
+// NewBrowserTools returns all browser tools sharing a single session.
 // ---------------------------------------------------------------------------
 
 // NewBrowserTools creates all browser tools sharing a single browser session.
@@ -172,6 +172,7 @@ func NewBrowserTools() []Tool {
 		&browserScrollTool{holder: holder},
 		&browserHoverTool{holder: holder},
 		&browserDragTool{holder: holder},
+		&browserGeometryTool{holder: holder},
 		&browserSelectTool{holder: holder},
 		&browserUploadFileTool{holder: holder},
 		&browserScreenshotTool{holder: holder},
@@ -1030,7 +1031,77 @@ func (t *browserDragTool) Execute(ctx context.Context, args json.RawMessage) (*R
 }
 
 // ---------------------------------------------------------------------------
-// 11. browser.select — Select dropdown option
+// 11. browser.geometry — Read an element's box / center / edges
+// ---------------------------------------------------------------------------
+
+type browserGeometryTool struct{ holder *browserSessionHolder }
+
+func (t *browserGeometryTool) Name() string { return "browser.geometry" }
+func (t *browserGeometryTool) Risk() Risk   { return RiskSafe }
+func (t *browserGeometryTool) Schema() Schema {
+	return Schema{
+		Name:        t.Name(),
+		Description: "Read an element's geometry (bounding box, edges, center). Preferred: pass id from browser.snapshot. Useful before browser.drag for slider CAPTCHA.",
+		InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "id":       { "type": "integer", "description": "data-brain-id from browser.snapshot (preferred)" },
+    "selector": { "type": "string",  "description": "CSS selector of the element (fallback)" }
+  }
+}`),
+		OutputSchema: browserGeometryOutputSchema,
+		Brain:        "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.inspect",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "shared-session",
+			Scope:               "turn",
+			ApprovalClass:       "external-network",
+		},
+	}
+}
+
+func (t *browserGeometryTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
+	var input struct {
+		ID       int    `json:"id"`
+		Selector string `json:"selector"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return errResult("invalid arguments: %v", err), nil
+	}
+	if input.ID <= 0 && strings.TrimSpace(input.Selector) == "" {
+		return errResult("either id (from browser.snapshot) or selector is required"), nil
+	}
+
+	sess, err := t.holder.get(ctx)
+	if err != nil {
+		return errResult("no browser session: %v", err), nil
+	}
+
+	box, target, err := resolveElementGeometry(ctx, sess, input.ID, input.Selector)
+	if err != nil {
+		return errResult("%v", err), nil
+	}
+	return okResult(map[string]interface{}{
+		"status": "ok",
+		"target": target,
+		"box": map[string]float64{
+			"x":        box.X,
+			"y":        box.Y,
+			"width":    box.Width,
+			"height":   box.Height,
+			"left":     box.Left,
+			"top":      box.Top,
+			"right":    box.Right,
+			"bottom":   box.Bottom,
+			"center_x": box.CenterX,
+			"center_y": box.CenterY,
+		},
+	}), nil
+}
+
+// ---------------------------------------------------------------------------
+// 12. browser.select — Select dropdown option
 // ---------------------------------------------------------------------------
 
 type browserSelectTool struct{ holder *browserSessionHolder }
@@ -1628,6 +1699,57 @@ func getElementBox(ctx context.Context, sess *cdp.BrowserSession, selector strin
 		}
 	}
 	return [4]float64{}, fmt.Errorf("element %q not found", selector)
+}
+
+type elementGeometry struct {
+	X       float64
+	Y       float64
+	Width   float64
+	Height  float64
+	Left    float64
+	Top     float64
+	Right   float64
+	Bottom  float64
+	CenterX float64
+	CenterY float64
+}
+
+func resolveElementGeometry(ctx context.Context, sess *cdp.BrowserSession, id int, selector string) (elementGeometry, string, error) {
+	switch {
+	case id > 0:
+		box, err := getBrainIDBox(ctx, sess, id)
+		if err != nil {
+			return elementGeometry{}, "", err
+		}
+		return normalizeElementBox(box), fmt.Sprintf("[data-brain-id=%d]", id), nil
+	case strings.TrimSpace(selector) != "":
+		box, err := getElementBox(ctx, sess, selector)
+		if err != nil {
+			return elementGeometry{}, "", err
+		}
+		return normalizeElementBox(box), selector, nil
+	default:
+		return elementGeometry{}, "", fmt.Errorf("provide id or selector")
+	}
+}
+
+func normalizeElementBox(box [4]float64) elementGeometry {
+	x := box[0]
+	y := box[1]
+	w := box[2]
+	h := box[3]
+	return elementGeometry{
+		X:       x,
+		Y:       y,
+		Width:   w,
+		Height:  h,
+		Left:    x,
+		Top:     y,
+		Right:   x + w,
+		Bottom:  y + h,
+		CenterX: x + w/2,
+		CenterY: y + h/2,
+	}
 }
 
 // focusElement focuses a DOM element by selector.

@@ -27,7 +27,7 @@ func TestBuiltinToolsDeclareValidOutputSchema(t *testing.T) {
 	)
 	tools = append(tools, NewBrowserTools()...)
 
-	if got, want := len(tools), 46; got != want {
+	if got, want := len(tools), 48; got != want {
 		t.Fatalf("unexpected builtin tool count: got %d want %d", got, want)
 	}
 

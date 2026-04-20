@@ -226,6 +226,31 @@ var (
   "required": ["status", "from", "to"]
 }`)
 
+	browserGeometryOutputSchema = json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string" },
+    "target": { "type": "string" },
+    "box": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "left": { "type": "number" },
+        "top": { "type": "number" },
+        "right": { "type": "number" },
+        "bottom": { "type": "number" },
+        "center_x": { "type": "number" },
+        "center_y": { "type": "number" }
+      },
+      "required": ["x", "y", "width", "height", "left", "top", "right", "bottom", "center_x", "center_y"]
+    }
+  },
+  "required": ["status", "target", "box"]
+}`)
+
 	browserSelectOutputSchema = json.RawMessage(`{
   "type": "object",
   "properties": {

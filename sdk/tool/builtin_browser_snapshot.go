@@ -56,12 +56,12 @@ const brainInteractiveSelector = `a,button,input,select,textarea,[role=button],[
 // 再次调用会复用上次的 observer(通过 __brainObserverInstalled 标志判断)。
 //
 // 增量 snapshot 的契约:
-//   1. 全量 snapshot 把 __brainDirty 清空;
-//   2. observer 监听 childList/subtree/attributes,把变动 target 及其所有
-//      匹配选择器的后代塞进 __brainDirty;
-//   3. 增量 snapshot 只遍历 __brainDirty,给这些元素补 data-brain-id(沿用
-//      全局 __brainNextID 自增),返回 {updated: [brainElement...]};
-//   4. 调用方把 updated 合入上一次缓存,更新 inViewport / 坐标等易变字段。
+//  1. 全量 snapshot 把 __brainDirty 清空;
+//  2. observer 监听 childList/subtree/attributes,把变动 target 及其所有
+//     匹配选择器的后代塞进 __brainDirty;
+//  3. 增量 snapshot 只遍历 __brainDirty,给这些元素补 data-brain-id(沿用
+//     全局 __brainNextID 自增),返回 {updated: [brainElement...]};
+//  4. 调用方把 updated 合入上一次缓存,更新 inViewport / 坐标等易变字段。
 const brainInstallObserverJS = `
 (function(){
   if (window.__brainObserverInstalled) return "already";
@@ -496,12 +496,12 @@ func (t *browserSnapshotTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 
 	return okResult(map[string]interface{}{
-		"count":    len(elements),
-		"total":    total,
-		"mode":     input.Mode,
-		"url":      url,
-		"title":    title,
-		"elements": elements,
+		"count":           len(elements),
+		"total":           total,
+		"mode":            input.Mode,
+		"url":             url,
+		"title":           title,
+		"elements":        elements,
 		"snapshot_source": used, // "full" | "incremental"
 	}), nil
 }
@@ -597,6 +597,7 @@ func collectIncremental(ctx context.Context, sess *cdp.BrowserSession) (updated 
 // mergeIncrementalUpdate 把增量结果合入上一次的缓存:
 //   - removed 里的 ID 从缓存里剔除;
 //   - updated 里的 ID 如果命中缓存,原地替换;未命中则 append。
+//
 // 保持原有元素相对顺序,避免 Agent 看到的 id 顺序大幅抖动。
 func mergeIncrementalUpdate(prev, updated []brainElement, removed []int) []brainElement {
 	if len(updated) == 0 && len(removed) == 0 {
@@ -788,14 +789,22 @@ func readPageMeta(ctx context.Context, sess *cdp.BrowserSession) (string, string
 // Returns a helpful error if the id is missing (e.g. no snapshot was taken,
 // or the DOM has changed since).
 func resolveBrainID(ctx context.Context, sess *cdp.BrowserSession, id int) (float64, float64, error) {
+	box, err := getBrainIDBox(ctx, sess, id)
+	if err != nil {
+		return 0, 0, err
+	}
+	return box[0] + box[2]/2, box[1] + box[3]/2, nil
+}
+
+func getBrainIDBox(ctx context.Context, sess *cdp.BrowserSession, id int) ([4]float64, error) {
 	if id <= 0 {
-		return 0, 0, fmt.Errorf("invalid brain id: %d", id)
+		return [4]float64{}, fmt.Errorf("invalid brain id: %d", id)
 	}
 	js := fmt.Sprintf(`(function(){
   var el = document.querySelector('[data-brain-id="%d"]');
   if(!el) return null;
   var r = el.getBoundingClientRect();
-  return JSON.stringify({x: r.x+r.width/2, y: r.y+r.height/2, w: r.width, h: r.height});
+  return JSON.stringify({x: r.x, y: r.y, w: r.width, h: r.height});
 })()`, id)
 
 	var result struct {
@@ -807,22 +816,25 @@ func resolveBrainID(ctx context.Context, sess *cdp.BrowserSession, id int) (floa
 		"expression":    js,
 		"returnByValue": true,
 	}, &result); err != nil {
-		return 0, 0, err
+		return [4]float64{}, err
 	}
 	var s string
 	if err := json.Unmarshal(result.Result.Value, &s); err != nil {
-		return 0, 0, fmt.Errorf("element [data-brain-id=%d] not found — run browser.snapshot first", id)
+		return [4]float64{}, fmt.Errorf("element [data-brain-id=%d] not found — run browser.snapshot first", id)
 	}
-	var pos struct {
-		X, Y, W, H float64
+	var box struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+		W float64 `json:"w"`
+		H float64 `json:"h"`
 	}
-	if err := json.Unmarshal([]byte(s), &pos); err != nil {
-		return 0, 0, fmt.Errorf("parse pos: %v", err)
+	if err := json.Unmarshal([]byte(s), &box); err != nil {
+		return [4]float64{}, fmt.Errorf("parse pos: %v", err)
 	}
-	if pos.W <= 0 || pos.H <= 0 {
-		return 0, 0, fmt.Errorf("element [data-brain-id=%d] has zero size", id)
+	if box.W <= 0 || box.H <= 0 {
+		return [4]float64{}, fmt.Errorf("element [data-brain-id=%d] has zero size", id)
 	}
-	return pos.X, pos.Y, nil
+	return [4]float64{box.X, box.Y, box.W, box.H}, nil
 }
 
 func min(a, b int) int {
