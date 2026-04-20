@@ -297,9 +297,16 @@ When NOT to use:
   - After every single tool call (snapshot is re-run by click/type as needed)
 
 mode:
-  - "interactive" (default): DOM-walk only, fast
+  - "interactive" (default): DOM-walk only, fast. Returns interactive elements list.
   - "a11y": Accessibility.getFullAXTree only, for semantic role/name
   - "both": merge DOM walk with AX tree for richest output
+  - "text": return document.body.innerText (human-readable page text).
+           Use this to read page content (search results, articles, prices).
+  - "html": return full document.documentElement.outerHTML (raw HTML).
+           Use this when you need to parse structured data or specific DOM attributes.
+
+Text/html modes return the payload in the "content" field (truncated to
+max_chars, default 50000). They do not populate the "elements" array.
 
 incremental (default true): if a prior snapshot exists on the same page, only
 re-scan DOM subtrees mutated since last call (MutationObserver-driven).
@@ -308,8 +315,9 @@ Full scan is always used on first call, on URL change, or when mode=a11y|both.`,
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "mode":          { "type": "string", "enum": ["interactive","a11y","both"], "description": "Data sources to combine (default: interactive)" },
+    "mode":          { "type": "string", "enum": ["interactive","a11y","both","text","html"], "description": "Data sources to combine (default: interactive)" },
     "max_elements":  { "type": "integer", "description": "Truncate to N elements (default 200)" },
+    "max_chars":     { "type": "integer", "description": "For text/html modes: truncate content to N chars (default 50000)" },
     "viewport_only": { "type": "boolean", "description": "Only return elements currently in viewport" },
     "incremental":   { "type": "boolean", "description": "Reuse cached snapshot + observer diff when available (default true)" }
   }
@@ -322,7 +330,9 @@ Full scan is always used on first call, on URL change, or when mode=a11y|both.`,
     "mode":     { "type": "string" },
     "url":      { "type": "string" },
     "title":    { "type": "string" },
-    "elements": { "type": "array" }
+    "elements": { "type": "array" },
+    "content":  { "type": "string", "description": "Page text/html when mode=text|html" },
+    "truncated":{ "type": "boolean", "description": "Content was truncated to max_chars" }
   }
 }`),
 		Brain: "browser",
@@ -340,6 +350,7 @@ func (t *browserSnapshotTool) Execute(ctx context.Context, args json.RawMessage)
 	var input struct {
 		Mode         string `json:"mode"`
 		MaxElements  int    `json:"max_elements"`
+		MaxChars     int    `json:"max_chars"`
 		ViewportOnly bool   `json:"viewport_only"`
 		Incremental  *bool  `json:"incremental,omitempty"`
 	}
@@ -353,6 +364,9 @@ func (t *browserSnapshotTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 	if input.MaxElements <= 0 {
 		input.MaxElements = 200
+	}
+	if input.MaxChars <= 0 {
+		input.MaxChars = 50000
 	}
 	// 默认 true。a11y / both 模式下禁用增量(AX 树没法增量 diff)。
 	incremental := true
@@ -371,6 +385,46 @@ func (t *browserSnapshotTool) Execute(ctx context.Context, args json.RawMessage)
 	// 读 URL 做页面边界 key。换页必须丢缓存(observer 自己也会失效,但本侧
 	// 以 URL 兜底)。
 	url, title := readPageMeta(ctx, sess)
+
+	// text/html 模式:不走元素扫描,直接用 Runtime.evaluate 抓页面文本/HTML。
+	if input.Mode == "text" || input.Mode == "html" {
+		var expr string
+		if input.Mode == "text" {
+			expr = "document.body && document.body.innerText || ''"
+		} else {
+			expr = "document.documentElement && document.documentElement.outerHTML || ''"
+		}
+		var evalResult struct {
+			Result struct {
+				Value string `json:"value"`
+			} `json:"result"`
+		}
+		if err := sess.Exec(ctx, "Runtime.evaluate", map[string]interface{}{
+			"expression":    expr,
+			"returnByValue": true,
+		}, &evalResult); err != nil {
+			return errResult("evaluate %s: %v", input.Mode, err), nil
+		}
+		content := evalResult.Result.Value
+		truncated := false
+		if len(content) > input.MaxChars {
+			content = content[:input.MaxChars]
+			truncated = true
+		}
+		// 清空 interactive 缓存:text/html 不经过 DOM 扫描,observer 状态下次要重新建。
+		t.holder.observerInstalled = false
+		t.holder.snapshotCache = nil
+		t.holder.snapshotCachePageKey = ""
+		return okResult(map[string]interface{}{
+			"mode":      input.Mode,
+			"url":       url,
+			"title":     title,
+			"content":   content,
+			"truncated": truncated,
+			"count":     len(content),
+			"total":     len(content),
+		}), nil
+	}
 
 	used := "full"
 	var elements []brainElement

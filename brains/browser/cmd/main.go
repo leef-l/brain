@@ -519,7 +519,10 @@ Available tools: ` + fmt.Sprintf("%v", toolList) + `
 
 Key tools:
 - browser.open: {"url": "..."} — open a URL
-- browser.snapshot: {} — get page structure (accessibility tree, NOT screenshot)
+- browser.snapshot: {"mode": "interactive|text|html"} — read page.
+    mode="interactive" (default): list of clickable/typable elements (for UI operations).
+    mode="text": page body innerText. USE THIS to extract article / search result / product text content.
+    mode="html": full outerHTML. Use when you need structured attributes (e.g. price tags, hidden data).
 - browser.type: {"selector": "...", "text": "..."} — type text
 - browser.click: {"selector": "..."} — click element
 - browser.press_key: {"key": "Enter"} — press a key
@@ -527,8 +530,9 @@ Key tools:
 - browser.eval: {"expression": "..."} — run JavaScript to extract data
 
 RULES:
-- Use browser.snapshot (NOT screenshot) to read page content.
-- The LAST step MUST be browser.snapshot or browser.eval to capture the final result data.
+- To read page content (search results, article text, prices, numbers), use browser.snapshot with mode="text".
+- To find clickable targets or form fields, use browser.snapshot with mode="interactive".
+- The LAST step MUST be browser.snapshot (mode=text for reading content, mode=interactive for further UI ops) or browser.eval.
 - Keep the plan SHORT — typically 3-6 steps.
 - The "url" field is for the initial page — do NOT include browser.open in steps if you set url.
 - Do NOT add browser.wait after setting the "url" field — the URL open already waits for page load.
@@ -651,19 +655,29 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 
 	summary := string(lastOutput)
 
-	// Always capture a text-mode snapshot for the summary so that the
-	// central brain receives human-readable page content instead of raw
-	// interactive-mode JSON (element IDs, coordinates, etc.).
+	// Always capture a text-mode snapshot for the summary so the central brain
+	// receives human-readable page content instead of raw interactive-mode JSON.
+	// We unpack the "content" field so the summary is plain page text.
 	if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
-		snapArgs, _ := json.Marshal(map[string]interface{}{"mode": "text"})
+		snapArgs, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 8000})
 		snapResult, snapErr := snapshotTool.Execute(ctx, snapArgs)
 		if snapErr == nil && snapResult != nil && len(snapResult.Output) > 0 {
-			summary = string(snapResult.Output)
+			var parsed struct {
+				Title   string `json:"title"`
+				URL     string `json:"url"`
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal(snapResult.Output, &parsed); err == nil && parsed.Content != "" {
+				summary = fmt.Sprintf("Title: %s\nURL: %s\n\n%s",
+					parsed.Title, parsed.URL, parsed.Content)
+			} else {
+				summary = string(snapResult.Output)
+			}
 		}
 	}
 	diaglog.Logf("browser", "executeLLMPlan: summary len=%d preview=%.500s", len(summary), summary)
-	if len(summary) > 4096 {
-		summary = summary[:4096] + "...[truncated]"
+	if len(summary) > 8192 {
+		summary = summary[:8192] + "...[truncated]"
 	}
 
 	// Learn: persist the successful plan as a new pattern.
