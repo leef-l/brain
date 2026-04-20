@@ -113,18 +113,27 @@ func clearPromptFrame(session *term.LineReadSession) {
 	if session.FrameLines <= 0 {
 		return
 	}
+	// FrameLines 统计的是"逻辑行"数(queue N + prompt 1 + footer 1)。
+	// 但如果用户在 prompt 里输入了长到自动折行的内容,prompt 实际在终端
+	// 上占了 1 + LastEndRow 个物理行。清屏时必须把折行带来的额外物理行
+	// 也一起清掉,否则多出来的那几行会残留在屏幕上形成"幻影"。
+	totalRows := session.FrameLines + session.Ed.LastEndRow
+	// 此刻光标在 prompt 行(RenderPromptFrame 结尾 moveCursorToPromptLine
+	// 把光标移到 prompt 首列);上方是 queue 行,下方是 prompt 折行 + footer。
+	// 需要先回到整帧顶部(queue 的第一行):
+	//   上移 = queueLines(= FrameLines - 2,因为 FrameLines 包含 prompt+footer)
 	if up := session.FrameLines - 2; up > 0 {
 		fmt.Printf("\033[%dA", up)
 	}
 	fmt.Print("\r")
-	for i := 0; i < session.FrameLines; i++ {
+	for i := 0; i < totalRows; i++ {
 		fmt.Print("\033[2K")
-		if i < session.FrameLines-1 {
+		if i < totalRows-1 {
 			fmt.Print("\033[1B\r")
 		}
 	}
-	if session.FrameLines > 1 {
-		fmt.Printf("\033[%dA", session.FrameLines-1)
+	if totalRows > 1 {
+		fmt.Printf("\033[%dA", totalRows-1)
 	}
 	fmt.Print("\r")
 	session.FrameLines = 0
