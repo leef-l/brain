@@ -35,6 +35,7 @@ import (
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/persistence"
+	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/tool/cdp"
@@ -415,11 +416,9 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 		}, nil
 	}
 
-	// 用户意图探测:指令里包含"看到/给我看/可见浏览器"这类表达时,
-	// 切换到有头模式让用户观察操作过程。
-	// 已存在的 headless session 会被关闭,下次 get() 会用新的 env 重启
-	// 一个有头的 Chrome 窗口。
-	if wantsVisibleBrowser(req.Instruction) {
+	// 用户意图探测优先使用结构化旁路字段，其次才回退到改写后的 instruction。
+	// 这样 central 重写 delegation instruction 时，不会丢掉用户“我要看到”的原始诉求。
+	if wantsHeadedBrowser(req.Subtask, req.Instruction) {
 		diaglog.Logf("browser", "detected visible-browser intent, switching to headed mode")
 		os.Setenv("BROWSER_HEADED", "1")
 		tool.CloseBrowserSession(h.browserTools)
@@ -621,8 +620,8 @@ type plannedStep struct {
 
 // llmPlan is the full plan output from a single LLM call.
 type llmPlan struct {
-	URL      string       `json:"url"`
-	Category string       `json:"category"`
+	URL      string        `json:"url"`
+	Category string        `json:"category"`
 	Steps    []plannedStep `json:"steps"`
 }
 
@@ -1098,6 +1097,7 @@ func extractPageMetaFromSummary(summary string) (url, title string) {
 // 命中的场景:
 //   - 中文:"我要看到"/"给我看"/"让我看"/"打开浏览器"/"可见"/"看得到"
 //   - 英文:"visible"/"watch"/"show me"/"headed"/"not headless"
+//
 // 这些词出现在 instruction 里就切到有头模式。宁可多开窗口,也不要
 // 让用户看不到自己明确要求的操作过程。
 func wantsVisibleBrowser(instruction string) bool {
@@ -1116,11 +1116,27 @@ func wantsVisibleBrowser(instruction string) bool {
 	return false
 }
 
+func wantsHeadedBrowser(subtask *protocol.SubtaskContext, instruction string) bool {
+	if subtask != nil {
+		switch strings.ToLower(strings.TrimSpace(subtask.RenderMode)) {
+		case "headed":
+			return true
+		case "headless":
+			return false
+		}
+		if wantsVisibleBrowser(subtask.UserUtterance) {
+			return true
+		}
+	}
+	return wantsVisibleBrowser(instruction)
+}
+
 // stillOnLoginPage 根据最终 summary(text snapshot 的 Title+URL+Content)
 // 粗略判断 plan 跑完后页面是否仍停在登录/认证页。典型特征:
 //   - URL 路径含 /login /signin /auth
 //   - 页面有"密码"/"password"/"登录"/"Sign in"之类的提示文本
 //   - 页面有"登录失败"/"invalid password" 等错误提示
+//
 // 命中任一就当登录失败,交给 takeover 路径让用户接管。
 func stillOnLoginPage(summary string) bool {
 	if summary == "" {

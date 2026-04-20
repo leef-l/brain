@@ -11,6 +11,7 @@ import (
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/persistence"
+	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/tool"
 )
 
@@ -114,6 +115,24 @@ func TestNewBrowserHumanEventSourceFactory_DegradesWithoutSession(t *testing.T) 
 	}
 	if src != nil {
 		t.Fatalf("factory source = %#v, want nil before session creation", src)
+	}
+}
+
+func TestWantsHeadedBrowser_PrefersStructuredSubtaskIntent(t *testing.T) {
+	if !wantsHeadedBrowser(&protocol.SubtaskContext{
+		UserUtterance: "我要能看到你的操作",
+	}, "启动浏览器大脑实例，准备接受后续网页任务") {
+		t.Fatal("expected structured user utterance to force headed mode")
+	}
+
+	if wantsHeadedBrowser(&protocol.SubtaskContext{
+		RenderMode: "headless",
+	}, "给我看浏览器") {
+		t.Fatal("explicit headless render mode should override fallback keyword matching")
+	}
+
+	if !wantsHeadedBrowser(nil, "给我看浏览器操作过程") {
+		t.Fatal("expected legacy instruction keyword fallback to remain available")
 	}
 }
 

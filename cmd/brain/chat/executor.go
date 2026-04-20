@@ -9,8 +9,10 @@ import (
 	"github.com/leef-l/brain/cmd/brain/cliruntime"
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/cmd/brain/env"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
+	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/runtimeaudit"
 	"github.com/leef-l/brain/sdk/tool"
 )
@@ -71,6 +73,10 @@ func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Regis
 	opts loop.RunOptions, brainID string, maxTurns int, turnIndex int,
 	baseMessages []llm.Message, input, workdir string, maxDuration time.Duration,
 	progressCh chan<- ProgressEvent) (*loop.RunResult, error) {
+	ctx = kernel.WithSubtaskContext(ctx, &protocol.SubtaskContext{
+		UserUtterance: input,
+		TurnIndex:     turnIndex,
+	})
 
 	messages := append(baseMessages, llm.Message{
 		Role:    "user",

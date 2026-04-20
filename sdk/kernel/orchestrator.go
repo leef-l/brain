@@ -38,6 +38,11 @@ type SubtaskRequest struct {
 	// Context is optional structured context (file paths, prior results).
 	Context json.RawMessage `json:"context,omitempty"`
 
+	// Subtask carries immutable caller intent such as the original user
+	// utterance and explicit render preferences. Unlike Instruction, this
+	// metadata must not be rewritten by the delegating LLM.
+	Subtask *protocol.SubtaskContext `json:"subtask,omitempty"`
+
 	// Budget constrains the subtask execution.
 	Budget *SubtaskBudget `json:"budget,omitempty"`
 
@@ -635,6 +640,9 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 	}
 	if req.Execution != nil {
 		payload["execution"] = req.Execution
+	}
+	if req.Subtask != nil {
+		payload["subtask"] = req.Subtask
 	}
 
 	// Send brain/execute and wait for result.

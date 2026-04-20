@@ -13,6 +13,7 @@ import (
 	"github.com/leef-l/brain/sdk/executionpolicy"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
+	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/toolpolicy"
 )
@@ -22,6 +23,7 @@ type ExecuteRequest struct {
 	TaskID      string                         `json:"task_id"`
 	Instruction string                         `json:"instruction"`
 	Context     json.RawMessage                `json:"context,omitempty"`
+	Subtask     *protocol.SubtaskContext       `json:"subtask,omitempty"`
 	Budget      *ExecuteBudget                 `json:"budget,omitempty"`
 	Execution   *executionpolicy.ExecutionSpec `json:"execution,omitempty"`
 }

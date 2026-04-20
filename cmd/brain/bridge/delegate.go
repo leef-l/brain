@@ -9,6 +9,7 @@ import (
 	"github.com/leef-l/brain/cmd/brain/env"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/tool"
 )
 
@@ -59,6 +60,11 @@ func (t *DelegateTool) Schema() tool.Schema {
 				"context": {
 					"type": "object",
 					"description": "Optional structured context (file paths, prior results, etc.)"
+				},
+				"render_mode": {
+					"type": "string",
+					"enum": ["headed", "headless"],
+					"description": "Optional explicit browser render mode preference for delegated UI tasks"
 				}
 			},
 			"required": ["target_kind", "instruction"]
@@ -69,11 +75,26 @@ func (t *DelegateTool) Schema() tool.Schema {
 
 func (t *DelegateTool) Risk() tool.Risk { return tool.RiskMedium }
 
+func buildSubtaskContext(ctx context.Context, renderMode string) *protocol.SubtaskContext {
+	subtask := kernel.SubtaskContextFromContext(ctx)
+	if subtask == nil {
+		subtask = &protocol.SubtaskContext{}
+	}
+	if renderMode != "" {
+		subtask.RenderMode = renderMode
+	}
+	if subtask.UserUtterance == "" && subtask.RenderMode == "" && subtask.ParentRunID == "" && subtask.TurnIndex == 0 {
+		return nil
+	}
+	return subtask
+}
+
 func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool.Result, error) {
 	var input struct {
 		TargetKind  string          `json:"target_kind"`
 		Instruction string          `json:"instruction"`
 		Context     json.RawMessage `json:"context,omitempty"`
+		RenderMode  string          `json:"render_mode,omitempty"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return &tool.Result{
@@ -100,6 +121,7 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		TargetKind:  agent.Kind(input.TargetKind),
 		Instruction: input.Instruction,
 		Context:     input.Context,
+		Subtask:     buildSubtaskContext(ctx, input.RenderMode),
 		Execution:   t.Env.ExecutionSpec(),
 	}
 	if deadline, ok := ctx.Deadline(); ok {

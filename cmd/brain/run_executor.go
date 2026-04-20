@@ -6,29 +6,31 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/events"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
+	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/runtimeaudit"
 	"github.com/leef-l/brain/sdk/tool"
 )
 
 type managedRunExecution struct {
-	Runtime       *cliRuntime
-	Record        *persistedRunRecord
-	Registry      tool.Registry
-	Provider      llm.Provider
-	ProviderName  string
-	ProviderModel string
-	BrainID       string
-	Prompt        string
-	MaxTurns      int
-	MaxDuration   time.Duration
-	Stream        bool
-	SystemPrompt  string
-	EventBus      *events.MemEventBus // 可选，非 nil 时双写事件到 EventBus
-	BatchPlanner  loop.ToolBatchPlanner // 可选，非 nil 时启用并行工具分组
+	Runtime           *cliRuntime
+	Record            *persistedRunRecord
+	Registry          tool.Registry
+	Provider          llm.Provider
+	ProviderName      string
+	ProviderModel     string
+	BrainID           string
+	Prompt            string
+	MaxTurns          int
+	MaxDuration       time.Duration
+	Stream            bool
+	SystemPrompt      string
+	EventBus          *events.MemEventBus                                                                  // 可选，非 nil 时双写事件到 EventBus
+	BatchPlanner      loop.ToolBatchPlanner                                                                // 可选，非 nil 时启用并行工具分组
 	MessageCompressor func(ctx context.Context, messages []llm.Message, budget int) ([]llm.Message, error) // 可选，消息压缩
-	TokenBudget       int // 消息 token 预算
+	TokenBudget       int                                                                                  // 消息 token 预算
 }
 
 type managedRunOutcome struct {
@@ -41,6 +43,14 @@ type managedRunOutcome struct {
 }
 
 func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRunOutcome, error) {
+	parentRunID := ""
+	if req.Record != nil {
+		parentRunID = req.Record.ID
+	}
+	ctx = kernel.WithSubtaskContext(ctx, &protocol.SubtaskContext{
+		UserUtterance: req.Prompt,
+		ParentRunID:   parentRunID,
+	})
 	ctx = runtimeaudit.WithSink(ctx, runtimeaudit.SinkFunc(func(sinkCtx context.Context, ev runtimeaudit.Event) {
 		if req.Runtime == nil || req.Runtime.RunStore == nil || req.Record == nil {
 			return

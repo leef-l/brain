@@ -82,7 +82,9 @@ func (h *centralHandler) ToolSchemas() []tool.Schema {
   "properties": {
     "target_kind": { "type": "string" },
     "instruction": { "type": "string" },
-    "context": { "type": "object" }
+    "context": { "type": "object" },
+    "render_mode": { "type": "string", "enum": ["headed", "headless"] },
+    "subtask": { "type": "object" }
   },
   "required": ["target_kind", "instruction"]
 }`),
@@ -229,6 +231,8 @@ func (h *centralHandler) handleDelegate(ctx context.Context, args json.RawMessag
 		TargetKind  string          `json:"target_kind"`
 		Instruction string          `json:"instruction"`
 		Context     json.RawMessage `json:"context,omitempty"`
+		RenderMode  string          `json:"render_mode,omitempty"`
+		Subtask     json.RawMessage `json:"subtask,omitempty"`
 	}
 	if err := json.Unmarshal(args, &delegateArgs); err != nil {
 		return toolCallFailure("central.delegate", "invalid_arguments", "invalid delegate arguments: "+err.Error()), nil
@@ -249,6 +253,13 @@ func (h *centralHandler) handleDelegate(ctx context.Context, args json.RawMessag
 	}
 	if delegateArgs.Context != nil {
 		delegateReq["context"] = delegateArgs.Context
+	}
+	if delegateArgs.Subtask != nil {
+		delegateReq["subtask"] = delegateArgs.Subtask
+	} else if delegateArgs.RenderMode != "" {
+		delegateReq["subtask"] = map[string]interface{}{
+			"render_mode": delegateArgs.RenderMode,
+		}
 	}
 
 	// Call subtask.delegate via reverse RPC to the Kernel.
