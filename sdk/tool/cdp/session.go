@@ -67,11 +67,21 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 		return nil, fmt.Errorf("cdp: no free port in range 9222-9321")
 	}
 
+	// 伪装的 User-Agent:去掉 "HeadlessChrome"/"Headless" 标识,
+	// 用一个常见的 Windows Chrome UA,降低被反爬识别的概率。
+	// 可通过 BROWSER_UA 环境变量覆盖。
+	fakeUA := os.Getenv("BROWSER_UA")
+	if fakeUA == "" {
+		fakeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+			"(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+	}
+
 	// Launch browser.
 	args := []string{
 		"--headless=new",
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		fmt.Sprintf("--user-data-dir=%s", userDir),
+		fmt.Sprintf("--user-agent=%s", fakeUA),
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-client-side-phishing-detection",
@@ -87,6 +97,8 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 		"--no-sandbox",
 		"--disable-gpu",
 		"--window-size=1920,1080",
+		// 反爬规避:禁用 AutomationControlled 特性,不再在 UA-CH 里暴露自动化标识。
+		"--disable-blink-features=AutomationControlled",
 		"about:blank",
 	}
 
@@ -341,8 +353,70 @@ func (s *BrowserSession) attachToTarget(ctx context.Context, targetID string) er
 		}
 	}
 
+	// 反爬规避:在页面任何脚本运行前注入反检测 JS,清除 headless 特征。
+	// 失败不阻断 attach,只是反爬效果可能变差。
+	s.client.CallSession(ctx, result.SessionID, "Page.addScriptToEvaluateOnNewDocument", map[string]interface{}{
+		"source": antiDetectScript,
+	}, nil)
+
 	return nil
 }
+
+// antiDetectScript 清除 headless Chrome 的自动化特征,用于绕过基础反爬检测。
+// 在每个 document 创建时(任何用户脚本之前)运行。
+const antiDetectScript = `
+(() => {
+  try {
+    Object.defineProperty(Navigator.prototype, 'webdriver', {
+      get: () => undefined,
+      configurable: true,
+    });
+  } catch (e) {}
+  try {
+    const fakePlugins = [
+      { name: 'PDF Viewer', filename: 'internal-pdf-viewer' },
+      { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer' },
+      { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer' },
+    ];
+    Object.defineProperty(Navigator.prototype, 'plugins', {
+      get: () => fakePlugins,
+      configurable: true,
+    });
+    Object.defineProperty(Navigator.prototype, 'mimeTypes', {
+      get: () => [{ type: 'application/pdf', suffixes: 'pdf' }],
+      configurable: true,
+    });
+  } catch (e) {}
+  try {
+    Object.defineProperty(Navigator.prototype, 'languages', {
+      get: () => ['zh-CN', 'zh', 'en-US', 'en'],
+      configurable: true,
+    });
+  } catch (e) {}
+  try {
+    if (!window.chrome) {
+      window.chrome = { runtime: {} };
+    }
+  } catch (e) {}
+  try {
+    const originalQuery = window.navigator.permissions && window.navigator.permissions.query;
+    if (originalQuery) {
+      window.navigator.permissions.query = (p) =>
+        p && p.name === 'notifications'
+          ? Promise.resolve({ state: Notification.permission })
+          : originalQuery(p);
+    }
+  } catch (e) {}
+  try {
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(param) {
+      if (param === 37445) return 'Intel Inc.';
+      if (param === 37446) return 'Intel Iris OpenGL Engine';
+      return getParameter.call(this, param);
+    };
+  } catch (e) {}
+})();
+`
 
 // findBrowser searches for a Chromium-based browser on the system.
 // Priority: BROWSER_PATH env → Chrome → Chromium → Edge → Brave → Opera.
