@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -528,11 +529,12 @@ Key tools:
 - browser.press_key: {"key": "Enter"} — press a key
 - browser.wait: {"condition": "load"} — wait for page load (valid: visible, hidden, load, idle, js). Prefer "load" over "idle" as idle may timeout on pages with continuous network activity.
 - browser.eval: {"expression": "..."} — run JavaScript to extract data
+- browser.screenshot: {"full_page": true} — save a PNG to ~/.brain/screenshots/. Only use when the user explicitly asks for a visual/screenshot; do NOT use screenshot to read text content.
 
 RULES:
 - To read page content (search results, article text, prices, numbers), use browser.snapshot with mode="text".
 - To find clickable targets or form fields, use browser.snapshot with mode="interactive".
-- The LAST step MUST be browser.snapshot (mode=text for reading content, mode=interactive for further UI ops) or browser.eval.
+- The LAST step MUST be browser.snapshot (mode=text for reading content), browser.eval, or browser.screenshot (only when the user explicitly asks for a screenshot).
 - Keep the plan SHORT — typically 3-6 steps.
 - The "url" field is for the initial page — do NOT include browser.open in steps if you set url.
 - Do NOT add browser.wait after setting the "url" field — the URL open already waits for page load.
@@ -655,27 +657,72 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 
 	summary := string(lastOutput)
 
-	// Always capture a text-mode snapshot for the summary so the central brain
-	// receives human-readable page content instead of raw interactive-mode JSON.
-	// We unpack the "content" field so the summary is plain page text.
-	if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
-		snapArgs, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 8000})
-		snapResult, snapErr := snapshotTool.Execute(ctx, snapArgs)
-		if snapErr == nil && snapResult != nil && len(snapResult.Output) > 0 {
-			var parsed struct {
-				Title   string `json:"title"`
-				URL     string `json:"url"`
-				Content string `json:"content"`
+	// 根据 plan 的最后一步类型决定 summary 策略:
+	//   screenshot / eval:保留原始输出(截图 base64 或 JS 返回值)
+	//   其他:追加 text-mode snapshot,让 central 拿到人类可读的页面文本
+	lastTool := ""
+	if n := len(plan.Steps); n > 0 {
+		lastTool = plan.Steps[n-1].Tool
+	}
+	if lastTool == "browser.screenshot" {
+		// Screenshot was the final step.
+		// 把 base64 写到本地文件(~/.brain/screenshots/screenshot-<ts>.png),
+		// summary 只返回文件路径和页面元信息:
+		//   1) 截图 base64 字符串对非视觉 LLM 没用且耗上下文
+		//   2) 用户需要的是一个能直接查看的本地文件
+		var shot struct {
+			Format string `json:"format"`
+			Data   string `json:"data"`
+		}
+		if err := json.Unmarshal(lastOutput, &shot); err == nil && shot.Data != "" {
+			ext := shot.Format
+			if ext == "" {
+				ext = "png"
 			}
-			if err := json.Unmarshal(snapResult.Output, &parsed); err == nil && parsed.Content != "" {
-				summary = fmt.Sprintf("Title: %s\nURL: %s\n\n%s",
-					parsed.Title, parsed.URL, parsed.Content)
-			} else {
-				summary = string(snapResult.Output)
+			dir := filepath.Join(os.Getenv("HOME"), ".brain", "screenshots")
+			os.MkdirAll(dir, 0o755)
+			filename := fmt.Sprintf("screenshot-%d.%s", time.Now().UnixNano(), ext)
+			path := filepath.Join(dir, filename)
+			if raw, decErr := base64.StdEncoding.DecodeString(shot.Data); decErr == nil {
+				if writeErr := os.WriteFile(path, raw, 0o644); writeErr == nil {
+					pageURL, pageTitle := "", ""
+					if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
+						sa, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 200})
+						if sr, err := snapshotTool.Execute(ctx, sa); err == nil && sr != nil {
+							var meta struct {
+								Title string `json:"title"`
+								URL   string `json:"url"`
+							}
+							json.Unmarshal(sr.Output, &meta)
+							pageURL, pageTitle = meta.URL, meta.Title
+						}
+					}
+					summary = fmt.Sprintf(
+						"Screenshot saved to: %s (%d bytes, %s)\nPage URL: %s\nPage Title: %s",
+						path, len(raw), ext, pageURL, pageTitle)
+				}
+			}
+		}
+	} else if lastTool != "browser.eval" {
+		if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
+			snapArgs, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 8000})
+			snapResult, snapErr := snapshotTool.Execute(ctx, snapArgs)
+			if snapErr == nil && snapResult != nil && len(snapResult.Output) > 0 {
+				var parsed struct {
+					Title   string `json:"title"`
+					URL     string `json:"url"`
+					Content string `json:"content"`
+				}
+				if err := json.Unmarshal(snapResult.Output, &parsed); err == nil && parsed.Content != "" {
+					summary = fmt.Sprintf("Title: %s\nURL: %s\n\n%s",
+						parsed.Title, parsed.URL, parsed.Content)
+				} else {
+					summary = string(snapResult.Output)
+				}
 			}
 		}
 	}
-	diaglog.Logf("browser", "executeLLMPlan: summary len=%d preview=%.500s", len(summary), summary)
+	diaglog.Logf("browser", "executeLLMPlan: lastTool=%s summary len=%d preview=%.200s", lastTool, len(summary), summary)
 	if len(summary) > 8192 {
 		summary = summary[:8192] + "...[truncated]"
 	}
