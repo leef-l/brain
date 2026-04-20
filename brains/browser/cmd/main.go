@@ -496,6 +496,17 @@ func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar
 		}
 	}
 
+	// 登录 / 敏感表单 / 含滑块的任务跳过 planner 直接走 agent loop。
+	// 理由:planner 是"一次规划固定 plan",不适合需要"试 → 看结果 → 调整"
+	// 的场景(滑块可能一次拖不过,需要 LLM 看 snapshot 决定调 drag 重试
+	// 还是 human.request_takeover)。agent loop 每轮都能看到工具清单
+	// 和最新 snapshot,也能发 human.request_takeover 这种要阻塞的 tool
+	// call。
+	if isSensitiveFormTask(req.Instruction) || hasSliderKeyword(req.Instruction) {
+		diaglog.Logf("browser", "sensitive/slider task, going straight to agent loop")
+		return h.fallbackAgentLoop(ctx, req, registry)
+	}
+
 	diaglog.Logf("browser", "no pattern matched, calling LLM planner, snapshot_len=%d", len(pageSnapshot))
 	plan, err := h.planWithLLM(ctx, req.Instruction, pageSnapshot, registry)
 	if err == nil {
@@ -511,6 +522,22 @@ func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar
 
 	// Step 3 (fallback): Multi-turn agent loop as last resort.
 	return h.fallbackAgentLoop(ctx, req, registry)
+}
+
+// hasSliderKeyword 识别 instruction 是否提到滑块/验证码等需要多轮交互
+// 判断的任务。这类任务跳过 planner,直接走 agent loop。
+func hasSliderKeyword(instruction string) bool {
+	s := strings.ToLower(instruction)
+	needles := []string{
+		"滑块", "拖动", "拖拽", "验证码", "人机验证", "safety check",
+		"captcha", "slider", "slide to verify", "drag to verify",
+	}
+	for _, n := range needles {
+		if strings.Contains(s, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
 }
 
 // executePattern runs a matched pattern via pattern_exec (0 LLM calls).
@@ -1214,16 +1241,31 @@ Tools:
   - browser.eval(expression): run JavaScript to read/extract data.
   - browser.screenshot(full_page=true): save a PNG (user visible file).
   - human.request_takeover(reason, guidance): HAND OFF to a human operator.
-      CALL THIS WHEN:
-        * slider / image / puzzle CAPTCHA keeps failing after your drag attempts
+      CALL THIS — IT IS A REAL TOOL, NOT A METAPHOR. You MUST emit a tool_use
+      block with name="human.request_takeover", not a text reply describing it.
+      CALL THIS IMMEDIATELY WHEN (do NOT waste turns trying):
+        * A slider CAPTCHA appears. CALL human.request_takeover ON THE FIRST
+          SIGHT of a slider. Do not attempt browser.drag first — the drag will
+          be detected as bot and fail, and every failed attempt wastes the
+          turn budget.
         * SMS / phone verification / 2FA prompt appears
-        * You have tried 3+ distinct strategies with no progress
-        * You cannot identify the slider handle or target position
-      The agent PAUSES until the human resumes. Human actions are recorded and
-      become a learned pattern, so next time the same site works automatically.
-      NEVER tell the user "please do X yourself in the browser" in a text reply
-      when you could instead call human.request_takeover and wait — that tool is
-      the ONLY way for the human's work to be recorded and learned.
+        * Image CAPTCHA ("select all crosswalks" etc.) appears
+        * You tried 3+ distinct strategies with no progress
+        * You cannot locate the element you need to interact with
+      The agent PAUSES until the human /resumes. During the pause, CDP hooks
+      record the human's clicks / inputs / drags into a demo sequence that
+      becomes a learned UIPattern for future runs. THIS RECORDING ONLY HAPPENS
+      IF YOU ACTUALLY CALL THIS TOOL.
+
+  FORBIDDEN BEHAVIORS:
+    - Do not produce a text reply saying "please finish the CAPTCHA yourself"
+      or "I will observe your operations" without ALSO calling
+      human.request_takeover. Text is not recording — only the tool call is.
+    - Do not claim "已完成" / "Done" / "Succeeded" unless a final
+      browser.snapshot confirms you're on a different URL/title than the
+      starting login page.
+    - Do not pretend to have dragged the slider if browser.drag returned an
+      error or the next snapshot still shows the slider.
 
 Pass ALL user-provided values (username, password, URLs, queries, phone numbers)
 VERBATIM to browser.type — never replace them with placeholders like $username

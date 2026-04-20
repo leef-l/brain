@@ -34,10 +34,35 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /brain             List specialist brains and status")
 		fmt.Println("  /brain start <kind> Start a specialist brain sidecar")
 		fmt.Println("  /brain stop <kind>  Stop a running sidecar (or 'all')")
+		fmt.Println("  /takeover          Enter manual takeover mode (you operate the browser)")
 		fmt.Println("  /resume [note]     Signal the waiting agent to continue after human takeover")
 		fmt.Println("  /abort  [note]     Tell the waiting agent to give up this step")
 		fmt.Println("  /keys              Show keybindings config path")
 		fmt.Println("  /exit              Exit chat")
+		fmt.Println()
+		return true, false
+
+	case cmd == "/takeover" || strings.HasPrefix(cmd, "/takeover "):
+		// 手动触发 takeover:即便 LLM 没主动举手,用户也能强制挂起当前
+		// 运行的 browser 任务让自己操作。需要当前有 running browser
+		// task + ChatHumanCoordinator 可用。
+		if state.HumanCoord == nil {
+			fmt.Println("  \033[33mHuman coordinator not initialized.\033[0m")
+			fmt.Println()
+			return true, false
+		}
+		// 直接 emit 一个 fake requested 事件,让 chat 屏幕提示用户操作。
+		// 这个不走 sidecar 反向 RPC,只是 UI 提示;真正挂起 agent 需要
+		// sidecar LLM 发出 human.request_takeover tool call。
+		// 如果有 pending 那是真挂起,否则只是手动进"人工模式"等 agent
+		// 下一次检查页面时识别状态。
+		if _, ok := state.HumanCoord.Pending(); ok {
+			fmt.Println("  \033[33mA takeover is already pending. Use /resume or /abort.\033[0m")
+		} else {
+			fmt.Println("  \033[1;33m✋ Manual takeover mode\033[0m")
+			fmt.Println("     No agent is currently waiting. You can operate the browser yourself.")
+			fmt.Println("     Agent will continue next turn based on the new page state.")
+		}
 		fmt.Println()
 		return true, false
 
