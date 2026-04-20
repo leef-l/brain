@@ -716,6 +716,10 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 
 // flushToolCalls enqueues all accumulated tool calls into r.pending and
 // returns the first one. Subsequent calls to Next() will drain the rest.
+// 若有 tool call 累积,末尾自动追加一条 EventMessageDelta 把 StopReason
+// 设成 "tool_use"——某些服务端(阿里云 qwen)不发 finish_reason 或 fin-
+// ish_reason 不是 tool_calls,没有这一步 runner 会把 tool call 当作普通
+// 文本忽略,表现为"Plan 了但 tools=0"。
 func (r *openaiSSEReader) flushToolCalls() (StreamEvent, bool) {
 	for idx, tc := range r.toolUse {
 		delete(r.toolUse, idx)
@@ -733,6 +737,14 @@ func (r *openaiSSEReader) flushToolCalls() (StreamEvent, bool) {
 		})
 	}
 	if len(r.pending) > 0 {
+		// Append a message_delta with StopReason=tool_use so runner knows to
+		// actually dispatch the tools.
+		r.pending = append(r.pending, StreamEvent{
+			Type: EventMessageDelta,
+			Data: marshalRaw(struct {
+				StopReason string `json:"stop_reason,omitempty"`
+			}{StopReason: "tool_use"}),
+		})
 		ev := r.pending[0]
 		r.pending = r.pending[1:]
 		return ev, true
