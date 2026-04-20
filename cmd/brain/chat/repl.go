@@ -389,11 +389,12 @@ func RunChat(args []string) int {
 
 				if running {
 					state.Enqueue(input)
-					if frameDetached {
-						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
-					} else {
-						RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
-					}
+					// running 期间用户 Enter 的消息要么:
+					//  (a) 被 ChatHumanCoordinator 识别为 /resume /abort,
+					//  (b) 进入输入队列等当前 run 结束后自动跑
+					// 打一行明确的灰色提示,让用户知道输入已被接受,不会
+					// 误以为"卡住了"。running 期间不画 prompt frame。
+					fmt.Printf("\033[2m  (queued — will run after current task)\033[0m\n")
 					continue
 				}
 
