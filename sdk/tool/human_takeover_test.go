@@ -12,10 +12,10 @@ import (
 )
 
 type fakeCoord struct {
-	mu       sync.Mutex
-	calls    []HumanTakeoverRequest
-	reply    HumanTakeoverResponse
-	delay    time.Duration
+	mu    sync.Mutex
+	calls []HumanTakeoverRequest
+	reply HumanTakeoverResponse
+	delay time.Duration
 }
 
 func (f *fakeCoord) RequestTakeover(_ context.Context, req HumanTakeoverRequest) HumanTakeoverResponse {
@@ -33,7 +33,6 @@ func TestHumanRequestTakeoverResumed(t *testing.T) {
 	SetHumanTakeoverCoordinator(coord)
 	t.Cleanup(func() { SetHumanTakeoverCoordinator(nil) })
 
-	// 绑定 recorder,让 coord 收到 run_id / brain_kind
 	ctx := context.Background()
 	BindRecorder(ctx, "run-123", "browser", "log in")
 	t.Cleanup(func() { _ = FinishRecorder(ctx, "success") })
@@ -90,7 +89,6 @@ func TestHumanRequestTakeoverRecordsMarker(t *testing.T) {
 	tool := NewHumanRequestTakeoverTool()
 	_, _ = tool.Execute(ctx, json.RawMessage(`{"reason":"captcha"}`))
 
-	// inspect the bound recorder's actions
 	recorderMu.Lock()
 	rec := ctxRecorders[ctx]
 	recorderMu.Unlock()
@@ -122,11 +120,6 @@ func TestHumanRequestTakeoverRejectsMissingReason(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// P3.3 真人 DOM 录制测试
-// ---------------------------------------------------------------------------
-
-// fakeDemoSink 抓取 SaveHumanDemoSequence 的调用,便于断言落盘内容。
 type fakeDemoSink struct {
 	mu   sync.Mutex
 	seqs []*persistence.HumanDemoSequence
@@ -139,8 +132,6 @@ func (f *fakeDemoSink) SaveHumanDemoSequence(_ context.Context, seq *persistence
 	return nil
 }
 
-// delayedCoord 模拟 coordinator 阻塞一小段,让 event source 有时间把事件
-// 塞进来并被消费 —— 然后 push Stop 让 recorder 优雅退出。
 type delayedCoord struct {
 	onEntered func()
 	reply     HumanTakeoverResponse
@@ -150,7 +141,6 @@ func (d *delayedCoord) RequestTakeover(ctx context.Context, _ HumanTakeoverReque
 	if d.onEntered != nil {
 		d.onEntered()
 	}
-	// 等一小段让 recorder goroutine 把 channel 上的事件处理干净。
 	select {
 	case <-ctx.Done():
 	case <-time.After(30 * time.Millisecond):
@@ -158,10 +148,6 @@ func (d *delayedCoord) RequestTakeover(ctx context.Context, _ HumanTakeoverReque
 	return d.reply
 }
 
-// TestHumanTakeoverRecordsDOMEvents 走一遍 takeover 全路径:
-// MemoryEventSource 注入 click / input*3(500ms 内合并) / submit,
-// 验证 SequenceRecorder 里有对应的 browser.* 动作(带 _human=true),
-// HumanDemoSink 里有一条完整 HumanDemoSequence。
 func TestHumanTakeoverRecordsDOMEvents(t *testing.T) {
 	src := cdp.NewMemoryEventSource(32)
 	sink := &fakeDemoSink{}
@@ -174,8 +160,6 @@ func TestHumanTakeoverRecordsDOMEvents(t *testing.T) {
 		SetHumanTakeoverCoordinator(nil)
 	})
 
-	// coordinator 进 takeover 后立刻 push 事件,然后阻塞到自己返回 —— 给
-	// recorder goroutine 消费事件的时间,再等 Stop 被触发后 channel 关闭。
 	coord := &delayedCoord{
 		onEntered: func() {
 			base := time.Now().UTC()
@@ -202,7 +186,6 @@ func TestHumanTakeoverRecordsDOMEvents(t *testing.T) {
 		t.Fatalf("unexpected error: %s", string(res.Output))
 	}
 
-	// 1) SequenceRecorder 里应该有:start marker + click + type(合并) + submit + end marker
 	recorderMu.Lock()
 	rec := ctxRecorders[ctx]
 	recorderMu.Unlock()
@@ -224,7 +207,6 @@ func TestHumanTakeoverRecordsDOMEvents(t *testing.T) {
 		t.Errorf("last action should be takeover resumed marker, got %+v", last)
 	}
 
-	// 中间段(剥掉首末 marker)是 DOM 事件转的 action
 	dom := actions[1 : len(actions)-1]
 	var humanCount, clickCount, typeCount, submitCount int
 	for _, a := range dom {
@@ -251,11 +233,9 @@ func TestHumanTakeoverRecordsDOMEvents(t *testing.T) {
 	if submitCount != 1 {
 		t.Errorf("want 1 submit, got %d", submitCount)
 	}
-	// 3 条 input 中前两条在 500ms 窗口内合并,第三条虽然也≤500ms 但属于同元素延续 —— 全部合并为 1 条 Type。
 	if typeCount != 1 {
 		t.Errorf("input merge failed: want 1 Type action, got %d", typeCount)
 	}
-	// 合并后的 Type 应保留最后一次 value
 	for _, a := range dom {
 		if a.Tool == "browser.type" {
 			if got, _ := a.Params["text"].(string); got != "abc@x.com" {
@@ -264,7 +244,6 @@ func TestHumanTakeoverRecordsDOMEvents(t *testing.T) {
 		}
 	}
 
-	// 2) HumanDemoSink 应收到一条,actions 内容 ≥ 3(click/type/submit)
 	sink.mu.Lock()
 	seqs := sink.seqs
 	sink.mu.Unlock()
@@ -287,8 +266,6 @@ func TestHumanTakeoverRecordsDOMEvents(t *testing.T) {
 	}
 }
 
-// TestHumanTakeoverNoFactoryIsBackwardsCompat 验证工厂没设时,老行为不变:
-// 只录 start/end 标记,不调 HumanDemoSink。
 func TestHumanTakeoverNoFactoryIsBackwardsCompat(t *testing.T) {
 	sink := &fakeDemoSink{}
 	SetHumanEventSourceFactory(nil)
@@ -313,8 +290,6 @@ func TestHumanTakeoverNoFactoryIsBackwardsCompat(t *testing.T) {
 	}
 }
 
-// TestHumanTakeoverEmptyDemoNotPersisted 验证工厂有但期间没 DOM 事件时
-// (人类只看了看页面没点),HumanDemoSink 也不会被调 —— 避免堆空记录。
 func TestHumanTakeoverEmptyDemoNotPersisted(t *testing.T) {
 	src := cdp.NewMemoryEventSource(8)
 	sink := &fakeDemoSink{}
@@ -340,8 +315,6 @@ func TestHumanTakeoverEmptyDemoNotPersisted(t *testing.T) {
 	}
 }
 
-// TestHumanTakeoverNonInputResetsMergeWindow 验证 input→click→input 序列里
-// 第二条 input 不会被误合并到第一条 input 上。
 func TestHumanTakeoverNonInputResetsMergeWindow(t *testing.T) {
 	src := cdp.NewMemoryEventSource(16)
 	sink := &fakeDemoSink{}
@@ -357,7 +330,6 @@ func TestHumanTakeoverNonInputResetsMergeWindow(t *testing.T) {
 			base := time.Now().UTC()
 			src.Push(cdp.HumanEvent{Kind: cdp.HumanEventInput, BrainID: 1, Value: "a", Timestamp: base})
 			src.Push(cdp.HumanEvent{Kind: cdp.HumanEventClick, BrainID: 2, Tag: "a", Name: "Help", Timestamp: base.Add(50 * time.Millisecond)})
-			// 回到 input 1,时间还在 500ms 窗内 —— 但中间有 click 应重置窗口,成为新 Type。
 			src.Push(cdp.HumanEvent{Kind: cdp.HumanEventInput, BrainID: 1, Value: "ab", Timestamp: base.Add(100 * time.Millisecond)})
 		},
 		reply: HumanTakeoverResponse{Outcome: HumanOutcomeResumed},
@@ -386,5 +358,80 @@ func TestHumanTakeoverNonInputResetsMergeWindow(t *testing.T) {
 	}
 	if typeN != 2 {
 		t.Errorf("want 2 Type actions (window reset by click), got %d: %+v", typeN, acts)
+	}
+}
+
+func TestConvertDemoToPattern_ParameterizesAuthFlow(t *testing.T) {
+	seq := &persistence.HumanDemoSequence{
+		RunID:      "run-auth",
+		Goal:       "登录管理后台",
+		URL:        "https://pwv2.easytestdev.online/admin/#/auth/login",
+		RecordedAt: time.Now().UTC(),
+	}
+	actions := []RecordedAction{
+		{
+			Tool:        "browser.type",
+			ElementRole: "textbox",
+			ElementName: "账号",
+			Params: map[string]interface{}{
+				"text": "admin",
+				"id":   1,
+			},
+		},
+		{
+			Tool:        "browser.type",
+			ElementRole: "textbox",
+			ElementType: "password",
+			ElementName: "密码",
+			Params: map[string]interface{}{
+				"text": "123456789ASD",
+				"id":   2,
+			},
+		},
+		{
+			Tool:        "browser.drag",
+			ElementRole: "button",
+			ElementName: "请按住滑块拖动",
+			Params: map[string]interface{}{
+				"from_x": 10.0,
+				"from_y": 20.0,
+				"to_x":   200.0,
+				"to_y":   20.0,
+			},
+		},
+		{
+			Tool:        "browser.click",
+			ElementRole: "button",
+			ElementName: "登录",
+			Params: map[string]interface{}{
+				"id": 3,
+			},
+		},
+	}
+
+	got := ConvertDemoToPattern(seq, actions)
+	if got == nil {
+		t.Fatal("ConvertDemoToPattern() = nil")
+	}
+	if got.Category != "auth" {
+		t.Fatalf("category = %q, want auth", got.Category)
+	}
+	if got.ElementRoles["username_field"].Name != "账号" {
+		t.Fatalf("username descriptor = %+v", got.ElementRoles["username_field"])
+	}
+	if got.ElementRoles["password_field"].Type != "password" {
+		t.Fatalf("password descriptor = %+v", got.ElementRoles["password_field"])
+	}
+	if got.ActionSequence[0].Params["text"] != "$credentials.username" {
+		t.Fatalf("first text = %v, want placeholder", got.ActionSequence[0].Params["text"])
+	}
+	if got.ActionSequence[1].Params["text"] != "$credentials.password" {
+		t.Fatalf("second text = %v, want placeholder", got.ActionSequence[1].Params["text"])
+	}
+	if got.ActionSequence[2].Tool != "browser.drag" || got.ActionSequence[2].TargetRole != "slider_handle" {
+		t.Fatalf("drag step = %+v, want slider_handle drag", got.ActionSequence[2])
+	}
+	if got.ActionSequence[3].TargetRole != "submit_button" {
+		t.Fatalf("submit step = %+v, want submit_button", got.ActionSequence[3])
 	}
 }

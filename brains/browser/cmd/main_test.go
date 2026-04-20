@@ -294,6 +294,48 @@ func TestFormatDragPostCheckFeedback_IncludesUsefulSignals(t *testing.T) {
 	}
 }
 
+func TestExtractVariables_ParsesCredentials(t *testing.T) {
+	got := extractVariables(`打开 https://pwv2.easytestdev.online/admin 输入账号：admin 密码：123456789ASD`)
+	credentials, ok := got["credentials"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("credentials missing: %+v", got)
+	}
+	if credentials["username"] != "admin" {
+		t.Fatalf("username = %v, want admin", credentials["username"])
+	}
+	if credentials["password"] != "123456789ASD" {
+		t.Fatalf("password = %v, want 123456789ASD", credentials["password"])
+	}
+	if got["url"] != "https://pwv2.easytestdev.online/admin" {
+		t.Fatalf("url = %v, want target url", got["url"])
+	}
+}
+
+func TestIsSafeReusableAuthPattern_RequiresCredentialPlaceholders(t *testing.T) {
+	safe := &tool.UIPattern{
+		Category: "auth",
+		Enabled:  true,
+		ActionSequence: []tool.ActionStep{
+			{Tool: "browser.type", Params: map[string]interface{}{"text": "$credentials.username"}},
+			{Tool: "browser.type", Params: map[string]interface{}{"text": "$credentials.password"}},
+		},
+	}
+	if !isSafeReusableAuthPattern(safe) {
+		t.Fatal("expected placeholder auth pattern to be reusable")
+	}
+
+	unsafe := &tool.UIPattern{
+		Category: "auth",
+		Enabled:  true,
+		ActionSequence: []tool.ActionStep{
+			{Tool: "browser.type", Params: map[string]interface{}{"text": "admin"}},
+		},
+	}
+	if isSafeReusableAuthPattern(unsafe) {
+		t.Fatal("expected literal-credential auth pattern to be rejected")
+	}
+}
+
 func TestConfigureBrowserRuntime_LoadsPersistenceBackedWiring(t *testing.T) {
 	prevLib := tool.SharedAnomalyTemplateLibrary()
 	prevGate := tool.CurrentBrowserFeatureGateConfig()

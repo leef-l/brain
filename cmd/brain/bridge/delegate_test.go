@@ -59,3 +59,25 @@ func TestResolveBrowserRenderMode_InfersHeadedFromUserUtterance(t *testing.T) {
 		t.Fatalf("resolveBrowserRenderMode() = %q, want headed", got)
 	}
 }
+
+func TestSanitizeBrowserDelegateOutput_FailsOnCrossHostSummary(t *testing.T) {
+	raw := []byte(`{"status":"completed","summary":"Title: Login\nURL: https://www.zhihu.com/signin\n\n..."}`)
+	_, failed, msg := sanitizeBrowserDelegateOutput(raw, "打开 https://pwv2.easytestdev.online/admin 并登录")
+	if !failed {
+		t.Fatal("expected cross-host summary to fail sanitization")
+	}
+	if msg == "" {
+		t.Fatal("expected failure message")
+	}
+}
+
+func TestSanitizeBrowserDelegateOutput_AllowsSameHost(t *testing.T) {
+	raw := []byte(`{"status":"completed","summary":"Title: 分析页\nURL: https://pwv2.easytestdev.online/admin/#/analytics\n\n..."}`)
+	out, failed, msg := sanitizeBrowserDelegateOutput(raw, "打开 https://pwv2.easytestdev.online/admin 并登录")
+	if failed {
+		t.Fatalf("failed=%v msg=%q, want allowed", failed, msg)
+	}
+	if string(out) != string(raw) {
+		t.Fatalf("output changed unexpectedly: %s", string(out))
+	}
+}

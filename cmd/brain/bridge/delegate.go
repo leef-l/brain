@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -196,6 +197,17 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		}, nil
 	}
 
+	if strings.EqualFold(input.TargetKind, "browser") {
+		if sanitized, failed, failMsg := sanitizeBrowserDelegateOutput(result.Output, input.Instruction); failed {
+			return &tool.Result{
+				Output:  json.RawMessage(fmt.Sprintf(`"subtask failed: %s"`, failMsg)),
+				IsError: true,
+			}, nil
+		} else if sanitized != nil {
+			return &tool.Result{Output: sanitized}, nil
+		}
+	}
+
 	if result.Output != nil {
 		return &tool.Result{Output: result.Output}, nil
 	}
@@ -218,4 +230,51 @@ func RegisterDelegateToolForEnvironment(reg tool.Registry, orch *kernel.Orchestr
 		return
 	}
 	RegisterDelegateToolIfAvailable(reg, orch, e)
+}
+
+func sanitizeBrowserDelegateOutput(raw json.RawMessage, instruction string) (json.RawMessage, bool, string) {
+	target := extractInstructionURL(instruction)
+	targetHost := hostOfURL(target)
+	if targetHost == "" || len(raw) == 0 {
+		return raw, false, ""
+	}
+	var out struct {
+		Status  string `json:"status"`
+		Summary string `json:"summary,omitempty"`
+		Error   string `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return raw, false, ""
+	}
+	summaryHost := hostOfURL(extractSummaryURL(out.Summary))
+	if summaryHost != "" && summaryHost != targetHost {
+		return nil, true, fmt.Sprintf("browser result host mismatch: expected %s, got %s", targetHost, summaryHost)
+	}
+	return raw, false, ""
+}
+
+func extractSummaryURL(summary string) string {
+	for _, line := range strings.Split(summary, "\n") {
+		if strings.HasPrefix(line, "URL: ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "URL: "))
+		}
+	}
+	return ""
+}
+
+func extractInstructionURL(instruction string) string {
+	for _, field := range strings.Fields(instruction) {
+		if strings.HasPrefix(strings.ToLower(field), "http://") || strings.HasPrefix(strings.ToLower(field), "https://") {
+			return strings.Trim(field, `"'<>`)
+		}
+	}
+	return ""
+}
+
+func hostOfURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u == nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
 }

@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -181,6 +182,9 @@ func (r *browserRuntimeReloader) MaybeRefresh(ctx context.Context) error {
 		if err := loadBrowserAnomalyTemplateLibrary(ctx, store); err != nil {
 			return err
 		}
+	}
+	if lib := tool.SharedPatternLibrary(); lib != nil {
+		return lib.Reload(ctx)
 	}
 	return tool.RefreshSharedPatternLibraryIfChanged()
 }
@@ -453,7 +457,7 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 		truelySuccess = false
 	}
 	if fullRunRec != nil {
-		fullRunRec.FinalizePersist(ctx, truelySuccess, false)
+		fullRunRec.FinalizePersist(ctx, truelySuccess, true)
 		if truelySuccess {
 			diaglog.Logf("browser", "full run demo persisted: learning this successful flow")
 		} else {
@@ -476,6 +480,14 @@ func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar
 	diaglog.Logf("browser", "executeWithPerception: instruction=%s caller=%v sensitive=%v slider=%v",
 		req.Instruction, h.caller != nil,
 		isSensitiveFormTask(req.Instruction), hasSliderKeyword(req.Instruction))
+
+	h.anchorToInstructionURL(ctx, registry, req.Instruction)
+
+	if isSensitiveFormTask(req.Instruction) {
+		if fast := h.tryReusableSensitivePattern(ctx, req, registry); fast != nil {
+			return fast
+		}
+	}
 
 	// Step 1: Try pattern_match on current page (if already navigated).
 	// 登录/敏感表单任务跳过 pattern 复用:旧 pattern 可能固化了旧账号密码
@@ -570,6 +582,143 @@ func hasSliderKeyword(instruction string) bool {
 		}
 	}
 	return false
+}
+
+func (h *browserHandler) anchorToInstructionURL(ctx context.Context, registry tool.Registry, instruction string) {
+	targetURL := extractInstructionURL(instruction)
+	if targetURL == "" {
+		return
+	}
+	if sameHost(currentBrowserURL(ctx), targetURL) {
+		return
+	}
+	openTool, ok := registry.Lookup("browser.open")
+	if !ok {
+		return
+	}
+	args, _ := json.Marshal(map[string]string{"url": targetURL})
+	_, _ = openTool.Execute(ctx, args)
+}
+
+func (h *browserHandler) tryReusableSensitivePattern(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry) *sidecar.ExecuteResult {
+	vars := extractVariables(req.Instruction)
+	if !hasCredentialVariables(vars) {
+		return nil
+	}
+	sess, ok := tool.CurrentSharedBrowserSession()
+	if !ok || sess == nil {
+		return nil
+	}
+	lib := tool.SharedPatternLibrary()
+	if lib == nil {
+		return nil
+	}
+	matches, err := tool.MatchPatterns(ctx, sess, lib, "auth")
+	if err != nil {
+		return nil
+	}
+	for _, m := range matches {
+		if m == nil || m.Pattern == nil || !isSafeReusableAuthPattern(m.Pattern) {
+			continue
+		}
+		exec := tool.ExecutePattern(ctx, sess, registry, m.Pattern, vars)
+		_ = lib.RecordExecution(ctx, m.Pattern.ID, exec.Success, exec.DurationMS)
+		if !exec.Success {
+			continue
+		}
+		summary := buildVerifiedPageSummary(ctx, registry, 8000)
+		if summary == "" {
+			summary = "reusable auth pattern succeeded"
+		}
+		return &sidecar.ExecuteResult{
+			Status:  "completed",
+			Summary: summary,
+			Turns:   0,
+		}
+	}
+	return nil
+}
+
+func isSafeReusableAuthPattern(p *tool.UIPattern) bool {
+	if p == nil || p.Category != "auth" || !p.Enabled {
+		return false
+	}
+	hasCredentialPlaceholder := false
+	for _, step := range p.ActionSequence {
+		if step.Tool != "browser.type" {
+			continue
+		}
+		text, _ := step.Params["text"].(string)
+		if strings.Contains(text, "$credentials.") {
+			hasCredentialPlaceholder = true
+			continue
+		}
+		if text != "" {
+			return false
+		}
+	}
+	return hasCredentialPlaceholder
+}
+
+func buildVerifiedPageSummary(ctx context.Context, registry tool.Registry, maxChars int) string {
+	snapshotTool, ok := registry.Lookup("browser.snapshot")
+	if !ok {
+		return ""
+	}
+	args, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": maxChars})
+	res, err := snapshotTool.Execute(ctx, args)
+	if err != nil || res == nil || res.IsError || len(res.Output) == 0 {
+		return ""
+	}
+	var parsed struct {
+		Title   string `json:"title"`
+		URL     string `json:"url"`
+		Content string `json:"content"`
+	}
+	if json.Unmarshal(res.Output, &parsed) == nil && (parsed.URL != "" || parsed.Title != "" || parsed.Content != "") {
+		return fmt.Sprintf("Title: %s\nURL: %s\n\n%s", parsed.Title, parsed.URL, parsed.Content)
+	}
+	return string(res.Output)
+}
+
+func extractInstructionURL(instruction string) string {
+	re := regexp.MustCompile(`https?://[^\s"'<>]+`)
+	return strings.TrimSpace(re.FindString(instruction))
+}
+
+func currentBrowserURL(ctx context.Context) string {
+	sess, ok := tool.CurrentSharedBrowserSession()
+	if !ok || sess == nil {
+		return ""
+	}
+	var out struct {
+		Result struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"result"`
+	}
+	if err := sess.Exec(ctx, "Runtime.evaluate", map[string]interface{}{
+		"expression":    "location.href",
+		"returnByValue": true,
+	}, &out); err != nil {
+		return ""
+	}
+	var pageURL string
+	_ = json.Unmarshal(out.Result.Value, &pageURL)
+	return pageURL
+}
+
+func hostOfURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u == nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+func sameHost(a, b string) bool {
+	ha := hostOfURL(a)
+	hb := hostOfURL(b)
+	return ha != "" && hb != "" && ha == hb
 }
 
 // executePattern runs a matched pattern via pattern_exec (0 LLM calls).
@@ -1328,11 +1477,12 @@ func (h *browserHandler) learnFromPlan(ctx context.Context, plan *llmPlan, instr
 		return
 	}
 
+	vars := extractVariables(instruction)
 	actionSeq := make([]tool.ActionStep, 0, len(plan.Steps))
 	for _, s := range plan.Steps {
 		actionSeq = append(actionSeq, tool.ActionStep{
 			Tool:   s.Tool,
-			Params: s.Params,
+			Params: parameterizePlanStepParams(s.Params, vars),
 		})
 	}
 
@@ -1367,6 +1517,41 @@ func (h *browserHandler) learnFromPlan(ctx context.Context, plan *llmPlan, instr
 	} else {
 		diaglog.Logf("browser", "learned pattern %s (category=%s) from: %s", pat.ID, category, instruction)
 	}
+}
+
+func parameterizePlanStepParams(params map[string]interface{}, vars map[string]interface{}) map[string]interface{} {
+	if len(params) == 0 {
+		return params
+	}
+	out := make(map[string]interface{}, len(params))
+	creds, _ := vars["credentials"].(map[string]interface{})
+	userValue := fmt.Sprint(creds["username"])
+	if userValue == "<nil>" || userValue == "" {
+		userValue = fmt.Sprint(creds["email"])
+		if userValue == "<nil>" {
+			userValue = ""
+		}
+	}
+	passValue := fmt.Sprint(creds["password"])
+	if passValue == "<nil>" {
+		passValue = ""
+	}
+	for k, v := range params {
+		s, ok := v.(string)
+		if !ok {
+			out[k] = v
+			continue
+		}
+		switch {
+		case userValue != "" && s == userValue:
+			out[k] = "$credentials.username"
+		case passValue != "" && s == passValue:
+			out[k] = "$credentials.password"
+		default:
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func (h *browserHandler) deleteLearnedPattern(ctx context.Context, patternID string) {
@@ -1466,6 +1651,7 @@ Be efficient: perceive, act, verify (snapshot), report. Do not take unnecessary 
 
 func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, systemPrompt string, maxTurns int, allowAutoTakeover bool, feedback string) *sidecar.ExecuteResult {
 	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, mergeLoopContextText(req.Context, feedback))
+	result = normalizeBrowserLoopResult(ctx, registry, result)
 	// budget 耗尽 = LLM 卡在循环里还没调 takeover,我们兜底自动调一次让
 	// 用户接管。关键：/resume 后必须在同一个 delegated run 里继续执行，
 	// 不能把“已恢复接管”伪装成 completed 然后把问题抛回 central。
@@ -1529,6 +1715,25 @@ func mergeLoopContextText(existing json.RawMessage, feedback string) json.RawMes
 	return raw
 }
 
+func normalizeBrowserLoopResult(ctx context.Context, registry tool.Registry, result *sidecar.ExecuteResult) *sidecar.ExecuteResult {
+	if result == nil {
+		return nil
+	}
+	verified := buildVerifiedPageSummary(ctx, registry, 4000)
+	if verified == "" {
+		return result
+	}
+	switch {
+	case strings.TrimSpace(result.Summary) == "":
+		result.Summary = verified
+	case strings.Contains(result.Summary, "URL: "):
+		result.Summary = verified + "\n\n[Agent summary]\n" + result.Summary
+	default:
+		result.Summary = verified + "\n\n[Agent summary]\n" + result.Summary
+	}
+	return result
+}
+
 func summarizeLoopContext(raw json.RawMessage) string {
 	var asString string
 	if err := json.Unmarshal(raw, &asString); err == nil {
@@ -1588,6 +1793,23 @@ func extractTopPatternID(output json.RawMessage) string {
 // extractVariables pulls query/search terms from the instruction for pattern variables.
 func extractVariables(instruction string) map[string]interface{} {
 	vars := map[string]interface{}{}
+	var credentials = map[string]interface{}{}
+
+	if v := extractCredentialValue(instruction, []string{"账号", "帐号", "账户", "用户名", "user name", "username", "account"}); v != "" {
+		credentials["email"] = v
+		credentials["username"] = v
+	}
+	if v := extractCredentialValue(instruction, []string{"密码", "password", "passwd"}); v != "" {
+		credentials["password"] = v
+	}
+	if len(credentials) > 0 {
+		vars["credentials"] = credentials
+	}
+
+	if url := extractInstructionURL(instruction); url != "" {
+		vars["url"] = url
+	}
+
 	searchKeywords := []string{"搜索", "查询", "查找", "搜", "找"}
 	for _, kw := range searchKeywords {
 		if idx := strings.Index(instruction, kw); idx >= 0 {
@@ -1600,6 +1822,31 @@ func extractVariables(instruction string) map[string]interface{} {
 		}
 	}
 	return vars
+}
+
+func extractCredentialValue(instruction string, labels []string) string {
+	for _, label := range labels {
+		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(label) + `\s*[:：]?\s*["“”']?([^\s,，。；;！!？?]+)`)
+		m := re.FindStringSubmatch(instruction)
+		if len(m) > 1 {
+			return strings.TrimSpace(strings.Trim(m[1], `"'“”`))
+		}
+	}
+	return ""
+}
+
+func hasCredentialVariables(vars map[string]interface{}) bool {
+	if len(vars) == 0 {
+		return false
+	}
+	credentials, ok := vars["credentials"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, hasUser := credentials["username"]
+	_, hasEmail := credentials["email"]
+	_, hasPass := credentials["password"]
+	return (hasUser || hasEmail) && hasPass
 }
 
 func (h *browserHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {

@@ -531,29 +531,36 @@ func ConvertDemoToPattern(seq *persistence.HumanDemoSequence, actions []Recorded
 	if seq.URL == "" {
 		return nil
 	}
-	steps := make([]ActionStep, 0, len(actions))
+	var (
+		steps        = make([]ActionStep, 0, len(actions))
+		elementRoles = map[string]ElementDescriptor{}
+		authLike     = looksLikeAuthDemo(seq, actions)
+	)
 	for _, a := range actions {
-		if a.Tool == "" {
+		step, roleKey, desc := demoActionToPatternStep(a, authLike)
+		if step.Tool == "" {
 			continue
 		}
-		params := map[string]interface{}{}
-		for k, v := range a.Params {
-			switch k {
-			case "_human", "ts", "kind": // 调试/来源字段,不进 pattern
-				continue
+		steps = append(steps, step)
+		if roleKey != "" {
+			if _, exists := elementRoles[roleKey]; !exists {
+				elementRoles[roleKey] = desc
 			}
-			params[k] = v
 		}
-		steps = append(steps, ActionStep{
-			Tool:       a.Tool,
-			TargetRole: a.ElementRole,
-			Params:     params,
-		})
 	}
 	if len(steps) == 0 {
 		return nil
 	}
-	urlPattern := extractDemoURLPattern(seq.URL)
+	cond := MatchCondition{URLPattern: extractDemoURLPattern(seq.URL)}
+	category := "browser_demo"
+	if authLike {
+		category = "auth"
+		cond = MatchCondition{
+			URLPattern:   `(?i)/(login|signin|sign-in|auth)\b`,
+			Has:          []string{`input[type="password"]`, `input[type="text"], input[type="email"], input[name*="user" i], input[placeholder*="账号" i], input[placeholder*="用户名" i]`},
+			TextContains: []string{"登录"},
+		}
+	}
 	// id 基于 seq.RecordedAt 而非 time.Now(),这样:
 	//   1. 每条 demo 对应一个确定 id,实时转化路径和启动 backfill 扫到
 	//      同一条时产出相同 id,Upsert 幂等
@@ -569,13 +576,130 @@ func ConvertDemoToPattern(seq *persistence.HumanDemoSequence, actions []Recorded
 	}
 	return &UIPattern{
 		ID:             id,
-		Category:       "browser_demo",
+		Category:       category,
 		Description:    desc,
-		AppliesWhen:    MatchCondition{URLPattern: urlPattern},
+		AppliesWhen:    cond,
+		ElementRoles:   elementRoles,
 		ActionSequence: steps,
 		Source:         "human_demo",
 		Enabled:        true,
 	}
+}
+
+func demoActionToPatternStep(a RecordedAction, authLike bool) (ActionStep, string, ElementDescriptor) {
+	if a.Tool == "" {
+		return ActionStep{}, "", ElementDescriptor{}
+	}
+	params := sanitizeDemoParams(a.Params)
+	roleKey, desc := inferDemoRole(a, authLike)
+	step := ActionStep{
+		Tool:       a.Tool,
+		TargetRole: roleKey,
+		Params:     params,
+	}
+
+	switch a.Tool {
+	case "browser.type":
+		if authLike {
+			if roleKey == "username_field" || roleKey == "email_field" {
+				step.Params["text"] = "$credentials.username"
+			}
+			if roleKey == "password_field" {
+				step.Params["text"] = "$credentials.password"
+			}
+		}
+	case "browser.click":
+		delete(step.Params, "submit")
+	case "browser.drag":
+		step.Params = map[string]interface{}{"strategy": "auto"}
+	}
+
+	if step.TargetRole != "" {
+		delete(step.Params, "id")
+		delete(step.Params, "brain_id")
+		delete(step.Params, "css")
+	}
+	return step, roleKey, desc
+}
+
+func sanitizeDemoParams(params map[string]interface{}) map[string]interface{} {
+	if len(params) == 0 {
+		return map[string]interface{}{}
+	}
+	out := map[string]interface{}{}
+	for k, v := range params {
+		switch k {
+		case "_human", "ts", "kind", "url", "tag":
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func inferDemoRole(a RecordedAction, authLike bool) (string, ElementDescriptor) {
+	desc := ElementDescriptor{
+		Role: a.ElementRole,
+		Name: a.ElementName,
+		Type: a.ElementType,
+	}
+	if css, _ := a.Params["css"].(string); css != "" {
+		desc.CSS = css
+	}
+	if tag, _ := a.Params["tag"].(string); tag != "" {
+		desc.Tag = tag
+	}
+
+	nameLower := strings.ToLower(a.ElementName)
+	typeLower := strings.ToLower(a.ElementType)
+	switch a.Tool {
+	case "browser.type":
+		switch {
+		case strings.Contains(typeLower, "password") || strings.Contains(nameLower, "密码") || strings.Contains(nameLower, "password"):
+			return "password_field", desc
+		case strings.Contains(nameLower, "email"):
+			return "email_field", desc
+		case authLike:
+			return "username_field", desc
+		default:
+			return "text_field", desc
+		}
+	case "browser.click":
+		if strings.Contains(nameLower, "登录") || strings.Contains(nameLower, "sign in") || strings.Contains(nameLower, "login") {
+			return "submit_button", desc
+		}
+		return "action_button", desc
+	case "browser.drag":
+		return "slider_handle", desc
+	default:
+		return "", ElementDescriptor{}
+	}
+}
+
+func looksLikeAuthDemo(seq *persistence.HumanDemoSequence, actions []RecordedAction) bool {
+	if seq != nil {
+		goal := strings.ToLower(seq.Goal)
+		if strings.Contains(goal, "登录") || strings.Contains(goal, "login") || strings.Contains(goal, "密码") || strings.Contains(goal, "password") {
+			return true
+		}
+	}
+	hasPassword := false
+	hasUser := false
+	for _, a := range actions {
+		nameLower := strings.ToLower(a.ElementName)
+		typeLower := strings.ToLower(a.ElementType)
+		if a.Tool == "browser.type" {
+			if strings.Contains(typeLower, "password") || strings.Contains(nameLower, "密码") || strings.Contains(nameLower, "password") {
+				hasPassword = true
+			} else {
+				hasUser = true
+			}
+		}
+		if a.Tool == "browser.drag" {
+			// 滑块登录页常见,但仅 drag 不足以说明 auth。
+		}
+	}
+	return hasPassword && hasUser
 }
 
 // extractDemoURLPattern 从一个具体 URL 派生"同域"的正则模式,让 pattern
