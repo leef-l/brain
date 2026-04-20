@@ -227,6 +227,20 @@ func TestRunFallbackAgentLoop_ContinuesAfterHumanResume(t *testing.T) {
 	}
 }
 
+func TestShouldRequestTakeover_WhenDragPostCheckUnverified(t *testing.T) {
+	plan := &llmPlan{
+		Steps: []plannedStep{
+			{Tool: "browser.drag"},
+		},
+	}
+	post := map[string]interface{}{
+		"verified": false,
+	}
+	if !shouldRequestTakeover(plan, "Title: Login\nURL: /admin/#/auth/login", post) {
+		t.Fatal("shouldRequestTakeover() = false, want true when drag post-check is unverified")
+	}
+}
+
 func TestConfigureBrowserRuntime_LoadsPersistenceBackedWiring(t *testing.T) {
 	prevLib := tool.SharedAnomalyTemplateLibrary()
 	prevGate := tool.CurrentBrowserFeatureGateConfig()

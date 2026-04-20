@@ -769,6 +769,7 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 
 	var lastOutput json.RawMessage
 	var screenshotPaths []string
+	var lastDragPostCheck map[string]interface{}
 	for i, step := range plan.Steps {
 		diaglog.Logf("browser", "plan step %d/%d: %s params=%v", i+1, len(plan.Steps), step.Tool, step.Params)
 		argsRaw, _ := json.Marshal(step.Params)
@@ -821,6 +822,14 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 					Status: "failed",
 					Error:  fmt.Sprintf("step %d (%s): %s", i+1, step.Tool, string(result.Output)),
 					Turns:  0,
+				}
+			}
+			if step.Tool == "browser.drag" {
+				var payload struct {
+					PostCheck map[string]interface{} `json:"post_check"`
+				}
+				if json.Unmarshal(result.Output, &payload) == nil && payload.PostCheck != nil {
+					lastDragPostCheck = payload.PostCheck
 				}
 			}
 			// 截图步骤实时持久化,避免被后续步骤的 output 覆盖丢失。
@@ -916,6 +925,9 @@ summaryDone:
 	if lastTool != "browser.screenshot" && len(screenshotPaths) > 0 {
 		summary += "\n\n[Screenshots saved: " + strings.Join(screenshotPaths, ", ") + "]"
 	}
+	if dragPostCheckNeedsAttention(lastDragPostCheck) {
+		summary += "\n\n[Drag post-check: verification not confirmed after drag]"
+	}
 	// 兜底:如果 plan 里做过拖动/点击登录等交互,但页面仍停留在验证码
 	// 特征页上(URL 含 captcha/verify,或 title 含"安全验证"/"验证码"),
 	// 自动调 human.request_takeover 挂起等人类处理,避免 AI 反复失败
@@ -928,7 +940,7 @@ summaryDone:
 	if isSensitiveFormTask(instruction) && stillOnLoginPage(summary) {
 		diaglog.Logf("browser", "sensitive task post-check: still on login/auth page, forcing takeover request")
 	}
-	if (shouldRequestTakeover(plan, summary) || (isSensitiveFormTask(instruction) && stillOnLoginPage(summary))) && !stepHasTool(plan, "human.request_takeover") {
+	if (shouldRequestTakeover(plan, summary, lastDragPostCheck) || (isSensitiveFormTask(instruction) && stillOnLoginPage(summary))) && !stepHasTool(plan, "human.request_takeover") {
 		if takeoverTool, ok := registry.Lookup("human.request_takeover"); ok {
 			// 附一张截图给人类看。
 			var shotB64 string
@@ -1021,16 +1033,23 @@ func planHasNavigationStep(plan *llmPlan) bool {
 // shouldRequestTakeover 判断本次 plan 执行后是否应自动请求人类接管。
 // 典型场景:plan 里调过 drag / click / press_key(说明尝试了交互),
 // 但页面最终停在验证码/安全验证页上。
-func shouldRequestTakeover(plan *llmPlan, summary string) bool {
+func shouldRequestTakeover(plan *llmPlan, summary string, dragPostCheck map[string]interface{}) bool {
 	interacted := false
+	dragAttempted := false
 	for _, s := range plan.Steps {
 		switch s.Tool {
 		case "browser.drag", "browser.click", "browser.press_key", "browser.type":
 			interacted = true
+			if s.Tool == "browser.drag" {
+				dragAttempted = true
+			}
 		}
 	}
 	if !interacted {
 		return false
+	}
+	if dragAttempted && dragPostCheckNeedsAttention(dragPostCheck) {
+		return true
 	}
 	low := strings.ToLower(summary)
 	signals := []string{
@@ -1041,6 +1060,16 @@ func shouldRequestTakeover(plan *llmPlan, summary string) bool {
 		if strings.Contains(low, strings.ToLower(sig)) {
 			return true
 		}
+	}
+	return false
+}
+
+func dragPostCheckNeedsAttention(post map[string]interface{}) bool {
+	if len(post) == 0 {
+		return false
+	}
+	if verified, ok := post["verified"].(bool); ok {
+		return !verified
 	}
 	return false
 }
