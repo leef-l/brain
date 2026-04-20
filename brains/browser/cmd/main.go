@@ -1104,7 +1104,7 @@ func wantsVisibleBrowser(instruction string) bool {
 	s := strings.ToLower(instruction)
 	needles := []string{
 		"我要看到", "给我看", "让我看", "我要能看到", "可见浏览器",
-		"可视化", "看得到", "看到操作", "看到你的操作", "打开浏览器",
+		"可视化", "看得到", "看到操作", "看到你的操作", "看到浏览器", "浏览器窗口", "打开浏览器",
 		"visible browser", "not headless", "non-headless", "headed",
 		"show me the browser", "watch the browser", "show browser",
 	}

@@ -35,3 +35,27 @@ func TestBuildSubtaskContext_ReturnsNilWhenEmpty(t *testing.T) {
 		t.Fatalf("buildSubtaskContext() = %+v, want nil", got)
 	}
 }
+
+func TestResolveBrowserRenderMode_PrefersExplicitMode(t *testing.T) {
+	got := resolveBrowserRenderMode(context.Background(), "browser", "我要看到浏览器", "headless")
+	if got != "headless" {
+		t.Fatalf("resolveBrowserRenderMode() = %q, want headless", got)
+	}
+}
+
+func TestResolveBrowserRenderMode_InfersHeadedFromInstruction(t *testing.T) {
+	got := resolveBrowserRenderMode(context.Background(), "browser", "打开浏览器，我要看到你的操作", "")
+	if got != "headed" {
+		t.Fatalf("resolveBrowserRenderMode() = %q, want headed", got)
+	}
+}
+
+func TestResolveBrowserRenderMode_InfersHeadedFromUserUtterance(t *testing.T) {
+	ctx := kernel.WithSubtaskContext(context.Background(), &protocol.SubtaskContext{
+		UserUtterance: "我需要看到浏览器窗口",
+	})
+	got := resolveBrowserRenderMode(ctx, "browser", "登录后台", "")
+	if got != "headed" {
+		t.Fatalf("resolveBrowserRenderMode() = %q, want headed", got)
+	}
+}

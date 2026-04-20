@@ -97,7 +97,7 @@ var BrainDescriptions = map[agent.Kind]string{
 }
 
 func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) string {
-	if orch == nil || !RegistryHasTool(reg, "central.delegate") {
+	if orch == nil || (!RegistryHasTool(reg, "central.delegate") && !RegistryHasTool(reg, "central.brain_manage")) {
 		return ""
 	}
 
@@ -116,14 +116,21 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	prompt := "\n\n## Specialist Brain Delegation\n\n"
 	prompt += "You have access to specialist brains that can handle specific tasks. "
 	prompt += fmt.Sprintf("Available specialists: %s.\n\n", strings.Join(names, ", "))
-	prompt += "Use the `central.delegate` tool to delegate tasks to the appropriate specialist:\n"
+	if RegistryHasTool(reg, "central.brain_manage") {
+		prompt += "For specialist lifecycle requests such as 'start browser brain', 'stop code brain', 'show brain status', or '启动/停止/查看大脑状态', use `central.brain_manage` instead of `central.delegate`. Starting a brain is process management, not a delegated task.\n\n"
+	}
+	if RegistryHasTool(reg, "central.delegate") {
+		prompt += "Use the `central.delegate` tool to delegate tasks to the appropriate specialist:\n"
+	}
 
-	for _, kind := range kinds {
-		desc, ok := BrainDescriptions[kind]
-		if !ok {
-			desc = fmt.Sprintf("Specialist brain for %s tasks.", kind)
+	if RegistryHasTool(reg, "central.delegate") {
+		for _, kind := range kinds {
+			desc, ok := BrainDescriptions[kind]
+			if !ok {
+				desc = fmt.Sprintf("Specialist brain for %s tasks.", kind)
+			}
+			prompt += fmt.Sprintf("- **%s**: %s\n", kind, desc)
 		}
-		prompt += fmt.Sprintf("- **%s**: %s\n", kind, desc)
 	}
 
 	hasQuantTools := RegistryHasTool(reg, "quant.global_portfolio")
@@ -160,10 +167,11 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	}
 
 	prompt += "\nWhen you receive a task:\n"
-	prompt += "1. For trading/data queries, use the specialist tools directly\n"
-	prompt += "2. For any website opening, web search, page reading, or browser interaction task, delegate to the browser brain instead of using shell_exec + curl/wget\n"
-	prompt += "3. After code changes, delegate verification to the verifier brain\n"
-	prompt += "4. Summarize the results to the user\n\n"
+	prompt += "1. For specialist lifecycle requests (start/stop/list brains), use `central.brain_manage`\n"
+	prompt += "2. For trading/data queries, use the specialist tools directly\n"
+	prompt += "3. For any website opening, web search, page reading, or browser interaction task, delegate to the browser brain instead of using shell_exec + curl/wget\n"
+	prompt += "4. After code changes, delegate verification to the verifier brain\n"
+	prompt += "5. Summarize the results to the user\n\n"
 	prompt += "Never treat shell_exec HTTP fetches as a substitute for browser delegation on normal web tasks.\n"
 	prompt += "If browser delegation fails, report the browser failure clearly instead of retrying the same web task through shell_exec, curl, wget, or verifier.browser_action.\n"
 	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n\n"
@@ -174,7 +182,12 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 		"the specialist will type the string LITERALLY into the input field and the login/action will fail.\n" +
 		"Example — user says `账号：admin 密码：abc123`:\n" +
 		"  CORRECT: instruction=\"在账号框输入 admin，密码框输入 abc123，点击登录\"\n" +
-		"  WRONG:   instruction=\"在账号框输入 $credentials.email，密码框输入 $credentials.password，点击登录\"\n"
+		"  WRONG:   instruction=\"在账号框输入 $credentials.email，密码框输入 $credentials.password，点击登录\"\n\n" +
+		"When delegating to the browser brain and the user explicitly wants to SEE the browser or your operations " +
+		"(examples: '打开浏览器', '我要看到', '看得到你的操作', 'visible browser', 'show me the browser'), " +
+		"set `render_mode` to `headed`. Do not leave headed/headless ambiguous.\n" +
+		"If the user only asks to open a visible browser window and wait for further instructions, delegate a minimal task " +
+		"that opens a visible browser on `about:blank` and waits. Do NOT pick an unrelated website such as Baidu or Google on your own.\n"
 
 	if notice := orch.DegradationNotice(); notice != "" {
 		prompt += "\n" + notice + "\n"

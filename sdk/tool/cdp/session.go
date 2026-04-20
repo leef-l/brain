@@ -38,6 +38,12 @@ type browserTarget struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
+type pageTargetInfo struct {
+	TargetID string `json:"targetId"`
+	Type     string `json:"type"`
+	URL      string `json:"url"`
+}
+
 // NewBrowserSession launches a browser in headless mode and connects via CDP.
 // It auto-detects Chrome, Edge, or other Chromium-based browsers.
 func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
@@ -351,22 +357,19 @@ func (s *BrowserSession) getWebSocketURL() (string, error) {
 func (s *BrowserSession) attachToFirstPage(ctx context.Context) error {
 	// List targets.
 	var result struct {
-		TargetInfos []struct {
-			TargetID string `json:"targetId"`
-			Type     string `json:"type"`
-		} `json:"targetInfos"`
+		TargetInfos []pageTargetInfo `json:"targetInfos"`
 	}
 	if err := s.client.Call(ctx, "Target.getTargets", nil, &result); err != nil {
 		return fmt.Errorf("cdp: list targets: %w", err)
 	}
 
-	for _, t := range result.TargetInfos {
-		if t.Type == "page" {
-			return s.attachToTarget(ctx, t.TargetID)
-		}
+	targetID, ok := chooseInitialPageTarget(result.TargetInfos)
+	if ok {
+		return s.attachToTarget(ctx, targetID)
 	}
 
-	// No page target — create one.
+	// No usable blank page target — create one explicitly so startup always
+	// lands on a deterministic empty page instead of a browser-defined default.
 	var createResult struct {
 		TargetID string `json:"targetId"`
 	}
@@ -376,6 +379,18 @@ func (s *BrowserSession) attachToFirstPage(ctx context.Context) error {
 		return fmt.Errorf("cdp: create target: %w", err)
 	}
 	return s.attachToTarget(ctx, createResult.TargetID)
+}
+
+func chooseInitialPageTarget(targets []pageTargetInfo) (string, bool) {
+	for _, t := range targets {
+		if t.Type != "page" {
+			continue
+		}
+		if t.URL == "" || t.URL == "about:blank" {
+			return t.TargetID, true
+		}
+	}
+	return "", false
 }
 
 // attachToTarget attaches a flat CDP session to the given target.

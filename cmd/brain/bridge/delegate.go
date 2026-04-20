@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/env"
@@ -89,6 +90,42 @@ func buildSubtaskContext(ctx context.Context, renderMode string) *protocol.Subta
 	return subtask
 }
 
+func wantsVisibleBrowser(text string) bool {
+	s := strings.ToLower(strings.TrimSpace(text))
+	if s == "" {
+		return false
+	}
+	needles := []string{
+		"我要看到", "给我看", "让我看", "我要能看到", "可见浏览器",
+		"可视化", "看得到", "看到操作", "看到你的操作", "看到浏览器", "浏览器窗口", "打开浏览器",
+		"visible browser", "not headless", "non-headless", "headed",
+		"show me the browser", "watch the browser", "show browser",
+	}
+	for _, n := range needles {
+		if strings.Contains(s, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveBrowserRenderMode(ctx context.Context, targetKind, instruction, renderMode string) string {
+	if strings.TrimSpace(renderMode) != "" {
+		return renderMode
+	}
+	if !strings.EqualFold(strings.TrimSpace(targetKind), "browser") {
+		return ""
+	}
+	subtask := kernel.SubtaskContextFromContext(ctx)
+	if subtask != nil && wantsVisibleBrowser(subtask.UserUtterance) {
+		return "headed"
+	}
+	if wantsVisibleBrowser(instruction) {
+		return "headed"
+	}
+	return ""
+}
+
 func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool.Result, error) {
 	var input struct {
 		TargetKind  string          `json:"target_kind"`
@@ -116,12 +153,13 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		}, nil
 	}
 
+	renderMode := resolveBrowserRenderMode(ctx, input.TargetKind, input.Instruction, input.RenderMode)
 	req := &kernel.SubtaskRequest{
 		TaskID:      fmt.Sprintf("delegate-%s", input.TargetKind),
 		TargetKind:  agent.Kind(input.TargetKind),
 		Instruction: input.Instruction,
 		Context:     input.Context,
-		Subtask:     buildSubtaskContext(ctx, input.RenderMode),
+		Subtask:     buildSubtaskContext(ctx, renderMode),
 		Execution:   t.Env.ExecutionSpec(),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
