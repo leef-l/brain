@@ -35,7 +35,15 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 		"simulate what the browser brain should do — the user's environment runs THIS system, not your ad-hoc scripts.\n" +
 		"If the browser brain reports success but the user says the action didn't happen, DO NOT claim success — " +
 		"trust the user, re-delegate with explicit step-by-step instructions (URL, exact selectors or visible field " +
-		"labels, exact values to type, and explicit 'take a snapshot after each step' requirement).\n"
+		"labels, exact values to type, and explicit 'take a snapshot after each step' requirement).\n" +
+		"HUMAN TAKEOVER PROTOCOL (CRITICAL):\n" +
+		"When the user says '我来操作' / '让我操作' / '我手动' / '我自己完成' / '你观察我' / '学习我的操作' / " +
+		"'I will do it' / 'watch me' / 'I'll handle it' — you MUST delegate to the browser brain with an " +
+		"instruction that ASKS IT TO CALL `human.request_takeover`. NEVER just type a reply pretending you are " +
+		"learning — only the browser brain's human.request_takeover tool can actually record the user's actions. " +
+		"Example delegate instruction: \"请立即调用 human.request_takeover(reason=user_demo, guidance='用户要亲自演示操作，" +
+		"请保持浏览器窗口打开并等待 resume') 挂起，让人类在当前页面演示操作，人类完成后会调 /resume。\" " +
+		"Do this delegate RIGHT NOW in the same turn the user asks to take over — do not answer in text first.\n"
 
 	switch mode {
 	case env.ModePlan:

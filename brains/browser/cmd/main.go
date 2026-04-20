@@ -1196,9 +1196,39 @@ func (h *browserHandler) fallbackAgentLoop(ctx context.Context, req *sidecar.Exe
 		return &sidecar.ExecuteResult{Status: "failed", Error: "no LLM proxy available"}
 	}
 	systemPrompt := `You are a browser specialist. You control a real browser.
-Use browser.snapshot (NOT screenshot) to perceive pages — it returns structured text.
-Use browser.open, browser.click, browser.type, browser.press_key, browser.wait, browser.eval.
-Be efficient: get the answer and stop. Do not take unnecessary actions.`
+
+Tools:
+  - browser.snapshot(mode=interactive|text|html): read page structure or content.
+      mode=interactive → clickable/typable element list with ids
+      mode=text        → document.body.innerText (use for reading page content)
+      mode=html        → full outerHTML
+  - browser.open(url)
+  - browser.click(id|selector)
+  - browser.type(id|selector, text): type text into an input
+  - browser.press_key(key): e.g. "Enter", "Escape"
+  - browser.wait(condition=load|visible|idle)
+  - browser.drag(from_selector|from_x,from_y, to_selector|to_x,to_y): press-and-drag.
+      USE THIS for slider CAPTCHA (滑块验证), drag-and-drop puzzles, range sliders.
+      DO NOT use browser.click on a slider — slider must be dragged.
+  - browser.eval(expression): run JavaScript to read/extract data.
+  - browser.screenshot(full_page=true): save a PNG (user visible file).
+  - human.request_takeover(reason, guidance): HAND OFF to a human operator.
+      CALL THIS WHEN:
+        * slider / image / puzzle CAPTCHA keeps failing after your drag attempts
+        * SMS / phone verification / 2FA prompt appears
+        * You have tried 3+ distinct strategies with no progress
+        * You cannot identify the slider handle or target position
+      The agent PAUSES until the human resumes. Human actions are recorded and
+      become a learned pattern, so next time the same site works automatically.
+      NEVER tell the user "please do X yourself in the browser" in a text reply
+      when you could instead call human.request_takeover and wait — that tool is
+      the ONLY way for the human's work to be recorded and learned.
+
+Pass ALL user-provided values (username, password, URLs, queries, phone numbers)
+VERBATIM to browser.type — never replace them with placeholders like $username
+or ${password}. The type tool will enter whatever string you give it literally.
+
+Be efficient: perceive, act, verify (snapshot), report. Do not take unnecessary actions.`
 
 	maxTurns := 15
 	if req.Budget != nil && req.Budget.MaxTurns > 0 {
