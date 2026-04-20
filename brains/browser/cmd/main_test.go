@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,8 +13,21 @@ import (
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/protocol"
+	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
 )
+
+type staticResultTool struct {
+	name   string
+	result *tool.Result
+}
+
+func (t staticResultTool) Name() string        { return t.name }
+func (t staticResultTool) Risk() tool.Risk     { return tool.RiskSafe }
+func (t staticResultTool) Schema() tool.Schema { return tool.Schema{Name: t.name} }
+func (t staticResultTool) Execute(context.Context, json.RawMessage) (*tool.Result, error) {
+	return t.result, nil
+}
 
 func TestNewBrowserHandler_AppliesDelegateToolPolicy(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
@@ -39,6 +53,9 @@ func TestNewBrowserHandler_AppliesDelegateToolPolicy(t *testing.T) {
 	}
 	if _, ok := h.registry.Lookup("browser.open"); !ok {
 		t.Fatalf("browser.open should remain available")
+	}
+	if _, ok := h.registry.Lookup("human.request_takeover"); !ok {
+		t.Fatalf("human.request_takeover should remain available even when delegate.browser only includes browser.*")
 	}
 }
 
@@ -133,6 +150,71 @@ func TestWantsHeadedBrowser_PrefersStructuredSubtaskIntent(t *testing.T) {
 
 	if !wantsHeadedBrowser(nil, "给我看浏览器操作过程") {
 		t.Fatal("expected legacy instruction keyword fallback to remain available")
+	}
+}
+
+func TestEnsureCriticalBrowserTools_ReaddsTakeoverTool(t *testing.T) {
+	reg := tool.NewMemRegistry()
+	reg.Register(tool.NewNoteTool("browser"))
+
+	ensureCriticalBrowserTools(reg)
+
+	if _, ok := reg.Lookup("human.request_takeover"); !ok {
+		t.Fatal("human.request_takeover missing after ensureCriticalBrowserTools")
+	}
+}
+
+func TestRunFallbackAgentLoop_ContinuesAfterHumanResume(t *testing.T) {
+	prev := runBrowserAgentLoop
+	t.Cleanup(func() { runBrowserAgentLoop = prev })
+
+	callCount := 0
+	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ int, _ json.RawMessage) *sidecar.ExecuteResult {
+		callCount++
+		if callCount == 1 {
+			return &sidecar.ExecuteResult{
+				Status: "failed",
+				Error:  "budget.turns_exhausted",
+				Turns:  30,
+			}
+		}
+		return &sidecar.ExecuteResult{
+			Status:  "completed",
+			Summary: "login succeeded",
+			Turns:   3,
+		}
+	}
+
+	reg := tool.NewMemRegistry()
+	takeoverPayload := map[string]string{
+		"outcome": "resumed",
+		"note":    "slider done",
+	}
+	raw, _ := json.Marshal(takeoverPayload)
+	reg.Register(staticResultTool{
+		name: "human.request_takeover",
+		result: &tool.Result{
+			Output: raw,
+		},
+	})
+
+	h := &browserHandler{}
+	req := &sidecar.ExecuteRequest{Instruction: "登录后台并完成滑块"}
+	got := h.runFallbackAgentLoop(context.Background(), req, reg, "browser prompt", 30, true)
+	if got == nil {
+		t.Fatal("runFallbackAgentLoop() = nil")
+	}
+	if got.Status != "completed" {
+		t.Fatalf("status = %q, want completed", got.Status)
+	}
+	if callCount != 2 {
+		t.Fatalf("runBrowserAgentLoop callCount = %d, want 2", callCount)
+	}
+	if !strings.Contains(got.Summary, "login succeeded") {
+		t.Fatalf("summary = %q, want continued run summary", got.Summary)
+	}
+	if !strings.Contains(got.Summary, "slider done") {
+		t.Fatalf("summary = %q, want takeover resume note", got.Summary)
 	}
 }
 

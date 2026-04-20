@@ -54,6 +54,8 @@ type browserHandler struct {
 	reloader     *browserRuntimeReloader
 }
 
+var runBrowserAgentLoop = sidecar.RunAgentLoopWithContext
+
 type browserLearningStoreSitemapCache struct {
 	store persistence.LearningStore
 }
@@ -360,6 +362,7 @@ func newBrowserHandler(reloader *browserRuntimeReloader) *browserHandler {
 	} else {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindBrowser))...)
 	}
+	ensureCriticalBrowserTools(reg)
 	return &browserHandler{
 		registry:     reg,
 		browserTools: browserTools,
@@ -1353,26 +1356,82 @@ Be efficient: perceive, act, verify (snapshot), report. Do not take unnecessary 
 	if req.Budget != nil && req.Budget.MaxTurns > 0 {
 		maxTurns = req.Budget.MaxTurns
 	}
-	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	return h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, maxTurns, true)
+}
+
+func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, systemPrompt string, maxTurns int, allowAutoTakeover bool) *sidecar.ExecuteResult {
+	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
 	// budget 耗尽 = LLM 卡在循环里还没调 takeover,我们兜底自动调一次让
-	// 用户接管,比直接失败好:至少能把 run 挂起等用户手动完成、录制学习。
-	if result != nil && result.Status == "failed" &&
-		strings.Contains(result.Error, "budget.turns_exhausted") {
-		diaglog.Logf("browser", "fallbackAgentLoop budget exhausted; auto-triggering human.request_takeover")
-		if takeoverTool, ok := registry.Lookup("human.request_takeover"); ok {
-			tReq, _ := json.Marshal(map[string]interface{}{
-				"reason":   "agent_exhausted",
-				"guidance": "自动化尝试多次仍未通过,请手动完成当前步骤(拖滑块/登录等),完成后 /resume 继续。",
-			})
-			tRes, _ := takeoverTool.Execute(ctx, tReq)
-			if tRes != nil && !tRes.IsError {
-				result.Status = "completed"
-				result.Error = ""
-				result.Summary += "\n\n[Human takeover after budget exhausted: " + string(tRes.Output) + "]"
+	// 用户接管。关键：/resume 后必须在同一个 delegated run 里继续执行，
+	// 不能把“已恢复接管”伪装成 completed 然后把问题抛回 central。
+	if !allowAutoTakeover || result == nil || result.Status != "failed" ||
+		!strings.Contains(result.Error, "budget.turns_exhausted") {
+		return result
+	}
+
+	diaglog.Logf("browser", "fallbackAgentLoop budget exhausted; auto-triggering human.request_takeover")
+	takeoverTool, ok := registry.Lookup("human.request_takeover")
+	if !ok {
+		return result
+	}
+
+	tReq, _ := json.Marshal(map[string]interface{}{
+		"reason":   "agent_exhausted",
+		"guidance": "自动化尝试多次仍未通过,请手动完成当前步骤(拖滑块/登录等),完成后 /resume 继续。",
+	})
+	tRes, _ := takeoverTool.Execute(ctx, tReq)
+	outcome, note := parseTakeoverOutcome(tRes)
+	switch outcome {
+	case "resumed":
+		diaglog.Logf("browser", "human takeover resumed; continuing same delegated run")
+		resumed := h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, max(6, min(12, maxTurns/2)), false)
+		if resumed == nil {
+			return &sidecar.ExecuteResult{
+				Status: "failed",
+				Error:  "takeover_resumed_but_agent_returned_nil",
 			}
 		}
+		resumed.Summary = appendTakeoverNote(resumed.Summary, outcome, note)
+		return resumed
+	case "aborted", "no_coordinator":
+		if result.Summary == "" {
+			result.Summary = appendTakeoverNote("", outcome, note)
+		} else {
+			result.Summary = appendTakeoverNote(result.Summary, outcome, note)
+		}
+		return result
+	default:
+		if tRes != nil && !tRes.IsError {
+			result.Summary = appendTakeoverNote(result.Summary, "unknown", string(tRes.Output))
+		}
+		return result
 	}
-	return result
+}
+
+func parseTakeoverOutcome(res *tool.Result) (outcome string, note string) {
+	if res == nil || res.IsError || len(res.Output) == 0 {
+		return "", ""
+	}
+	var payload struct {
+		Outcome string `json:"outcome"`
+		Note    string `json:"note"`
+	}
+	if err := json.Unmarshal(res.Output, &payload); err != nil {
+		return "", ""
+	}
+	return strings.TrimSpace(payload.Outcome), strings.TrimSpace(payload.Note)
+}
+
+func appendTakeoverNote(summary, outcome, note string) string {
+	entry := "[Human takeover outcome: " + strings.TrimSpace(outcome)
+	if strings.TrimSpace(note) != "" {
+		entry += "; note: " + strings.TrimSpace(note)
+	}
+	entry += "]"
+	if strings.TrimSpace(summary) == "" {
+		return entry
+	}
+	return summary + "\n\n" + entry
 }
 
 // extractTopPatternID gets the best pattern_id from pattern_match result.
@@ -1478,5 +1537,15 @@ func (h *browserHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (too
 	} else {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindBrowser))...)
 	}
+	ensureCriticalBrowserTools(reg)
 	return reg, nil
+}
+
+func ensureCriticalBrowserTools(reg tool.Registry) {
+	if reg == nil {
+		return
+	}
+	if _, ok := reg.Lookup("human.request_takeover"); !ok {
+		reg.Register(tool.NewHumanRequestTakeoverTool())
+	}
 }
