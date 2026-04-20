@@ -677,12 +677,13 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 
 	// Sensitive form (login/payment/2FA) task 必须至少包含一个 browser.type
 	// 步骤。有些 LLM 会生成只有 open+snapshot 的空 plan,然后返回"已完成"
-	// 骗用户。这种 plan 直接视为失败,让上层 Agent 重试并写更明确的指令。
+	// 骗用户。这种 plan 直接视为失败,让上层 Agent 走 fallbackAgentLoop
+	// (多轮 Agent 有 snapshot → 看到输入框 → 决定 type 的机会)。
 	if isSensitiveFormTask(instruction) && !stepHasTool(plan, "browser.type") {
-		diaglog.Logf("browser", "sensitive task but plan has no browser.type step; rejecting as failed")
+		diaglog.Logf("browser", "sensitive task but plan has no browser.type step; falling through to agent loop")
 		return &sidecar.ExecuteResult{
 			Status: "failed",
-			Error:  "plan lacks browser.type step for a login/sensitive task; cannot fulfil the user request",
+			Error:  "plan_missing_type_step",
 		}
 	}
 
@@ -1230,11 +1231,30 @@ or ${password}. The type tool will enter whatever string you give it literally.
 
 Be efficient: perceive, act, verify (snapshot), report. Do not take unnecessary actions.`
 
-	maxTurns := 15
+	maxTurns := 30
 	if req.Budget != nil && req.Budget.MaxTurns > 0 {
 		maxTurns = req.Budget.MaxTurns
 	}
-	return sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	// budget 耗尽 = LLM 卡在循环里还没调 takeover,我们兜底自动调一次让
+	// 用户接管,比直接失败好:至少能把 run 挂起等用户手动完成、录制学习。
+	if result != nil && result.Status == "failed" &&
+		strings.Contains(result.Error, "budget.turns_exhausted") {
+		diaglog.Logf("browser", "fallbackAgentLoop budget exhausted; auto-triggering human.request_takeover")
+		if takeoverTool, ok := registry.Lookup("human.request_takeover"); ok {
+			tReq, _ := json.Marshal(map[string]interface{}{
+				"reason":   "agent_exhausted",
+				"guidance": "自动化尝试多次仍未通过,请手动完成当前步骤(拖滑块/登录等),完成后 /resume 继续。",
+			})
+			tRes, _ := takeoverTool.Execute(ctx, tReq)
+			if tRes != nil && !tRes.IsError {
+				result.Status = "completed"
+				result.Error = ""
+				result.Summary += "\n\n[Human takeover after budget exhausted: " + string(tRes.Output) + "]"
+			}
+		}
+	}
+	return result
 }
 
 // extractTopPatternID gets the best pattern_id from pattern_match result.

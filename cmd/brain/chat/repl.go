@@ -216,6 +216,7 @@ func RunChat(args []string) int {
 				lastProgressSecond = -1
 				DetachPromptFrame(session)
 				PrintUserMessage(queued)
+				ResetStreamClock()
 				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, queued, resultCh, progressCh)
 				running = true
 				// running 期间不画 prompt,让事件实时 Println。
@@ -402,6 +403,7 @@ func RunChat(args []string) int {
 					DetachPromptFrame(session)
 				}
 				PrintUserMessage(input)
+				ResetStreamClock()
 				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, input, resultCh, progressCh)
 				running = true
 				// running 期间不再画 prompt frame:让 LLM 流式输出、tool 调用、
