@@ -249,7 +249,19 @@ func RunChat(args []string) int {
 				return cli.ExitFailed
 			}
 			if !done {
-				RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+				// 正在输入过程中(每收到一个字符就进到这里)。字符回显已经
+				// 由 LineReadSession.Consume 内部的 fast-path(fmt.Print(r))
+				// 完成。
+				//
+				// 不能无条件触发 RerenderPromptFrame:那会清掉整个多行 prompt
+				// frame + 重画,每次重画把"已经打出的字符"连带擦掉又重新写
+				// 一遍,视觉上就是每输入一个字就多出一行残影。
+				//
+				// slash 补全需要动态显示候选项,只在当前输入以 / 开头时才
+				// Rerender,普通聊天输入完全走 Consume 的原地回显路径。
+				if strings.HasPrefix(strings.TrimSpace(session.Editor().String()), "/") {
+					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+				}
 				continue
 			}
 

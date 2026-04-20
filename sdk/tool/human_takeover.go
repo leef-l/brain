@@ -218,9 +218,14 @@ func (r *humanActionRecorder) snapshotDemo() []RecordedAction {
 
 // handle 把一个 HumanEvent 转 RecordedAction 入队。
 func (r *humanActionRecorder) handle(ev cdp.HumanEvent) {
-	// 白名单:只接受有意义的四类。其它(在 hook 脚本里其实就没订阅)兜底丢弃。
+	// 白名单:只接受有意义的事件类型。dragstart 作为"拖动轨迹开始"
+	// 记录但不单独成一条 action(在 dragend 收尾时合并成 browser.drag)。
 	switch ev.Kind {
-	case cdp.HumanEventClick, cdp.HumanEventInput, cdp.HumanEventChange, cdp.HumanEventSubmit:
+	case cdp.HumanEventClick, cdp.HumanEventInput, cdp.HumanEventChange,
+		cdp.HumanEventSubmit, cdp.HumanEventDragEnd:
+	case cdp.HumanEventDragStart:
+		// dragstart 不直接追加,仅用于调试/跟踪。dragend 携带全部坐标。
+		return
 	default:
 		return
 	}
@@ -331,6 +336,12 @@ func (r *humanActionRecorder) toAction(ev cdp.HumanEvent) RecordedAction {
 	case cdp.HumanEventSubmit:
 		act.Tool = "browser.click" // submit 按钮点击
 		params["submit"] = true
+	case cdp.HumanEventDragEnd:
+		act.Tool = "browser.drag"
+		params["from_x"] = ev.FromX
+		params["from_y"] = ev.FromY
+		params["to_x"] = ev.ToX
+		params["to_y"] = ev.ToY
 	}
 	act.Params = params
 	act.Result = "human"

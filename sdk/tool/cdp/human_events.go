@@ -29,25 +29,33 @@ import (
 type HumanEventKind string
 
 const (
-	HumanEventClick  HumanEventKind = "click"
-	HumanEventInput  HumanEventKind = "input"
-	HumanEventChange HumanEventKind = "change"
-	HumanEventSubmit HumanEventKind = "submit"
+	HumanEventClick     HumanEventKind = "click"
+	HumanEventInput     HumanEventKind = "input"
+	HumanEventChange    HumanEventKind = "change"
+	HumanEventSubmit    HumanEventKind = "submit"
+	HumanEventDragStart HumanEventKind = "dragstart"
+	HumanEventDragEnd   HumanEventKind = "dragend"
 )
 
 // HumanEvent 是一条真人 DOM 操作。字段尽量对齐 sdk/tool.RecordedAction
 // 的上游结构(ElementRole / ElementName / 值字段),让 recorder 转换简单。
 type HumanEvent struct {
-	Kind        HumanEventKind `json:"kind"`
-	BrainID     int            `json:"brain_id,omitempty"`   // data-brain-id(snapshot 分配),0 表示未覆盖
-	Tag         string         `json:"tag,omitempty"`        // input / button / a / ...
-	Type        string         `json:"type,omitempty"`       // input type / button type
-	Role        string         `json:"role,omitempty"`
-	Name        string         `json:"name,omitempty"`       // aria-label / innerText 截短
-	Value       string         `json:"value,omitempty"`      // input 值 / change 后 value
-	CSS         string         `json:"css,omitempty"`        // DOM path 粗略 selector(稳定性中)
-	URL         string         `json:"url,omitempty"`
-	Timestamp   time.Time      `json:"timestamp"`
+	Kind      HumanEventKind `json:"kind"`
+	BrainID   int            `json:"brain_id,omitempty"` // data-brain-id(snapshot 分配),0 表示未覆盖
+	Tag       string         `json:"tag,omitempty"`      // input / button / a / ...
+	Type      string         `json:"type,omitempty"`     // input type / button type
+	Role      string         `json:"role,omitempty"`
+	Name      string         `json:"name,omitempty"`  // aria-label / innerText 截短
+	Value     string         `json:"value,omitempty"` // input 值 / change 后 value
+	CSS       string         `json:"css,omitempty"`   // DOM path 粗略 selector(稳定性中)
+	URL       string         `json:"url,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
+	// 拖动专用:记录指针轨迹起止坐标,让 recorder 把 dragstart+dragend
+	// 合并成一条 Drag(带 from_x/from_y/to_x/to_y)供后续重放。
+	FromX float64 `json:"from_x,omitempty"`
+	FromY float64 `json:"from_y,omitempty"`
+	ToX   float64 `json:"to_x,omitempty"`
+	ToY   float64 `json:"to_y,omitempty"`
 }
 
 // EventSource 是 HumanEventSubscriber 的下游抽象。Start 返回一个 Events
@@ -170,6 +178,46 @@ const humanHookScript = `
     emit({ kind: "change", ...d });
   }, true);
   document.addEventListener("submit", (e) => emit({ kind: "submit", ...describe(e.target) }), true);
+
+  // --- 拖动识别:用 pointerdown/pointermove/pointerup 检测"按下后移动>5px
+  //     再松开"的真实人类拖动,合成 dragstart + dragend 两条事件带坐标。
+  //     原生 dragstart/dragend 只在设置了 draggable=true 的元素上触发,
+  //     多数滑块验证不用 HTML5 draggable,pointerdown+move 才能覆盖。
+  let dragCtx = null;
+  document.addEventListener("pointerdown", (e) => {
+    dragCtx = {
+      target: e.target,
+      fromX: e.clientX, fromY: e.clientY,
+      moved: false, t0: Date.now(),
+    };
+  }, true);
+  document.addEventListener("pointermove", (e) => {
+    if (!dragCtx) return;
+    const dx = e.clientX - dragCtx.fromX;
+    const dy = e.clientY - dragCtx.fromY;
+    if (!dragCtx.moved && Math.hypot(dx, dy) > 5) {
+      dragCtx.moved = true;
+      const d = describe(dragCtx.target);
+      d.from_x = dragCtx.fromX; d.from_y = dragCtx.fromY;
+      emit({ kind: "dragstart", ...d });
+    }
+    if (dragCtx.moved) {
+      dragCtx.lastX = e.clientX;
+      dragCtx.lastY = e.clientY;
+    }
+  }, true);
+  document.addEventListener("pointerup", (e) => {
+    if (!dragCtx) return;
+    if (dragCtx.moved) {
+      const d = describe(dragCtx.target);
+      d.from_x = dragCtx.fromX; d.from_y = dragCtx.fromY;
+      d.to_x = (dragCtx.lastX != null ? dragCtx.lastX : e.clientX);
+      d.to_y = (dragCtx.lastY != null ? dragCtx.lastY : e.clientY);
+      emit({ kind: "dragend", ...d });
+    }
+    dragCtx = null;
+  }, true);
+  document.addEventListener("pointercancel", () => { dragCtx = null; }, true);
 })();
 `
 
