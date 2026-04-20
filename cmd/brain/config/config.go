@@ -446,6 +446,8 @@ func setProviderKey(cfg *Config, key, value string) error {
 		p.APIKey = value
 	case "model":
 		p.Model = value
+	case "protocol":
+		p.Protocol = value
 	case "models":
 		if len(parts) < 4 {
 			return fmt.Errorf("invalid key %q (use providers.%s.models.<brain>)", key, name)
@@ -456,7 +458,7 @@ func setProviderKey(cfg *Config, key, value string) error {
 		}
 		p.Models[brain] = value
 	default:
-		return fmt.Errorf("unknown provider field %q (use base_url, api_key, model, or models.<brain>)", field)
+		return fmt.Errorf("unknown provider field %q (use base_url, api_key, model, protocol, or models.<brain>)", field)
 	}
 	return nil
 }

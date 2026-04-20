@@ -656,10 +656,23 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 	// Finish reason
 	if finishReason != nil {
 		stopReason := *finishReason
-		switch stopReason {
+		// 兼容不同实现:阿里云百炼 qwen / DeepSeek / 某些 OpenAI 代理
+		// 可能用 function_call / FUNCTION_CALL / tool-calls / tool_use 等
+		// 变体。只要 toolUse map 里有累积的 tool_use 数据,就当 tool_use
+		// 处理,不管 finish_reason 叫什么名字。
+		normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(stopReason, "-", "_"), " ", "_"))
+		if len(r.toolUse) > 0 {
+			switch normalized {
+			case "stop", "end_turn", "length", "max_tokens":
+				// provider 报了普通停止,但已经累积了 tool call,按 tool_use
+				// 处理——不然 tool call 会丢。
+				normalized = "tool_calls"
+			}
+		}
+		switch normalized {
 		case "stop":
 			stopReason = "end_turn"
-		case "tool_calls":
+		case "tool_calls", "function_call", "tool_use":
 			stopReason = "tool_use"
 			// Flush all tool calls — enqueue them so they are emitted one
 			// per Next() call (the previous code returned inside the loop,
