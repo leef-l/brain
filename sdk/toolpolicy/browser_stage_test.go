@@ -10,12 +10,13 @@ func makeBrowserRegistry() tool.Registry {
 	reg := tool.NewMemRegistry()
 	for _, name := range []string{
 		"browser.open", "browser.navigate", "browser.click", "browser.type",
+		"browser.drag",
 		"browser.snapshot", "browser.understand", "browser.sitemap",
 		"browser.check_anomaly", "browser.wait", "browser.wait_network_idle",
 		"browser.network", "browser.pattern_match", "browser.pattern_exec",
 		"browser.pattern_list", "browser.visual_inspect", "browser.screenshot",
 		"browser.eval", "browser.press_key", "browser.scroll", "browser.hover",
-		"browser.fill_form", "browser.storage",
+		"browser.fill_form", "browser.storage", "human.request_takeover",
 	} {
 		reg.Register(&stubTool{name: name})
 	}
@@ -39,6 +40,12 @@ func TestBrowserStageNewPageExcludesVisualInspect(t *testing.T) {
 	names := toolNameSet(result)
 	if !names["browser.snapshot"] || !names["browser.understand"] {
 		t.Errorf("new_page must include snapshot/understand, got %v", names)
+	}
+	if !names["browser.drag"] {
+		t.Errorf("new_page must include browser.drag for slider CAPTCHA, got %v", names)
+	}
+	if !names["human.request_takeover"] {
+		t.Errorf("new_page must include human.request_takeover, got %v", names)
 	}
 	if names["browser.visual_inspect"] {
 		t.Errorf("new_page must NOT include visual_inspect (fallback-only)")
@@ -68,6 +75,12 @@ func TestBrowserStageKnownFlowPreferPattern(t *testing.T) {
 			t.Errorf("known_flow must include %s", must)
 		}
 	}
+	if !names["browser.drag"] {
+		t.Errorf("known_flow must include browser.drag, got %v", names)
+	}
+	if !names["human.request_takeover"] {
+		t.Errorf("known_flow must include human.request_takeover, got %v", names)
+	}
 	if names["browser.understand"] {
 		t.Errorf("known_flow should not pay for understand — pattern matches are enough")
 	}
@@ -85,7 +98,7 @@ func TestBrowserStageFallbackAllowsAll(t *testing.T) {
 	}, makeBrowserRegistry())
 
 	names := toolNameSet(result)
-	for _, must := range []string{"browser.visual_inspect", "browser.eval", "browser.screenshot", "browser.snapshot"} {
+	for _, must := range []string{"browser.visual_inspect", "browser.eval", "browser.screenshot", "browser.snapshot", "browser.drag", "human.request_takeover"} {
 		if !names[must] {
 			t.Errorf("fallback must include %s", must)
 		}
@@ -104,8 +117,8 @@ func TestBrowserStageUnknownIsNoop(t *testing.T) {
 	}, makeBrowserRegistry())
 
 	// 没 profile 绑定 run.browser 这个 scope — 所有工具通过
-	if len(result.List()) != 22 {
-		t.Errorf("unknown stage should keep all 22 tools, got %d", len(result.List()))
+	if len(result.List()) != 24 {
+		t.Errorf("unknown stage should keep all 24 tools, got %d", len(result.List()))
 	}
 }
 

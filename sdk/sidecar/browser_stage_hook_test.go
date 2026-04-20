@@ -27,8 +27,9 @@ func buildStubBrowserRegistry() tool.Registry {
 	for _, n := range []string{
 		"browser.snapshot", "browser.understand", "browser.sitemap",
 		"browser.pattern_match", "browser.pattern_exec", "browser.pattern_list",
-		"browser.click", "browser.type",
+		"browser.click", "browser.type", "browser.drag",
 		"browser.screenshot", "browser.visual_inspect", "browser.eval",
+		"human.request_takeover",
 	} {
 		_ = reg.Register(stubTool{name: n})
 	}
@@ -69,6 +70,12 @@ func TestBrowserStageHookFirstTurnNewPage(t *testing.T) {
 	if !names["browser.snapshot"] {
 		t.Errorf("new_page should include browser.snapshot; got %v", names)
 	}
+	if !names["browser.drag"] {
+		t.Errorf("new_page should include browser.drag; got %v", names)
+	}
+	if !names["human.request_takeover"] {
+		t.Errorf("new_page should include human.request_takeover; got %v", names)
+	}
 	if names["browser.visual_inspect"] {
 		t.Errorf("new_page should NOT include browser.visual_inspect; got %v", names)
 	}
@@ -88,6 +95,9 @@ func TestBrowserStageHookHighScoreKnownFlow(t *testing.T) {
 	if !names["browser.pattern_match"] || !names["browser.pattern_exec"] {
 		t.Errorf("known_flow should keep pattern_* tools; got %v", names)
 	}
+	if !names["browser.drag"] || !names["human.request_takeover"] {
+		t.Errorf("known_flow should keep drag + takeover; got %v", names)
+	}
 	if names["browser.sitemap"] {
 		t.Errorf("known_flow profile should drop browser.sitemap; got %v", names)
 	}
@@ -105,6 +115,9 @@ func TestBrowserStageHookConsecutiveErrorsFallback(t *testing.T) {
 	names := hookNameSet(t, ctx, reg)
 	if !names["browser.eval"] || !names["browser.visual_inspect"] {
 		t.Errorf("fallback should open eval + visual_inspect; got %v", names)
+	}
+	if !names["browser.drag"] || !names["human.request_takeover"] {
+		t.Errorf("fallback should keep drag + takeover; got %v", names)
 	}
 }
 

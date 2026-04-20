@@ -362,7 +362,8 @@ func DefaultBrowserStageProfiles() (map[string]*Profile, map[string]string) {
 				"browser.check_anomaly", "browser.wait*", "browser.network",
 				"browser.navigate", "browser.open",
 				"browser.click", "browser.type", "browser.press_key",
-				"browser.scroll", "browser.hover",
+				"browser.scroll", "browser.hover", "browser.drag",
+				"human.request_takeover",
 			},
 		},
 		"browser_known_flow": {
@@ -370,9 +371,10 @@ func DefaultBrowserStageProfiles() (map[string]*Profile, map[string]string) {
 				"browser.pattern_*",
 				"browser.snapshot", "browser.check_anomaly",
 				"browser.click", "browser.type", "browser.press_key",
-				"browser.scroll", "browser.navigate",
+				"browser.scroll", "browser.navigate", "browser.drag",
 				"browser.fill_form", "browser.storage",
 				"browser.wait*", "browser.network",
+				"human.request_takeover",
 			},
 		},
 		"browser_destructive": {
@@ -381,13 +383,14 @@ func DefaultBrowserStageProfiles() (map[string]*Profile, map[string]string) {
 				"browser.snapshot", "browser.understand",
 				"browser.visual_inspect", "browser.screenshot",
 				"browser.check_anomaly",
-				"browser.click", "browser.type", "browser.press_key",
+				"browser.click", "browser.type", "browser.press_key", "browser.drag",
+				"human.request_takeover",
 			},
 		},
 		"browser_fallback": {
 			// 兜底阶段允许全量工具,但 exclude 掉 eval 的原始危险变体
 			// (如未来引入 browser.eval.unrestricted)。目前全开。
-			Include: []string{"browser.*"},
+			Include: []string{"browser.*", "human.request_takeover"},
 		},
 	}
 	active := map[string]string{
