@@ -619,6 +619,7 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 	}
 
 	var lastOutput json.RawMessage
+	var screenshotPaths []string
 	for i, step := range plan.Steps {
 		diaglog.Logf("browser", "plan step %d/%d: %s params=%v", i+1, len(plan.Steps), step.Tool, step.Params)
 		t, ok := registry.Lookup(step.Tool)
@@ -648,6 +649,13 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 					Turns:  0,
 				}
 			}
+			// 截图步骤实时持久化,避免被后续步骤的 output 覆盖丢失。
+			if step.Tool == "browser.screenshot" {
+				if path, ok := saveScreenshotOutput(result.Output); ok {
+					screenshotPaths = append(screenshotPaths, path)
+					diaglog.Logf("browser", "screenshot saved: %s", path)
+				}
+			}
 		}
 	}
 
@@ -664,46 +672,9 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 	if n := len(plan.Steps); n > 0 {
 		lastTool = plan.Steps[n-1].Tool
 	}
-	if lastTool == "browser.screenshot" {
-		// Screenshot was the final step.
-		// 把 base64 写到本地文件(~/.brain/screenshots/screenshot-<ts>.png),
-		// summary 只返回文件路径和页面元信息:
-		//   1) 截图 base64 字符串对非视觉 LLM 没用且耗上下文
-		//   2) 用户需要的是一个能直接查看的本地文件
-		var shot struct {
-			Format string `json:"format"`
-			Data   string `json:"data"`
-		}
-		if err := json.Unmarshal(lastOutput, &shot); err == nil && shot.Data != "" {
-			ext := shot.Format
-			if ext == "" {
-				ext = "png"
-			}
-			dir := filepath.Join(os.Getenv("HOME"), ".brain", "screenshots")
-			os.MkdirAll(dir, 0o755)
-			filename := fmt.Sprintf("screenshot-%d.%s", time.Now().UnixNano(), ext)
-			path := filepath.Join(dir, filename)
-			if raw, decErr := base64.StdEncoding.DecodeString(shot.Data); decErr == nil {
-				if writeErr := os.WriteFile(path, raw, 0o644); writeErr == nil {
-					pageURL, pageTitle := "", ""
-					if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
-						sa, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 200})
-						if sr, err := snapshotTool.Execute(ctx, sa); err == nil && sr != nil {
-							var meta struct {
-								Title string `json:"title"`
-								URL   string `json:"url"`
-							}
-							json.Unmarshal(sr.Output, &meta)
-							pageURL, pageTitle = meta.URL, meta.Title
-						}
-					}
-					summary = fmt.Sprintf(
-						"Screenshot saved to: %s (%d bytes, %s)\nPage URL: %s\nPage Title: %s",
-						path, len(raw), ext, pageURL, pageTitle)
-				}
-			}
-		}
-	} else if lastTool != "browser.eval" {
+	if lastTool != "browser.eval" && lastTool != "browser.screenshot" {
+		// 非 eval / screenshot 场景:追加 text-mode snapshot,让 central
+		// 拿到人类可读的页面文本而不是原始 JSON。
 		if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
 			snapArgs, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 8000})
 			snapResult, snapErr := snapshotTool.Execute(ctx, snapArgs)
@@ -721,6 +692,33 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 				}
 			}
 		}
+	} else if lastTool == "browser.screenshot" {
+		// 最后一步是截图:用已保存的文件路径 + 页面元信息替代 base64。
+		pageURL, pageTitle := "", ""
+		if snapshotTool, ok := registry.Lookup("browser.snapshot"); ok {
+			sa, _ := json.Marshal(map[string]interface{}{"mode": "text", "max_chars": 200})
+			if sr, err := snapshotTool.Execute(ctx, sa); err == nil && sr != nil {
+				var meta struct {
+					Title string `json:"title"`
+					URL   string `json:"url"`
+				}
+				json.Unmarshal(sr.Output, &meta)
+				pageURL, pageTitle = meta.URL, meta.Title
+			}
+		}
+		if len(screenshotPaths) > 0 {
+			summary = fmt.Sprintf(
+				"Screenshot saved to: %s\nPage URL: %s\nPage Title: %s",
+				screenshotPaths[len(screenshotPaths)-1], pageURL, pageTitle)
+		} else {
+			summary = fmt.Sprintf("Screenshot step ran but no file was saved.\nPage URL: %s\nPage Title: %s", pageURL, pageTitle)
+		}
+	}
+
+	// 如果 plan 中间步骤截图了(但最后一步不是 screenshot),在 summary 末尾
+	// 附加截图路径提示,避免截图被"悄悄丢失"。
+	if lastTool != "browser.screenshot" && len(screenshotPaths) > 0 {
+		summary += "\n\n[Screenshots saved: " + strings.Join(screenshotPaths, ", ") + "]"
 	}
 	diaglog.Logf("browser", "executeLLMPlan: lastTool=%s summary len=%d preview=%.200s", lastTool, len(summary), summary)
 	if len(summary) > 8192 {
@@ -735,6 +733,35 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 		Summary: summary,
 		Turns:   1,
 	}
+}
+
+// saveScreenshotOutput decodes a browser.screenshot tool result and persists
+// the PNG/JPEG bytes to ~/.brain/screenshots/. Returns the file path on success.
+func saveScreenshotOutput(output json.RawMessage) (string, bool) {
+	var shot struct {
+		Format string `json:"format"`
+		Data   string `json:"data"`
+	}
+	if err := json.Unmarshal(output, &shot); err != nil || shot.Data == "" {
+		return "", false
+	}
+	ext := shot.Format
+	if ext == "" {
+		ext = "png"
+	}
+	raw, decErr := base64.StdEncoding.DecodeString(shot.Data)
+	if decErr != nil {
+		return "", false
+	}
+	dir := filepath.Join(os.Getenv("HOME"), ".brain", "screenshots")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", false
+	}
+	path := filepath.Join(dir, fmt.Sprintf("screenshot-%d.%s", time.Now().UnixNano(), ext))
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		return "", false
+	}
+	return path, true
 }
 
 // learnFromPlan converts a successful LLM plan into a UIPattern and saves it.

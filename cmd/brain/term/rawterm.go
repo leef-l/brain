@@ -24,6 +24,9 @@ type LineEditor struct {
 	Runes       []rune
 	Pos         int
 	PromptWidth int
+	// 上次 RedrawFull 画完后,光标所在行相对 prompt 行的偏移(即已占用的
+	// 终端行数 - 1)。用于长内容折行时正确回退并清屏避免残影。
+	LastRowsBelow int
 }
 
 type LineReadSession struct {
@@ -211,7 +214,14 @@ func (s *LineReadSession) Consume(chunk []byte) (line string, action InputAction
 		s.LeaveHistoryBrowse()
 		s.Ed.Insert(r)
 		if s.Ed.Pos == len(s.Ed.Runes) {
+			// fast path:追加一个字符。如果追加后恰好跨越终端宽度,
+			// 更新 LastRowsBelow 让下次 returnToPromptRow 能正确回
+			// 退并清掉折行残影。
 			fmt.Print(string(r))
+			cols := termCols()
+			totalW := s.Ed.PromptWidth + s.Ed.DisplayWidthRange(0, len(s.Ed.Runes))
+			s.Ed.LastRowsBelow = totalW / cols
+			// 行尾正好填满时光标可能没真正换行,保守估计不扣减。
 		} else {
 			RedrawFull(s.Ed)
 		}
@@ -499,26 +509,63 @@ func RedrawFromCursor(ed *LineEditor) {
 	}
 }
 
-func RedrawFull(ed *LineEditor) {
+// termCols returns the terminal width, falling back to 120 when unknown.
+func termCols() int {
+	w := TerminalColumns()
+	if w <= 0 {
+		return 120
+	}
+	return w
+}
+
+// returnToPromptRow 把光标从当前位置回到 prompt 行的第一列,并清除从
+// 那里到屏幕底部的所有内容。依赖 ed.LastRowsBelow(上次绘制后光标所
+// 在行相对 prompt 行的下移行数)。
+func returnToPromptRow(ed *LineEditor) {
+	if ed.LastRowsBelow > 0 {
+		fmt.Printf("\033[%dA", ed.LastRowsBelow)
+	}
 	fmt.Print("\r")
+	// \033[J:清除从光标到屏幕末尾的所有字符(含下方折行残影)。
+	fmt.Print("\033[J")
+	ed.LastRowsBelow = 0
+}
+
+func RedrawFull(ed *LineEditor) {
+	returnToPromptRow(ed)
 	if ed.PromptWidth > 0 {
 		fmt.Printf("\033[%dC", ed.PromptWidth)
 	}
 	for _, r := range ed.Runes {
 		fmt.Print(string(r))
 	}
-	fmt.Print("\033[K")
 
-	tailW := ed.DisplayWidthRange(ed.Pos, len(ed.Runes))
-	if tailW > 0 {
-		fmt.Printf("\033[%dD", tailW)
+	// 计算光标最终位置的行/列,供下次重绘使用。
+	cols := termCols()
+	totalW := ed.PromptWidth + ed.DisplayWidthRange(0, len(ed.Runes))
+	endRow, endCol := totalW/cols, totalW%cols
+	// 行尾正好填满时,终端可能还停在前一行末尾未换行 —— 不扣减,保留
+	// 保守估计。即便多算一行,returnToPromptRow 的 \033[J 会清干净。
+
+	// 把光标从内容末尾移到 ed.Pos 的位置。
+	cursorW := ed.PromptWidth + ed.DisplayWidthRange(0, ed.Pos)
+	curRow, curCol := cursorW/cols, cursorW%cols
+
+	if endRow > curRow {
+		fmt.Printf("\033[%dA", endRow-curRow)
 	}
+	// 用 \r + 绝对列前进 定位到目标列。
+	fmt.Print("\r")
+	if curCol > 0 {
+		fmt.Printf("\033[%dC", curCol)
+	}
+
+	ed.LastRowsBelow = endRow
+	_ = endCol
 }
 
 func RedrawClear(ed *LineEditor) {
-	if len(ed.Runes) > 0 {
-		fmt.Print("\r\033[K")
-	}
+	returnToPromptRow(ed)
 }
 
 func MoveWordBack(ed *LineEditor) {
