@@ -76,9 +76,24 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 			"(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 	}
 
+	// 头模式开关:默认 headless(适合服务器/CI),用户想看到浏览器操作时
+	// 设置 BROWSER_HEADLESS=false(等价:BROWSER_HEADED=1)启用有头模式。
+	headless := true
+	if v := os.Getenv("BROWSER_HEADLESS"); v != "" {
+		switch v {
+		case "0", "false", "False", "FALSE", "no", "No", "NO":
+			headless = false
+		}
+	}
+	if v := os.Getenv("BROWSER_HEADED"); v != "" {
+		switch v {
+		case "1", "true", "True", "TRUE", "yes", "Yes", "YES":
+			headless = false
+		}
+	}
+
 	// Launch browser.
 	args := []string{
-		"--headless=new",
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		fmt.Sprintf("--user-data-dir=%s", userDir),
 		fmt.Sprintf("--user-agent=%s", fakeUA),
@@ -95,11 +110,15 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 		"--metrics-recording-only",
 		"--safebrowsing-disable-auto-update",
 		"--no-sandbox",
-		"--disable-gpu",
 		"--window-size=1920,1080",
 		// 反爬规避:禁用 AutomationControlled 特性,不再在 UA-CH 里暴露自动化标识。
 		"--disable-blink-features=AutomationControlled",
 		"about:blank",
+	}
+	if headless {
+		// headless=new:Chrome 109+ 的新版 headless,支持扩展/文件上传等特性,
+		// 比旧 --headless 更接近有头行为。
+		args = append([]string{"--headless=new", "--disable-gpu"}, args...)
 	}
 
 	cmd := exec.CommandContext(ctx, browserPath, args...)
