@@ -355,6 +355,10 @@ func resetPromptInput(session *term.LineReadSession) {
 	session.LeaveHistoryBrowse()
 	session.Ed.Runes = nil
 	session.Ed.Pos = 0
+	// 重置行占用计数:新的 prompt 行从 0 行残留开始,下次 RedrawFull
+	// 不会再去清理上一条输入留下的"多行残影"(那些已经不在新 prompt
+	// 附近了,清了会破坏历史输出)。
+	session.Ed.LastRowsBelow = 0
 }
 
 func startAsyncStdinReader() (<-chan []byte, <-chan error) {
