@@ -91,7 +91,7 @@ func windowTrim(msgs []llm.Message, budget int) []llm.Message {
 		startIdx = i
 	}
 	if startIdx >= len(msgs) {
-		return msgs[len(msgs)-1:]
+		startIdx = len(msgs) - 1
 	}
 	// OpenAI/DeepSeek 要求 role=tool 消息前必须有 role=assistant 的 tool_calls。
 	// 如果裁剪起点落在 tool_result 消息上，向前扩展到对应的 assistant 消息。
@@ -151,7 +151,7 @@ func hardTruncate(msgs []llm.Message, budget int) []llm.Message {
 		startIdx = i
 	}
 	if startIdx >= len(msgs) {
-		return []llm.Message{truncateMessageContent(msgs[len(msgs)-1], 100)}
+		startIdx = len(msgs) - 1
 	}
 	startIdx = adjustStartForToolPairs(msgs, startIdx)
 	result := make([]llm.Message, len(msgs)-startIdx)
