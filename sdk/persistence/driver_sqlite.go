@@ -1863,6 +1863,69 @@ func (s *sqliteLearningStore) ListHumanDemoSequences(ctx context.Context, approv
 	return out, nil
 }
 
+func (s *sqliteLearningStore) GetHumanDemoSequence(ctx context.Context, id int64) (*HumanDemoSequence, error) {
+	row := s.c.db.QueryRowContext(ctx,
+		`SELECT id, run_id, brain_kind, goal, site, url, actions, approved, recorded_at
+		 FROM human_demo_sequences WHERE id = ?`, id)
+	seq := &HumanDemoSequence{}
+	var actions []byte
+	var approvedInt int
+	var atStr string
+	if err := row.Scan(&seq.ID, &seq.RunID, &seq.BrainKind,
+		&seq.Goal, &seq.Site, &seq.URL,
+		&actions, &approvedInt, &atStr); err != nil {
+		return nil, err
+	}
+	if len(actions) > 0 {
+		seq.Actions = json.RawMessage(actions)
+	}
+	seq.Approved = approvedInt != 0
+	seq.RecordedAt, _ = time.Parse(sqliteTimeLayout, atStr)
+	return seq, nil
+}
+
+func (s *sqliteLearningStore) ApproveHumanDemoSequence(ctx context.Context, id int64) error {
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	res, err := s.c.db.ExecContext(ctx,
+		`UPDATE human_demo_sequences SET approved = 1 WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("human demo sequence %d not found", id)
+	}
+	return nil
+}
+
+func (s *sqliteLearningStore) DeleteHumanDemoSequence(ctx context.Context, id int64) error {
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	res, err := s.c.db.ExecContext(ctx,
+		`DELETE FROM human_demo_sequences WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("human demo sequence %d not found", id)
+	}
+	return nil
+}
+
+func (s *sqliteLearningStore) PurgeHumanDemoSequences(ctx context.Context, olderThan time.Time) (int64, error) {
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	res, err := s.c.db.ExecContext(ctx,
+		`DELETE FROM human_demo_sequences WHERE recorded_at < ?`,
+		olderThan.Format(sqliteTimeLayout))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ── P3.4 SitemapSnapshot ───────────────────────────────────────────────
 
 func (s *sqliteLearningStore) SaveSitemapSnapshot(ctx context.Context, snap *SitemapSnapshot) error {

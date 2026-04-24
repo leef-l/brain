@@ -205,6 +205,10 @@ type LearningStore interface {
 	// filters to rows that a reviewer has approved for pattern ingestion.
 	SaveHumanDemoSequence(ctx context.Context, seq *HumanDemoSequence) error
 	ListHumanDemoSequences(ctx context.Context, approvedOnly bool) ([]*HumanDemoSequence, error)
+	GetHumanDemoSequence(ctx context.Context, id int64) (*HumanDemoSequence, error)
+	ApproveHumanDemoSequence(ctx context.Context, id int64) error
+	DeleteHumanDemoSequence(ctx context.Context, id int64) error
+	PurgeHumanDemoSequences(ctx context.Context, olderThan time.Time) (int64, error)
 
 	// P3.4 — Sitemap snapshot cache. GetSitemapSnapshot returns the most
 	// recent entry for (site, depth) or nil if absent.
