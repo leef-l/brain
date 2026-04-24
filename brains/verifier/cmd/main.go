@@ -76,9 +76,27 @@ func (h *verifierHandler) HandleMethod(ctx context.Context, method string, param
 		return h.handleVerify(ctx, params)
 	case "brain/metrics":
 		return h.learner.ExportMetrics(), nil
+	case "brain/learn":
+		return nil, h.handleLearn(ctx, params)
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
+}
+
+func (h *verifierHandler) handleLearn(ctx context.Context, params json.RawMessage) error {
+	var req struct {
+		TaskType string  `json:"task_type"`
+		Success  bool    `json:"success"`
+		Duration float64 `json:"duration"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return err
+	}
+	return h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType: req.TaskType,
+		Success:  req.Success,
+		Duration: time.Duration(req.Duration * float64(time.Second)),
+	})
 }
 
 // handleVerify runs the Verifier Brain's Agent Loop for verification.
@@ -148,7 +166,7 @@ func (h *verifierHandler) handleVerify(ctx context.Context, params json.RawMessa
 	return result, nil
 }
 
-var verifierVerdictRE = regexp.MustCompile(`(?i)VERDICT:\s*(PASS|FAIL)(?:\s*[—:-]\s*(.*))?`)
+var verifierVerdictRE = regexp.MustCompile(`(?i)VERDICT:\s*(PASS|FAIL)(?:\s*[—–:-]\s*(.*))?`)
 
 func applyVerifierVerdict(result *sidecar.ExecuteResult) {
 	if result == nil {

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -58,14 +59,9 @@ func MatchPatterns(ctx context.Context, sess *cdp.BrowserSession, lib *PatternLi
 		candidates = append(candidates, &PatternMatch{Pattern: p, Score: score, MatchedVia: reason})
 	}
 
-	// Sort by score desc
-	for i := 0; i < len(candidates); i++ {
-		for j := i + 1; j < len(candidates); j++ {
-			if candidates[j].Score > candidates[i].Score {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
-		}
-	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
 	return candidates, nil
 }
 

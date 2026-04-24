@@ -53,6 +53,7 @@ type browserHandler struct {
 	browserTools []tool.Tool
 	learner      *kernel.DefaultBrainLearner
 	reloader     *browserRuntimeReloader
+	headedOnce   sync.Once
 }
 
 var runBrowserAgentLoop = sidecar.RunAgentLoopFull
@@ -191,10 +192,17 @@ func (r *browserRuntimeReloader) MaybeRefresh(ctx context.Context) error {
 }
 
 func (r *browserRuntimeReloader) Start(ctx context.Context) {
-	if r == nil || r.stopCh != nil {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	if r.stopCh != nil {
+		r.mu.Unlock()
 		return
 	}
 	r.stopCh = make(chan struct{})
+	ch := r.stopCh
+	r.mu.Unlock()
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
@@ -202,7 +210,7 @@ func (r *browserRuntimeReloader) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-r.stopCh:
+			case <-ch:
 				return
 			case <-ticker.C:
 				if err := r.MaybeRefresh(context.Background()); err != nil {
@@ -214,11 +222,16 @@ func (r *browserRuntimeReloader) Start(ctx context.Context) {
 }
 
 func (r *browserRuntimeReloader) Stop() {
-	if r == nil || r.stopCh == nil {
+	if r == nil {
 		return
 	}
-	close(r.stopCh)
+	r.mu.Lock()
+	ch := r.stopCh
 	r.stopCh = nil
+	r.mu.Unlock()
+	if ch != nil {
+		close(ch)
+	}
 }
 
 func applyBrowserRuntimeProjectionFromFile(path string) error {
@@ -400,9 +413,27 @@ func (h *browserHandler) HandleMethod(ctx context.Context, method string, params
 		return h.handleExecute(ctx, params)
 	case "brain/metrics":
 		return h.learner.ExportMetrics(), nil
+	case "brain/learn":
+		return nil, h.handleLearn(ctx, params)
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
+}
+
+func (h *browserHandler) handleLearn(ctx context.Context, params json.RawMessage) error {
+	var req struct {
+		TaskType string  `json:"task_type"`
+		Success  bool    `json:"success"`
+		Duration float64 `json:"duration"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return err
+	}
+	return h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType: req.TaskType,
+		Success:  req.Success,
+		Duration: time.Duration(req.Duration * float64(time.Second)),
+	})
 }
 
 // handleExecute runs browser tasks using the perception-first architecture:
@@ -420,8 +451,10 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 	// 用户意图探测优先使用结构化旁路字段，其次才回退到改写后的 instruction。
 	// 这样 central 重写 delegation instruction 时，不会丢掉用户“我要看到”的原始诉求。
 	if wantsHeadedBrowser(req.Subtask, req.Instruction) {
-		diaglog.Logf("browser", "detected visible-browser intent, switching to headed mode")
-		os.Setenv("BROWSER_HEADED", "1")
+		h.headedOnce.Do(func() {
+			diaglog.Logf("browser", "detected visible-browser intent, switching to headed mode")
+			os.Setenv("BROWSER_HEADED", "1")
+		})
 		tool.CloseBrowserSession(h.browserTools)
 	}
 
@@ -1942,6 +1975,7 @@ func main() {
 	runtimeStores, runtimeReloader, err := configureBrowserRuntime(context.Background())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain-browser: runtime wiring: %v\n", err)
+		os.Exit(1)
 	}
 	if runtimeStores != nil {
 		defer runtimeStores.Close()

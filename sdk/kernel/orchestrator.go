@@ -516,6 +516,7 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 			"duration", time.Since(start),
 		)
 		o.recordDelegateOutcome(req, result)
+		o.sendBrainLearn(ctx, req, result)
 		return result, nil
 	}
 
@@ -553,6 +554,7 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 		"duration", time.Since(start),
 	)
 	o.recordDelegateOutcome(req, retryResult)
+	o.sendBrainLearn(ctx, req, retryResult)
 	return retryResult, retryErr
 }
 
@@ -1030,6 +1032,36 @@ func (o *Orchestrator) recordDelegateOutcome(req *SubtaskRequest, result *Subtas
 			Score:     accuracy,
 		}},
 	})
+}
+
+// sendBrainLearn 异步通知 sidecar 本次执行结果，激活 sidecar 侧的 L0 学习。
+func (o *Orchestrator) sendBrainLearn(ctx context.Context, req *SubtaskRequest, result *SubtaskResult) {
+	if result == nil {
+		return
+	}
+	ag, err := o.getOrStartSidecar(ctx, req.TargetKind)
+	if err != nil {
+		return
+	}
+	rpcAgent, ok := ag.(agent.RPCAgent)
+	if !ok {
+		return
+	}
+	rpc, ok := rpcAgent.RPC().(protocol.BidirRPC)
+	if !ok {
+		return
+	}
+	payload := map[string]interface{}{
+		"task_id":   req.TaskID,
+		"task_type": req.TaskType,
+		"success":   result.Status == "completed",
+		"duration":  result.Usage.Duration.Seconds(),
+	}
+	go func() {
+		learnCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = rpc.Call(learnCtx, "brain/learn", payload, nil)
+	}()
 }
 
 // HandleSubtaskDelegate returns a protocol.HandlerFunc that can be registered
