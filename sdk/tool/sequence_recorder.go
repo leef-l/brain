@@ -332,6 +332,26 @@ func recordInteractionForLearning(ctx context.Context, toolName string, args jso
 	rec.append(RecordedAction{Tool: toolName, Params: params, Result: outcome})
 }
 
+// snapshotActiveRecorder 从 ctx 绑定的 activeRecorder 拷贝一份当前
+// 操作序列快照。供 FullRunRecorder.FinalizePersist 在 CDP 录制不可用
+// 时获取 AI 工具调用序列作为 fallback。
+func snapshotActiveRecorder(ctx context.Context) (actions []RecordedAction, site, lastURL string) {
+	if ctx == nil {
+		return nil, "", ""
+	}
+	recorderMu.Lock()
+	rec := ctxRecorders[ctx]
+	recorderMu.Unlock()
+	if rec == nil {
+		return nil, "", ""
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	out := make([]RecordedAction, len(rec.actions))
+	copy(out, rec.actions)
+	return out, rec.site, rec.lastURL
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

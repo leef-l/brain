@@ -235,36 +235,73 @@ func (r *humanActionRecorder) stop() {
 // 录"整个 run 从头到尾"的所有 DOM 事件,包含 AI 做的 type/click 和人类做
 // 的 drag/click,任务最终登录成功时整条合并写盘,形成一条可完整重放的
 // pattern。
+//
+// 当 CDP 事件源不可用时(典型:浏览器 session 还没创建),inner 为 nil 但
+// FullRunRecorder 仍然有效——FinalizePersist 会从 ctx 绑定的
+// activeRecorder(InteractionRecorder)获取 AI 工具调用序列作为 fallback。
 type FullRunRecorder struct {
-	inner *humanActionRecorder
+	inner     *humanActionRecorder
+	ctx       context.Context
+	runID     string
+	brainKind string
+	goal      string
 }
 
 // StartFullRunRecorder 在 run 入口启动 CDP 事件录制。ctx 会贯穿整个 run,
-// run 结束时调 FinalizePersist 决定是否写盘。nil 表示工厂未配置,调用方
-// 正常继续(只是不学习)。
+// run 结束时调 FinalizePersist 决定是否写盘。
+//
+// 当 CDP 事件源不可用时(浏览器 session 尚未创建),仍返回有效对象——
+// FinalizePersist 会从 ctx 的 activeRecorder 获取 AI 工具调用序列作为
+// fallback,确保纯 AI 执行成功的流程也能学习成 pattern。
 func StartFullRunRecorder(ctx context.Context, runID, brainKind, goal, url string) *FullRunRecorder {
-	r := startHumanRecorder(ctx, runID, brainKind, goal, url)
-	if r == nil {
-		return nil
+	rec := &FullRunRecorder{
+		ctx:       ctx,
+		runID:     runID,
+		brainKind: brainKind,
+		goal:      goal,
 	}
-	return &FullRunRecorder{inner: r}
+	rec.inner = startHumanRecorder(ctx, runID, brainKind, goal, url)
+	return rec
 }
 
 // FinalizePersist 停止录制。success=true 时把 actions 写到 HumanDemoSink,
 // success=false 则丢弃(失败的流程没有学习价值,避免把错误轨迹固化成
 // pattern)。auto=true 时 sink 写完立刻转成 UIPattern 进库,无需人工审批。
+//
+// 当 CDP 录制器不可用(inner==nil)或 CDP 录制的 demoActions 为空时,
+// 从 ctx 绑定的 activeRecorder 获取 AI 工具调用序列作为 fallback。
 func (r *FullRunRecorder) FinalizePersist(ctx context.Context, success bool, auto bool) {
-	if r == nil || r.inner == nil {
+	if r == nil {
 		return
 	}
-	r.inner.stop()
+	if r.inner != nil {
+		r.inner.stop()
+	}
 	if !success {
 		return
 	}
-	actions := r.inner.snapshotDemo()
+
+	// 优先取 CDP 录制的 DOM 事件序列(包含人类 takeover 操作)。
+	var actions []RecordedAction
+	var site, lastURL string
+	if r.inner != nil {
+		actions = r.inner.snapshotDemo()
+		site = r.inner.site
+		lastURL = r.inner.lastURL
+	}
+
+	// fallback: CDP 没录到(session 未建立 or 纯 AI 执行无 DOM 事件),
+	// 从 ctx 的 InteractionRecorder 获取 AI 工具调用序列。
+	if len(actions) == 0 {
+		actions, site, lastURL = snapshotActiveRecorder(r.ctx)
+	}
+
+	// 过滤掉无效步骤:只保留实际改变页面状态的操作工具 + 执行成功的步骤。
+	actions = filterEffectiveActions(actions)
 	if len(actions) == 0 {
 		return
 	}
+
 	sink := currentHumanDemoSink()
 	if sink == nil {
 		return
@@ -273,12 +310,28 @@ func (r *FullRunRecorder) FinalizePersist(ctx context.Context, success bool, aut
 	if err != nil {
 		return
 	}
+
+	runID := r.runID
+	brainKind := r.brainKind
+	goal := r.goal
+	if r.inner != nil {
+		runID = r.inner.runID
+		brainKind = r.inner.brainKind
+		goal = r.inner.goal
+		if site == "" {
+			site = r.inner.site
+		}
+		if lastURL == "" {
+			lastURL = r.inner.lastURL
+		}
+	}
+
 	seq := &persistence.HumanDemoSequence{
-		RunID:      r.inner.runID,
-		BrainKind:  r.inner.brainKind,
-		Goal:       r.inner.goal,
-		Site:       r.inner.site,
-		URL:        r.inner.lastURL,
+		RunID:      runID,
+		BrainKind:  brainKind,
+		Goal:       goal,
+		Site:       site,
+		URL:        lastURL,
 		Actions:    actionsJSON,
 		Approved:   auto || demoAutoApprove(),
 		RecordedAt: time.Now().UTC(),
@@ -500,6 +553,41 @@ func persistDemoSequence(ctx context.Context, r *humanActionRecorder) {
 			}
 		}
 	}
+}
+
+// effectiveTools 是会改变页面状态的操作工具白名单。只有这些工具产生的步骤
+// 才值得保存到 pattern 中重放。browser.snapshot / browser.wait / browser.screenshot
+// 等只读/辅助工具不保留。
+var effectiveTools = map[string]bool{
+	"browser.open":       true,
+	"browser.click":      true,
+	"browser.type":       true,
+	"browser.press_key":  true,
+	"browser.drag":       true,
+	"browser.scroll":     true,
+	"browser.hover":      true,
+	"browser.eval":       true,
+	"browser.double_click": true,
+	"browser.right_click":  true,
+	"browser.select":       true,
+}
+
+// filterEffectiveActions 从操作序列中过滤掉无效步骤,只保留实际改变页面
+// 状态的工具调用,且执行结果不为 error。
+func filterEffectiveActions(actions []RecordedAction) []RecordedAction {
+	out := make([]RecordedAction, 0, len(actions))
+	for _, a := range actions {
+		if a.Result == "error" {
+			continue
+		}
+		if a.Tool == "" {
+			continue
+		}
+		if effectiveTools[a.Tool] {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // demoAutoApprove 读环境变量决定 demo 是否自动 approved + 立即转 pattern。
