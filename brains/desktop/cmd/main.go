@@ -58,6 +58,7 @@ func (h *desktopHandler) ToolSchemas() []tool.Schema {
 
 func (h *desktopHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	h.caller = caller
+	sidecar.SetProgressContext(caller, string(h.Kind()))
 }
 
 func (h *desktopHandler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
@@ -114,9 +115,11 @@ WORKFLOW:
 3. Execute the single action (open / hotkey)
 4. Report what was done and any observable effect`
 
-	maxTurns := 6
-	if req.Budget != nil && req.Budget.MaxTurns > 0 {
-		maxTurns = req.Budget.MaxTurns
+	budget := req.Budget
+	if budget == nil {
+		budget = &sidecar.ExecuteBudget{MaxTurns: 6}
+	} else if budget.MaxTurns <= 0 {
+		budget.MaxTurns = 6
 	}
 
 	registry, err := h.buildRegistry(req.Execution)
@@ -128,7 +131,7 @@ WORKFLOW:
 	}
 
 	start := time.Now()
-	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	result := sidecar.RunAgentLoopFull(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, req.Context)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "desktop.execute",
 		Success:   result.Status == "completed",

@@ -50,8 +50,14 @@ func (f *RuleFallback) Compute(ruleVec []float64, instID string) MLFeatures {
 // probabilities using ADX, EMA alignment, BB width, and ATR.
 func (f *RuleFallback) computeMarketRegime(ml *MLFeatures, ruleVec []float64, instID string) {
 	w := f.candles.GetWindow(instID, "1H")
-	if w == nil || !w.ADX14.Ready() || !w.EMA9.Ready() || !w.EMA21.Ready() || !w.EMA55.Ready() || !w.BB20.Ready() || !w.ATR14.Ready() {
-		// Indicators not ready — uniform distribution
+	if w == nil {
+		ml.MarketRegime = [4]float64{0.25, 0.25, 0.25, 0.25}
+		return
+	}
+	w.RLock()
+	defer w.RUnlock()
+
+	if !w.ADX14.Ready() || !w.EMA9.Ready() || !w.EMA21.Ready() || !w.EMA55.Ready() || !w.BB20.Ready() || !w.ATR14.Ready() {
 		ml.MarketRegime = [4]float64{0.25, 0.25, 0.25, 0.25}
 		return
 	}
@@ -62,7 +68,6 @@ func (f *RuleFallback) computeMarketRegime(ml *MLFeatures, ruleVec []float64, in
 	atr := w.ATR14.Value()
 	price := w.Current.Close
 
-	// Trend probability
 	if adx > 25 && emaAligned {
 		ml.MarketRegime[0] = 0.7
 	} else if adx > 20 {
@@ -71,7 +76,6 @@ func (f *RuleFallback) computeMarketRegime(ml *MLFeatures, ruleVec []float64, in
 		ml.MarketRegime[0] = 0.15
 	}
 
-	// Range probability
 	bbWidth := 0.0
 	if w.BB20.Ready() {
 		upper := w.BB20.Upper()
@@ -93,8 +97,7 @@ func (f *RuleFallback) computeMarketRegime(ml *MLFeatures, ruleVec []float64, in
 		ml.MarketRegime[1] = 0.1
 	}
 
-	// Breakout probability
-	bbPos := w.BBPosition()
+	bbPos := w.BB20.Position(w.Current.Close)
 	volRatio := 1.0
 	if len(ruleVec) > 60 && ruleVec[60] > 0 {
 		volRatio = ruleVec[60]
@@ -107,13 +110,12 @@ func (f *RuleFallback) computeMarketRegime(ml *MLFeatures, ruleVec []float64, in
 		ml.MarketRegime[2] = 0.05
 	}
 
-	// Panic probability
 	priceMove := 0.0
 	if atr > 0 && price > 0 {
-		priceMove = math.Abs(w.PriceChangeRate(1)) * price / atr
+		priceMove = math.Abs(w.PriceChangeRateLocked(1)) * price / atr
 	}
 	if priceMove > 3 && volRatio > 3 {
-		ml.MarketRegime[2] = math.Max(ml.MarketRegime[2], 0.3) // breakout is also elevated
+		ml.MarketRegime[2] = math.Max(ml.MarketRegime[2], 0.3)
 		ml.MarketRegime[3] = 0.7
 	} else if priceMove > 2 {
 		ml.MarketRegime[3] = 0.2
@@ -121,47 +123,50 @@ func (f *RuleFallback) computeMarketRegime(ml *MLFeatures, ruleVec []float64, in
 		ml.MarketRegime[3] = 0.05
 	}
 
-	// Normalize to probability distribution (sum = 1.0)
 	normalizeProb(ml.MarketRegime[:])
 }
 
 // computeVolPredict fills [180:184] with volatility predictions using
 // current ATR as a proxy.
 func (f *RuleFallback) computeVolPredict(ml *MLFeatures, _ []float64, instID string) {
-	// 1H volatility prediction ≈ current ATR ratio
-	if w := f.candles.GetWindow(instID, "1H"); w != nil && w.ATR14.Ready() && w.Current.Close > 0 {
-		ml.VolPredict[0] = w.ATR14.Value() / w.Current.Close
-	}
-
-	// 4H volatility prediction
-	if w := f.candles.GetWindow(instID, "4H"); w != nil && w.ATR14.Ready() && w.Current.Close > 0 {
-		ml.VolPredict[1] = w.ATR14.Value() / w.Current.Close
-	}
-
-	// Volatility percentile: vol5/vol20 as rough proxy
 	if w := f.candles.GetWindow(instID, "1H"); w != nil {
-		vol5 := w.Volatility(5)
-		vol20 := w.Volatility(20)
+		w.RLock()
+		if w.ATR14.Ready() && w.Current.Close > 0 {
+			ml.VolPredict[0] = w.ATR14.Value() / w.Current.Close
+		}
+		vol5 := w.VolatilityLocked(5)
+		vol20 := w.VolatilityLocked(20)
 		if vol20 > 0 {
 			ml.VolPredict[2] = math.Min(vol5/vol20, 3.0) / 3.0
 		} else {
 			ml.VolPredict[2] = 0.5
 		}
-		// Volatility direction: accelerating or decelerating
 		ml.VolPredict[3] = vol5/math.Max(vol20, 1e-10) - 1
+		w.RUnlock()
+	}
+
+	if w := f.candles.GetWindow(instID, "4H"); w != nil {
+		w.RLock()
+		if w.ATR14.Ready() && w.Current.Close > 0 {
+			ml.VolPredict[1] = w.ATR14.Value() / w.Current.Close
+		}
+		w.RUnlock()
 	}
 }
 
 // computeAnomalyScore fills [184:188] with anomaly scores based on
 // simple threshold rules.
 func (f *RuleFallback) computeAnomalyScore(ml *MLFeatures, ruleVec []float64, instID string) {
-	// Price anomaly: |change| > 3*ATR → 1.0
-	if w := f.candles.GetWindow(instID, "1H"); w != nil && w.ATR14.Ready() && w.Current.Close > 0 {
-		atr := w.ATR14.Value()
-		if atr > 0 {
-			priceAnomaly := math.Abs(w.PriceChangeRate(1)) * w.Current.Close / atr
-			ml.AnomalyScore[0] = math.Min(priceAnomaly/3.0, 1.0)
+	if w := f.candles.GetWindow(instID, "1H"); w != nil {
+		w.RLock()
+		if w.ATR14.Ready() && w.Current.Close > 0 {
+			atr := w.ATR14.Value()
+			if atr > 0 {
+				priceAnomaly := math.Abs(w.PriceChangeRateLocked(1)) * w.Current.Close / atr
+				ml.AnomalyScore[0] = math.Min(priceAnomaly/3.0, 1.0)
+			}
 		}
+		w.RUnlock()
 	}
 
 	// Volume anomaly: vol > 5x avg → 1.0

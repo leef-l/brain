@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/leef-l/brain/sdk/diaglog"
@@ -155,31 +156,32 @@ type llmUsageWire struct {
 	CostUSD             float64 `json:"cost_usd,omitempty"`
 }
 
-// RunAgentLoop 是 sidecar 的 Agent Loop 入口。
-//
-// 历史实现是手搓的 for-loop，绕开了 sdk/loop.Runner（含 LoopDetector / Budget /
-// Sanitizer / CacheBuilder / MessageCompressor 等）。v1.1 起改为适配层：
-// 用 sdk/loop.Runner 驱动，把工具执行、死循环检测、成本预算、prompt cache
-// 全部统一到主流程实现上。保持公开签名不变，向后兼容四个基础大脑。
-//
-// 调用方可选地通过 RunAgentLoopWithContext 传入 ExecuteRequest.Context，
-// 让中央 ContextEngine 装配的上下文注入到对话起始。
+// RunAgentLoop 是 sidecar 的 Agent Loop 入口（向后兼容签名）。
 func RunAgentLoop(ctx context.Context, caller KernelCaller, registry tool.Registry,
 	systemPrompt string, instruction string, maxTurns int) *ExecuteResult {
 	return RunAgentLoopWithContext(ctx, caller, registry, systemPrompt, instruction, maxTurns, nil)
 }
 
-// RunAgentLoopWithContext 是 RunAgentLoop 的扩展版本，额外接收 ExecuteRequest.Context
-// 做"对话起始上下文注入"。当 extraContext 非空且为合法 JSON 时，会作为一条
-// 前置 user message 插入在 instruction 之前。
+// RunAgentLoopWithContext 向后兼容签名，内部委托给 RunAgentLoopFull。
 func RunAgentLoopWithContext(ctx context.Context, caller KernelCaller, registry tool.Registry,
 	systemPrompt string, instruction string, maxTurns int, extraContext json.RawMessage) *ExecuteResult {
+	b := &ExecuteBudget{MaxTurns: maxTurns}
+	return RunAgentLoopFull(ctx, caller, registry, systemPrompt, instruction, b, extraContext)
+}
 
-	if maxTurns <= 0 {
-		maxTurns = 10
+// RunAgentLoopFull 是完整版 Agent Loop 入口。接受完整 ExecuteBudget，
+// 接入 MessageCompressor 实现上下文自动压缩。
+func RunAgentLoopFull(ctx context.Context, caller KernelCaller, registry tool.Registry,
+	systemPrompt string, instruction string, eb *ExecuteBudget, extraContext json.RawMessage) *ExecuteResult {
+
+	maxTurns := 10
+	if eb != nil && eb.MaxTurns > 0 {
+		maxTurns = eb.MaxTurns
 	}
 
 	provider := NewKernelLLMProvider(caller, "kernel")
+
+	const defaultTokenBudget = 100_000
 
 	runner := &loop.Runner{
 		Provider:     provider,
@@ -188,22 +190,40 @@ func RunAgentLoopWithContext(ctx context.Context, caller KernelCaller, registry 
 		LoopDetector: loop.NewMemLoopDetector(),
 		CacheBuilder: loop.NewMemCacheBuilder(),
 		ToolObserver: stderrToolObserver{},
+		TokenBudget:       defaultTokenBudget,
+		MessageCompressor: loop.DefaultMessageCompressor,
 	}
 
-	// P3.5: browser brain 每 turn 前按 SequenceRecorder 信号自动切 BrowserStage,
-	// 通过 AdaptivePolicy 重建本轮 registry/runtime 视图并同步重写 tools schema。
-	// 其他 brain 不挂 hook,开销为零。
 	brainKindEarly := brainKindFromSystem(systemPrompt)
 	if brainKindEarly == "browser" {
 		runner.PreTurnStateHook = newBrowserStageHook(registry)
 	}
 
+	budgetMaxCost := 5.0
+	budgetMaxLLM := maxTurns * 2
+	budgetMaxTool := maxTurns * 4
+	budgetMaxDur := 10 * time.Minute
+	if eb != nil {
+		if eb.MaxCostUSD > 0 {
+			budgetMaxCost = eb.MaxCostUSD
+		}
+		if eb.MaxLLMCalls > 0 {
+			budgetMaxLLM = eb.MaxLLMCalls
+		}
+		if eb.MaxToolCalls > 0 {
+			budgetMaxTool = eb.MaxToolCalls
+		}
+		if eb.MaxDurationS > 0 {
+			budgetMaxDur = time.Duration(eb.MaxDurationS) * time.Second
+		}
+	}
+
 	budget := loop.Budget{
 		MaxTurns:     maxTurns,
-		MaxCostUSD:   5.0,
-		MaxLLMCalls:  maxTurns * 2,
-		MaxToolCalls: maxTurns * 4,
-		MaxDuration:  10 * time.Minute,
+		MaxCostUSD:   budgetMaxCost,
+		MaxLLMCalls:  budgetMaxLLM,
+		MaxToolCalls: budgetMaxTool,
+		MaxDuration:  budgetMaxDur,
 	}
 	runID := fmt.Sprintf("sidecar-%d", time.Now().UnixNano())
 	run := loop.NewRun(runID, "sidecar", budget)
@@ -214,6 +234,8 @@ func RunAgentLoopWithContext(ctx context.Context, caller KernelCaller, registry 
 	// ui_pattern_learn 聚类。没注入 sink 时该机制整体 no-op。
 	brainKind := brainKindEarly
 	tool.BindRecorder(ctx, runID, brainKind, instruction)
+
+	ensureSidecarOutcomeSink()
 
 	// L1+L2: 把 systemPrompt 分两层。仅一层时简化为单块 SystemBlock 且 cache=true，
 	// 让 Prompt Cache 在每一轮自动复用。
@@ -1892,4 +1914,42 @@ func browserStageToolChoice(stage string, turnIndex int) string {
 		return "browser.open"
 	}
 	return ""
+}
+
+// sidecarOutcomeSink 是 sidecar 进程内的轻量 tool.OutcomeSink 实现。
+// 记录每个工具的成功/失败次数，进程生命周期内有效。
+type sidecarOutcomeSink struct {
+	mu    sync.Mutex
+	stats map[string]*toolStat
+}
+
+type toolStat struct {
+	total   int
+	success int
+}
+
+func (s *sidecarOutcomeSink) RecordOutcome(toolName string, _ string, success bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.stats[toolName]
+	if !ok {
+		st = &toolStat{}
+		s.stats[toolName] = st
+	}
+	st.total++
+	if success {
+		st.success++
+	}
+}
+
+var (
+	sidecarSinkOnce sync.Once
+	sidecarSink     *sidecarOutcomeSink
+)
+
+func ensureSidecarOutcomeSink() {
+	sidecarSinkOnce.Do(func() {
+		sidecarSink = &sidecarOutcomeSink{stats: map[string]*toolStat{}}
+		tool.SetOutcomeSink(sidecarSink)
+	})
 }

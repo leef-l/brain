@@ -22,7 +22,7 @@
     "approval_class": "readonly",
     "approval_mode": "auto",
     "sandbox_profile": "workspace",
-    "tool_scope": "data"
+    "tool_scope": "delegate.data"
   },
   "task_patterns": [
     "K线数据获取",
@@ -35,11 +35,14 @@
     "heartbeat_timeout_ms": 30000,
     "expected_methods": [
       "brain/execute",
-      "brain/tools_list",
+      "tools/list",
+      "tools/call",
       "brain/metrics"
     ]
   },
   "compatibility": {
-    "min_kernel_version": "1.0.0"
+    "protocol": "1.0",
+    "tested_kernel": "1.0.x",
+    "min_kernel": "1.0.0"
   }
 }

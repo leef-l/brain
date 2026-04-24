@@ -90,6 +90,10 @@ func (w *CandleWindow) LoadHistory(candles []provider.Candle) {
 func (w *CandleWindow) PriceChangeRate(n int) float64 {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+	return w.PriceChangeRateLocked(n)
+}
+
+func (w *CandleWindow) PriceChangeRateLocked(n int) float64 {
 	hLen := w.History.Len()
 	if hLen < n || n <= 0 {
 		return 0
@@ -105,6 +109,10 @@ func (w *CandleWindow) PriceChangeRate(n int) float64 {
 func (w *CandleWindow) Volatility(n int) float64 {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+	return w.VolatilityLocked(n)
+}
+
+func (w *CandleWindow) VolatilityLocked(n int) float64 {
 	hLen := w.History.Len()
 	if hLen < n || n <= 0 {
 		return 0
@@ -131,6 +139,10 @@ func (w *CandleWindow) Volatility(n int) float64 {
 func (w *CandleWindow) BBPosition() float64 {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+	return w.bbPositionLocked()
+}
+
+func (w *CandleWindow) bbPositionLocked() float64 {
 	return w.BB20.Position(w.Current.Close)
 }
 

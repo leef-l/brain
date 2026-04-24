@@ -16,15 +16,18 @@ active_list:
   min_amplitude_pct: 0           # 最低 24h 振幅百分比，如 2.0 = 过滤振幅 < 2% 的品种
 
 # --- 数据源 ---
+# 注意：providers 块中的配置当前未被代码读取。
+# Data Brain 使用硬编码的 OKX WebSocket 地址（wss://ws.okx.com:8443/ws/v5/public 和 business），
+# 数据源连接参数暂不支持通过配置文件覆盖。此处仅作文档记录，留作未来扩展。
 providers:
-  - name: okx-swap               # 实例名称（自定义）
-    type: okx-swap                # 数据源类型
+  - name: okx-swap               # 实例名称（自定义，当前未使用）
+    type: okx-swap                # 数据源类型（当前未使用）
     params:
-      ws_url: "wss://ws.okx.com:8443/ws/v5/public"              # Public WebSocket（trades/books/funding）
-      business_ws_url: "wss://ws.okx.com:8443/ws/v5/business"  # Business WebSocket（K 线 candle channels）
-      rest_url: "https://www.okx.com"                           # REST API 地址
-      ping_interval: 25s                               # WebSocket 心跳间隔
-      reconnect_delay:                                 # 断线重连退避（依次尝试）
+      ws_url: "wss://ws.okx.com:8443/ws/v5/public"              # Public WebSocket（当前未使用）
+      business_ws_url: "wss://ws.okx.com:8443/ws/v5/business"  # Business WebSocket（当前未使用）
+      rest_url: "https://www.okx.com"                           # REST API 地址（当前未使用）
+      ping_interval: 25s                               # WebSocket 心跳间隔（当前未使用）
+      reconnect_delay:                                 # 断线重连退避（当前未使用）
         - 1s
         - 2s
         - 5s
@@ -36,8 +39,8 @@ backfill:
   enabled: true                  # 启动时是否回填历史数据（有 PG 时自动执行）
   max_days: 90                   # 回填天数
   batch_size: 100                # 每次请求的 K 线数量
-  rate_limit: 200ms              # REST 请求最小间隔（避免触发限频）
-  concurrent: 3                  # 并行回填 worker 数
+  rate_limit: 200ms              # 注意：当前代码忽略此字段，实际硬编码为 5 rps（请求/秒）
+  concurrent: 3                  # 注意：当前代码忽略此字段，回填为串行执行（无并发）
 
 # --- 数据校验 ---
 validation:

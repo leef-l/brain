@@ -189,6 +189,7 @@ func handleWSSession(ctx context.Context, w http.ResponseWriter, r *http.Request
 	// 创建帧读写器（复用 kernel 包的实现会造成循环依赖，这里内联简化版）
 	reader := &sidecarWSReader{conn: conn}
 	writer := newSidecarWSWriter(conn)
+	defer writer.Close()
 	rpc := protocol.NewBidirRPC(protocol.RoleSidecar, reader, writer)
 
 	// 注册内置方法

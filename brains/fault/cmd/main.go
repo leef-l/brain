@@ -64,6 +64,7 @@ func (h *faultHandler) ToolSchemas() []tool.Schema {
 // SetKernelCaller implements sidecar.RichBrainHandler.
 func (h *faultHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	h.caller = caller
+	sidecar.SetProgressContext(caller, string(h.Kind()))
 }
 
 func (h *faultHandler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
@@ -127,9 +128,11 @@ When done, summarize:
 - Expected impact on the system
 - How to clean up / revert`
 
-	maxTurns := 8
-	if req.Budget != nil && req.Budget.MaxTurns > 0 {
-		maxTurns = req.Budget.MaxTurns
+	budget := req.Budget
+	if budget == nil {
+		budget = &sidecar.ExecuteBudget{MaxTurns: 8}
+	} else if budget.MaxTurns <= 0 {
+		budget.MaxTurns = 8
 	}
 
 	registry, err := h.buildRegistry(req.Execution)
@@ -141,7 +144,7 @@ When done, summarize:
 	}
 
 	start := time.Now()
-	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	result := sidecar.RunAgentLoopFull(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, req.Context)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "fault.execute",
 		Success:   result.Status == "completed",

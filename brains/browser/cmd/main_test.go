@@ -745,3 +745,122 @@ func TestBrowserRuntimeReloader_AppliesFeatureGateFromSyncFile(t *testing.T) {
 		t.Fatalf("feature gate missing refreshed browser-pro.evidence: %+v", cfg)
 	}
 }
+
+func TestStillOnLoginPage_SuccessfulDashboard(t *testing.T) {
+	summary := "Title: 管理后台\nURL: https://example.com/admin/#/dashboard\n\n欢迎回来, admin\n修改密码 | 退出"
+	if stillOnLoginPage(summary) {
+		t.Fatal("dashboard page should not be detected as login page")
+	}
+}
+
+func TestStillOnLoginPage_ActualLoginPage(t *testing.T) {
+	summary := "Title: 用户登录\nURL: https://example.com/admin/login\n\n请输入账号\n请输入密码\n登录"
+	if !stillOnLoginPage(summary) {
+		t.Fatal("actual login page should be detected")
+	}
+}
+
+func TestStillOnLoginPage_LoginFailedMessage(t *testing.T) {
+	summary := "Title: 登录\nURL: https://example.com/admin/#/auth\n\n登录失败：密码错误"
+	if !stillOnLoginPage(summary) {
+		t.Fatal("login failure page should be detected")
+	}
+}
+
+func TestExtractCredentialValue_QuotedWithSpaces(t *testing.T) {
+	instruction := `密码："abc 123" 然后点击登录`
+	got := extractCredentialValue(instruction, []string{"密码"})
+	if got != "abc 123" {
+		t.Fatalf("got %q, want %q", got, "abc 123")
+	}
+}
+
+func TestExtractCredentialValue_BareValue(t *testing.T) {
+	instruction := "账号:admin 密码:pass123"
+	got := extractCredentialValue(instruction, []string{"账号"})
+	if got != "admin" {
+		t.Fatalf("got %q, want %q", got, "admin")
+	}
+}
+
+func TestExtractVariables_SearchQueryNotGreedy(t *testing.T) {
+	instruction := "搜索 天气预报 然后截图保存"
+	vars := extractVariables(instruction)
+	q, _ := vars["query"].(string)
+	if q != "天气预报" {
+		t.Fatalf("query = %q, want %q", q, "天气预报")
+	}
+}
+
+func TestIsSafeReusableAuthPattern_AllowsNonCredentialTyping(t *testing.T) {
+	p := &tool.UIPattern{
+		Category: "auth",
+		Enabled:  true,
+		ActionSequence: []tool.ActionStep{
+			{Tool: "browser.type", TargetRole: "username_field", Params: map[string]interface{}{"text": "$credentials.username"}},
+			{Tool: "browser.type", TargetRole: "password_field", Params: map[string]interface{}{"text": "$credentials.password"}},
+			{Tool: "browser.type", TargetRole: "captcha_field", Params: map[string]interface{}{"text": "1234"}},
+		},
+	}
+	if !isSafeReusableAuthPattern(p) {
+		t.Fatal("pattern with non-credential typing should be allowed")
+	}
+}
+
+func TestParameterizePlanStepParams_CaseInsensitive(t *testing.T) {
+	params := map[string]interface{}{"text": "Admin "}
+	vars := map[string]interface{}{
+		"credentials": map[string]interface{}{
+			"username": "admin",
+			"email":    "admin",
+			"password": "pass123",
+		},
+	}
+	out := parameterizePlanStepParams(params, vars)
+	if out["text"] != "$credentials.username" {
+		t.Fatalf("text = %v, want $credentials.username", out["text"])
+	}
+}
+
+func TestSummarizeLoopContext_NullJSON(t *testing.T) {
+	got := summarizeLoopContext(json.RawMessage("null"))
+	if got != "" {
+		t.Fatalf("got %q, want empty string", got)
+	}
+}
+
+func TestSummarizeLoopContext_Nil(t *testing.T) {
+	got := summarizeLoopContext(nil)
+	if got != "" {
+		t.Fatalf("got %q, want empty string", got)
+	}
+}
+
+func TestExtractInstructionURL(t *testing.T) {
+	tests := []struct {
+		instruction string
+		want        string
+	}{
+		{"打开 https://example.com/admin 并登录", "https://example.com/admin"},
+		{"登录 http://test.dev 账号admin", "http://test.dev"},
+		{"搜索天气预报", ""},
+	}
+	for _, tc := range tests {
+		got := extractInstructionURL(tc.instruction)
+		if got != tc.want {
+			t.Errorf("extractInstructionURL(%q) = %q, want %q", tc.instruction, got, tc.want)
+		}
+	}
+}
+
+func TestSameHost(t *testing.T) {
+	if !sameHost("https://example.com/a", "https://example.com/b") {
+		t.Fatal("same host should match")
+	}
+	if sameHost("https://a.com", "https://b.com") {
+		t.Fatal("different hosts should not match")
+	}
+	if sameHost("", "https://a.com") {
+		t.Fatal("empty should not match")
+	}
+}

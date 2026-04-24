@@ -22,7 +22,7 @@
     "approval_class": "exec-capable",
     "approval_mode": "review",
     "sandbox_profile": "workspace",
-    "tool_scope": "code"
+    "tool_scope": "delegate.code"
   },
   "task_patterns": [
     "读写源代码文件",
@@ -35,11 +35,14 @@
     "heartbeat_timeout_ms": 30000,
     "expected_methods": [
       "brain/execute",
-      "brain/tools_list",
+      "tools/list",
+      "tools/call",
       "brain/metrics"
     ]
   },
   "compatibility": {
-    "min_kernel_version": "1.0.0"
+    "protocol": "1.0",
+    "tested_kernel": "1.0.x",
+    "min_kernel": "1.0.0"
   }
 }

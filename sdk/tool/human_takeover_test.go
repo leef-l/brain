@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -433,5 +434,17 @@ func TestConvertDemoToPattern_ParameterizesAuthFlow(t *testing.T) {
 	}
 	if got.ActionSequence[3].TargetRole != "submit_button" {
 		t.Fatalf("submit step = %+v, want submit_button", got.ActionSequence[3])
+	}
+	if got.AppliesWhen.URLPattern == "" {
+		t.Fatal("auth pattern should have URLPattern derived from demo URL")
+	}
+	if strings.Contains(got.AppliesWhen.URLPattern, "login|signin") {
+		t.Fatal("auth pattern should use site-specific URL, not generic login regex")
+	}
+	if len(got.AppliesWhen.Has) == 0 || got.AppliesWhen.Has[0] != `input[type="password"]` {
+		t.Fatalf("Has = %v, want password input selector", got.AppliesWhen.Has)
+	}
+	if len(got.AppliesWhen.TextContains) != 0 {
+		t.Fatalf("TextContains = %v, should be empty for broad compatibility", got.AppliesWhen.TextContains)
 	}
 }

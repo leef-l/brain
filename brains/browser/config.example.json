@@ -18,13 +18,17 @@
     "浏览器启动参数（内置不可修改）：",
     "  --headless=new  --window-size=1920,1080  --no-sandbox  --disable-gpu",
     "",
-    "注册工具（15 个）：",
-    "  browser.open / navigate / click / double_click / right_click",
-    "  browser.type / press_key / scroll / hover / drag",
-    "  browser.select / upload_file / screenshot / eval / wait",
+    "注册工具（34 个）：",
+    "  browser.open / navigate / snapshot / click / double_click / right_click",
+    "  browser.type / press_key / scroll / hover / drag / geometry / select",
+    "  browser.upload_file / screenshot / eval / wait / wait_network_idle",
+    "  browser.network / iframe / downloads / storage / fill_form / changes",
+    "  browser.check_anomaly / check_anomaly_v2 / understand / sitemap",
+    "  browser.pattern_match / pattern_exec / pattern_list / visual_inspect",
+    "  browser.note / human.request_takeover",
     "",
     "执行预算（通过 RPC ExecuteRequest 传入）：",
-    "  budget.max_turns: 15（默认）"
+    "  budget.max_turns: 30（默认）"
   ],
 
   "tool_profiles": {

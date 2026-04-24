@@ -556,9 +556,8 @@ func ConvertDemoToPattern(seq *persistence.HumanDemoSequence, actions []Recorded
 	if authLike {
 		category = "auth"
 		cond = MatchCondition{
-			URLPattern:   `(?i)/(login|signin|sign-in|auth)\b`,
-			Has:          []string{`input[type="password"]`, `input[type="text"], input[type="email"], input[name*="user" i], input[placeholder*="账号" i], input[placeholder*="用户名" i]`},
-			TextContains: []string{"登录"},
+			URLPattern: extractDemoURLPattern(seq.URL),
+			Has:        []string{`input[type="password"]`},
 		}
 	}
 	// id 基于 seq.RecordedAt 而非 time.Now(),这样:

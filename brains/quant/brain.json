@@ -23,7 +23,7 @@
     "approval_class": "control-plane",
     "approval_mode": "review",
     "sandbox_profile": "workspace",
-    "tool_scope": "quant"
+    "tool_scope": "delegate.quant"
   },
   "task_patterns": [
     "仓位与风控查询",
@@ -36,11 +36,14 @@
     "heartbeat_timeout_ms": 30000,
     "expected_methods": [
       "brain/execute",
-      "brain/tools_list",
+      "tools/list",
+      "tools/call",
       "brain/metrics"
     ]
   },
   "compatibility": {
-    "min_kernel_version": "1.0.0"
+    "protocol": "1.0",
+    "tested_kernel": "1.0.x",
+    "min_kernel": "1.0.0"
   }
 }

@@ -5,8 +5,10 @@ package backfill
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -50,15 +52,22 @@ func New(httpClient *http.Client, st store.Store, cfg Config) *Backfiller {
 }
 
 // BackfillAll backfills all instruments across all configured timeframes.
+// 单个品种失败时记录日志并继续，最终聚合所有错误返回。
 func (b *Backfiller) BackfillAll(ctx context.Context, instruments []string) error {
+	var errs []error
 	for _, inst := range instruments {
 		for _, tf := range b.config.Timeframes {
 			if err := b.backfillOne(ctx, inst, tf); err != nil {
-				return fmt.Errorf("backfill %s/%s: %w", inst, tf, err)
+				slog.Warn("backfill instrument failed, skipping",
+					"inst", inst,
+					"tf", tf,
+					"err", err,
+				)
+				errs = append(errs, fmt.Errorf("backfill %s/%s: %w", inst, tf, err))
 			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // backfillOne fills a single instrument+timeframe, ensuring contiguous coverage

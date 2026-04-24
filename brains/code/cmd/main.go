@@ -63,6 +63,7 @@ func (h *codeHandler) ToolSchemas() []tool.Schema {
 // SetKernelCaller implements sidecar.RichBrainHandler.
 func (h *codeHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	h.caller = caller
+	sidecar.SetProgressContext(caller, string(h.Kind()))
 }
 
 func (h *codeHandler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
@@ -107,9 +108,11 @@ func (h *codeHandler) handleExecute(ctx context.Context, params json.RawMessage)
 		"For simple tasks, skip planning and just execute.\n\n" +
 		"When done, summarize what you did."
 
-	maxTurns := 10
-	if req.Budget != nil && req.Budget.MaxTurns > 0 {
-		maxTurns = req.Budget.MaxTurns
+	budget := req.Budget
+	if budget == nil {
+		budget = &sidecar.ExecuteBudget{MaxTurns: 10}
+	} else if budget.MaxTurns <= 0 {
+		budget.MaxTurns = 10
 	}
 
 	registry, err := h.buildRegistry(req.Execution)
@@ -121,7 +124,7 @@ func (h *codeHandler) handleExecute(ctx context.Context, params json.RawMessage)
 	}
 
 	start := time.Now()
-	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	result := sidecar.RunAgentLoopFull(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, req.Context)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "code.execute",
 		Success:   result.Status == "completed",

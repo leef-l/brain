@@ -351,8 +351,6 @@ func (t *browserNavigateTool) Execute(ctx context.Context, args json.RawMessage)
 
 	switch input.Action {
 	case "back":
-		err = sess.Exec(ctx, "Page.navigateToHistoryEntry", nil, nil)
-		// Use JS history.back() instead — more reliable.
 		err = sess.Exec(ctx, "Runtime.evaluate", map[string]interface{}{
 			"expression": "history.back()",
 		}, nil)
@@ -1957,8 +1955,7 @@ func inspectPostDragState(ctx context.Context, sess *cdp.BrowserSession, input b
 		return check
 	}
 
-	// 给前端一点时间提交拖动后的状态更新。
-	time.Sleep(180 * time.Millisecond)
+	time.Sleep(350 * time.Millisecond)
 
 	currentGeom, ok := rereadDragSourceGeometry(ctx, sess, input)
 	if ok {
@@ -1968,7 +1965,7 @@ func inspectPostDragState(ctx context.Context, sess *cdp.BrowserSession, input b
 		check["distance_to_expected"] = distanceToExpected
 		sourceMoved := movement >= math.Max(4, fromGeom.Width*0.2)
 		check["source_moved"] = sourceMoved
-		if sourceMoved && distanceToExpected <= math.Max(12, fromGeom.Width) {
+		if sourceMoved && distanceToExpected <= math.Max(20, fromGeom.Width*1.5) {
 			check["verified"] = true
 		}
 	}

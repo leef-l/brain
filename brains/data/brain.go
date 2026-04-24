@@ -45,9 +45,10 @@ type DataBrain struct {
 	buffers   *ringbuf.BufferManager
 
 	// 状态
-	running atomic.Bool
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
+	running     atomic.Bool
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	fundingRates sync.Map // map[instID string]float64 — 最新资金费率快照
 
 	// 指标
 	metrics Metrics
@@ -208,12 +209,17 @@ func (b *DataBrain) Start(ctx context.Context) error {
 
 	// 3. 后台历史回填（不阻塞启动）
 	if b.config.Backfill.Enabled && b.store != nil {
+		// 将 RateLimit（time.Duration）换算为 req/s：每 d 毫秒一个请求 = 1/d.Seconds() rps
+		backfillRPS := 5.0
+		if b.config.Backfill.RateLimit > 0 {
+			backfillRPS = 1.0 / b.config.Backfill.RateLimit.Seconds()
+		}
 		bf := backfill.New(&http.Client{Timeout: 30 * time.Second}, b.store, backfill.Config{
 			RESTURL:    "https://www.okx.com",
 			GoBack:     time.Duration(b.config.Backfill.MaxDays) * 24 * time.Hour,
 			Timeframes: []string{"1m", "5m", "15m", "1H", "4H"},
 			MaxBars:    b.config.Backfill.BatchSize,
-			RateLimit:  5,
+			RateLimit:  backfillRPS,
 		})
 		b.backfiller = bf
 
@@ -256,9 +262,27 @@ func (b *DataBrain) Start(ctx context.Context) error {
 		b.activeList.Seed(instIDs)
 		b.logger.Warn("active list empty after refresh, seeded defaults", "instruments", instIDs)
 	}
-	p := provider.NewOKXSwapProvider("okx-swap", provider.OKXSwapConfig{
+	// 构造 OKX Provider 配置，优先读取 b.config.Providers 中 type=="okx" 的第一个配置项
+	okxCfg := provider.OKXSwapConfig{
 		Instruments: instIDs,
-	})
+	}
+	for _, pc := range b.config.Providers {
+		if pc.Type != "okx" {
+			continue
+		}
+		// 将 Params 中的标准字段映射到 OKXSwapConfig
+		if v, ok := pc.Params["ws_url"].(string); ok && v != "" {
+			okxCfg.WSURL = v
+		}
+		if v, ok := pc.Params["business_ws_url"].(string); ok && v != "" {
+			okxCfg.BusinessWSURL = v
+		}
+		if v, ok := pc.Params["rest_url"].(string); ok && v != "" {
+			okxCfg.RESTURL = v
+		}
+		break // 仅取第一个 okx 配置
+	}
+	p := provider.NewOKXSwapProvider("okx-swap", okxCfg)
 	b.provider = p
 
 	// 4. Provider.Subscribe(router) — router 实现了 DataSink
@@ -280,12 +304,14 @@ func (b *DataBrain) Start(ctx context.Context) error {
 		b.consumeNearRT(ctx)
 	}()
 
-	// 6. 启动 feature 更新 goroutine
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-		b.featureLoop(ctx)
-	}()
+	// 6. 启动 feature 更新 goroutine（仅在 Feature.Enabled 为 true 时启动）
+	if b.config.Feature.Enabled {
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.featureLoop(ctx)
+		}()
+	}
 
 	// 7. 启动活跃列表定期刷新
 	b.wg.Add(1)
@@ -410,9 +436,11 @@ func (b *DataBrain) dispatchEvent(event provider.DataEvent) {
 	case *provider.OrderBook:
 		b.orderbook.Update(event.Symbol, *p)
 	case provider.FundingRate:
-		_ = p
+		b.fundingRates.Store(p.InstID, p.Rate)
 	case []provider.FundingRate:
-		_ = p
+		for _, fr := range p {
+			b.fundingRates.Store(fr.InstID, fr.Rate)
+		}
 	}
 }
 
@@ -456,6 +484,11 @@ func (b *DataBrain) updateFeatures() {
 			MarketRegime:  output.MarketRegimeLabel(),
 			AnomalyLevel:  output.AnomalyLevel(),
 			VolPercentile: output.VolPercentile(),
+		}
+
+		// 填充资金费率
+		if v, ok := b.fundingRates.Load(instID); ok {
+			snap.FundingRate = v.(float64)
 		}
 
 		// 填充价格数据

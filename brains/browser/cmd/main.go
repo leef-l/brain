@@ -39,6 +39,7 @@ import (
 	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
+	"github.com/leef-l/brain/sdk/toolpolicy"
 	"github.com/leef-l/brain/sdk/tool/cdp"
 	"github.com/leef-l/brain/sdk/toolguard"
 )
@@ -54,7 +55,7 @@ type browserHandler struct {
 	reloader     *browserRuntimeReloader
 }
 
-var runBrowserAgentLoop = sidecar.RunAgentLoopWithContext
+var runBrowserAgentLoop = sidecar.RunAgentLoopFull
 
 type browserLearningStoreSitemapCache struct {
 	store persistence.LearningStore
@@ -457,7 +458,7 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 		truelySuccess = false
 	}
 	if fullRunRec != nil {
-		fullRunRec.FinalizePersist(ctx, truelySuccess, true)
+		fullRunRec.FinalizePersist(ctx, truelySuccess, false)
 		if truelySuccess {
 			diaglog.Logf("browser", "full run demo persisted: learning this successful flow")
 		} else {
@@ -644,6 +645,9 @@ func isSafeReusableAuthPattern(p *tool.UIPattern) bool {
 		return false
 	}
 	hasCredentialPlaceholder := false
+	credentialRoles := map[string]bool{
+		"username_field": true, "password_field": true, "email_field": true,
+	}
 	for _, step := range p.ActionSequence {
 		if step.Tool != "browser.type" {
 			continue
@@ -653,7 +657,7 @@ func isSafeReusableAuthPattern(p *tool.UIPattern) bool {
 			hasCredentialPlaceholder = true
 			continue
 		}
-		if text != "" {
+		if text != "" && credentialRoles[step.TargetRole] {
 			return false
 		}
 	}
@@ -737,6 +741,9 @@ func (h *browserHandler) executePattern(ctx context.Context, registry tool.Regis
 		return &sidecar.ExecuteResult{Status: "failed", Error: fmt.Sprintf("pattern_exec: %v", err)}
 	}
 
+	if result == nil {
+		return &sidecar.ExecuteResult{Status: "failed", Error: "pattern_exec: nil result"}
+	}
 	// Read final page state for summary.
 	summary := string(result.Output)
 	snapshotTool, ok := registry.Lookup("browser.snapshot")
@@ -829,6 +836,7 @@ RULES:
   NEVER skip the type steps — the user EXPECTS login to be attempted. Pass the exact string the user gave you; never replace it with placeholders like $username, ${password}, <admin>, etc.
 - For slider CAPTCHA (滑块验证 / 拖动滑块 / slide-to-verify): FIRST take a snapshot with mode="interactive" to locate the slider handle and the slider track. THEN use browser.drag with the handle as source and the track as target; the tool can auto-compute a realistic end coordinate for slider-like targets. Use browser.geometry only when you need to inspect/debug the boxes explicitly. Typical selectors: ".slider-button", ".captcha-slider", ".nc_iconfont", ".verify-move-block", "[name='captcha-action']". DO NOT use browser.click on the slider — a click is not a drag and the captcha will not pass.
 - If the captcha page is still present after the drag attempt, call human.request_takeover with reason="slider_failed" and guidance="请手动完成滑块验证，完成后点击 resume". DO NOT keep retrying drag blindly.
+- The "url" field and any browser.open step MUST use the EXACT domain from the user's instruction. NEVER substitute a different website. If the instruction says "打开 https://example.com", the url MUST be on example.com, not any other domain.
 - Output ONLY the JSON object, no explanation.`
 
 	userMsg := "Instruction: " + instruction
@@ -901,6 +909,12 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 
 	// Open URL if LLM specified one.
 	if plan.URL != "" {
+		if targetURL := extractInstructionURL(instruction); targetURL != "" {
+			if !sameHost(plan.URL, targetURL) {
+				diaglog.Logf("browser", "executeLLMPlan: plan URL %q does not match instruction URL %q, overriding", plan.URL, targetURL)
+				plan.URL = targetURL
+			}
+		}
 		openTool, ok := registry.Lookup("browser.open")
 		if ok {
 			diaglog.Logf("browser", "executeLLMPlan: opening url=%s", plan.URL)
@@ -923,8 +937,17 @@ func (h *browserHandler) executeLLMPlan(ctx context.Context, registry tool.Regis
 
 	var lastOutput json.RawMessage
 	var screenshotPaths []string
+	instructionHost := hostOfURL(extractInstructionURL(instruction))
 	var lastDragPostCheck map[string]interface{}
 	for i, step := range plan.Steps {
+		if step.Tool == "browser.open" && instructionHost != "" {
+			if stepURL, _ := step.Params["url"].(string); stepURL != "" {
+				if !sameHost(stepURL, "https://"+instructionHost) {
+					diaglog.Logf("browser", "plan step %d: browser.open URL %q mismatches instruction host %q, overriding", i+1, stepURL, instructionHost)
+					step.Params["url"] = extractInstructionURL(instruction)
+				}
+			}
+		}
 		diaglog.Logf("browser", "plan step %d/%d: %s params=%v", i+1, len(plan.Steps), step.Tool, step.Params)
 		argsRaw, _ := json.Marshal(step.Params)
 		sidecar.EmitProgress(ctx, sidecar.ProgressEvent{
@@ -1397,20 +1420,23 @@ func stillOnLoginPage(summary string) bool {
 	if summary == "" {
 		return false
 	}
-	low := strings.ToLower(summary)
+	pageURL := extractSummaryPageURL(summary)
+	lowURL := strings.ToLower(pageURL)
 	urlSignals := []string{
-		"/login", "/signin", "/sign-in", "/auth", "/account/login",
-		"login.html", "login.php", "/admin#", "/admin ", "/admin\n",
+		"/login", "/signin", "/sign-in", "/auth/login", "/account/login",
+		"login.html", "login.php",
 	}
 	for _, s := range urlSignals {
-		if strings.Contains(low, s) {
+		if strings.Contains(lowURL, s) {
 			return true
 		}
 	}
+	low := strings.ToLower(summary)
 	textSignals := []string{
-		"密码", "登录失败", "账号错误", "账户错误", "password is required",
+		"登录失败", "账号错误", "账户错误", "密码错误", "密码不正确",
+		"请输入密码", "请输入账号", "password is required",
 		"please log in", "please sign in", "invalid credentials",
-		"incorrect password", "incorrect username",
+		"incorrect password", "incorrect username", "login failed",
 	}
 	for _, s := range textSignals {
 		if strings.Contains(low, strings.ToLower(s)) {
@@ -1418,6 +1444,15 @@ func stillOnLoginPage(summary string) bool {
 		}
 	}
 	return false
+}
+
+func extractSummaryPageURL(summary string) string {
+	for _, line := range strings.Split(summary, "\n") {
+		if strings.HasPrefix(line, "URL: ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "URL: "))
+		}
+	}
+	return ""
 }
 
 // isSensitiveFormTask 粗略判断 instruction 是否涉及登录/敏感表单。
@@ -1503,13 +1538,16 @@ func (h *browserHandler) learnFromPlan(ctx context.Context, plan *llmPlan, instr
 		UpdatedAt:      time.Now(),
 	}
 
-	// Use the URL as matching condition so similar URLs hit this pattern next time.
-	if plan.URL == "" {
-		diaglog.Logf("browser", "skip saving learned pattern: no URL in plan")
+	planURL := plan.URL
+	if planURL == "" {
+		planURL = currentBrowserURL(ctx)
+	}
+	if planURL == "" {
+		diaglog.Logf("browser", "skip saving learned pattern: no URL in plan or browser")
 		return
 	}
 	pat.AppliesWhen = tool.MatchCondition{
-		URLPattern: extractDomainPattern(plan.URL),
+		URLPattern: extractDomainPattern(planURL),
 	}
 
 	if err := lib.Upsert(ctx, pat); err != nil {
@@ -1542,10 +1580,11 @@ func parameterizePlanStepParams(params map[string]interface{}, vars map[string]i
 			out[k] = v
 			continue
 		}
+		trimmed := strings.TrimSpace(s)
 		switch {
-		case userValue != "" && s == userValue:
+		case userValue != "" && strings.EqualFold(trimmed, userValue):
 			out[k] = "$credentials.username"
-		case passValue != "" && s == passValue:
+		case passValue != "" && trimmed == passValue:
 			out[k] = "$credentials.password"
 		default:
 			out[k] = v
@@ -1627,6 +1666,10 @@ Tools:
       IF YOU ACTUALLY CALL THIS TOOL.
 
   FORBIDDEN BEHAVIORS:
+    - Do NOT navigate to a different website/domain than the one specified in
+      the user's instruction. If the instruction says "打开 https://example.com",
+      you MUST only open example.com, never a different domain. If a page
+      redirects you to a different domain, report it rather than continuing.
     - Do not produce a text reply saying "please finish the CAPTCHA yourself"
       or "I will observe your operations" without ALSO calling
       human.request_takeover. Text is not recording — only the tool call is.
@@ -1642,15 +1685,17 @@ or ${password}. The type tool will enter whatever string you give it literally.
 
 Be efficient: perceive, act, verify (snapshot), report. Do not take unnecessary actions.`
 
-	maxTurns := 30
-	if req.Budget != nil && req.Budget.MaxTurns > 0 {
-		maxTurns = req.Budget.MaxTurns
+	budget := req.Budget
+	if budget == nil {
+		budget = &sidecar.ExecuteBudget{MaxTurns: 30}
+	} else if budget.MaxTurns <= 0 {
+		budget.MaxTurns = 30
 	}
-	return h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, maxTurns, true, feedback)
+	return h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, budget, true, feedback)
 }
 
-func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, systemPrompt string, maxTurns int, allowAutoTakeover bool, feedback string) *sidecar.ExecuteResult {
-	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, mergeLoopContextText(req.Context, feedback))
+func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, systemPrompt string, budget *sidecar.ExecuteBudget, allowAutoTakeover bool, feedback string) *sidecar.ExecuteResult {
+	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, mergeLoopContextText(req.Context, feedback))
 	result = normalizeBrowserLoopResult(ctx, registry, result)
 	// budget 耗尽 = LLM 卡在循环里还没调 takeover,我们兜底自动调一次让
 	// 用户接管。关键：/resume 后必须在同一个 delegated run 里继续执行，
@@ -1675,7 +1720,8 @@ func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.
 	switch outcome {
 	case "resumed":
 		diaglog.Logf("browser", "human takeover resumed; continuing same delegated run")
-		resumed := h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, max(6, min(12, maxTurns/2)), false, "")
+		resumeBudget := &sidecar.ExecuteBudget{MaxTurns: max(6, min(12, budget.MaxTurns/2))}
+		resumed := h.runFallbackAgentLoop(ctx, req, registry, systemPrompt, resumeBudget, false, "")
 		if resumed == nil {
 			return &sidecar.ExecuteResult{
 				Status: "failed",
@@ -1726,8 +1772,6 @@ func normalizeBrowserLoopResult(ctx context.Context, registry tool.Registry, res
 	switch {
 	case strings.TrimSpace(result.Summary) == "":
 		result.Summary = verified
-	case strings.Contains(result.Summary, "URL: "):
-		result.Summary = verified + "\n\n[Agent summary]\n" + result.Summary
 	default:
 		result.Summary = verified + "\n\n[Agent summary]\n" + result.Summary
 	}
@@ -1735,6 +1779,9 @@ func normalizeBrowserLoopResult(ctx context.Context, registry tool.Registry, res
 }
 
 func summarizeLoopContext(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
 	var asString string
 	if err := json.Unmarshal(raw, &asString); err == nil {
 		return asString
@@ -1810,13 +1857,23 @@ func extractVariables(instruction string) map[string]interface{} {
 		vars["url"] = url
 	}
 
-	searchKeywords := []string{"搜索", "查询", "查找", "搜", "找"}
+	searchKeywords := []string{"搜索", "查询", "查找"}
 	for _, kw := range searchKeywords {
 		if idx := strings.Index(instruction, kw); idx >= 0 {
-			query := strings.TrimSpace(instruction[idx+len(kw):])
-			query = strings.TrimRight(query, "，。！？,.!?")
-			if query != "" {
-				vars["query"] = query
+			rest := strings.TrimSpace(instruction[idx+len(kw):])
+			rest = strings.TrimLeft(rest, ":： ")
+			if cutIdx := strings.IndexAny(rest, "，。；！？,.;!?\n"); cutIdx > 0 {
+				rest = rest[:cutIdx]
+			}
+			clauseBreakers := []string{" 然后", " 并", " 再", " 之后", " 接着"}
+			for _, br := range clauseBreakers {
+				if ci := strings.Index(rest, br); ci > 0 {
+					rest = rest[:ci]
+				}
+			}
+			rest = strings.TrimSpace(rest)
+			if rest != "" {
+				vars["query"] = rest
 			}
 			break
 		}
@@ -1824,12 +1881,22 @@ func extractVariables(instruction string) map[string]interface{} {
 	return vars
 }
 
+var (
+	credQuoteClass    = `["\x{201c}\x{201d}\x{2018}\x{2019}']`
+	credNonQuoteClass = `[^"\x{201c}\x{201d}\x{2018}\x{2019}']+`
+)
+
 func extractCredentialValue(instruction string, labels []string) string {
 	for _, label := range labels {
-		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(label) + `\s*[:：]?\s*["“”']?([^\s,，。；;！!？?]+)`)
-		m := re.FindStringSubmatch(instruction)
+		quotedRe := regexp.MustCompile("(?i)" + regexp.QuoteMeta(label) + `\s*[:：]?\s*` + credQuoteClass + `\s*(` + credNonQuoteClass + `)\s*` + credQuoteClass)
+		m := quotedRe.FindStringSubmatch(instruction)
 		if len(m) > 1 {
-			return strings.TrimSpace(strings.Trim(m[1], `"'“”`))
+			return strings.TrimSpace(m[1])
+		}
+		bareRe := regexp.MustCompile("(?i)" + regexp.QuoteMeta(label) + `\s*[:：]\s*([^\s,，。；;！!？?\])]+)`)
+		m = bareRe.FindStringSubmatch(instruction)
+		if len(m) > 1 {
+			return strings.TrimSpace(strings.Trim(m[1], "\"'\u201c\u201d\u2018\u2019"))
 		}
 	}
 	return ""
@@ -1916,6 +1983,11 @@ func (h *browserHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (too
 		reg.Register(toolguard.WrapReadPolicy(tool.WrapSandbox(t, bounds.Sandbox), bounds.FilePolicy))
 	}
 	reg.Register(tool.NewNoteTool("browser"))
+	if cfg, err := toolpolicy.Load(""); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-browser: toolpolicy load: %v\n", err)
+	} else {
+		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindBrowser))...)
+	}
 	ensureCriticalBrowserTools(reg, h.browserTools)
 	return reg, nil
 }

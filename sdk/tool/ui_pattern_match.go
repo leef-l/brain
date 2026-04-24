@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"regexp"
 	"strings"
@@ -175,7 +176,7 @@ func matchStrength(cond *MatchCondition, reason string) float64 {
 	signals += len(cond.Has)
 	signals += len(cond.TitleContains)
 	signals += len(cond.TextContains)
-	return float64(signals) / 10.0 // capped 1.0
+	return math.Min(float64(signals)/10.0, 1.0)
 }
 
 func siteHostMatchesURL(siteHost, pageURL string) bool {
@@ -724,7 +725,11 @@ func executeStep(ctx context.Context, sess *cdp.BrowserSession, registry Registr
 		if step.Params == nil {
 			step.Params = map[string]interface{}{}
 		}
-		step.Params["id"] = id
+		if step.Tool == "browser.drag" {
+			step.Params["from_id"] = id
+		} else {
+			step.Params["id"] = id
+		}
 	}
 
 	params := resolvePlaceholders(step.Params, variables)

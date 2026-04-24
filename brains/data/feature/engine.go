@@ -100,17 +100,17 @@ func (e *Engine) computePrice(vec []float64, instID string) {
 		}
 		// BB position
 		if w.BB20.Ready() {
-			vec[base+6] = w.BBPosition()
+			vec[base+6] = w.BB20.Position(w.Current.Close)
 		}
 		// ATR ratio
 		if w.ATR14.Ready() {
 			vec[base+7] = w.ATR14.Value() / price
 		}
 		// Price change rates
-		vec[base+8] = w.PriceChangeRate(5)
-		vec[base+9] = w.PriceChangeRate(20)
+		vec[base+8] = w.PriceChangeRateLocked(5)
+		vec[base+9] = w.PriceChangeRateLocked(20)
 		// Volatility
-		vec[base+10] = w.Volatility(20)
+		vec[base+10] = w.VolatilityLocked(20)
 		// ADX
 		if w.ADX14.Ready() {
 			vec[base+11] = w.ADX14.Value() / 100.0

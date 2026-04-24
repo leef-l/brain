@@ -724,6 +724,7 @@ type DefaultBrainLearner struct {
 	successCount int
 	latencyEWMA  EWMAScore
 	startTime    time.Time
+	store        persistence.LearningStore
 }
 
 // NewDefaultBrainLearner 创建默认 BrainLearner 实例。
@@ -735,15 +736,71 @@ func NewDefaultBrainLearner(kind agent.Kind) *DefaultBrainLearner {
 	}
 }
 
-// RecordOutcome 记录一次任务执行结果，更新 EWMA 指标。
-func (d *DefaultBrainLearner) RecordOutcome(_ context.Context, outcome TaskOutcome) error {
+// NewDefaultBrainLearnerWithStore 创建带持久化的 BrainLearner。
+func NewDefaultBrainLearnerWithStore(kind agent.Kind, store persistence.LearningStore) *DefaultBrainLearner {
+	d := NewDefaultBrainLearner(kind)
+	d.store = store
+	return d
+}
+
+// Load 从持久化存储恢复 L0 指标。
+func (d *DefaultBrainLearner) Load(ctx context.Context) error {
+	if d.store == nil {
+		return nil
+	}
+	scores, err := d.store.ListTaskScores(ctx, string(d.kind))
+	if err != nil {
+		return err
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	for _, s := range scores {
+		d.taskCount += s.SampleCount
+		d.successCount += int(s.AccuracyValue * float64(s.SampleCount))
+		d.latencyEWMA.Value = s.SpeedValue
+		if s.SampleCount > 0 {
+			d.latencyEWMA.Updated = time.Now()
+		}
+	}
+	return nil
+}
+
+// Save 将当前 L0 指标持久化。
+func (d *DefaultBrainLearner) Save(ctx context.Context) error {
+	if d.store == nil {
+		return nil
+	}
+	d.mu.Lock()
+	successRate := 0.0
+	if d.taskCount > 0 {
+		successRate = float64(d.successCount) / float64(d.taskCount)
+	}
+	ts := &persistence.LearningTaskScore{
+		BrainKind:     string(d.kind),
+		TaskType:      "default",
+		SampleCount:   d.taskCount,
+		AccuracyValue: successRate,
+		AccuracyAlpha: 0.2,
+		SpeedValue:    d.latencyEWMA.Value,
+		SpeedAlpha:    0.2,
+	}
+	d.mu.Unlock()
+	return d.store.SaveTaskScore(ctx, ts)
+}
+
+// RecordOutcome 记录一次任务执行结果，更新 EWMA 指标。
+func (d *DefaultBrainLearner) RecordOutcome(ctx context.Context, outcome TaskOutcome) error {
+	d.mu.Lock()
 	d.taskCount++
 	if outcome.Success {
 		d.successCount++
 	}
 	d.latencyEWMA.Update(outcome.Duration.Seconds())
+	shouldSave := d.store != nil && d.taskCount%5 == 0
+	d.mu.Unlock()
+	if shouldSave {
+		go d.Save(ctx)
+	}
 	return nil
 }
 

@@ -67,7 +67,7 @@
 
 ### 1.1 进程内部结构
 
-mcp-backed brain 与 native brain 的**对外接口完全相同**：都是通过 stdio 与 BrainPool 通信的 sidecar 进程，都实现 `brain/execute`、`brain/tools_list`、`ping` 等协议方法。
+mcp-backed brain 与 native brain 的**对外接口完全相同**：都是通过 stdio 与 BrainPool 通信的 sidecar 进程，都实现 `brain/execute`、`tools/list`、`ping` 等协议方法。
 
 差异在进程内部：
 
@@ -118,7 +118,7 @@ mcp-backed brain 与 native brain 的**对外接口完全相同**：都是通过
 //  1. 启动并管理 N 个 MCP server 进程（通过 AdapterManager）
 //  2. 把 MCP tools 注册进 MCPToolRegistry
 //  3. 驱动 Agent Loop（LLM 推理 + 工具路由）
-//  4. 响应 Kernel 的 brain/execute、brain/tools_list、ping 方法
+//  4. 响应 Kernel 的 brain/execute、tools/list、ping 方法
 type BrainHost struct {
     // manifest 来自 brain 启动时加载的配置
     manifest BrainManifest
@@ -338,7 +338,7 @@ BrainHost.Start()
   │      ├── 为每个工具创建 ToolConcurrencySpec（默认规则）
   │      └── 注册进 MCPToolRegistry
   │
-  ├── 4. 上报工具列表给 Kernel（brain/tools_list 响应就绪）
+  ├── 4. 上报工具列表给 Kernel（tools/list 响应就绪）
   │
   └── 5. 启动健康检查 goroutine（per adapter）
 ```
@@ -1169,8 +1169,8 @@ func (h *BrainHost) registerProtocolHandlers() {
     // brain/execute：主执行入口
     h.transport.Handle("brain/execute", h.handleExecute)
 
-    // brain/tools_list：返回当前工具集（含来自 MCP server 的工具）
-    h.transport.Handle("brain/tools_list", h.handleToolsList)
+    // tools/list：返回当前工具集（含来自 MCP server 的工具）
+    h.transport.Handle("tools/list", h.handleToolsList)
 
     // ping：BrainPool 健康探测
     h.transport.Handle("ping", h.handlePing)
@@ -1379,7 +1379,7 @@ func TestBrainHostToolDiscovery(t *testing.T) {
 
 | 能力维度 | native brain | mcp-backed brain | 差异说明 |
 |---------|-------------|-----------------|---------|
-| **对外接口** | `brain/execute`、`brain/tools_list`、`ping` | **完全相同** | 调用方无感知 |
+| **对外接口** | `brain/execute`、`tools/list`、`ping` | **完全相同** | 调用方无感知 |
 | **Delegate 支持** | ✅ 是 Central 的 delegate 目标 | ✅ **完全相同** | MCP Server 不可见 |
 | **工具来源** | 本地 Go 代码注册 | MCP server 动态发现 | mcp-backed 工具集在运行时确定 |
 | **工具数量** | 编译时固定 | 启动时动态（MCP server 决定） | mcp-backed 更灵活，但无法静态分析 |

@@ -82,6 +82,13 @@ type DefaultContextEngine struct {
 	// SharedStore 是可选的持久化后端，用于保存 Share() 的跨脑消息。
 	SharedStore persistence.SharedMessageStore
 
+	// MaxShareMessages 是 Share() 传递的最大消息条数。零值回退为默认 30。
+	MaxShareMessages int
+
+	// ShareTokenBudget 是 Share() 传递消息的 token 上限。零值回退为 8000。
+	// 当消息总 token 超过此预算时，从最老的消息开始裁剪。
+	ShareTokenBudget int
+
 	// sharedBuckets 是按 (from, to) 分桶的跨脑消息存储,解决多 delegate 并发
 	// 时 SharedMessages 相互覆盖的问题(Task #18)。
 	sharedMu      sync.Mutex
@@ -426,10 +433,21 @@ func (e *DefaultContextEngine) Share(ctx context.Context, from, to agent.Kind, m
 		filtered = append(filtered, m)
 	}
 
-	// 数量限制：最多 10 条
-	const maxShareMessages = 10
-	if len(filtered) > maxShareMessages {
-		filtered = filtered[len(filtered)-maxShareMessages:]
+	// 数量限制
+	maxMsg := e.MaxShareMessages
+	if maxMsg <= 0 {
+		maxMsg = 30
+	}
+	if len(filtered) > maxMsg {
+		filtered = filtered[len(filtered)-maxMsg:]
+	}
+	// token 预算裁剪：从最新消息往前保留，超预算的老消息丢弃
+	tokenBudget := e.ShareTokenBudget
+	if tokenBudget <= 0 {
+		tokenBudget = 8000
+	}
+	if estimateTokens(filtered) > tokenBudget {
+		filtered = windowTrim(filtered, tokenBudget)
 	}
 
 	e.sharedMu.Lock()

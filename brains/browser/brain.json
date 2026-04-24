@@ -10,6 +10,9 @@
     "web.screenshot",
     "web.evaluate",
     "web.upload",
+    "web.pattern_match",
+    "web.anomaly_detection",
+    "human.takeover",
     "domain.browser",
     "resource.browser_session",
     "mode.interactive"
@@ -22,7 +25,7 @@
     "approval_class": "external-network",
     "approval_mode": "review",
     "sandbox_profile": "browser",
-    "tool_scope": "browser"
+    "tool_scope": "delegate.browser"
   },
   "task_patterns": [
     "网页浏览与信息提取",
@@ -35,11 +38,14 @@
     "heartbeat_timeout_ms": 30000,
     "expected_methods": [
       "brain/execute",
-      "brain/tools_list",
+      "tools/list",
+      "tools/call",
       "brain/metrics"
     ]
   },
   "compatibility": {
-    "min_kernel_version": "1.0.0"
+    "protocol": "1.0",
+    "tested_kernel": "1.0.x",
+    "min_kernel": "1.0.0"
   }
 }

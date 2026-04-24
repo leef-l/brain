@@ -65,6 +65,7 @@ func (h *verifierHandler) ToolSchemas() []tool.Schema {
 // SetKernelCaller implements sidecar.RichBrainHandler.
 func (h *verifierHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	h.caller = caller
+	sidecar.SetProgressContext(caller, string(h.Kind()))
 }
 
 func (h *verifierHandler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
@@ -120,9 +121,11 @@ func (h *verifierHandler) handleVerify(ctx context.Context, params json.RawMessa
 		"  VERDICT: PASS — [reason]\n" +
 		"  VERDICT: FAIL — [reason]"
 
-	maxTurns := 8
-	if req.Budget != nil && req.Budget.MaxTurns > 0 {
-		maxTurns = req.Budget.MaxTurns
+	budget := req.Budget
+	if budget == nil {
+		budget = &sidecar.ExecuteBudget{MaxTurns: 8}
+	} else if budget.MaxTurns <= 0 {
+		budget.MaxTurns = 8
 	}
 
 	registry, err := h.buildRegistry(req.Execution)
@@ -134,7 +137,7 @@ func (h *verifierHandler) handleVerify(ctx context.Context, params json.RawMessa
 	}
 
 	start := time.Now()
-	result := sidecar.RunAgentLoopWithContext(ctx, h.caller, registry, systemPrompt, req.Instruction, maxTurns, req.Context)
+	result := sidecar.RunAgentLoopFull(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, req.Context)
 	applyVerifierVerdict(result)
 	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
 		TaskType:  "verifier.verify",

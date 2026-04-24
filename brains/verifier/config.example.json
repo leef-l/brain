@@ -8,11 +8,12 @@
     "  BRAIN_CONFIG           覆盖默认配置文件路径（默认 ~/.brain/config.json）",
     "  BRAIN_LICENSE_REQUIRED 设为 1 强制要求 license 校验",
     "",
-    "注册工具（4 个）：",
+    "注册工具（5 个）：",
     "  verifier.read_file      — 读取文件内容（只读）",
     "  verifier.run_tests      — 运行测试套件",
     "  verifier.check_output   — 校验命令输出",
     "  verifier.browser_action — 请求浏览器操作（委派给 Browser Brain）",
+    "  verifier.note           — Scratchpad / 记录验证过程与中间结论",
     "",
     "执行预算（通过 RPC ExecuteRequest 传入）：",
     "  budget.max_turns: 8（默认）",
@@ -38,7 +39,7 @@
   },
 
   "file_policy": {
-    "allow_read": ["**/*.go", "**/*.ts", "**/*.py", "**/*.md"],
+    "allow_read": ["**/*.go", "**/*.ts", "**/*.py", "**/*.md", "**/*.json", "**/*.yaml", "**/*.yml", "**/*.sh", "**/*.txt"],
     "allow_create": [],
     "allow_edit": [],
     "allow_delete": [],
