@@ -7,9 +7,9 @@
 每次修改后必须执行：
 ```bash
 go build ./...
-go vet ./...
-go test ./... -count=1
 ```
+
+**铁律：绝对禁止执行 `go test` 和 `go vet`。** 服务器配置太低，只用 `go build ./...` 验证编译。
 
 ## 编译目标
 - `cmd/brain/` → brain（kernel 主进程）
