@@ -491,9 +491,9 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 		truelySuccess = false
 	}
 	if fullRunRec != nil {
-		fullRunRec.FinalizePersist(ctx, truelySuccess, false)
+		fullRunRec.FinalizePersist(ctx, truelySuccess, truelySuccess)
 		if truelySuccess {
-			diaglog.Logf("browser", "full run demo persisted: learning this successful flow")
+			diaglog.Logf("browser", "full run demo auto-approved: AI completed successfully, converting to pattern")
 		} else {
 			diaglog.Logf("browser", "full run discarded: task not truly successful")
 		}
