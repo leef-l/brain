@@ -178,7 +178,7 @@ func TestRunFallbackAgentLoop_ContinuesAfterHumanResume(t *testing.T) {
 	t.Cleanup(func() { runBrowserAgentLoop = prev })
 
 	callCount := 0
-	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ int, _ json.RawMessage) *sidecar.ExecuteResult {
+	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ *sidecar.ExecuteBudget, _ json.RawMessage) *sidecar.ExecuteResult {
 		callCount++
 		if callCount == 1 {
 			return &sidecar.ExecuteResult{
@@ -209,7 +209,7 @@ func TestRunFallbackAgentLoop_ContinuesAfterHumanResume(t *testing.T) {
 
 	h := &browserHandler{}
 	req := &sidecar.ExecuteRequest{Instruction: "登录后台并完成滑块"}
-	got := h.runFallbackAgentLoop(context.Background(), req, reg, "browser prompt", 30, true, "")
+	got := h.runFallbackAgentLoop(context.Background(), req, reg, "browser prompt", &sidecar.ExecuteBudget{MaxTurns: 30}, true, "")
 	if got == nil {
 		t.Fatal("runFallbackAgentLoop() = nil")
 	}
@@ -232,7 +232,7 @@ func TestRunFallbackAgentLoop_PassesRecentInteractionFeedbackIntoContext(t *test
 	t.Cleanup(func() { runBrowserAgentLoop = prev })
 
 	var gotContext json.RawMessage
-	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ int, extra json.RawMessage) *sidecar.ExecuteResult {
+	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ *sidecar.ExecuteBudget, extra json.RawMessage) *sidecar.ExecuteResult {
 		gotContext = append(json.RawMessage(nil), extra...)
 		return &sidecar.ExecuteResult{Status: "completed", Summary: "ok", Turns: 1}
 	}
@@ -243,7 +243,7 @@ func TestRunFallbackAgentLoop_PassesRecentInteractionFeedbackIntoContext(t *test
 		Context:     json.RawMessage(`{"text":"Coordinator context"}`),
 	}
 	feedback := "The last browser.drag did not confirm success."
-	got := h.runFallbackAgentLoop(context.Background(), req, tool.NewMemRegistry(), "browser prompt", 8, false, feedback)
+	got := h.runFallbackAgentLoop(context.Background(), req, tool.NewMemRegistry(), "browser prompt", &sidecar.ExecuteBudget{MaxTurns: 8}, false, feedback)
 	if got == nil || got.Status != "completed" {
 		t.Fatalf("runFallbackAgentLoop() = %+v, want completed result", got)
 	}
