@@ -93,7 +93,31 @@ func windowTrim(msgs []llm.Message, budget int) []llm.Message {
 	if startIdx >= len(msgs) {
 		return msgs[len(msgs)-1:]
 	}
+	// OpenAI/DeepSeek 要求 role=tool 消息前必须有 role=assistant 的 tool_calls。
+	// 如果裁剪起点落在 tool_result 消息上，向前扩展到对应的 assistant 消息。
+	startIdx = adjustStartForToolPairs(msgs, startIdx)
 	return msgs[startIdx:]
+}
+
+// adjustStartForToolPairs 确保裁剪起点不会把 assistant tool_use 消息
+// 裁掉而留下孤立的 tool_result 消息。
+func adjustStartForToolPairs(msgs []llm.Message, startIdx int) int {
+	if startIdx <= 0 || startIdx >= len(msgs) {
+		return startIdx
+	}
+	for startIdx > 0 && hasToolResult(msgs[startIdx]) {
+		startIdx--
+	}
+	return startIdx
+}
+
+func hasToolResult(m llm.Message) bool {
+	for _, blk := range m.Content {
+		if blk.Type == "tool_result" {
+			return true
+		}
+	}
+	return false
 }
 
 func truncateOldMessages(msgs []llm.Message, budget int) []llm.Message {
@@ -115,7 +139,7 @@ func hardTruncate(msgs []llm.Message, budget int) []llm.Message {
 	if len(msgs) == 0 {
 		return nil
 	}
-	var result []llm.Message
+	startIdx := len(msgs)
 	total := 0
 	for i := len(msgs) - 1; i >= 0; i-- {
 		truncated := truncateMessageContent(msgs[i], 100)
@@ -124,10 +148,15 @@ func hardTruncate(msgs []llm.Message, budget int) []llm.Message {
 			break
 		}
 		total += t
-		result = append([]llm.Message{truncated}, result...)
+		startIdx = i
 	}
-	if len(result) == 0 && len(msgs) > 0 {
-		result = []llm.Message{truncateMessageContent(msgs[len(msgs)-1], 100)}
+	if startIdx >= len(msgs) {
+		return []llm.Message{truncateMessageContent(msgs[len(msgs)-1], 100)}
+	}
+	startIdx = adjustStartForToolPairs(msgs, startIdx)
+	result := make([]llm.Message, len(msgs)-startIdx)
+	for i, m := range msgs[startIdx:] {
+		result[i] = truncateMessageContent(m, 100)
 	}
 	return result
 }
