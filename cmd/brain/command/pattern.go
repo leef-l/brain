@@ -51,6 +51,10 @@ func RunPattern(args []string, deps PatternDeps) int {
 	sub := args[0]
 	rest := args[1:]
 	switch sub {
+	case "list":
+		return runPatternList(rest, deps)
+	case "delete":
+		return runPatternDelete(rest, deps)
 	case "export":
 		return runPatternExport(rest, deps)
 	case "import":
@@ -69,8 +73,91 @@ func printPatternUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: brain pattern <subcommand> [flags]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Subcommands:")
+	fmt.Fprintln(os.Stderr, "  list     List UI patterns")
+	fmt.Fprintln(os.Stderr, "  delete   Delete a UI pattern by ID")
 	fmt.Fprintln(os.Stderr, "  export   Export UI patterns to a JSON file")
 	fmt.Fprintln(os.Stderr, "  import   Import UI patterns from a JSON file")
+}
+
+func runPatternList(args []string, deps PatternDeps) int {
+	fs := flag.NewFlagSet("pattern list", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	category := fs.String("category", "", "filter by category (e.g. auth, admin)")
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: brain pattern list [--category <cat>]")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+
+	lib, err := deps.NewLibrary()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain pattern list: %v\n", err)
+		return cli.ExitSoftware
+	}
+	defer lib.Close()
+
+	patterns := lib.ListAll(*category)
+	if len(patterns) == 0 {
+		fmt.Fprintln(os.Stderr, "No patterns found.")
+		return cli.ExitOK
+	}
+	for _, p := range patterns {
+		enabled := "on "
+		if !p.Enabled {
+			enabled = "off"
+		}
+		pending := ""
+		if p.Pending {
+			pending = " [pending]"
+		}
+		url := p.AppliesWhen.URLPattern
+		if url == "" {
+			url = p.AppliesWhen.SiteHost
+		}
+		fmt.Printf("%-30s  %s  src=%-8s  cat=%-10s  steps=%-3d  match=%-4d  succ=%-4d  url=%s%s\n",
+			p.ID, enabled, p.Source, p.Category, len(p.ActionSequence),
+			p.Stats.MatchCount, p.Stats.SuccessCount, url, pending)
+	}
+	fmt.Fprintf(os.Stderr, "\nTotal: %d pattern(s)\n", len(patterns))
+	return cli.ExitOK
+}
+
+func runPatternDelete(args []string, deps PatternDeps) int {
+	fs := flag.NewFlagSet("pattern delete", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: brain pattern delete <id> [<id>...]")
+	}
+	if err := fs.Parse(args); err != nil {
+		return cli.ExitUsage
+	}
+	if fs.NArg() == 0 {
+		fs.Usage()
+		return cli.ExitUsage
+	}
+
+	lib, err := deps.NewLibrary()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain pattern delete: %v\n", err)
+		return cli.ExitSoftware
+	}
+	defer lib.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	exitCode := cli.ExitOK
+	for _, id := range fs.Args() {
+		if err := lib.Delete(ctx, id); err != nil {
+			fmt.Fprintf(os.Stderr, "brain pattern delete %s: %v\n", id, err)
+			exitCode = cli.ExitSoftware
+			continue
+		}
+		fmt.Printf("Deleted pattern %s\n", id)
+	}
+	return exitCode
 }
 
 func runPatternExport(args []string, deps PatternDeps) int {
