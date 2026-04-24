@@ -1,5 +1,7 @@
 # 35. Brain Pool 实现设计
 
+> **⚠️ 实现简化说明（2026-04-24）：** BrainPool 接口实际只有 4 个方法（GetBrain/Status/AutoStart/Shutdown），ReturnBrain/HealthCheck/Drain/WarmUp/Register 未实现。EntryState 状态机未实现，用更简单的 agent 状态管理替代。
+
 > **状态**：v1 · 2026-04-16
 > **对应路线**：[32-v3-Brain架构.md](./32-v3-Brain架构.md) §7.11 Phase A-1
 > **依赖规格**：[20-协议规格.md](./20-协议规格.md) / [02-BrainKernel设计.md](./02-BrainKernel设计.md)

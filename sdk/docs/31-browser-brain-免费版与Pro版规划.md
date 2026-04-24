@@ -1,5 +1,7 @@
 # 31. Browser Brain 免费版与 Pro 版规划
 
+> **⚠️ 路径迁移说明（2026-04-24）：** 代码路径已从 `/www/wwwroot/project/brain/cmd/brain-browser/` 迁移到 `brain-v3/brains/browser/cmd/`，工具代码从 `brain/tool/` 迁移到 `brain-v3/sdk/tool/`。
+
 > 目标：明确 `brain-browser` 当前免费版边界，以及未来 `brain-browser-pro`
 > 的收费能力范围，避免产品线混乱。
 

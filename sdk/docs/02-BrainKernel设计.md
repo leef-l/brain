@@ -1,5 +1,7 @@
 # 02 · BrainKernel 设计
 
+> **⚠️ 路径迁移说明（2026-04-24）：** 本文档中的包路径（`admin-go/app/mvp/internal/...`、`workflow/executor/kernel/`）和接口名（`BrainAgent`→`Agent`、`BrainKind`→`Kind`）为 v2 时期命名。v3 代码以 `sdk/` 目录为准：`sdk/agent/`、`sdk/kernel/`、`sdk/errors/`。
+
 > **定位**：BrainKernel 是所有大脑（CentralBrain + N 个 SpecialistBrain）共享的**基础设施**，不是"又一个大脑"。它只做六件事：运行 Agent Loop、抽象 LLM Provider、持久化 BrainPlan、管理 Artifact、执行 Guardrail、记账与审计。它**不做**任何业务决策，不拆任务，不判断验收是否通过——这些是大脑自己的活。
 >
 > 本文档是整个执行器家族的"内核宪法"。只要这份文档定了，剩下的协议、实现与演进文档都应该在这份的接口约束下展开。

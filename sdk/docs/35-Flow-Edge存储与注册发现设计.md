@@ -1,5 +1,7 @@
 # 35. Flow Edge 存储层与注册/发现机制设计
 
+> **⚠️ 实现简化说明（2026-04-24）：** POSIX 共享内存（/dev/shm）和 mmap 快路径未实现。实际 `sdk/flow/ringbuf.go` 为进程内内存 RingBufBackend。
+
 > **状态**：v1 · 2026-04-17
 > **归属**：§7.10 Flow Edge（32-v3-Brain架构.md）的详细规格
 > **Phase 映射**：Phase C-1 Workflow Engine 核心子系统

@@ -1,5 +1,7 @@
 # 35. LeaseManager 实现设计
 
+> **⚠️ 实现简化说明（2026-04-24）：** LeaseManager 接口实际只有 `AcquireSet` 和 `ReleaseAll` 2 个方法。Release/Query/Renew/ForceRevoke/Subscribe/Close 等为设计预留，HolderID 为普通字符串。
+
 > **状态**：v1 · 2026-04-17
 > **归属**：[32-v3-Brain架构.md](./32-v3-Brain架构.md) §7.7.2 / §7.9 / §13.2
 > **依赖**：[35-TaskExecution生命周期状态机.md](./35-TaskExecution生命周期状态机.md) · [35-Dispatch-Policy-冲突图与Batch分组算法.md](./35-Dispatch-Policy-冲突图与Batch分组算法.md) · [35-BrainPool实现设计.md](./35-BrainPool实现设计.md)

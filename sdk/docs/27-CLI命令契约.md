@@ -1,5 +1,7 @@
 # 27 · CLI 命令契约 v1
 
+> **⚠️ 存储格式变更（2026-04-24）：** `~/.brain/store.json`、`~/.brain/runs.json` 等 JSON 文件已废弃，统一迁移到 SQLite WAL（`~/.brain/brain.db`）。
+
 > **状态**：v1 契约 + 当前实现对齐说明 · 2026-04-13
 > **上位规格**：[02-BrainKernel设计.md](./02-BrainKernel设计.md) §12 执行器架构
 > **依赖**：

@@ -1,5 +1,7 @@
 # 35. Manifest 解析与版本化设计
 
+> **⚠️ 实现差异说明（2026-04-24）：** 实际只有 loader.go/validator.go/registry.go/types.go 4 个文件。watcher.go（文件变更监听）、converter.go（版本转换）、schema/v1.json 未实现。
+
 > **状态**：v1 · 2026-04-16
 > **上位规格**：[33-Brain-Manifest规格.md](./33-Brain-Manifest规格.md)
 > **关联文档**：[35-BrainPool实现设计.md](./35-BrainPool实现设计.md) / [32-v3-Brain架构.md](./32-v3-Brain架构.md) §7.5

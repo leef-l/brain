@@ -1,6 +1,18 @@
 # 32. v3 Brain 架构
 
-> **状态**：v8 · 2026-04-18
+> **状态**：v8 · 2026-04-18 · **代码对照勘误 2026-04-24**
+>
+> **⚠️ 代码对照勘误（以当前代码为准）：**
+> - §2.2 能力映射表：实际有 7 个专精大脑（补充 desktop），多任务支持已完成（✅）
+> - §7.1 `/v1/jobs` 端点未实现
+> - §7.4 ContextEngine.Compress 签名：实际为 `(ctx, messages, budget int)` 多了 budget 参数
+> - §7.6 BrainLearner 无 `Adapt()` 方法；LearningEngine 是 struct 非 interface，方法名：RankBrainsForTask→RankBrains, RecordExecutionChain→RecordSequence, SuggestChain→RecommendOrder, RecordUserPreference→RecordUserFeedback, GetUserProfile→GetPreference
+> - §13.1 状态机为 **12** 个（非 11），多了 `interrupted` 状态
+> - §13.2 LeaseManager 接口实际只有 `AcquireSet`/`ReleaseAll` 2 个方法，其余为设计预留
+> - §13.3 Dispatch Policy 实际路径：sdk/kernel/dispatch.go + sdk/loop/batch_planner.go（非 sdk/loop/dispatch/）
+> - §13.4 BrainPool 接口实际 4 个方法（GetBrain/Status/AutoStart/Shutdown），AutoStart 替代了 WarmUp/Register
+> - §13.5 Dashboard 实际 8 个端点（非 11），新增 auth/learning/ws，缺少 brains/:kind 等细粒度端点
+> - §15 节号重复：第二个 §15 应为 §16
 > **上位规格**：[02-BrainKernel设计.md](./02-BrainKernel设计.md)
 > **下位规格**：[33-Brain-Manifest规格.md](./33-Brain-Manifest规格.md) / [34-Brain-Package与Marketplace规范.md](./34-Brain-Package与Marketplace规范.md)
 > **变更记录**：v1（2026-04-13）初版，v2（2026-04-16）行业对标后重排优先级，将多脑协作运行时提升为主轴，v3（2026-04-16）新增四层自适应学习体系，v4（2026-04-16）多任务架构重设计：三层分离，v5（2026-04-16）收敛为 TaskExecution + Capability Lease + Dispatch Policy + Flow Edge 四正交概念，引入 AcquireSet 死锁防护、ToolConcurrencySpec、LeaseScope，v6（2026-04-17）全面细化 8 大核心子系统设计（§13），新增独立规格文档 35 系列，v7（2026-04-17）补充 P0 差距：Brain Capability 标签体系、跨脑通信协议、LeaseManager 独立文档、端到端时序与模块依赖图，v8（2026-04-18）新增 §15 上层产品接入边界（runtime vs domain 职责划分、四条接入铁律）

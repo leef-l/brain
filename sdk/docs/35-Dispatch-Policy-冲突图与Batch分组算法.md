@@ -1,5 +1,7 @@
 # 35. §7.8 Dispatch Policy — 冲突图构建与 Batch 分组算法
 
+> **⚠️ 包路径说明（2026-04-24）：** 实际实现在 `sdk/kernel/dispatch.go`（ConflictGraph/BatchPlanner）+ `sdk/loop/batch_planner.go`（接口定义），非文档设计的 `sdk/loop/dispatch/` 子包。
+
 > **状态**：v1 · 2026-04-16
 > **归属**：32-v3-Brain架构.md §7.8 的下位规格
 > **作用域**：`sdk/loop/turn_executor.go` + 新增 `sdk/loop/dispatch/`

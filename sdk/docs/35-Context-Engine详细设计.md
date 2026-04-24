@@ -1,5 +1,7 @@
 # 35. Context Engine 详细设计
 
+> **⚠️ 实现差异说明（2026-04-24）：** 实际实现在 `sdk/kernel/context_engine.go`（非独立 sdk/contextengine/ 包）。Compress 签名为 `(ctx, messages, budget int)`（多了 budget 参数）。Persist 方法改为 SharedFor/ClearShared。
+
 > **状态**：v1 · 2026-04-16  
 > **所属阶段**：Phase B-4（见 32-v3-Brain架构.md §6）  
 > **上位规格**：[32-v3-Brain架构.md](./32-v3-Brain架构.md) §7.4  
