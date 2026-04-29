@@ -1,9 +1,0 @@
-{
-  "combo": "B",
-  "role": "cheap",
-  "provider": "deepseek",
-  "page_id": "govuk_form",
-  "element_id": 46,
-  "predictions": [],
-  "skipped": "provider has no image support"
-}

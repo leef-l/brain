@@ -1,9 +1,0 @@
-{
-  "combo": "B",
-  "role": "cheap",
-  "provider": "deepseek",
-  "page_id": "saleor_product",
-  "element_id": 11,
-  "predictions": [],
-  "skipped": "provider has no image support"
-}

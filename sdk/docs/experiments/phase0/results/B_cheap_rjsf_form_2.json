@@ -1,9 +1,0 @@
-{
-  "combo": "B",
-  "role": "cheap",
-  "provider": "deepseek",
-  "page_id": "rjsf_form",
-  "element_id": 2,
-  "predictions": [],
-  "skipped": "provider has no image support"
-}

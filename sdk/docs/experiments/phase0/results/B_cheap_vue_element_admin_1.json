@@ -1,9 +1,0 @@
-{
-  "combo": "B",
-  "role": "cheap",
-  "provider": "deepseek",
-  "page_id": "vue_element_admin",
-  "element_id": 1,
-  "predictions": [],
-  "skipped": "provider has no image support"
-}
