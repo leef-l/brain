@@ -62,6 +62,7 @@ type QuantBrain struct {
 	weightAdapter *learning.WeightAdapter   // L1: strategy weight adaptation
 	symbolScorer  *learning.SymbolScorer   // L1: symbol preference scoring
 	sltpOptimizer *learning.SLTPOptimizer  // L1: SL/TP ATR multiplier optimizer
+	hyperOptimizer *learning.HyperOptimizer // L2: hyper-parameter optimizer
 	mu            sync.RWMutex
 
 	// Anti-churn: cooldown tracking for signal_exit
@@ -189,12 +190,20 @@ func (qb *QuantBrain) SetGlobalRiskConfig(cfg risk.GlobalRiskConfig) {
 }
 
 // SetLearning configures L1 adaptive learning components.
-func (qb *QuantBrain) SetLearning(wa *learning.WeightAdapter, ss *learning.SymbolScorer, opt *learning.SLTPOptimizer) {
+func (qb *QuantBrain) SetLearning(wa *learning.WeightAdapter, ss *learning.SymbolScorer, opt *learning.SLTPOptimizer, ho *learning.HyperOptimizer) {
 	qb.mu.Lock()
 	defer qb.mu.Unlock()
 	qb.weightAdapter = wa
 	qb.symbolScorer = ss
 	qb.sltpOptimizer = opt
+	qb.hyperOptimizer = ho
+}
+
+// WeightAdapter returns the L1 strategy weight adapter (may be nil).
+func (qb *QuantBrain) WeightAdapter() *learning.WeightAdapter {
+	qb.mu.RLock()
+	defer qb.mu.RUnlock()
+	return qb.weightAdapter
 }
 
 // AddUnit registers a TradingUnit. Must be called before Start.
@@ -290,7 +299,7 @@ func (qb *QuantBrain) Start(ctx context.Context) error {
 
 	// Start L1 learning loop (every 5 minutes).
 	qb.mu.RLock()
-	hasLearning := qb.weightAdapter != nil || qb.symbolScorer != nil || qb.sltpOptimizer != nil
+	hasLearning := qb.weightAdapter != nil || qb.symbolScorer != nil || qb.sltpOptimizer != nil || qb.hyperOptimizer != nil
 	qb.mu.RUnlock()
 	if hasLearning {
 		qb.wg.Add(1)
@@ -351,21 +360,27 @@ func (qb *QuantBrain) evaluationLoop(ctx context.Context) {
 	}
 }
 
-// learningLoop periodically updates L1 adaptive parameters (strategy weights
-// and symbol scores) from trade history. Runs every 5 minutes.
+// learningLoop periodically updates L1 adaptive parameters (strategy weights,
+// symbol scores, SL/TP multipliers) from trade history. Runs every 5 minutes.
+// L2 hyper-parameter optimization runs once per day (frequency lower than L1).
 func (qb *QuantBrain) learningLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
+	l1Ticker := time.NewTicker(5 * time.Minute)
+	defer l1Ticker.Stop()
 
-	// Run once immediately on start.
+	l2Ticker := time.NewTicker(24 * time.Hour)
+	defer l2Ticker.Stop()
+
+	// Run L1 once immediately on start.
 	qb.updateLearning(ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-l1Ticker.C:
 			qb.updateLearning(ctx)
+		case <-l2Ticker.C:
+			qb.updateHyperOptimization(ctx)
 		}
 	}
 }
@@ -409,6 +424,43 @@ func (qb *QuantBrain) updateLearning(ctx context.Context) {
 	if opt != nil {
 		opt.Update(store)
 	}
+}
+
+// updateHyperOptimization runs the L2 hyper-parameter optimizer.
+// It collects recent trade records and runs a grid search over the
+// strategy parameter space to find better thresholds.
+func (qb *QuantBrain) updateHyperOptimization(ctx context.Context) {
+	qb.mu.RLock()
+	ho := qb.hyperOptimizer
+	units := qb.units
+	qb.mu.RUnlock()
+	if ho == nil {
+		return
+	}
+
+	// Collect recent trade records from all units.
+	var allRecords []tradestore.TradeRecord
+	for _, u := range units {
+		if u.TradeStore == nil {
+			continue
+		}
+		// Look back 7 days (matching HyperOptimizer window default).
+		records := u.TradeStore.Query(tradestore.Filter{
+			Since: time.Now().AddDate(0, 0, -7),
+		})
+		allRecords = append(allRecords, records...)
+	}
+
+	if len(allRecords) == 0 {
+		qb.logger.Debug("hyper-opt: no trade records available")
+		return
+	}
+
+	bestParams, score := ho.Optimise(allRecords)
+	qb.logger.Info("hyper-opt: L2 optimization complete",
+		"best_params", bestParams,
+		"score", round4(score),
+		"samples", len(allRecords))
 }
 
 // safeRunCycle wraps runCycle with panic recovery so a single cycle panic
@@ -1691,4 +1743,9 @@ func (qb *QuantBrain) Health() map[string]any {
 		"cycle_latency_ms":  qb.metrics.CycleLatencyMs.Load(),
 		"warmup_remaining":  qb.recovery.ticksRemaining.Load(),
 	}
+}
+
+// round4 rounds a float64 to 4 decimal places.
+func round4(v float64) float64 {
+	return math.Round(v*10000) / 10000
 }

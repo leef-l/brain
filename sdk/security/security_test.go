@@ -3,6 +3,7 @@ package security
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -145,9 +146,9 @@ func (s *staticSandbox) Sys() SysPolicy  { return s.sys }
 func newTestSandbox() *staticSandbox {
 	return &staticSandbox{
 		fs: FSPolicy{
-			ReadAllowed:  []string{"/workspace/"},
-			WriteAllowed: []string{"/workspace/out/"},
-			Denied:       []string{"/workspace/out/secrets/"},
+			ReadAllowed:  []string{filepath.FromSlash("/workspace/")},
+			WriteAllowed: []string{filepath.FromSlash("/workspace/out/")},
+			Denied:       []string{filepath.FromSlash("/workspace/out/secrets/")},
 		},
 		net: NetPolicy{
 			AllowedHosts: []string{"api.anthropic.com", "api.openai.com"},
@@ -167,16 +168,16 @@ func newTestSandbox() *staticSandbox {
 
 func TestSandboxChecker_FS(t *testing.T) {
 	c := NewSandboxChecker(newTestSandbox())
-	if err := c.CheckRead("/workspace/src/main.go"); err != nil {
+	if err := c.CheckRead(filepath.FromSlash("/workspace/src/main.go")); err != nil {
 		t.Fatalf("expected allow, got %v", err)
 	}
-	if err := c.CheckWrite("/workspace/out/artifact.bin"); err != nil {
+	if err := c.CheckWrite(filepath.FromSlash("/workspace/out/artifact.bin")); err != nil {
 		t.Fatalf("expected allow, got %v", err)
 	}
-	if err := c.CheckRead("/etc/passwd"); err == nil {
+	if err := c.CheckRead(filepath.FromSlash("/etc/passwd")); err == nil {
 		t.Fatal("expected deny")
 	}
-	if err := c.CheckWrite("/workspace/out/secrets/key.pem"); err == nil {
+	if err := c.CheckWrite(filepath.FromSlash("/workspace/out/secrets/key.pem")); err == nil {
 		t.Fatal("expected deny (denied list wins)")
 	}
 }
@@ -543,7 +544,7 @@ func TestSandboxEnforcer_L0(t *testing.T) {
 		t.Error("Checker is nil")
 	}
 	// Policy checks still work through the enforcer.
-	if err := e.Checker().CheckRead("/workspace/src/main.go"); err != nil {
+	if err := e.Checker().CheckRead(filepath.FromSlash("/workspace/src/main.go")); err != nil {
 		t.Fatalf("CheckRead: %v", err)
 	}
 }
@@ -555,10 +556,10 @@ func TestSandboxEnforcer_L1(t *testing.T) {
 	}
 }
 
-func TestSandboxEnforcer_L2NotImplemented(t *testing.T) {
+func TestSandboxEnforcer_L2Available(t *testing.T) {
 	e := NewSandboxEnforcer(newTestSandbox(), SandboxL2)
-	if err := e.ValidateLevel(); err == nil {
-		t.Fatal("expected error for L2")
+	if err := e.ValidateLevel(); err != nil {
+		t.Fatalf("expected L2 to be available, got: %v", err)
 	}
 }
 

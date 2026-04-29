@@ -25,6 +25,9 @@ type Guard struct {
 	ExecutorFailurePause   time.Duration
 	MemoryAlertThresholdGB float64
 	LiquidationPause       time.Duration
+
+	// Anomaly is optional. When set, CheckOrder also evaluates anomaly scores.
+	Anomaly *AnomalyGuard
 }
 
 func DefaultGuard() Guard {
@@ -47,6 +50,23 @@ func DefaultGuard() Guard {
 }
 
 func (g Guard) CheckOrder(req OrderRequest, portfolio PortfolioSnapshot) Decision {
+	// Symbol-level anomaly pause is checked regardless of whether the
+	// current request carries a fresh AnomalyScore.
+	if g.Anomaly != nil && g.Anomaly.IsSymbolPaused(req.Symbol) {
+		return deny("layer-1", "symbol paused due to orderbook anomaly", false)
+	}
+
+	// Anomaly guard check for the current score.
+	if g.Anomaly != nil && req.AnomalyScore != nil {
+		decision := g.Anomaly.Check(*req.AnomalyScore, req.Action)
+		if decision.Action == "pause" {
+			g.Anomaly.SetSymbolPause(req.Symbol, decision.PauseFor)
+		}
+		if !decision.Allowed {
+			return decision
+		}
+	}
+
 	// Close/Reduce actions are risk-reducing — skip most opening checks.
 	if req.Action == ActionClose || req.Action == ActionReduce {
 		return allow("layer-1")

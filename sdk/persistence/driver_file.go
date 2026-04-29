@@ -41,6 +41,10 @@ func (fileDriver) Open(dsn string) (*Stores, error) {
 		RunCheckpointStore: checkpoint,
 		UsageLedger:        fs.Ledger(),
 		ResumeCoordinator:  resume,
+		RunStore:           NewMemRunStore(),
+		AuditLogger:        NewMemAuditLogger(),
+		LearningStore:      NewMemLearningStore(),
+		SharedMessageStore: NewMemSharedMessageStore(),
 	}, nil
 }
 

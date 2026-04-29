@@ -6,24 +6,16 @@ package backtest
 
 import (
 	"fmt"
-	"math"
-	"sort"
 	"time"
 
 	"github.com/leef-l/brain/brains/quant/risk"
 	"github.com/leef-l/brain/brains/quant/strategy"
 )
 
-// Candle is the backtest candle format (same fields as strategy.Candle).
-type Candle = strategy.Candle
-
 // Config controls backtest behavior.
 type Config struct {
 	Symbol    string
 	Timeframe string // primary timeframe for strategy evaluation
-
-	// InitialEquity in base currency.
-	InitialEquity float64
 
 	// MaxLeverage allowed in the backtest.
 	MaxLeverage int
@@ -39,56 +31,16 @@ type Config struct {
 	WarmupBars int
 }
 
-// Trade records a single simulated trade.
-type Trade struct {
-	EntryBar   int
-	ExitBar    int
-	Direction  strategy.Direction
-	EntryPrice float64
-	ExitPrice  float64
-	Quantity   float64
-	PnL        float64
-	PnLPct     float64
-	Reason     string
-	EntryTime  int64
-	ExitTime   int64
-}
-
-// Report is the backtest output.
-type Report struct {
-	Symbol        string
-	Timeframe     string
-	Bars          int
-	Trades        []Trade
-	TotalReturn   float64 // final equity / initial - 1
-	WinRate       float64
-	AvgWin        float64
-	AvgLoss       float64
-	ProfitFactor  float64
-	MaxDrawdown   float64 // as fraction (0.1 = 10%)
-	SharpeRatio   float64 // annualized, assuming 252 trading days
-	InitialEquity float64
-	FinalEquity   float64
-	Duration      time.Duration // wall-clock time of backtest
-}
-
-// Engine runs a backtest over historical candle data.
-type Engine struct {
+// BacktestEngine runs a backtest over historical candle data.
+type BacktestEngine struct {
 	config     Config
-	pool       *strategy.Pool
 	aggregator *strategy.RegimeAwareAggregator
 	guard      risk.Guard
 	sizer      risk.PositionSizer
 }
 
 // NewEngine creates a backtest engine with the given config.
-func NewEngine(cfg Config) *Engine {
-	if cfg.InitialEquity <= 0 {
-		cfg.InitialEquity = 10000
-	}
-	if cfg.MaxLeverage <= 0 {
-		cfg.MaxLeverage = 1
-	}
+func NewEngine(cfg Config) *BacktestEngine {
 	if cfg.WarmupBars <= 0 {
 		cfg.WarmupBars = 60
 	}
@@ -99,33 +51,57 @@ func NewEngine(cfg Config) *Engine {
 	guard := risk.DefaultGuard()
 	guard.MaxLeverage = cfg.MaxLeverage
 
-	return &Engine{
+	return &BacktestEngine{
 		config:     cfg,
-		pool:       strategy.DefaultPool(),
 		aggregator: strategy.NewRegimeAwareAggregator(),
 		guard:      guard,
 		sizer:      risk.DefaultPositionSizer(),
 	}
 }
 
-// SetPool overrides the default strategy pool.
-func (e *Engine) SetPool(pool *strategy.Pool) { e.pool = pool }
+// SetAggregator overrides the default regime-aware aggregator.
+func (e *BacktestEngine) SetAggregator(agg *strategy.RegimeAwareAggregator) {
+	if agg != nil {
+		e.aggregator = agg
+	}
+}
 
 // Run executes the backtest over the provided candles.
-// candles must be sorted by timestamp ascending.
-func (e *Engine) Run(candles []Candle) (*Report, error) {
-	if len(candles) < e.config.WarmupBars+10 {
-		return nil, fmt.Errorf("need at least %d candles, got %d",
-			e.config.WarmupBars+10, len(candles))
+//
+// Parameters:
+//   - strategies: list of strategies to use. nil or empty uses the default pool.
+//   - candles:    must be sorted by timestamp ascending.
+//   - initialEquity: starting capital. <=0 falls back to 10000.
+//   - startTime, endTime: optional time range filter. Zero values disable filtering.
+func (e *BacktestEngine) Run(
+	strategies []strategy.Strategy,
+	candles []Candle,
+	initialEquity float64,
+	startTime, endTime time.Time,
+) (*BacktestResult, error) {
+	// Resolve initial equity
+	if initialEquity <= 0 {
+		initialEquity = 10000
+	}
+
+	// Filter candles by time range
+	filtered := filterCandlesByTime(candles, startTime, endTime)
+	if len(filtered) < e.config.WarmupBars+10 {
+		return nil, fmt.Errorf("need at least %d candles after warmup, got %d",
+			e.config.WarmupBars+10, len(filtered))
+	}
+
+	// Build strategy pool
+	pool := strategy.DefaultPool()
+	if len(strategies) > 0 {
+		pool = strategy.NewPool(strategies...)
 	}
 
 	start := time.Now()
-	equity := e.config.InitialEquity
-	peakEquity := equity
-	maxDrawdown := 0.0
+	equity := initialEquity
 
 	var trades []Trade
-	var equityCurve []float64
+	var equitySeries []equityPoint
 
 	// Track open position
 	type openPos struct {
@@ -142,8 +118,8 @@ func (e *Engine) Run(candles []Candle) (*Report, error) {
 	slippage := e.config.SlippageBps / 10000
 	fee := e.config.FeeBps / 10000
 
-	for i := e.config.WarmupBars; i < len(candles); i++ {
-		bar := candles[i]
+	for i := e.config.WarmupBars; i < len(filtered); i++ {
+		bar := filtered[i]
 
 		// Check stop-loss / take-profit on open position
 		if pos != nil {
@@ -184,7 +160,10 @@ func (e *Engine) Run(candles []Candle) (*Report, error) {
 				}
 				pnl -= exitPrice * pos.quantity * fee // exit fee
 
-				pnlPct := pnl / (pos.entryPrice * pos.quantity)
+				pnlPct := 0.0
+				if pos.entryPrice > 0 && pos.quantity > 0 {
+					pnlPct = pnl / (pos.entryPrice * pos.quantity)
+				}
 				equity += pnl
 
 				trades = append(trades, Trade{
@@ -210,7 +189,7 @@ func (e *Engine) Run(candles []Candle) (*Report, error) {
 		if windowEnd > 200 {
 			windowStart = windowEnd - 200
 		}
-		window := candles[windowStart:windowEnd]
+		window := filtered[windowStart:windowEnd]
 
 		view := strategy.Snapshot{
 			SymbolValue:    e.config.Symbol,
@@ -222,13 +201,15 @@ func (e *Engine) Run(candles []Candle) (*Report, error) {
 		}
 
 		// Run strategies (uses computeLegacy path since HasFeatureView=false)
-		signals := e.pool.Compute(view)
+		signals := pool.Compute(view)
 		agg := e.aggregator.Aggregate(view, signals, strategy.ReviewContext{})
 
 		// Try to open a new position if flat
 		if pos == nil && agg.Direction != strategy.DirectionHold {
 			best := bestSignalForDirection(agg)
 			if best.Entry <= 0 || best.StopLoss <= 0 {
+				// Record equity even when no trade
+				equitySeries = append(equitySeries, equityPoint{timestamp: bar.Timestamp, equity: equity})
 				continue
 			}
 
@@ -242,6 +223,7 @@ func (e *Engine) Run(candles []Candle) (*Report, error) {
 			}
 			sized, err := e.sizer.Size(sizeReq)
 			if err != nil || sized.Quantity <= 0 {
+				equitySeries = append(equitySeries, equityPoint{timestamp: bar.Timestamp, equity: equity})
 				continue
 			}
 
@@ -276,23 +258,12 @@ func (e *Engine) Run(candles []Candle) (*Report, error) {
 				currentEquity += (pos.entryPrice - bar.Close) * pos.quantity
 			}
 		}
-		equityCurve = append(equityCurve, currentEquity)
-
-		if currentEquity > peakEquity {
-			peakEquity = currentEquity
-		}
-		dd := 0.0
-		if peakEquity > 0 {
-			dd = (peakEquity - currentEquity) / peakEquity
-		}
-		if dd > maxDrawdown {
-			maxDrawdown = dd
-		}
+		equitySeries = append(equitySeries, equityPoint{timestamp: bar.Timestamp, equity: currentEquity})
 	}
 
 	// Close any remaining position at last bar's close
 	if pos != nil {
-		lastBar := candles[len(candles)-1]
+		lastBar := filtered[len(filtered)-1]
 		exitPrice := lastBar.Close
 		if pos.direction == strategy.DirectionLong {
 			exitPrice *= (1 - slippage)
@@ -309,110 +280,67 @@ func (e *Engine) Run(candles []Candle) (*Report, error) {
 		pnl -= exitPrice * pos.quantity * fee
 		equity += pnl
 
+		pnlPct := 0.0
+		if pos.entryPrice > 0 && pos.quantity > 0 {
+			pnlPct = pnl / (pos.entryPrice * pos.quantity)
+		}
+
 		trades = append(trades, Trade{
 			EntryBar:   pos.entryBar,
-			ExitBar:    len(candles) - 1,
+			ExitBar:    len(filtered) - 1,
 			Direction:  pos.direction,
 			EntryPrice: pos.entryPrice,
 			ExitPrice:  exitPrice,
 			Quantity:   pos.quantity,
 			PnL:        pnl,
-			PnLPct:     pnl / (pos.entryPrice * pos.quantity),
+			PnLPct:     pnlPct,
 			Reason:     "end_of_data",
 			EntryTime:  pos.entryTime,
 			ExitTime:   lastBar.Timestamp,
 		})
 	}
 
-	report := &Report{
+	report := &BacktestResult{
 		Symbol:        e.config.Symbol,
 		Timeframe:     e.config.Timeframe,
-		Bars:          len(candles),
+		Bars:          len(filtered),
 		Trades:        trades,
-		InitialEquity: e.config.InitialEquity,
+		InitialEquity: initialEquity,
 		FinalEquity:   equity,
-		TotalReturn:   (equity - e.config.InitialEquity) / e.config.InitialEquity,
-		MaxDrawdown:   maxDrawdown,
+		TotalReturn:   (equity - initialEquity) / initialEquity,
 		Duration:      time.Since(start),
 	}
 
-	computeStats(report)
-	if len(equityCurve) > 1 {
-		report.SharpeRatio = computeSharpe(equityCurve)
-	}
+	// Compute all performance metrics
+	computePerformanceStats(report, equitySeries)
 
 	return report, nil
 }
 
-// computeStats fills in WinRate, AvgWin, AvgLoss, ProfitFactor.
-func computeStats(r *Report) {
-	if len(r.Trades) == 0 {
-		return
-	}
-
-	wins := 0
-	totalWin := 0.0
-	totalLoss := 0.0
-
-	for _, t := range r.Trades {
-		if t.PnL > 0 {
-			wins++
-			totalWin += t.PnL
-		} else if t.PnL < 0 {
-			totalLoss += math.Abs(t.PnL)
-		}
-	}
-
-	r.WinRate = float64(wins) / float64(len(r.Trades))
-
-	if wins > 0 {
-		r.AvgWin = totalWin / float64(wins)
-	}
-	losses := len(r.Trades) - wins
-	if losses > 0 {
-		r.AvgLoss = totalLoss / float64(losses)
-	}
-	if totalLoss > 0 {
-		r.ProfitFactor = totalWin / totalLoss
-	}
+// equityPoint captures equity at a specific timestamp.
+type equityPoint struct {
+	timestamp int64
+	equity    float64
 }
 
-// computeSharpe computes annualized Sharpe ratio from equity curve.
-func computeSharpe(equity []float64) float64 {
-	if len(equity) < 2 {
-		return 0
+// filterCandlesByTime returns candles within [start, end].
+// Zero start/end means no bound on that side.
+func filterCandlesByTime(candles []Candle, start, end time.Time) []Candle {
+	if (start.IsZero() || start.Equal(time.Time{})) && (end.IsZero() || end.Equal(time.Time{})) {
+		return candles
 	}
-
-	returns := make([]float64, len(equity)-1)
-	for i := 1; i < len(equity); i++ {
-		if equity[i-1] > 0 {
-			returns[i-1] = (equity[i] - equity[i-1]) / equity[i-1]
+	var out []Candle
+	for _, c := range candles {
+		ts := time.UnixMilli(c.Timestamp)
+		if !start.IsZero() && ts.Before(start) {
+			continue
 		}
+		if !end.IsZero() && ts.After(end) {
+			continue
+		}
+		out = append(out, c)
 	}
-
-	n := float64(len(returns))
-	mean := 0.0
-	for _, r := range returns {
-		mean += r
-	}
-	mean /= n
-
-	variance := 0.0
-	for _, r := range returns {
-		d := r - mean
-		variance += d * d
-	}
-	variance /= n
-
-	stdDev := math.Sqrt(variance)
-	if stdDev == 0 {
-		return 0
-	}
-
-	// Annualize: assume bars are roughly daily-ish
-	// For 1H bars: ~6 bars/day on crypto, ~252 trading days
-	annualFactor := math.Sqrt(252 * 6)
-	return (mean / stdDev) * annualFactor
+	return out
 }
 
 // bestSignalForDirection picks the highest-confidence signal matching direction.
@@ -424,27 +352,4 @@ func bestSignalForDirection(agg strategy.AggregatedSignal) strategy.Signal {
 		}
 	}
 	return best
-}
-
-// String returns a human-readable summary of the report.
-func (r *Report) String() string {
-	return fmt.Sprintf(
-		"Backtest: %s %s | %d bars, %d trades\n"+
-			"Return: %.2f%% | Win Rate: %.1f%% | PF: %.2f\n"+
-			"Max DD: %.2f%% | Sharpe: %.2f\n"+
-			"Equity: %.2f → %.2f | Time: %s",
-		r.Symbol, r.Timeframe, r.Bars, len(r.Trades),
-		r.TotalReturn*100, r.WinRate*100, r.ProfitFactor,
-		r.MaxDrawdown*100, r.SharpeRatio,
-		r.InitialEquity, r.FinalEquity, r.Duration.Round(time.Millisecond),
-	)
-}
-
-// SortTradesByPnL returns trades sorted by PnL descending.
-func (r *Report) SortTradesByPnL() []Trade {
-	sorted := append([]Trade(nil), r.Trades...)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].PnL > sorted[j].PnL
-	})
-	return sorted
 }

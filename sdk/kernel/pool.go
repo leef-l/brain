@@ -1,7 +1,7 @@
 // Package kernel — BrainPool 接口与 ProcessBrainPool 实现。
 //
 // BrainPool 将进程池管理从 Orchestrator 中抽离，使多个 Run 可以共享一个
-// 全局 pool。这是 v3 架构过渡的第一步。
+// 全局 pool。v3 升级后，每个 kind 可维护多个实例，由负载均衡策略自动选择。
 //
 // 设计参考：35-BrainPool实现设计.md
 package kernel
@@ -21,7 +21,7 @@ import (
 // 多个 Run / Orchestrator 可以共享同一个 BrainPool 实例。
 type BrainPool interface {
 	// GetBrain 返回一个正在运行的 sidecar agent，如果不存在则启动。
-	// 内部包含 nil-placeholder 并发控制、健康检查和崩溃重启逻辑。
+	// 内部使用默认负载均衡策略选择最优实例。
 	GetBrain(ctx context.Context, kind agent.Kind) (agent.Agent, error)
 
 	// Status 返回所有已知 brain 的状态快照。
@@ -45,6 +45,15 @@ type brainPoolRegistrationCatalog interface {
 // ProcessBrainPool 基于进程的 BrainPool 实现。
 // 逻辑从 orchestrator.go 的 getOrStartSidecar / waitForSidecar / removeSidecar /
 // AutoStartBrains / ListBrains / Shutdown 中提取而来。
+type BrainEvent struct {
+	Kind   agent.Kind
+	Action string // "start" | "stop" | "restart"
+	Agent  agent.Agent
+	Error  error
+	Time   time.Time
+}
+
+// ProcessBrainPool 管理每个 kind 的多个 brain 实例，支持负载均衡。
 type ProcessBrainPool struct {
 	runner      BrainRunner
 	binResolver func(kind agent.Kind) (string, error)
@@ -56,18 +65,36 @@ type ProcessBrainPool struct {
 	registrations map[agent.Kind]*BrainRegistration
 
 	mu     sync.Mutex
-	active map[agent.Kind]agent.Agent // 运行中的 sidecar 池（可复用）
+	active map[agent.Kind][]*poolEntry // 运行中的 sidecar 实例池（每个 kind 可多实例）
+
+	// starting 标记某个 kind 是否正在启动中（防止并发重复启动）。
+	starting map[agent.Kind]bool
+
+	// entrySeq 为每个 kind 生成唯一的实例序号。
+	entrySeq map[agent.Kind]int
+
+	// defaultStrategy 是 GetBrain 使用的默认负载均衡策略。
+	defaultStrategy LoadBalanceStrategy
+
+	// notifyCh 接收 sidecar 生命周期事件（可选，外部可订阅）。
+	notifyCh chan<- BrainEvent
+
+	// warmKinds 是需要在后台预热的 brain 种类。
+	warmKinds []agent.Kind
 }
 
 // NewProcessBrainPool 创建一个基于进程的 BrainPool。
 // 它会探测文件系统上的可用 sidecar 二进制文件，记录哪些 kind 可以被启动。
 func NewProcessBrainPool(runner BrainRunner, binResolver func(agent.Kind) (string, error), cfg OrchestratorConfig) *ProcessBrainPool {
 	p := &ProcessBrainPool{
-		runner:        runner,
-		binResolver:   binResolver,
-		available:     make(map[agent.Kind]bool),
-		registrations: make(map[agent.Kind]*BrainRegistration),
-		active:        make(map[agent.Kind]agent.Agent),
+		runner:          runner,
+		binResolver:     binResolver,
+		available:       make(map[agent.Kind]bool),
+		registrations:   make(map[agent.Kind]*BrainRegistration),
+		active:          make(map[agent.Kind][]*poolEntry),
+		starting:        make(map[agent.Kind]bool),
+		entrySeq:        make(map[agent.Kind]int),
+		defaultStrategy: DefaultLoadBalanceStrategy(),
 	}
 
 	if len(cfg.Brains) > 0 {
@@ -85,6 +112,15 @@ func NewProcessBrainPool(runner BrainRunner, binResolver func(agent.Kind) (strin
 	}
 
 	return p
+}
+
+// SetLoadBalanceStrategy 设置默认负载均衡策略。
+func (p *ProcessBrainPool) SetLoadBalanceStrategy(s LoadBalanceStrategy) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if s != nil {
+		p.defaultStrategy = s
+	}
 }
 
 // probeRegistration 检查一个配置 brain 的二进制文件是否存在。
@@ -114,32 +150,27 @@ func (p *ProcessBrainPool) probeBinResolver(kind agent.Kind, binResolver func(ag
 	}
 }
 
-// GetBrain 返回已运行的 sidecar，或启动一个新的。
-// 如果缓存的 sidecar 已死亡，则移除并重新启动。
+// GetBrain 返回已运行的 sidecar 实例，或启动一个新的。
+// 如果该 kind 已有存活实例，使用默认负载均衡策略选择最优的一个。
 // 使用 nil-placeholder 防止并发启动重复的 sidecar。
 func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent.Agent, error) {
 	p.mu.Lock()
 
-	// 复用已有的存活 sidecar（跳过 nil placeholder）。
-	if ag, ok := p.active[kind]; ok && ag != nil {
-		if p.isAlive(ag) {
-			p.mu.Unlock()
-			return ag, nil
+	// 1. 过滤存活实例。
+	alive := p.filterAliveLocked(p.active[kind])
+
+	// 2. 如果有存活实例，使用负载均衡策略选择。
+	if len(alive) > 0 {
+		p.mu.Unlock()
+		selected := p.defaultStrategy.Select(alive)
+		if selected != nil {
+			selected.Acquire()
+			return selected.agent, nil
 		}
-		// sidecar 已死亡——从池中移除。
-		fmt.Fprintf(os.Stderr, "pool: %s sidecar dead, removing from pool\n", kind)
-		delete(p.active, kind)
-		// 后台清理。
-		go func() {
-			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			ag.Shutdown(shutCtx)
-			p.runner.Stop(shutCtx, kind)
-		}()
 	}
 
-	// 标记为"正在启动"：插入 nil，让并发调用者不会重复启动。
-	if ag, starting := p.active[kind]; starting && ag == nil {
+	// 3. 没有存活实例，需要启动。
+	if p.starting[kind] {
 		// 另一个 goroutine 正在启动——在锁外等待。
 		p.mu.Unlock()
 
@@ -151,19 +182,24 @@ func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent
 			return resolvedAg, nil
 		}
 
-		// 启动者失败并移除了 placeholder——我们自己来启动。
+		// 启动者失败——我们自己来启动。
 		p.mu.Lock()
 		// 再次检查：也许另一个等待者已经启动了。
-		if ag, ok := p.active[kind]; ok && ag != nil {
+		alive = p.filterAliveLocked(p.active[kind])
+		if len(alive) > 0 {
 			p.mu.Unlock()
-			return ag, nil
+			selected := p.defaultStrategy.Select(alive)
+			if selected != nil {
+				selected.Acquire()
+				return selected.agent, nil
+			}
 		}
 		// 继续走启动流程。
 	}
-	p.active[kind] = nil // placeholder: "正在启动"
+	p.starting[kind] = true
 	p.mu.Unlock()
 
-	// 在锁外启动新的 sidecar。
+	// 4. 在锁外启动新的 sidecar。
 	desc := agent.Descriptor{
 		Kind:      kind,
 		LLMAccess: agent.LLMAccessProxied,
@@ -171,21 +207,99 @@ func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent
 
 	ag, err := p.startWithRegistration(ctx, kind, desc)
 	if err != nil {
-		// 启动失败——移除 placeholder。
+		// 启动失败——移除 starting 标记。
 		p.mu.Lock()
-		if p.active[kind] == nil {
-			delete(p.active, kind)
-		}
+		delete(p.starting, kind)
 		p.mu.Unlock()
 		return nil, err
 	}
 
-	// 缓存 sidecar 以供复用（替换 nil placeholder）。
+	// 5. 包装为 poolEntry 并加入活跃池。
+	entry := p.newEntryLocked(kind, ag)
+	entry.Acquire()
+
 	p.mu.Lock()
-	p.active[kind] = ag
+	p.active[kind] = append(p.active[kind], entry)
+	delete(p.starting, kind)
 	p.mu.Unlock()
 
-	return ag, nil
+	p.notify(BrainEvent{Kind: kind, Action: "start", Agent: ag, Time: time.Now()})
+
+	return entry.agent, nil
+}
+
+// newEntryLocked 创建一个新的 poolEntry（必须在锁外调用，但使用锁保护的序号）。
+func (p *ProcessBrainPool) newEntryLocked(kind agent.Kind, ag agent.Agent) *poolEntry {
+	p.mu.Lock()
+	seq := p.entrySeq[kind]
+	p.entrySeq[kind] = seq + 1
+	p.mu.Unlock()
+	return newPoolEntry(ag, fmt.Sprintf("%s-%d", kind, seq))
+}
+
+// SelectBrain 使用指定策略选择一个 brain 实例。
+// 如果 strategy 为 nil，使用默认策略。
+func (p *ProcessBrainPool) SelectBrain(ctx context.Context, kind agent.Kind, strategy LoadBalanceStrategy) (agent.Agent, error) {
+	p.mu.Lock()
+	alive := p.filterAliveLocked(p.active[kind])
+	p.mu.Unlock()
+
+	if len(alive) == 0 {
+		// 没有存活实例，fallback 到 GetBrain 启动新实例。
+		return p.GetBrain(ctx, kind)
+	}
+
+	if strategy == nil {
+		strategy = p.defaultStrategy
+	}
+	selected := strategy.Select(alive)
+	if selected == nil {
+		return p.GetBrain(ctx, kind)
+	}
+	selected.Acquire()
+	return selected.agent, nil
+}
+
+// ScaleBrain 将指定 kind 的实例数扩缩到 targetCount。
+// 如果当前存活实例数 >= targetCount，不做任何操作。
+func (p *ProcessBrainPool) ScaleBrain(ctx context.Context, kind agent.Kind, targetCount int) error {
+	if targetCount <= 0 {
+		return fmt.Errorf("targetCount must be > 0")
+	}
+
+	p.mu.Lock()
+	alive := p.filterAliveLocked(p.active[kind])
+	current := len(alive)
+	p.mu.Unlock()
+
+	if current >= targetCount {
+		return nil
+	}
+
+	desc := agent.Descriptor{
+		Kind:      kind,
+		LLMAccess: agent.LLMAccessProxied,
+	}
+
+	for i := current; i < targetCount; i++ {
+		ag, err := p.startWithRegistration(ctx, kind, desc)
+		if err != nil {
+			return fmt.Errorf("scale %s instance %d: %w", kind, i, err)
+		}
+		entry := p.newEntryLocked(kind, ag)
+		p.mu.Lock()
+		p.active[kind] = append(p.active[kind], entry)
+		p.mu.Unlock()
+		p.notify(BrainEvent{Kind: kind, Action: "start", Agent: ag, Time: time.Now()})
+	}
+	return nil
+}
+
+// InstanceCount 返回指定 kind 的存活实例数。
+func (p *ProcessBrainPool) InstanceCount(kind agent.Kind) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.filterAliveLocked(p.active[kind]))
 }
 
 func (p *ProcessBrainPool) startWithRegistration(ctx context.Context, kind agent.Kind, desc agent.Descriptor) (agent.Agent, error) {
@@ -271,18 +385,43 @@ func (p *ProcessBrainPool) Status() map[agent.Kind]BrainStatus {
 
 	result := make(map[agent.Kind]BrainStatus, len(p.available))
 	for kind := range p.available {
-		status := BrainStatus{
-			Kind:    kind,
-			Running: p.isAlive(p.active[kind]),
-		}
-		if p.binResolver != nil {
-			if path, err := p.binResolver(kind); err == nil {
-				status.Binary = path
-			}
-		}
+		status := p.buildStatusLocked(kind)
 		result[kind] = status
 	}
 	return result
+}
+
+// BrainDetail 返回单个 brain 的详细状态。
+func (p *ProcessBrainPool) BrainDetail(kind agent.Kind) (BrainStatus, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.available[kind] {
+		return BrainStatus{}, false
+	}
+	return p.buildStatusLocked(kind), true
+}
+
+func (p *ProcessBrainPool) buildStatusLocked(kind agent.Kind) BrainStatus {
+	entries := p.active[kind]
+	aliveCount := len(p.filterAliveLocked(entries))
+
+	status := BrainStatus{
+		Kind:      kind,
+		Running:   aliveCount > 0,
+		Instances: aliveCount,
+	}
+	if p.binResolver != nil {
+		if path, err := p.binResolver(kind); err == nil {
+			status.Binary = path
+		}
+	}
+	if reg := p.registrations[kind]; reg != nil {
+		status.AutoStart = reg.AutoStart
+		status.Model = reg.Model
+		status.MinApprovalLevel = reg.MinApprovalLevel
+	}
+	return status
 }
 
 // AutoStart 启动所有标记为 AutoStart=true 的 brain sidecar。
@@ -308,21 +447,25 @@ func (p *ProcessBrainPool) AutoStart(ctx context.Context) {
 // Shutdown 优雅关停所有运行中的 sidecar。
 func (p *ProcessBrainPool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
-	agents := make(map[agent.Kind]agent.Agent, len(p.active))
+	allEntries := make(map[agent.Kind][]*poolEntry, len(p.active))
 	for k, v := range p.active {
-		agents[k] = v
+		allEntries[k] = append([]*poolEntry(nil), v...)
 	}
-	p.active = make(map[agent.Kind]agent.Agent)
+	p.active = make(map[agent.Kind][]*poolEntry)
+	p.starting = make(map[agent.Kind]bool)
 	p.mu.Unlock()
 
 	var lastErr error
-	for kind, ag := range agents {
-		if ag != nil {
-			ag.Shutdown(ctx)
+	for kind, entries := range allEntries {
+		for _, entry := range entries {
+			if entry != nil && entry.agent != nil {
+				entry.agent.Shutdown(ctx)
+			}
 		}
 		if err := p.runner.Stop(ctx, kind); err != nil {
 			lastErr = err
 		}
+		p.notify(BrainEvent{Kind: kind, Action: "stop", Time: time.Now()})
 	}
 	return lastErr
 }
@@ -353,21 +496,32 @@ func (p *ProcessBrainPool) Registrations() []BrainRegistration {
 	return out
 }
 
-// RemoveBrain 从活跃池中移除一个 sidecar 并尝试清理。
+// RemoveBrain 从活跃池中移除指定 kind 的所有实例并尝试清理。
 func (p *ProcessBrainPool) RemoveBrain(kind agent.Kind) {
 	p.mu.Lock()
-	ag, ok := p.active[kind]
-	if ok {
-		delete(p.active, kind)
-	}
+	entries := p.active[kind]
+	delete(p.active, kind)
+	delete(p.starting, kind)
 	p.mu.Unlock()
 
-	if ok && ag != nil {
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		ag.Shutdown(shutCtx)
-		p.runner.Stop(shutCtx, kind)
+	for _, entry := range entries {
+		if entry != nil && entry.agent != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			entry.agent.Shutdown(shutCtx)
+			p.runner.Stop(shutCtx, kind)
+			cancel()
+		}
 	}
+}
+
+// RestartBrain 停止并重新启动指定 kind 的 sidecar。
+// 用于 Dashboard 管理操作和故障恢复。
+func (p *ProcessBrainPool) RestartBrain(ctx context.Context, kind agent.Kind) error {
+	p.RemoveBrain(kind)
+	// 给 shutdown 一点时间释放端口/句柄
+	time.Sleep(200 * time.Millisecond)
+	_, err := p.GetBrain(ctx, kind)
+	return err
 }
 
 // waitForSidecar 等待另一个 goroutine 完成 sidecar 启动。
@@ -382,20 +536,162 @@ func (p *ProcessBrainPool) waitForSidecar(ctx context.Context, kind agent.Kind) 
 			return false, nil, ctx.Err()
 		}
 		p.mu.Lock()
-		ag, ok := p.active[kind]
+		alive := p.filterAliveLocked(p.active[kind])
+		starting := p.starting[kind]
 		p.mu.Unlock()
-		if !ok {
-			// 启动者失败并移除了 placeholder。
+
+		if !starting && len(alive) == 0 {
+			// 启动者失败。
 			return false, nil, nil
 		}
-		if ag != nil {
+		if len(alive) > 0 {
 			// 启动者成功。
-			return true, ag, nil
+			selected := p.defaultStrategy.Select(alive)
+			if selected != nil {
+				selected.Acquire()
+				return true, selected.agent, nil
+			}
 		}
-		// 仍然是 nil placeholder——继续等待。
+		// 仍在启动中——继续等待。
 	}
 	// 等待超时。
 	return false, nil, fmt.Errorf("timeout waiting for %s sidecar to start", kind)
+}
+
+// notify sends a lifecycle event to the optional notifyCh (non-blocking).
+func (p *ProcessBrainPool) notify(ev BrainEvent) {
+	if p.notifyCh == nil {
+		return
+	}
+	select {
+	case p.notifyCh <- ev:
+	default:
+	}
+}
+
+// SetNotifyCh sets the channel that receives BrainEvent lifecycle notifications.
+func (p *ProcessBrainPool) SetNotifyCh(ch chan<- BrainEvent) {
+	p.notifyCh = ch
+}
+
+// WarmPool starts background warming of the specified brain kinds.
+// It pre-starts sidecars so the first real delegation is faster.
+func (p *ProcessBrainPool) WarmPool(ctx context.Context, kinds ...agent.Kind) {
+	p.warmKinds = kinds
+	for _, kind := range kinds {
+		if !p.available[kind] {
+			continue
+		}
+		go func(k agent.Kind) {
+			if _, err := p.GetBrain(ctx, k); err != nil {
+				fmt.Fprintf(os.Stderr, "pool: warm %s failed: %v\n", k, err)
+			} else {
+				fmt.Fprintf(os.Stderr, "pool: warm %s ok\n", k)
+			}
+		}(kind)
+	}
+}
+
+// HealthCheck 返回所有活跃 brain 的健康状态。
+func (p *ProcessBrainPool) HealthCheck() map[agent.Kind]bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	result := make(map[agent.Kind]bool, len(p.active))
+	for kind, entries := range p.active {
+		result[kind] = len(p.filterAliveLocked(entries)) > 0
+	}
+	return result
+}
+
+// Drain 关闭除保留列表外的所有活跃 brain。
+func (p *ProcessBrainPool) Drain(ctx context.Context, keep ...agent.Kind) error {
+	keepSet := make(map[agent.Kind]bool, len(keep))
+	for _, k := range keep {
+		keepSet[k] = true
+	}
+
+	p.mu.Lock()
+	var toDrain []agent.Kind
+	for kind := range p.active {
+		if !keepSet[kind] {
+			toDrain = append(toDrain, kind)
+		}
+	}
+	p.mu.Unlock()
+
+	var errs []error
+	for _, kind := range toDrain {
+		if err := p.shutdownBrain(ctx, kind); err != nil {
+			errs = append(errs, fmt.Errorf("drain %s: %w", kind, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("drain errors: %v", errs)
+	}
+	return nil
+}
+
+// Register 动态注册一个新的 brain 到 pool。
+func (p *ProcessBrainPool) Register(reg BrainRegistration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.registrations[reg.Kind] = &reg
+	p.probeRegistration(&reg, p.binResolver)
+}
+
+// shutdownBrain 关闭单个 kind 的所有实例并清理状态。
+func (p *ProcessBrainPool) shutdownBrain(ctx context.Context, kind agent.Kind) error {
+	p.mu.Lock()
+	entries := p.active[kind]
+	delete(p.active, kind)
+	delete(p.starting, kind)
+	p.mu.Unlock()
+
+	var lastErr error
+	for _, entry := range entries {
+		if entry != nil && entry.agent != nil {
+			if shutdowner, ok := entry.agent.(interface{ Shutdown(context.Context) error }); ok {
+				if err := shutdowner.Shutdown(ctx); err != nil {
+					lastErr = err
+				}
+			}
+		}
+	}
+	return lastErr
+}
+
+// ReleaseAgent 释放指定 agent 的负载计数。
+// 在 delegateOnce / CallTool 完成后调用，让负载均衡策略知道该实例
+// 的并发负载已减少。
+func (p *ProcessBrainPool) ReleaseAgent(ag agent.Agent) {
+	if ag == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, entries := range p.active {
+		for _, e := range entries {
+			if e != nil && e.agent == ag {
+				e.Release()
+				return
+			}
+		}
+	}
+}
+
+// filterAliveLocked 过滤出存活的 poolEntry（必须在锁内调用）。
+func (p *ProcessBrainPool) filterAliveLocked(entries []*poolEntry) []*poolEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	alive := make([]*poolEntry, 0, len(entries))
+	for _, e := range entries {
+		if e != nil && p.isAlive(e.agent) {
+			alive = append(alive, e)
+		}
+	}
+	return alive
 }
 
 // isAlive 检查缓存的 sidecar agent 是否仍然存活。

@@ -18,6 +18,19 @@
     --font-mono: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 }
 
+/* Light Theme (D-10) */
+body.theme-light {
+    --bg-primary: #f0f2f5;
+    --bg-secondary: #ffffff;
+    --bg-card: #e8eaf0;
+    --bg-card-hover: #dde0e8;
+    --text-primary: #1a1a2e;
+    --text-secondary: #4a4a5e;
+    --text-muted: #8888a0;
+    --border-color: #d0d4dc;
+    --accent: #6b4c9a;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -29,6 +42,8 @@ body {
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 header {
@@ -63,6 +78,38 @@ header h1 {
     background: var(--failed);
 }
 
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 16px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent);
+}
+
 /* Grid Layout */
 .grid {
     display: grid;
@@ -70,7 +117,23 @@ header h1 {
     grid-template-rows: auto 1fr;
     gap: 16px;
     padding: 16px;
-    height: calc(100vh - 60px);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Tab Content */
+.tab-content {
+    grid-column: 1 / -1;
+    display: none;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    height: 100%;
+    overflow: hidden;
+}
+
+.tab-content.active {
+    display: grid;
 }
 
 /* Panel */
@@ -191,6 +254,16 @@ header h1 {
 
 .brain-status.stopped {
     background: var(--idle);
+}
+
+.brain-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-small {
+    padding: 4px 10px;
+    font-size: 0.75rem;
 }
 
 /* Badge */
@@ -337,6 +410,11 @@ header h1 {
         height: auto;
     }
 
+    .tab-content {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
     .panel {
         max-height: 400px;
     }
@@ -354,7 +432,7 @@ header h1 {
     }
 }
 
-/* ---- Learning panel (Task #17) ---- */
+/* ---- Learning panel ---- */
 
 .panel-wide {
     grid-column: 1 / -1;
@@ -367,7 +445,7 @@ header h1 {
 .learning-section h3 {
     margin: 0 0 0.5rem 0;
     font-size: 0.95rem;
-    color: #555;
+    color: var(--text-secondary);
 }
 
 .learning-table {
@@ -382,12 +460,14 @@ header h1 {
     background: rgba(100, 120, 140, 0.08);
     border-bottom: 1px solid rgba(100, 120, 140, 0.2);
     font-weight: 600;
+    color: var(--text-secondary);
 }
 
 .learning-table td {
     padding: 0.3rem 0.5rem;
     border-bottom: 1px solid rgba(100, 120, 140, 0.08);
     font-family: "SFMono-Regular", Menlo, monospace;
+    color: var(--text-primary);
 }
 
 .learning-table tr:hover td {
@@ -407,10 +487,11 @@ header h1 {
     justify-content: space-between;
     font-size: 0.85rem;
     margin-bottom: 0.3rem;
+    color: var(--text-primary);
 }
 
 .daily-meta {
-    color: #777;
+    color: var(--text-muted);
     font-size: 0.78rem;
 }
 
@@ -418,5 +499,399 @@ header h1 {
     font-size: 0.82rem;
     white-space: pre-wrap;
     line-height: 1.4;
-    color: #333;
+    color: var(--text-secondary);
+}
+
+/* ---- Phase 3 Trading & Analytics panels ---- */
+
+.canvas-panel {
+    padding: 0;
+    position: relative;
+}
+
+.canvas-panel canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.chart-legend {
+    position: absolute;
+    top: 6px;
+    left: 10px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    background: rgba(22, 33, 62, 0.7);
+    padding: 2px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+}
+
+body.theme-light .chart-legend {
+    background: rgba(240, 242, 245, 0.9);
+}
+
+.chart-tooltip {
+    position: absolute;
+    background: rgba(22, 33, 62, 0.95);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    padding: 6px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 10;
+}
+
+body.theme-light .chart-tooltip {
+    background: rgba(255, 255, 255, 0.95);
+    color: #1a1a2e;
+    border-color: #d0d4dc;
+}
+
+.trade-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.trade-controls label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.trade-controls select {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+.btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.btn:hover {
+    opacity: 0.9;
+}
+
+.trade-table-wrap {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.pagination button {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+
+.pagination button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.trade-side {
+    font-weight: 600;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+
+.side-buy {
+    background: rgba(76, 175, 80, 0.2);
+    color: var(--running);
+}
+
+.side-sell {
+    background: rgba(244, 67, 54, 0.2);
+    color: var(--failed);
+}
+
+.res-filled {
+    background: rgba(76, 175, 80, 0.2);
+    color: var(--running);
+}
+
+.res-rejected {
+    background: rgba(244, 67, 54, 0.2);
+    color: var(--failed);
+}
+
+/* ---- Phase 4: Chat Panel (D-9) ---- */
+
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    height: 100%;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chat-message {
+    display: flex;
+}
+
+.chat-message.user {
+    justify-content: flex-end;
+}
+
+.chat-message.system {
+    justify-content: flex-start;
+}
+
+.chat-message.error .chat-bubble {
+    border-left-color: var(--failed);
+}
+
+.chat-bubble {
+    max-width: 70%;
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 10px 14px;
+    border-left: 3px solid var(--accent);
+}
+
+.chat-message.user .chat-bubble {
+    background: var(--accent);
+    color: #fff;
+    border-left: none;
+}
+
+.chat-header {
+    font-size: 0.75rem;
+    margin-bottom: 4px;
+    opacity: 0.8;
+    display: flex;
+    gap: 8px;
+}
+
+.chat-sender {
+    font-weight: 600;
+}
+
+.chat-time {
+    color: var(--text-muted);
+}
+
+.chat-message.user .chat-time {
+    color: rgba(255,255,255,0.7);
+}
+
+.chat-body {
+    font-size: 0.85rem;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.chat-input-row {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.chat-input-row input {
+    flex: 1;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+}
+
+.chat-input-row input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ---- Phase 4: Settings Panel (D-10) ---- */
+
+.settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+}
+
+.setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.setting-row label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.setting-row input[type="number"],
+.setting-row select {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    min-width: 140px;
+}
+
+.setting-row input:focus,
+.setting-row select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 24px;
+    transition: 0.3s;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+    background: #fff;
+}
+
+.save-status {
+    font-size: 0.8rem;
+    color: var(--running);
+    margin-left: 8px;
+}
+
+/* ---- Phase 4: Login Modal (D-12) ---- */
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 24px;
+    width: 90%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.modal-content h2 {
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.modal-content p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.modal-content input {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+}
+
+.modal-content input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.login-error {
+    font-size: 0.8rem;
+    color: var(--failed);
+    min-height: 1.2em;
 }

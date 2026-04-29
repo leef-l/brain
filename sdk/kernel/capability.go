@@ -28,6 +28,9 @@ type CapabilityTag struct {
 	Category string // "function" | "domain" | "resource" | "mode"
 	Primary  string // 第一段，如 "trading"
 	Sub      string // 第二段，如 "execute"
+	// Version 是可选的能力版本号（如 "v2"、"v1.3"）。
+	// 支持语义化版本匹配，使 CapabilityMatcher 可以区分同一能力的不同版本。
+	Version string
 }
 
 // knownCategories 用于判断标签前缀是否为已知类别。
@@ -42,12 +45,20 @@ var knownCategories = map[string]bool{
 // 规则：
 //   - 若第一段是 domain / resource / mode，则 Category 取该前缀，Primary 取第二段，Sub 取第三段（如有）。
 //   - 否则 Category = "function"，Primary 取第一段，Sub 取第二段。
+//   - 如果最后一段以 "v" 开头且后面是数字，则视为版本号，从 Sub 中分离出来。
 func ParseCapabilityTag(raw string) CapabilityTag {
 	tag := CapabilityTag{Raw: raw}
 
-	parts := strings.SplitN(raw, ".", 3)
+	parts := strings.Split(raw, ".")
 	if len(parts) == 0 {
 		return tag
+	}
+
+	// Check if the last part is a version string (e.g. "v2", "v1.3").
+	last := parts[len(parts)-1]
+	if isVersionString(last) {
+		tag.Version = last
+		parts = parts[:len(parts)-1]
 	}
 
 	first := parts[0]
@@ -57,7 +68,7 @@ func ParseCapabilityTag(raw string) CapabilityTag {
 			tag.Primary = parts[1]
 		}
 		if len(parts) > 2 {
-			tag.Sub = parts[2]
+			tag.Sub = strings.Join(parts[2:], ".")
 		}
 	} else {
 		tag.Category = "function"
@@ -67,6 +78,24 @@ func ParseCapabilityTag(raw string) CapabilityTag {
 		}
 	}
 	return tag
+}
+
+// isVersionString returns true if s looks like a version tag (e.g. "v2", "v1.3").
+func isVersionString(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	if s[0] != 'v' && s[0] != 'V' {
+		return false
+	}
+	// Remaining chars must be digits or dots.
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if c != '.' && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +249,22 @@ func (idx *CapabilityIndex) AllBrains() []agent.Kind {
 	return result
 }
 
+// BrainCapabilities returns the raw capability strings for a given brain kind.
+func (idx *CapabilityIndex) BrainCapabilities(kind agent.Kind) []string {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	bs, ok := idx.brains[kind]
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(bs.Tags))
+	for _, t := range bs.Tags {
+		result = append(result, t.Raw)
+	}
+	return result
+}
+
 // ---------------------------------------------------------------------------
 // MatchRequest / MatchResult
 // ---------------------------------------------------------------------------
@@ -252,6 +297,15 @@ func NewCapabilityMatcher(index *CapabilityIndex) *CapabilityMatcher {
 	return &CapabilityMatcher{index: index}
 }
 
+// BestMatch 执行匹配并返回最佳候选。如果没有匹配结果，返回零值和 false。
+func (m *CapabilityMatcher) BestMatch(req MatchRequest) (MatchResult, bool) {
+	results := m.Match(req)
+	if len(results) == 0 {
+		return MatchResult{}, false
+	}
+	return results[0], true
+}
+
 // Match 执行匹配，返回按 CombinedScore 降序排列的候选列表。
 //
 // 三阶段：
@@ -271,10 +325,10 @@ func (m *CapabilityMatcher) Match(req MatchRequest) []MatchResult {
 			tagSet[t.Raw] = struct{}{}
 		}
 
-		// 阶段 1：硬匹配
+		// 阶段 1：硬匹配（支持版本语义）
 		hardPass := true
-		for _, req := range req.Required {
-			if _, ok := tagSet[req]; !ok {
+		for _, reqTag := range req.Required {
+			if !hasCapability(tagSet, reqTag) {
 				hardPass = false
 				break
 			}
@@ -317,4 +371,90 @@ func (m *CapabilityMatcher) Match(req MatchRequest) []MatchResult {
 	})
 
 	return results
+}
+
+// hasCapability checks whether a brain's tagSet satisfies a requested capability.
+// It supports version semantics:
+//   - Exact match: "function.write_file.v2" matches "function.write_file.v2"
+//   - No-version request: "function.write_file" matches any version ("v1", "v2", ...)
+//   - Versioned request: "function.write_file.v2" matches v2 or higher.
+func hasCapability(tagSet map[string]struct{}, req string) bool {
+	if _, ok := tagSet[req]; ok {
+		return true
+	}
+
+	reqTag := ParseCapabilityTag(req)
+	if reqTag.Version == "" {
+		// Request has no version — match any version of the same capability.
+		for raw := range tagSet {
+			t := ParseCapabilityTag(raw)
+			if t.Category == reqTag.Category && t.Primary == reqTag.Primary && t.Sub == reqTag.Sub {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Request has a version — match same or higher version.
+	reqVer := parseVersion(reqTag.Version)
+	for raw := range tagSet {
+		t := ParseCapabilityTag(raw)
+		if t.Category == reqTag.Category && t.Primary == reqTag.Primary && t.Sub == reqTag.Sub {
+			if t.Version == "" {
+				// Brain declares no version — assume latest, always match.
+				return true
+			}
+			brainVer := parseVersion(t.Version)
+			if versionGTE(brainVer, reqVer) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// versionTuple holds numeric version components (major, minor, patch).
+type versionTuple struct {
+	major int
+	minor int
+	patch int
+}
+
+// parseVersion parses "v2", "v1.3", "v2.1.0" into a versionTuple.
+func parseVersion(s string) versionTuple {
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "v"), "V")
+	parts := strings.Split(s, ".")
+	var v versionTuple
+	if len(parts) > 0 {
+		v.major = atoi(parts[0])
+	}
+	if len(parts) > 1 {
+		v.minor = atoi(parts[1])
+	}
+	if len(parts) > 2 {
+		v.patch = atoi(parts[2])
+	}
+	return v
+}
+
+func versionGTE(a, b versionTuple) bool {
+	if a.major != b.major {
+		return a.major > b.major
+	}
+	if a.minor != b.minor {
+		return a.minor > b.minor
+	}
+	return a.patch >= b.patch
+}
+
+func atoi(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }

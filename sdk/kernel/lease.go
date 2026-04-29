@@ -334,3 +334,90 @@ func (m *MemLeaseManager) Snapshot() []LeaseSnapshot {
 	}
 	return out
 }
+
+// ActiveCount 返回当前活跃租约总数（线程安全）。
+func (m *MemLeaseManager) ActiveCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var count int
+	for _, leases := range m.slots {
+		count += len(leases)
+	}
+	return count
+}
+
+// UniqueResourceCount 返回当前被占用的独立资源数（线程安全）。
+func (m *MemLeaseManager) UniqueResourceCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.slots)
+}
+
+// Query 查询特定 capability + resourceKey 的当前租约状态。
+func (m *MemLeaseManager) Query(capability, resourceKey string) []LeaseSnapshot {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := slotKey(capability, resourceKey)
+	var out []LeaseSnapshot
+	for _, l := range m.slots[key] {
+		out = append(out, LeaseSnapshot{
+			ID:          l.id,
+			Capability:  l.cap,
+			ResourceKey: l.resKey,
+			AccessMode:  l.mode,
+		})
+	}
+	return out
+}
+
+// Renew 尝试续期一组租约（内存实现中租约无固定过期时间，仅做存在性校验）。
+func (m *MemLeaseManager) Renew(leases []Lease) ([]Lease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var renewed []Lease
+	for _, lease := range leases {
+		ml, ok := lease.(*memLease)
+		if !ok {
+			continue
+		}
+		key := slotKey(ml.cap, ml.resKey)
+		found := false
+		for _, l := range m.slots[key] {
+			if l.id == ml.id {
+				found = true
+				break
+			}
+		}
+		if found {
+			renewed = append(renewed, ml)
+		}
+	}
+	return renewed, nil
+}
+
+// ForceRevoke 强制撤销指定 capability + resourceKey 上的所有租约。
+func (m *MemLeaseManager) ForceRevoke(capability, resourceKey string) int {
+	m.mu.Lock()
+	key := slotKey(capability, resourceKey)
+	leases := m.slots[key]
+	delete(m.slots, key)
+	m.mu.Unlock()
+
+	for _, l := range leases {
+		l.once.Do(func() {
+			// 不调用 removeLease 避免重复加锁
+		})
+	}
+	m.cond.Broadcast()
+	return len(leases)
+}
+
+// Close 关闭租约管理器，释放所有租约并清理状态。
+func (m *MemLeaseManager) Close() {
+	m.mu.Lock()
+	m.slots = make(map[string][]*memLease)
+	m.mu.Unlock()
+	m.cond.Broadcast()
+}

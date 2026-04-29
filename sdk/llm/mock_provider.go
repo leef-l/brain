@@ -225,6 +225,13 @@ func lowerToStream(resp *ChatResponse, chunkSize int) []StreamEvent {
 					Data: mustJSON(map[string]string{"text": chunk}),
 				})
 			}
+		case "thinking":
+			for _, chunk := range splitRunes(block.Text, chunkSize) {
+				events = append(events, StreamEvent{
+					Type: EventContentDelta,
+					Data: mustJSON(map[string]string{"text": chunk, "kind": "thinking"}),
+				})
+			}
 		case "tool_use":
 			events = append(events, StreamEvent{
 				Type: EventToolCallDelta,

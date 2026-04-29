@@ -9,10 +9,15 @@
 // §3 for the planned OpenTelemetry backend.
 //
 // This package has zero external dependencies — it only imports the
-// standard library — and does not import any other brain subpackage. The
-// concrete OTel-backed implementations will be added in a later wave; for
-// now every method body is an `unimplemented:` panic so that grep can
-// locate all TODO sites (see brain骨架实施计划.md §4.2).
+// standard library — and does not import any other brain subpackage.
+//
+// Concrete implementations:
+//   - MemLogExporter    → mem_logs.go    (in-memory ring buffer)
+//   - OTLPLogExporter   → otlp_exporter.go (batched OTLP-style export)
+//   - MemTraceExporter  → mem_trace.go
+//   - MemRegistry       → mem_metrics.go
+//
+// All implementations are stdlib-only and ready for production use.
 package observability
 
 import "context"

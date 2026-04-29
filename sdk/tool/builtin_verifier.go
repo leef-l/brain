@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -72,6 +73,7 @@ func (t *VerifierReadFileTool) Execute(ctx context.Context, args json.RawMessage
 type RunTestsTool struct {
 	sandbox    *Sandbox
 	cmdSandbox CommandSandbox
+	StreamTo   io.Writer // optional real-time stdout/stderr stream
 }
 
 func NewRunTestsTool() *RunTestsTool { return &RunTestsTool{} }
@@ -131,8 +133,14 @@ func (t *RunTestsTool) Execute(ctx context.Context, args json.RawMessage) (*Resu
 	}
 	req = NormalizeCommandRequest(t.Name(), req)
 
-	outcome, err := ExecuteCommandRequest(ctx, req, t.sandbox, t.cmdSandbox)
-	if err != nil {
+	var outcome CommandOutcome
+	var execErr error
+	if t.StreamTo != nil {
+		outcome, execErr = ExecuteCommandRequestWithStreams(ctx, req, t.sandbox, t.cmdSandbox, t.StreamTo, t.StreamTo)
+	} else {
+		outcome, execErr = ExecuteCommandRequest(ctx, req, t.sandbox, t.cmdSandbox)
+	}
+	if execErr != nil {
 		prefix := "exec error"
 		if t.cmdSandbox != nil && t.cmdSandbox.Available() {
 			prefix = "sandbox error"

@@ -314,6 +314,23 @@ func (c *SemanticCache) Purge(ctx context.Context, maxAge time.Duration) (int64,
 	return res.RowsAffected()
 }
 
+// Invalidate removes cached entries for a URL pattern. If domHash is empty,
+// all entries for the URL pattern are deleted; otherwise only the specific
+// DOM hash bucket is removed.
+func (c *SemanticCache) Invalidate(ctx context.Context, urlPattern, domHash string) error {
+	if c == nil || c.db == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if domHash != "" {
+		_, err := c.db.ExecContext(ctx, `DELETE FROM semantic_entries WHERE url_pattern = ? AND dom_hash = ?`, urlPattern, domHash)
+		return err
+	}
+	_, err := c.db.ExecContext(ctx, `DELETE FROM semantic_entries WHERE url_pattern = ?`, urlPattern)
+	return err
+}
+
 // ---------------------------------------------------------------------------
 // Helpers: URL pattern + DOM hash derivation
 // ---------------------------------------------------------------------------

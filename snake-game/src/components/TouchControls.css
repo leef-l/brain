@@ -1,0 +1,92 @@
+/* Hide on desktop, show on touch devices */
+.touch-controls {
+  display: none;
+  margin-top: 8px;
+  width: 100%;
+  max-width: 400px;
+}
+
+/* Show touch controls on screens that are touch-capable size */
+@media (max-width: 768px) {
+  .touch-controls {
+    display: flex;
+    justify-content: center;
+  }
+}
+
+/* Also show if the device supports touch (coarse pointer) */
+@media (pointer: coarse) {
+  .touch-controls {
+    display: flex;
+    justify-content: center;
+  }
+}
+
+.touch-dpad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: #16213e;
+  border-radius: 16px;
+  border: 1px solid #0f3460;
+}
+
+.touch-dpad-row {
+  display: flex;
+  gap: 4px;
+}
+
+.touch-btn {
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 12px;
+  background: #0f3460;
+  color: #4ecca3;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.1s, transform 0.1s;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.touch-btn:active {
+  background: #1a5276;
+  transform: scale(0.92);
+}
+
+.touch-btn--action {
+  width: 64px;
+  height: 56px;
+  background: #e94560;
+  color: #fff;
+  font-size: 1.3rem;
+}
+
+.touch-btn--action:active {
+  background: #c0392b;
+}
+
+/* Direction-specific labels for active state */
+.touch-btn--up {
+  border-radius: 12px 12px 4px 4px;
+}
+
+.touch-btn--down {
+  border-radius: 4px 4px 12px 12px;
+}
+
+.touch-btn--left {
+  border-radius: 12px 4px 4px 12px;
+}
+
+.touch-btn--right {
+  border-radius: 4px 12px 12px 4px;
+}

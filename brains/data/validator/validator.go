@@ -40,6 +40,16 @@ type Alert struct {
 // AlertSink is a callback that receives alerts.
 type AlertSink func(alert Alert)
 
+// ValidationResult captures the outcome of a single validation check.
+type ValidationResult struct {
+	Valid     bool
+	Reason    string
+	Symbol    string
+	EventTS   int64
+	AlertType string
+	Alert     Alert
+}
+
 // nowFunc is overridable for testing.
 var nowFunc = func() time.Time { return time.Now() }
 

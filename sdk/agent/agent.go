@@ -43,6 +43,10 @@ const (
 	// browser: file management, window control, keyboard shortcuts. See
 	// brains/desktop/.
 	KindDesktop Kind = "desktop"
+
+	// KindEasyMVP is a specialist brain for EasyMVP project contract execution:
+	// architect_chat, plan_review, plan_compile, acceptance_mapping, etc.
+	KindEasyMVP Kind = "easymvp"
 )
 
 // BuiltinKinds returns the set of built-in specialist brain kinds (excluding
@@ -57,6 +61,7 @@ func BuiltinKinds() []Kind {
 		KindData,
 		KindQuant,
 		KindDesktop,
+		KindEasyMVP,
 	}
 }
 

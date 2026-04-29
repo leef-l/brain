@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/cmd/brain/env"
 	"github.com/leef-l/brain/cmd/brain/term"
+	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/cli"
 	"github.com/leef-l/brain/sdk/kernel"
@@ -28,7 +30,7 @@ func RunChat(args []string) int {
 	fs := flag.NewFlagSet("chat", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	brainID := fs.String("brain", "central", "brain identifier (central, code, verifier)")
-	maxTurns := fs.Int("max-turns", 20, "max turns per user message")
+	maxTurns := fs.Int("max-turns", 40, "max turns per user message")
 	providerFlag := fs.String("provider", "", "LLM provider/profile name, or mock")
 	apiKey := fs.String("api-key", "", "API key (overrides env and config)")
 	baseURL := fs.String("base-url", "", "API base URL")
@@ -77,6 +79,8 @@ func RunChat(args []string) int {
 		return cli.ExitUsage
 	}
 
+	chatRuntime, _ := deps.NewDefaultCLIRuntime(*brainID)
+
 	var pool *kernel.ProcessBrainPool
 	var orch *kernel.Orchestrator
 	if *brainID == "central" && !deps.WantsMockProvider(*providerFlag, modelInput) {
@@ -91,9 +95,31 @@ func RunChat(args []string) int {
 					return session.Provider
 				},
 			}
+			var learner *kernel.LearningEngine
+			if chatRuntime != nil && chatRuntime.Stores != nil && chatRuntime.Stores.LearningStore != nil {
+				learner = kernel.NewLearningEngineWithStore(chatRuntime.Stores.LearningStore)
+				if err := learner.Load(context.Background()); err != nil {
+					fmt.Fprintf(os.Stderr, "brain chat: warning: load learning data: %v\n", err)
+				}
+			} else {
+				learner = kernel.NewLearningEngine()
+			}
+			defer func() {
+				_ = learner.Save(context.Background())
+			}()
+			// 上下文引擎：注入 LLM Summarizer
+			ctxEngine := kernel.NewDefaultContextEngine()
+			if session, err := deps.OpenConfiguredProvider(cfg, "central", modelInput, *providerFlag, *apiKey, *baseURL, *modelFlag); err == nil {
+				ctxEngine.Summarizer = session.Provider
+				ctxEngine.SummaryModel = session.Model
+			}
+
+			leaseManager := kernel.NewMemLeaseManager()
 			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver()}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
-				kernel.WithLearningEngine(kernel.NewLearningEngine()),
+				kernel.WithLearningEngine(learner),
+				kernel.WithContextEngine(ctxEngine),
+				kernel.WithLeaseManager(leaseManager),
 			)
 			// 专家 sidecar 的 brain/progress 事件直接打到屏幕,让用户能
 			// 实时看到 subtask 里每个 tool 的 start/end,避免 central.delegate
@@ -188,13 +214,21 @@ func RunChat(args []string) int {
 	}
 	state.SwitchMode(mode)
 
+	// 加载该 workdir 的历史 conversation
+	if conv, err := LoadConversation(e.Workdir); err != nil {
+		fmt.Fprintf(os.Stderr, "brain chat: load conversation: %v\n", err)
+	} else if conv != nil {
+		ApplyConversationToState(conv, state)
+		fmt.Printf("  \033[2mLoaded %d messages from previous session\033[0m\n", len(state.Messages))
+	}
+
 	fmt.Println()
 	fmt.Printf("  \033[1mBrain Chat v%s\033[0m\n", brain.CLIVersion)
 	fmt.Printf("  \033[2mProvider:\033[0m %s / %s\n", providerSession.Name, providerSession.Model)
 	fmt.Printf("  \033[2mBrain:\033[0m    %s\n", *brainID)
 	fmt.Printf("  \033[2mMode:\033[0m     %s\n", mode.StyledLabel())
 	fmt.Printf("  \033[2mWorkdir:\033[0m  %s\n", e.Workdir)
-	fmt.Printf("  \033[2mKeys:\033[0m     Esc cancel, Ctrl+D quit, Ctrl+W mode, /help\n")
+	fmt.Printf("  \033[2mKeys:\033[0m     Esc cancel latest, Ctrl+C cancel all, Ctrl+D quit, Ctrl+W mode, /help\n")
 	if orch != nil {
 		fmt.Printf("  \033[2mDelegates:\033[0m %v\n", orch.AvailableKinds())
 	}
@@ -211,44 +245,150 @@ func RunChat(args []string) int {
 
 	restore, rawErr := term.EnableRawInput()
 	if rawErr != nil {
-		return runChatLineMode(state, providerSession.Provider, brainID, maxTurns, sigCh)
+		exitCode := runChatLineMode(state, providerSession.Provider, brainID, maxTurns, sigCh)
+		_ = SaveConversation(SnapshotStateToConversation(state, e.Workdir))
+		return exitCode
 	}
 	defer restore()
+	defer func() {
+		_ = SaveConversation(SnapshotStateToConversation(state, e.Workdir))
+	}()
 
-	resultCh := make(chan RunResult, 1)
-	progressCh := make(chan ProgressEvent, 128)
+	eventCh := make(chan ChatEvent, 256)
 	stdinCh, stdinErrCh := startAsyncStdinReader()
 	progressTicker := time.NewTicker(250 * time.Millisecond)
 	defer progressTicker.Stop()
 
-	running := false
-	activity := &Activity{}
-	var lastProgressSecond int64 = -1
-	_ = lastProgressSecond
+	activities := make(map[string]*Activity)
+	lastProgressSecond := make(map[string]int64)
 	session := term.NewLineReadSession(kb, 0)
 	session.History = LoadHistory()
 	session.HistoryIndex = len(session.History)
 	session.MuteEcho = false
+
 	promptHeaderLines := func() []string {
 		currentInput := strings.TrimSpace(session.Editor().String())
 		completions := SlashCompletionLines(currentInput)
-		return BuildPromptHeaderLines(activity, state.QueueDisplayLines(), running, completions)
+		acts := make([]*Activity, 0, len(activities))
+		for _, a := range activities {
+			acts = append(acts, a)
+		}
+		return BuildPromptHeaderLines(acts, state.QueueDisplayLines(), state.AnyRunning(), completions)
 	}
-	RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+	RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
+
+	// launchRun 启动一个 run 并创建对应的 Activity。
+	launchRun := func(input string) string {
+		id := StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, input, eventCh)
+		act := &Activity{RunID: id, Input: input}
+		act.Start()
+		activities[id] = act
+		lastProgressSecond[id] = -1
+		DetachPromptFrame(session)
+		PrintUserMessage(input)
+		ResetStreamClock()
+		session.MuteEcho = true
+		return id
+	}
+
+	// handleRunResult 处理单个 run 的完成事件。
+	handleRunResult := func(id string, rr RunResult) {
+		act, ok := activities[id]
+		if ok {
+			act.Stop()
+			delete(activities, id)
+			delete(lastProgressSecond, id)
+		}
+		state.RemoveRun(id)
+
+		DetachPromptFrame(session)
+		defer RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
+		defer func() {
+			if !state.AnyRunning() && state.PlanResumeAfterRun {
+				state.PlanResumeAfterRun = false
+				state.SwitchMode(env.ModePlan)
+				fmt.Println("  \033[2m(returned to plan mode)\033[0m")
+				fmt.Println()
+			}
+		}()
+
+		if rr.Canceled {
+			fmt.Printf("  \033[1;33m! Cancelled [%s]\033[0m\n", id)
+			fmt.Println()
+			return
+		}
+		if rr.Err != nil {
+			fmt.Fprintf(os.Stderr, "\033[1;31m! Error [%s]: %s\033[0m\n\n", id, formatRunError(rr.Err))
+			return
+		}
+
+		if rr.Result != nil && rr.Result.Run.State == loop.StateFailed {
+			errMsg := LastTurnError(rr.Result)
+			if errMsg == "" {
+				errMsg = "unexpected error: run failed"
+			}
+			fmt.Fprintf(os.Stderr, "\033[1;31m! Error [%s]: %s\033[0m\n\n", id, formatRunErrorMsg(errMsg, rr.Result))
+			return
+		}
+
+		// 追加新增消息到 state.Messages（不覆盖，避免冲掉其他并行 run 的结果）
+		if rr.Result != nil {
+			if rr.BaseMsgCount < len(rr.Result.FinalMessages) {
+				newMsgs := rr.Result.FinalMessages[rr.BaseMsgCount:]
+				state.Messages = append(state.Messages, newMsgs...)
+			}
+		}
+
+		replyText := rr.ReplyText
+		if act != nil && strings.TrimSpace(replyText) == "" {
+			replyText = strings.TrimSpace(act.Content.String())
+		}
+		if strings.TrimSpace(replyText) == "" {
+			if rr.Result != nil {
+				replyText = BuildToolCallSummary(rr.Result.FinalMessages)
+			}
+		}
+
+		if shouldPrintAssistantReply(act.Content.String(), replyText) {
+			PrintAssistantMessage(replyText)
+		}
+
+		if rr.Result != nil {
+			elapsed := rr.Result.Run.Budget.ElapsedTime.Milliseconds()
+			unit := "ms"
+			val := elapsed
+			if elapsed >= 1000 {
+				unit = "s"
+				val = elapsed / 1000
+			}
+			fmt.Printf("\033[2m[%s turns:%d llm:%d tools:%d %d%s]\033[0m\n\n",
+				id,
+				rr.Result.Run.Budget.UsedTurns,
+				rr.Result.Run.Budget.UsedLLMCalls,
+				rr.Result.Run.Budget.UsedToolCalls,
+				val, unit)
+		}
+
+		if state.Mode != env.ModeAuto && shouldShowResponseSelector(state.BrainID, replyText) {
+			outcome := showResponseSelector(state.Mode, stdinCh, stdinErrCh)
+			if outcome.followUp != "" {
+				if outcome.planProceed && state.Mode == env.ModePlan {
+					state.SwitchMode(env.ModeAcceptEdits)
+					state.PlanResumeAfterRun = true
+				}
+				launchRun(outcome.followUp)
+			}
+		}
+	}
 
 	for {
-		if !running {
-			if queued := state.Dequeue(); queued != "" {
-				activity.Start()
-				lastProgressSecond = -1
-				DetachPromptFrame(session)
-				PrintUserMessage(queued)
-				ResetStreamClock()
-				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, queued, resultCh, progressCh)
-				running = true
-				session.MuteEcho = true
-				// running 期间不画 prompt,让事件实时 Println。
+		// 队列中的消息直接启动，不等当前 run 完成（支持并行）
+		for {
+			queued := state.Dequeue()
+			if queued == "" {
+				break
 			}
+			launchRun(queued)
 		}
 
 		select {
@@ -256,9 +396,7 @@ func RunChat(args []string) int {
 			continue
 
 		case ev := <-humanCoord.Events():
-			// 收到 sidecar 反向 RPC 转过来的人工求助事件。running 期间
-			// prompt 已经 Detach,直接 Println 就显示到屏幕;非 running
-			// 时先 Detach 再画回来。
+			running := state.AnyRunning()
 			if !running {
 				DetachPromptFrame(session)
 			}
@@ -274,34 +412,41 @@ func RunChat(args []string) int {
 			continue
 
 		case req := <-state.ApprovalCh:
-			HandleApprovalRequest(state, session, kb, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running, req, stdinCh, stdinErrCh)
+			HandleApprovalRequest(state, session, kb, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning(), req, stdinCh, stdinErrCh)
 			continue
 
-		case rr := <-resultCh:
-			running = false
-			session.MuteEcho = false
-			HandleChatRunResult(state, providerSession.Provider, *brainID, *maxTurns, session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), &running, rr, resultCh, progressCh, activity, stdinCh, stdinErrCh)
-			session.MuteEcho = running
-			continue
-
-		case ev := <-progressCh:
-			if running {
-				// running 期间 prompt frame 已经 Detach(在 StartChatRun 之前),
-				// 流式事件直接 Println 到屏幕,用户实时看到 LLM 输出 / 工具
-				// 调用 / 结果。不再清屏重绘,不会产生重影;也不再静默吞事件。
-				StreamProgressEvent(ev)
-				if len(ev.PreviewLines) > 0 {
-					PrintDiffPreviewBlock(ev.PreviewLines)
+		case ev := <-eventCh:
+			switch ev.Type {
+			case "progress":
+				if ev.Progress != nil {
+					StreamProgressEvent(*ev.Progress)
+					if len(ev.Progress.PreviewLines) > 0 {
+						PrintDiffPreviewBlock(ev.Progress.PreviewLines)
+					}
+					if act, ok := activities[ev.RunID]; ok {
+						act.Apply(*ev.Progress)
+					}
 				}
-				activity.Apply(ev)
+			case "result":
+				if ev.Result != nil {
+					handleRunResult(ev.RunID, *ev.Result)
+				}
+				if !state.AnyRunning() {
+					session.MuteEcho = false
+				}
 			}
 			continue
 
 		case <-progressTicker.C:
-			if running && activity.Running() {
-				sec := int64(time.Since(activity.StartedAt) / time.Second)
-				if sec != lastProgressSecond {
-					lastProgressSecond = sec
+			for id, act := range activities {
+				if act.Running() {
+					sec := int64(time.Since(act.StartedAt) / time.Second)
+					if sec != lastProgressSecond[id] {
+						lastProgressSecond[id] = sec
+						if sec > 0 && sec%5 == 0 {
+							fmt.Printf("\033[2m  [%s] %s\033[0m\n", id, act.StatusLine())
+						}
+					}
 				}
 			}
 			continue
@@ -323,19 +468,7 @@ func RunChat(args []string) int {
 				return cli.ExitFailed
 			}
 			if !done {
-				// 正在输入过程中(每收到一个字符就进到这里)。字符回显已经
-				// 由 LineReadSession.Consume 内部的 fast-path(fmt.Print(r))
-				// 完成。
-				//
-				// 不能无条件触发 RerenderPromptFrame:那会清掉整个多行 prompt
-				// frame + 重画,每次重画把"已经打出的字符"连带擦掉又重新写
-				// 一遍,视觉上就是每输入一个字就多出一行残影。
-				//
-				// slash 补全需要动态显示候选项,只在当前输入以 / 开头时才
-				// Rerender,普通聊天输入完全走 Consume 的原地回显路径。
-				if strings.HasPrefix(strings.TrimSpace(session.Editor().String()), "/") {
-					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
-				}
+				RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 				continue
 			}
 
@@ -347,25 +480,31 @@ func RunChat(args []string) int {
 
 			case term.ActionEscape:
 				input := strings.TrimSpace(line)
-				if running {
+				if state.AnyRunning() {
 					if input == "" {
-						state.CancelCurrentRun()
-						activity.Stop()
+						latestID := state.LatestRunID()
+						if latestID != "" {
+							state.CancelRun(latestID)
+							if act, ok := activities[latestID]; ok {
+								act.Stop()
+							}
+						}
 						resetPromptInput(session)
 						DetachPromptFrame(session)
-						fmt.Println("  \033[1;33m! Cancelled\033[0m")
+						fmt.Println("  \033[1;33m! Cancelled latest\033[0m")
 						fmt.Println()
-						running = false
-						session.MuteEcho = false
-						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+						if !state.AnyRunning() {
+							session.MuteEcho = false
+						}
+						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 					} else {
 						resetPromptInput(session)
-						RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+						RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 					}
 				} else {
 					if input != "" {
 						resetPromptInput(session)
-						RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+						RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 					}
 				}
 				continue
@@ -373,79 +512,127 @@ func RunChat(args []string) int {
 			case term.ActionCancel:
 				input := strings.TrimSpace(line)
 				resetPromptInput(session)
-				if running {
-					state.CancelCurrentRun()
-					activity.Stop()
+				if state.AnyRunning() {
+					state.CancelAllRuns()
+					for id, act := range activities {
+						_ = id
+						act.Stop()
+					}
+					state.ClearQueue()
 					DetachPromptFrame(session)
-					fmt.Println("  \033[1;33m! Cancelled\033[0m")
+					fmt.Println("  \033[1;33m! Cancelled all\033[0m")
 					fmt.Println()
-					running = false
 					session.MuteEcho = false
-					RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+					RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 				} else if input != "" {
-					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 				}
 				continue
 
 			case term.ActionCycle:
 				nextMode := env.CycleMode(state.Mode)
 				state.SwitchMode(nextMode)
-				RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+				RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 				continue
 
 			case term.ActionEnter, term.ActionQueue:
 				input := strings.TrimSpace(line)
-				frameDetached := false
 				resetPromptInput(session)
 				if input == "" {
-					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+					RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 					continue
 				}
 				session.AddHistory(input)
 				AppendHistory(input)
 
+				// 消息路由：@run-X msg → 纠正指定 run
+				if strings.HasPrefix(input, "@run-") {
+					parts := strings.SplitN(input, " ", 2)
+					targetID := strings.TrimSpace(parts[0])
+					var msg string
+					if len(parts) > 1 {
+						msg = strings.TrimSpace(parts[1])
+					}
+					if msg != "" {
+						// 取消旧 run 并启动新 run（继承上下文）
+						state.CancelRun(targetID)
+						if act, ok := activities[targetID]; ok {
+							act.Stop()
+						}
+						launchRun(msg)
+						continue
+					}
+				}
+
 				if strings.HasPrefix(input, "/") {
 					DetachPromptFrame(session)
-					frameDetached = true
 					handled, shouldQuit := HandleSlashCommand(input, state)
 					if shouldQuit {
 						fmt.Println("Bye!")
 						return cli.ExitOK
 					}
 					if handled {
-						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), running)
+						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 						continue
 					}
 				}
 
-				if running {
-					state.Enqueue(input)
-					// running 期间用户 Enter 的消息要么:
-					//  (a) 被 ChatHumanCoordinator 识别为 /resume /abort,
-					//  (b) 进入输入队列等当前 run 结束后自动跑
-					// 打一行明确的灰色提示,让用户知道输入已被接受,不会
-					// 误以为"卡住了"。running 期间不画 prompt frame。
-					fmt.Printf("\033[2m  (queued — will run after current task)\033[0m\n")
-					continue
-				}
-
-				activity.Start()
-				lastProgressSecond = -1
-				if !frameDetached {
-					DetachPromptFrame(session)
-				}
-				PrintUserMessage(input)
-				ResetStreamClock()
-				StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, input, resultCh, progressCh)
-				running = true
-				session.MuteEcho = true
-				// running 期间不再画 prompt frame:让 LLM 流式输出、tool 调用、
-				// takeover 提示等事件实时追加到屏幕底部,不被 frame 清屏干扰。
-				// HandleChatRunResult 里 run 结束会 RenderPromptFrame 重画一个
-				// 干净的新 prompt 行。
+				// 任何消息都直接启动新 run（并行模式）
+				launchRun(input)
 			}
 		}
 	}
+}
+
+// formatRunError 把 budget/loop 等技术错误翻译成人话 + 恢复建议。
+func formatRunError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var be *brainerrors.BrainError
+	if !errors.As(err, &be) {
+		return err.Error()
+	}
+	switch be.ErrorCode {
+	case brainerrors.CodeBudgetTurnsExhausted:
+		return "任务步骤数达到上限（提示：重启 brain 时加 --max-turns 60 可放宽限制）"
+	case brainerrors.CodeBudgetCostExhausted:
+		return "费用达到上限"
+	case brainerrors.CodeBudgetToolCallsExhausted:
+		return "工具调用次数达到上限"
+	case brainerrors.CodeBudgetLLMCallsExhausted:
+		return "LLM 调用次数达到上限"
+	case brainerrors.CodeBudgetTimeoutExhausted:
+		return "任务执行超时"
+	case brainerrors.CodeAgentLoopDetected:
+		return "检测到循环（AI 在重复相同操作）"
+	default:
+		return be.Message
+	}
+}
+
+// formatRunErrorMsg 根据 TurnResult 中的原始错误消息做友好化。
+func formatRunErrorMsg(raw string, result *loop.RunResult) string {
+	if strings.Contains(raw, "budget.turns_exhausted") {
+		used, max := "", ""
+		if result != nil {
+			used = fmt.Sprintf("%d", result.Run.Budget.UsedTurns)
+			max = fmt.Sprintf("%d", result.Run.Budget.MaxTurns)
+		}
+		msg := "任务步骤数达到上限"
+		if used != "" && max != "" {
+			msg += fmt.Sprintf("（已用 %s/%s steps）", used, max)
+		}
+		msg += "；提示：加 --max-turns 60 可放宽限制"
+		return msg
+	}
+	if strings.Contains(raw, "budget.cost_exhausted") {
+		return "费用达到上限"
+	}
+	if strings.Contains(raw, "budget.timeout_exhausted") {
+		return "任务执行超时"
+	}
+	return raw
 }
 
 func resetPromptInput(session *term.LineReadSession) {
@@ -465,6 +652,13 @@ func startAsyncStdinReader() (<-chan []byte, <-chan error) {
 	errCh := make(chan error, 1)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "brain chat: stdin reader panic: %v\n", r)
+				errCh <- fmt.Errorf("stdin reader panic: %v", r)
+				close(dataCh)
+			}
+		}()
 		buf := make([]byte, 4096)
 		for {
 			n, err := os.Stdin.Read(buf)
@@ -556,7 +750,7 @@ func runChatLineMode(state *State, provider llm.Provider, brainID *string, maxTu
 		copy(baseMessages, state.Messages)
 
 		ctx, cancel := config.WithOptionalTimeout(context.Background(), state.RunTimeout)
-		result, err := runChatTurn(ctx, provider, state.Registry, state.Opts, *brainID, *maxTurns, state.TurnCount, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, nil)
+		result, err := runChatTurn(ctx, provider, state.Registry, state.Opts, *brainID, *maxTurns, state.TurnCount, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, "", nil)
 		canceled := ctx.Err() == context.Canceled
 		cancel()
 
@@ -578,7 +772,9 @@ func runChatLineMode(state *State, provider llm.Provider, brainID *string, maxTu
 			}
 		}
 
-		state.Messages = result.FinalMessages
+		if len(baseMessages) < len(result.FinalMessages) {
+			state.Messages = append(state.Messages, result.FinalMessages[len(baseMessages):]...)
+		}
 		replyText := extractAssistantReply(result.FinalMessages)
 		if replyText != "" {
 			PrintAssistantMessage(replyText)

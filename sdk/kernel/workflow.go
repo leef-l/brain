@@ -32,10 +32,16 @@ var (
 
 // WorkflowNode 是 DAG 中的一个节点，对应一次 Brain 任务执行。
 type WorkflowNode struct {
-	ID        string   `json:"id"`
-	BrainID   string   `json:"brain_id"`
-	Prompt    string   `json:"prompt"`
-	DependsOn []string `json:"depends_on,omitempty"` // 依赖的节点 ID
+	ID            string   `json:"id"`
+	BrainID       string   `json:"brain_id"`
+	Prompt        string   `json:"prompt"`
+	DependsOn     []string `json:"depends_on,omitempty"` // 依赖的节点 ID
+	RequiredCaps  []string `json:"required_caps,omitempty"`
+	PreferredCaps []string `json:"preferred_caps,omitempty"`
+	TaskType      string   `json:"task_type,omitempty"`
+	// PipeID 用于 Workflow streaming edge 的跨进程流式传输。
+	// 非空时，sidecar 会通过 brain/stream/write 将 tool 输出实时写入 host 的 PipeRegistry。
+	PipeID string `json:"pipe_id,omitempty"`
 }
 
 // WorkflowEdge 定义节点间的数据传递。
@@ -113,6 +119,12 @@ func (e *WorkflowEngine) SetStreamingExecutor(exec StreamingNodeExecutor) {
 	e.streamingExecutor = exec
 }
 
+// SetPipeRegistry 注入外部 PipeRegistry，用于跨进程共享 pipe（如
+// Workflow streaming edge 与 Orchestrator streamPipes 共享同一实例）。
+func (e *WorkflowEngine) SetPipeRegistry(r *flow.PipeRegistry) {
+	e.pipes = r
+}
+
 // ---------------------------------------------------------------------------
 // Execute — 核心：拓扑排序 + 分层并行执行
 // ---------------------------------------------------------------------------
@@ -171,7 +183,7 @@ func (e *WorkflowEngine) Execute(ctx context.Context, wf *Workflow) (*WorkflowRe
 	defer e.pipes.CloseAll()
 
 	// 3. 拓扑排序（Kahn's algorithm）
-	layers, err := topoSort(wf.Nodes)
+	layers, err := topoSort(wf.Nodes, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -343,6 +355,17 @@ func (e *WorkflowEngine) executeNormalNode(
 }
 
 // executeStreamingProducer 执行 streaming 前驱节点，同时并行启动后继 consumer。
+//
+// 跨进程流式：当节点存在 streaming 出边时，node.PipeID 会被设置为第一个出边的
+// edge ID（如 "A->B"）。Orchestrator 在调用 sidecar 的 brain/execute 时把 PipeID
+// 传入 payload，sidecar（ThinBrain）收到后会在 RunAgentLoopFull 中注入
+// StreamingToolObserver。该 observer 在每个 tool 执行成功后通过反向 RPC
+// brain/stream/write 把输出实时发送到 host 的 PipeRegistry，consumer 节点
+// 同时从共享的 pipe 读取，实现跨 brain 的流式传输。
+//
+// 此外 kernelLLMProvider.Stream 已实现（聚合式伪流式），让 sidecar 可以走
+// loop.Runner 的 Stream 路径；host 侧的 LLMProxy.handleStream 调用真正的
+// provider.Stream 并聚合后返回。未来可进一步优化为逐 token 通知。
 func (e *WorkflowEngine) executeStreamingProducer(
 	ctx context.Context,
 	nid string,
@@ -512,6 +535,14 @@ func (e *WorkflowEngine) executeStreamingProducer(
 		}
 	} else {
 		// 使用普通 executor，完成后一次性写入所有 streaming pipe
+		// 若存在 streaming 出边，把第一个 edge ID 注入 node.PipeID，
+		// 让 sidecar 通过 brain/stream/write 实时发送 tool 输出。
+		for _, oe := range outEdgeMap[nid] {
+			if oe.Mode == flow.EdgeStreaming {
+				node.PipeID = oe.From + "->" + oe.To
+				break
+			}
+		}
 		output, execErr := e.executor(ctx, *node, input)
 		nr.EndedAt = time.Now().UTC()
 
@@ -630,7 +661,7 @@ func (e *WorkflowEngine) collectInputs(
 // topoSort 对节点进行拓扑排序，返回分层的节点 ID。
 // 同一层的节点没有相互依赖，可以并行执行。
 // 如果存在环路，返回 ErrWorkflowCycle。
-func topoSort(nodes []WorkflowNode) ([][]string, error) {
+func topoSort(nodes []WorkflowNode, layerSorter func([]string)) ([][]string, error) {
 	if len(nodes) == 0 {
 		return nil, nil
 	}
@@ -666,6 +697,9 @@ func topoSort(nodes []WorkflowNode) ([][]string, error) {
 		layers = append(layers, layer)
 		visited += len(layer)
 
+		if layerSorter != nil {
+			layerSorter(layer)
+		}
 		for _, id := range layer {
 			for _, succ := range successors[id] {
 				inDegree[succ]--

@@ -19,6 +19,10 @@ func (m mockKernelCaller) CallKernel(ctx context.Context, method string, params 
 	return nil
 }
 
+func (m mockKernelCaller) NotifyKernel(ctx context.Context, method string, params interface{}) error {
+	return nil
+}
+
 func TestCentralHandlerToolSchemasExposeOutputSchemas(t *testing.T) {
 	h := &centralHandler{}
 	schemas := h.ToolSchemas()

@@ -1,0 +1,89 @@
+  manifest-discovery: central (runtime=native, entrypoint=brain)
+  manifest-discovery: browser (runtime=native, entrypoint=brain-browser-sidecar)
+  manifest-discovery: code (runtime=native, entrypoint=brain-code-sidecar)
+  manifest-discovery: data (runtime=native, entrypoint=brain-data-sidecar)
+  manifest-discovery: desktop (runtime=native, entrypoint=brain-desktop-sidecar)
+  manifest-discovery: easymvp (runtime=native, entrypoint=brain-easymvp-sidecar)
+  manifest-discovery: fault (runtime=native, entrypoint=brain-fault-sidecar)
+  manifest-discovery: quant (runtime=native, entrypoint=brain-quant-sidecar)
+  manifest-discovery: verifier (runtime=native, entrypoint=brain-verifier-sidecar)
+  manifest-discovery: found 9 brain(s) from manifest files
+
+Starting Brain Kernel (cluster mode)
+  listen:    127.0.0.1:7701
+  max_runs:  20
+  mode:      accept-edits
+  workdir:   C:\Users\Public\project\brain
+  run_wd:    confined
+  store:     sqlite
+
+  manifest: quant → 9 capabilities
+  manifest: desktop → 6 capabilities
+  manifest: easymvp → 7 capabilities
+  manifest: code → 8 capabilities
+  manifest: data → 8 capabilities
+  manifest: central → 6 capabilities
+  manifest: fault → 7 capabilities
+  manifest: verifier → 7 capabilities
+  manifest: browser → 11 capabilities
+  manifest: 9 brain(s) registered in CapabilityIndex
+
+brain serve: daily summary daemon active
+brain serve: state observer active
+brain serve: feedback controller active
+brain serve: self stabilizer active
+Listening on 127.0.0.1:7701
+  HTTP  ready
+
+Kernel is ready to accept connections. Press Ctrl-C to stop.
+[feedback] alert kind= priority=8 reason=global global_success_rate critical: control=2.700
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+contract_execute: sidecar raw response: {"status":"ok","summary":"{\"decision_summary\":\"Architect chat response generated\",\"normalized_status\":\"success\",\"result_json\":\"We are asked: \\\"You are the EasyMVP Architect Brain. Analyze the project goal and conversation history, then provide a structured response. Return ONLY a valid JSON object with these exact fields: - reply (string) - draft_tasks (array of {task_key, name, phase, task_kind, summary, brain_kind, role_type}) - suggested_next_action (string: \\\"confirm_plan\\\" | \\\"continue_chat\\\" | \\\"refine_goal\\\") Do not wrap in markdown code blocks.\\\"\\n\\nProject Goal: (empty)\\nConversation: (empty)\\n\\nSo there is no project goal and no conversation. We need to analyze this and produce a response. Since there's no goal, we should likely ask the user to refine the goal. Probably the suggested_next_action should be \\\"refine_goal\\\" and the reply should prompt the user to provide a project goal. Draft tasks could be empty because no plan can be made yet.\\n\\nThus, output JSON with reply asking for more information, empty draft_tasks, and suggested_next_action \\\"refine_goal\\\". Ensure no markdown code blocks, just the raw JSON.{\\\"reply\\\": \\\"I need a project goal to get started. Could you describe what you want to build, including the core problem, target users, and key feature?\\\",\\\"draft_tasks\\\": [],\\\"suggested_next_action\\\": \\\"refine_goal\\\"}\",\"result_kind\":\"architect_chat\",\"result_version\":1,\"schema_version\":1,\"source_refs\":[{\"id\":\"\",\"kind\":\"project\",\"version\":1}],\"turns\":1}"}
+[feedback] alert kind= priority=8 reason=global throughput critical: control=0.350
+[feedback] restart kind=quant priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=verifier priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=desktop priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=easymvp priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=code priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=central priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=browser priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=data priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+[feedback] restart kind=fault priority=10 reason=success_rate too low (0.000 < 0.900), control=2.700, restarting sidecar
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+[feedback] alert kind= priority=8 reason=global global_success_rate critical: control=4.050
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+[feedback] restart kind=data priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=easymvp priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=browser priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=fault priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=desktop priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=code priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=quant priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=central priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+[feedback] restart kind=verifier priority=10 reason=success_rate too low (0.000 < 0.900), control=4.050, restarting sidecar
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+[feedback] alert kind= priority=8 reason=global global_success_rate critical: control=4.950
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: completeWithRetry succeeded, stop_reason=end_turn
+LLMProxy: handleComplete called for kind=easymvp

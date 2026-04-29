@@ -8,6 +8,10 @@ import (
 )
 
 func TestRefreshSharedPatternLibraryIfChanged_UsesCustomDSNAndReloads(t *testing.T) {
+	// Call t.TempDir() first so its cleanup is registered before ours.
+	// Cleanup runs in LIFO order, so we must close the DB before the temp dir is removed.
+	dsn := filepath.Join(t.TempDir(), "ui_patterns.db")
+
 	patternLibMu.Lock()
 	prevLib := patternLib
 	prevErr := patternLibErr
@@ -20,21 +24,21 @@ func TestRefreshSharedPatternLibraryIfChanged_UsesCustomDSNAndReloads(t *testing
 	patternLibMu.Unlock()
 	t.Cleanup(func() {
 		patternLibMu.Lock()
+		if patternLib != nil && patternLib != prevLib {
+			patternLib.Close()
+		}
 		patternLib = prevLib
 		patternLibErr = prevErr
 		patternLibDSN = prevDSN
 		patternLibCheckedAt = prevCheckedAt
 		patternLibMu.Unlock()
 	})
-
-	dsn := filepath.Join(t.TempDir(), "ui_patterns.db")
 	t.Setenv(envUIPatternDBPath, dsn)
 
 	lib, err := NewPatternLibrary(dsn)
 	if err != nil {
 		t.Fatalf("NewPatternLibrary: %v", err)
 	}
-	defer lib.Close()
 
 	if err := lib.Upsert(context.Background(), &UIPattern{
 		ID:       "reload_login",
@@ -53,6 +57,7 @@ func TestRefreshSharedPatternLibraryIfChanged_UsesCustomDSNAndReloads(t *testing
 	}); err != nil {
 		t.Fatalf("Upsert first pattern: %v", err)
 	}
+	lib.Close()
 
 	if err := RefreshSharedPatternLibraryIfChanged(); err != nil {
 		t.Fatalf("RefreshSharedPatternLibraryIfChanged first: %v", err)
@@ -67,7 +72,6 @@ func TestRefreshSharedPatternLibraryIfChanged_UsesCustomDSNAndReloads(t *testing
 	if err != nil {
 		t.Fatalf("NewPatternLibrary writer: %v", err)
 	}
-	defer writer.Close()
 	if err := writer.Upsert(context.Background(), &UIPattern{
 		ID:       "reload_checkout",
 		Category: "commerce",
@@ -85,6 +89,7 @@ func TestRefreshSharedPatternLibraryIfChanged_UsesCustomDSNAndReloads(t *testing
 	}); err != nil {
 		t.Fatalf("Upsert second pattern: %v", err)
 	}
+	writer.Close()
 
 	patternLibMu.Lock()
 	patternLibCheckedAt = patternLibCheckedAt.Add(-2 * patternLibraryRefreshInterval)

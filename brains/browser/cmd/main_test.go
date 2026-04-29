@@ -11,6 +11,7 @@ import (
 
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/sidecar"
@@ -178,7 +179,7 @@ func TestRunFallbackAgentLoop_ContinuesAfterHumanResume(t *testing.T) {
 	t.Cleanup(func() { runBrowserAgentLoop = prev })
 
 	callCount := 0
-	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ *sidecar.ExecuteBudget, _ json.RawMessage) *sidecar.ExecuteResult {
+	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ *sidecar.ExecuteBudget, _ json.RawMessage, _ loop.ToolObserver) *sidecar.ExecuteResult {
 		callCount++
 		if callCount == 1 {
 			return &sidecar.ExecuteResult{
@@ -232,7 +233,7 @@ func TestRunFallbackAgentLoop_PassesRecentInteractionFeedbackIntoContext(t *test
 	t.Cleanup(func() { runBrowserAgentLoop = prev })
 
 	var gotContext json.RawMessage
-	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ *sidecar.ExecuteBudget, extra json.RawMessage) *sidecar.ExecuteResult {
+	runBrowserAgentLoop = func(_ context.Context, _ sidecar.KernelCaller, _ tool.Registry, _ string, _ string, _ *sidecar.ExecuteBudget, extra json.RawMessage, _ loop.ToolObserver) *sidecar.ExecuteResult {
 		gotContext = append(json.RawMessage(nil), extra...)
 		return &sidecar.ExecuteResult{Status: "completed", Summary: "ok", Turns: 1}
 	}
@@ -346,10 +347,12 @@ func TestConfigureBrowserRuntime_LoadsPersistenceBackedWiring(t *testing.T) {
 		tool.SetHumanDemoSink(nil)
 		tool.SetPatternFailureStore(nil)
 		tool.SetHumanEventSourceFactory(nil)
+		tool.CloseSharedPatternLibrary()
 	})
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	stores, err := persistence.Open("sqlite", "")
 	if err != nil {
@@ -407,6 +410,8 @@ func TestConfigureBrowserRuntime_LoadsPersistenceBackedWiring(t *testing.T) {
 	if len(samples) != 1 {
 		t.Fatalf("pattern failure samples = %d, want 1", len(samples))
 	}
+
+	tool.CloseSharedPatternLibrary()
 }
 
 func TestBrowserRuntimeReloader_SeesCrossProcessUpdates(t *testing.T) {
@@ -568,6 +573,7 @@ func TestBrowserRuntimeReloader_MaybeRefreshReloadsAnomalyTemplates(t *testing.T
 		tool.SetHumanDemoSink(nil)
 		tool.SetPatternFailureStore(nil)
 		tool.SetHumanEventSourceFactory(nil)
+		tool.CloseSharedPatternLibrary()
 	})
 
 	customDB := filepath.Join(t.TempDir(), "reload-brain.db")
@@ -678,6 +684,8 @@ func TestBrowserRuntimeReloader_MaybeRefreshReloadsAnomalyTemplates(t *testing.T
 	if tool.SharedPatternLibrary().GetAny("reloaded_variant") == nil {
 		t.Fatal("expected shared pattern library to refresh newly added variant")
 	}
+
+	tool.CloseSharedPatternLibrary()
 }
 
 func TestBrowserRuntimeReloader_AppliesFeatureGateFromSyncFile(t *testing.T) {
@@ -688,10 +696,12 @@ func TestBrowserRuntimeReloader_AppliesFeatureGateFromSyncFile(t *testing.T) {
 		tool.SetHumanDemoSink(nil)
 		tool.SetPatternFailureStore(nil)
 		tool.SetHumanEventSourceFactory(nil)
+		tool.CloseSharedPatternLibrary()
 	})
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	syncFile := filepath.Join(home, ".brain", "browser-runtime.sync.json")
 	t.Setenv(envBrowserRuntimeSyncFile, syncFile)
@@ -744,6 +754,8 @@ func TestBrowserRuntimeReloader_AppliesFeatureGateFromSyncFile(t *testing.T) {
 	if !cfg.Features["browser-pro.evidence"] {
 		t.Fatalf("feature gate missing refreshed browser-pro.evidence: %+v", cfg)
 	}
+
+	tool.CloseSharedPatternLibrary()
 }
 
 func TestStillOnLoginPage_SuccessfulDashboard(t *testing.T) {

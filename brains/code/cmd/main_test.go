@@ -4,9 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/shared"
+	"github.com/leef-l/brain/sdk/tool"
 )
 
-func TestNewCodeHandler_AppliesDelegateToolPolicy(t *testing.T) {
+func TestRunBrain_CodeHandlerExists(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	data := `{
   "tool_profiles": {
@@ -24,16 +28,20 @@ func TestNewCodeHandler_AppliesDelegateToolPolicy(t *testing.T) {
 	}
 	t.Setenv("BRAIN_CONFIG", configPath)
 
-	h := newCodeHandler()
-	if _, ok := h.registry.Lookup("code.shell_exec"); ok {
+	reg := shared.RegisterWithPolicy(agent.KindCode,
+		tool.NewReadFileTool("code"),
+		tool.NewWriteFileTool("code"),
+		tool.NewEditFileTool("code"),
+		tool.NewDeleteFileTool("code"),
+		tool.NewListFilesTool("code"),
+		tool.NewSearchTool("code"),
+		tool.NewShellExecTool("code", nil),
+		tool.NewNoteTool("code"),
+	)
+	if _, ok := reg.Lookup("code.shell_exec"); ok {
 		t.Fatalf("code.shell_exec should be filtered out")
 	}
-	if _, ok := h.registry.Lookup("code.read_file"); !ok {
+	if _, ok := reg.Lookup("code.read_file"); !ok {
 		t.Fatalf("code.read_file should remain available")
-	}
-	for _, name := range h.Tools() {
-		if name == "code.shell_exec" {
-			t.Fatalf("Tools() should reflect filtered registry")
-		}
 	}
 }

@@ -1,3 +1,10 @@
+// Package persistence provides in-process storage implementations.
+//
+// MemPlanStore is the in-memory PlanStore from 26-持久化与恢复.md §5.
+// It enforces the full semantic contract (version conflict, archived → write
+// rejected, delta ordering) so the compliance test matrix can run without a
+// DB. Production deployments should replace it with a SQLite WAL / MySQL
+// backend once the driver dependency is introduced.
 package persistence
 
 import (

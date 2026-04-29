@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -214,7 +215,12 @@ func (r *HookRunner) runHook(parent context.Context, h HookSpec, ev events.Event
 	}
 	_ = json.Unmarshal(ev.Data, &data)
 
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", h.Command)
+	shell, flag := "/bin/sh", "-c"
+	if runtime.GOOS == "windows" {
+		shell = filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
+		flag = "/c"
+	}
+	cmd := exec.CommandContext(ctx, shell, flag, h.Command)
 	cmd.Env = append(os.Environ(),
 		"EVENT_TYPE="+ev.Type,
 		"EXECUTION_ID="+data.ExecutionID,

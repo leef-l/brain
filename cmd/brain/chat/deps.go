@@ -40,6 +40,7 @@ type Deps struct {
 	// Bridge tool registration (still injected because bridge/ is a sibling package)
 	RegisterDelegateTool func(reg tool.Registry, orch *kernel.Orchestrator, e *env.Environment)
 	RegisterBridgeTools  func(reg tool.Registry, orch *kernel.Orchestrator)
+	RegisterWorkflowTool func(reg tool.Registry, orch *kernel.Orchestrator)
 
 	// Provider
 	OpenConfiguredProvider func(cfg *config.Config, brainKind string, input *config.ModelConfigInput, flagProvider, flagKey, flagURL, flagModel string) (provider.Session, error)

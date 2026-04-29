@@ -147,6 +147,11 @@ type BidirRPC interface {
 	// errors).
 	Handle(method string, handler HandlerFunc)
 
+	// HandlerExists reports whether a handler has already been registered
+	// for the given method. Used by LLMProxy.RegisterHandlers to avoid
+	// duplicate registration when multiple callers share the same BidirRPC.
+	HandlerExists(method string) bool
+
 	// Start kicks off the reader goroutine that consumes inbound frames.
 	// MUST be called exactly once per instance. The returned error is
 	// non-nil only if the reader was already started.
@@ -351,6 +356,13 @@ func (r *bidirRPC) Handle(method string, handler HandlerFunc) {
 		panic(fmt.Sprintf("BidirRPC: duplicate handler registration for %q", method))
 	}
 	r.handlers[method] = handler
+}
+
+func (r *bidirRPC) HandlerExists(method string) bool {
+	r.rpcMu.Lock()
+	defer r.rpcMu.Unlock()
+	_, exists := r.handlers[method]
+	return exists
 }
 
 // StaleResponseCount returns the total number of stale-response drops per

@@ -35,6 +35,7 @@ import (
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/sidecar"
@@ -51,12 +52,14 @@ type browserHandler struct {
 	registry     tool.Registry
 	caller       sidecar.KernelCaller
 	browserTools []tool.Tool
-	learner      *kernel.DefaultBrainLearner
+	learner      kernel.BrainLearner
 	reloader     *browserRuntimeReloader
 	headedOnce   sync.Once
 }
 
-var runBrowserAgentLoop = sidecar.RunAgentLoopFull
+var runBrowserAgentLoop = func(ctx context.Context, caller sidecar.KernelCaller, registry tool.Registry, systemPrompt string, instruction string, budget *sidecar.ExecuteBudget, extraContext json.RawMessage, observer loop.ToolObserver) *sidecar.ExecuteResult {
+	return sidecar.RunAgentLoopFull(ctx, caller, registry, systemPrompt, instruction, budget, extraContext, observer, "")
+}
 
 type browserLearningStoreSitemapCache struct {
 	store persistence.LearningStore
@@ -377,7 +380,7 @@ func newBrowserHandler(reloader *browserRuntimeReloader) *browserHandler {
 	return &browserHandler{
 		registry:     reg,
 		browserTools: browserTools,
-		learner:      kernel.NewDefaultBrainLearner(agent.KindBrowser),
+		learner:      NewBrowserBrainLearner(),
 		reloader:     reloader,
 	}
 }
@@ -880,7 +883,7 @@ RULES:
 		userMsg += "\n\nRecent interaction feedback:\n" + feedback
 	}
 
-	provider := sidecar.NewKernelLLMProvider(h.caller, "browser-planner")
+	provider := sidecar.NewKernelLLMProvider(h.caller, "browser-planner", "")
 	resp, err := provider.Complete(ctx, &llm.ChatRequest{
 		System: []llm.SystemBlock{{Text: systemPrompt}},
 		Messages: []llm.Message{{
@@ -1728,7 +1731,7 @@ Be efficient: perceive, act, verify (snapshot), report. Do not take unnecessary 
 }
 
 func (h *browserHandler) runFallbackAgentLoop(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry, systemPrompt string, budget *sidecar.ExecuteBudget, allowAutoTakeover bool, feedback string) *sidecar.ExecuteResult {
-	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, mergeLoopContextText(req.Context, feedback))
+	result := runBrowserAgentLoop(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, mergeLoopContextText(req.Context, feedback), nil)
 	result = normalizeBrowserLoopResult(ctx, registry, result)
 	// budget 耗尽 = LLM 卡在循环里还没调 takeover,我们兜底自动调一次让
 	// 用户接管。关键：/resume 后必须在同一个 delegated run 里继续执行，
@@ -1950,10 +1953,34 @@ func hasCredentialVariables(vars map[string]interface{}) bool {
 }
 
 func (h *browserHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	return sidecar.DispatchToolCall(ctx, params, h.registry, h.buildRegistry)
+	var req struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(params, &req)
+
+	result, err := sidecar.DispatchToolCall(ctx, params, h.registry, h.buildRegistry)
+
+	if req.Name != "" {
+		if recorder, ok := h.learner.(kernel.ToolOutcomeRecorder); ok {
+			success := err == nil
+			if r, ok := result.(*protocol.ToolCallResult); ok {
+				success = !r.IsError
+			}
+			recorder.RecordToolOutcome(req.Name, success)
+		}
+	}
+
+	return result, err
 }
 
 func main() {
+	if err := runBrowserBrain(); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-browser: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runBrowserBrain() error {
 	listen := ""
 	for i, arg := range os.Args[1:] {
 		if arg == "--listen" && i+1 < len(os.Args[1:]) {
@@ -1963,19 +1990,16 @@ func main() {
 
 	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-browser: license config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("license config: %v", err)
 	}
 	res, err := license.CheckSidecar("brain-browser", verifyOpts)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-browser: license: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("license: %v", err)
 	}
 	tool.ConfigureBrowserFeatureGate(res)
 	runtimeStores, runtimeReloader, err := configureBrowserRuntime(context.Background())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-browser: runtime wiring: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("runtime wiring: %v", err)
 	}
 	if runtimeStores != nil {
 		defer runtimeStores.Close()
@@ -1990,14 +2014,9 @@ func main() {
 
 	handler := newBrowserHandler(runtimeReloader)
 	if listen != "" {
-		err = sidecar.ListenAndServe(listen, handler)
-	} else {
-		err = sidecar.Run(handler)
+		return sidecar.ListenAndServe(listen, handler)
 	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-browser: %v\n", err)
-		os.Exit(1)
-	}
+	return sidecar.Run(handler)
 }
 
 // buildRegistry 在 ExecutionSpec 约束下构建一份 registry。

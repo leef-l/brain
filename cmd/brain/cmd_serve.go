@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"net"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,6 +27,7 @@ import (
 	"github.com/leef-l/brain/sdk/cli"
 	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/kernel/mcpadapter"
 	"github.com/leef-l/brain/sdk/license"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
@@ -198,6 +202,27 @@ type runEntry struct {
 	cancel context.CancelFunc `json:"-"`
 }
 
+// workflowEntry tracks an in-flight or finished Workflow.
+type workflowEntry struct {
+	mu        sync.Mutex               `json:"-"`
+	ID        string                   `json:"workflow_id"`
+	Status    string                   `json:"status"`
+	Result    *kernel.WorkflowResult   `json:"result,omitempty"`
+	CreatedAt time.Time                `json:"created_at"`
+	cancel    context.CancelFunc       `json:"-"`
+}
+
+func (e *workflowEntry) snapshot() *workflowEntry {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return &workflowEntry{
+		ID:        e.ID,
+		Status:    e.Status,
+		Result:    e.Result,
+		CreatedAt: e.CreatedAt,
+	}
+}
+
 func runPatternSplitScanOnce(ctx context.Context, store tool.PatternFailureStore) (int, error) {
 	if store == nil {
 		return 0, nil
@@ -304,6 +329,7 @@ type runManager struct {
 	runs         sync.Map // id → *runEntry
 	store        *runtimeStore
 	pool         *kernel.ProcessBrainPool  // 全局共享的 BrainPool，多 run 复用
+	mcpPool      *mcpadapter.MCPBrainPool  // 全局 MCP brain 池
 	eventBus     *events.MemEventBus       // 全局事件总线，用于 SSE 推送
 	leaseManager *kernel.MemLeaseManager   // 全局租约管理器，协调资源互斥与共享访问
 	capMatcher   *kernel.CapabilityMatcher // 全局能力匹配器，三阶段 brain 选择
@@ -312,10 +338,18 @@ type runManager struct {
 	orgEnforcer  kernel.OrgPolicyEnforcer  // 组织级授权策略执行器（可为 nil）
 	scheduler    kernel.TaskScheduler      // 任务级调度引擎（B-2）
 	remotePool   *kernel.RemoteBrainPool   // 远程 brain 连接池（D-3，可为 nil）
-	rootCtx      context.Context
-	wg           sync.WaitGroup
-	launchMu     sync.Mutex // guards concurrent slot reservations
-	running      int
+	observer     kernel.StateObserver       // 系统状态观测器（钱学森 Phase A，可选）
+	controller   kernel.FeedbackController  // 反馈控制器（钱学森 Phase B，可选）
+	stabilizer   kernel.SelfStabilizer      // 自稳定器（钱学森 Phase C，可选）
+	rootCtx        context.Context
+	wg             sync.WaitGroup
+	launchMu       sync.Mutex // guards concurrent slot reservations
+	running        int
+	requestCount   atomic.Int64 // 总请求数（MetricsCallback 用）
+	completedCount atomic.Int64 // 总完成数（MetricsCallback 用）
+	startTime      time.Time    // 服务启动时间（MetricsCallback 用）
+
+	workflows sync.Map // id → *workflowEntry
 }
 
 type learningStoreSitemapCache struct {
@@ -408,8 +442,21 @@ func (rm *runManager) runningCount() int {
 	return rm.running
 }
 
+// pendingCount 返回当前处于 waiting 状态的任务数（队列深度估计）。
+func (rm *runManager) pendingCount() int {
+	var count int
+	rm.runs.Range(func(_, v interface{}) bool {
+		if v.(*runEntry).snapshot().Status == "waiting" {
+			count++
+		}
+		return true
+	})
+	return count
+}
+
 func (rm *runManager) launch(entry *runEntry, fn func()) {
 	rm.runs.Store(entry.ID, entry)
+	rm.requestCount.Add(1)
 	rm.wg.Add(1)
 	go func() {
 		defer rm.wg.Done()
@@ -529,15 +576,51 @@ func runServe(args []string) int {
 		pool.AutoStart(serveCtx)
 	}
 
+	// 全局 MCP BrainPool：将 MCP 服务器作为 brain 接入。
+	var mcpPool *mcpadapter.MCPBrainPool
+	if cfg != nil && len(cfg.MCPServers) > 0 {
+		var mcpConfigs []mcpadapter.MCPServerConfig
+		for _, entry := range cfg.MCPServers {
+			mcpConfigs = append(mcpConfigs, mcpadapter.MCPServerConfig{
+				Kind:       agent.Kind(entry.Kind),
+				BinPath:    entry.BinPath,
+				Args:       entry.Args,
+				Env:        entry.Env,
+				ToolPrefix: entry.ToolPrefix,
+				AutoStart:  entry.AutoStart,
+			})
+		}
+		mcpPool = mcpadapter.NewMCPBrainPool(mcpConfigs)
+		defer func() {
+			if mcpPool != nil {
+				_ = mcpPool.Shutdown(context.Background())
+			}
+		}()
+		mcpPool.AutoStart(serveCtx)
+	}
+
+	// 全局租约管理器，协调资源互斥与共享访问
+	leaseManager := kernel.NewMemLeaseManager()
+
 	// 为 startup 工具注册构建一个临时 Orchestrator（共享 pool）。
 	var startupOrch *kernel.Orchestrator
 	if pool != nil {
-		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{})
+		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{},
+			kernel.WithLeaseManager(leaseManager),
+			kernel.WithMCPBrainPool(mcpPool),
+		)
 		installHumanTakeoverBridge(startupOrch)
 	}
 	runtime.Kernel.ToolRegistry = buildManagedRegistry(cfg, env, "central", func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, startupOrch, env)
 		registerSpecialistBridgeTools(reg, startupOrch)
+		if startupOrch != nil {
+			ctx, cancel := context.WithTimeout(serveCtx, 30*time.Second)
+			defer cancel()
+			if err := startupOrch.RegisterMCPTools(ctx, reg); err != nil {
+				fmt.Fprintf(os.Stderr, "brain serve: warning: register mcp tools: %v\n", err)
+			}
+		}
 	})
 
 	fmt.Fprintf(os.Stderr, "Starting Brain Kernel (cluster mode)\n")
@@ -557,7 +640,6 @@ func runServe(args []string) int {
 	}
 	// 创建全局事件总线，供 SSE 端点和运行时事件推送使用
 	globalEventBus := events.NewMemEventBus()
-	leaseManager := kernel.NewMemLeaseManager()
 
 	// Task #19: 启动外部进程钩子 runner,订阅 task.state.* 事件。配置在
 	// ~/.brain/hooks.json,不存在时 no-op,不影响 serve 启动。
@@ -586,6 +668,7 @@ func runServe(args []string) int {
 	// 以及 ~/.brain/brains/<kind>/brain.json（安装目录）。
 	// 找不到 manifest 时静默跳过，保持向后兼容。
 	loadManifestCapabilities(capIndex, pool, env.Workdir)
+	runtime.Kernel.CapabilityIndex = capIndex
 
 	capMatcher := kernel.NewCapabilityMatcher(capIndex)
 
@@ -712,6 +795,7 @@ func runServe(args []string) int {
 	mgr := &runManager{
 		store:        runtime.RunStore,
 		pool:         pool,
+		mcpPool:      mcpPool,
 		eventBus:     globalEventBus,
 		leaseManager: leaseManager,
 		capMatcher:   capMatcher,
@@ -721,6 +805,38 @@ func runServe(args []string) int {
 		scheduler:    scheduler,
 		remotePool:   remotePool,
 		rootCtx:      serveCtx,
+		startTime:    time.Now(),
+	}
+
+	// 钱学森 Phase A: 启动系统状态观测器（控制论主线1 — 系统建模）
+	if pool != nil {
+		stateObserver := kernel.NewMemStateObserver(pool, leaseManager, learner)
+		stateObserver.SetMetricsCallback(func() (int, int, float64, float64) {
+			elapsed := time.Since(mgr.startTime).Seconds()
+			if elapsed < 1 {
+				elapsed = 1
+			}
+			reqRate := float64(mgr.requestCount.Load()) / elapsed
+			thrRate := float64(mgr.completedCount.Load()) / elapsed
+			return mgr.runningCount(), mgr.pendingCount(), reqRate, thrRate
+		})
+		mgr.observer = stateObserver
+		go stateObserver.Start(serveCtx)
+		fmt.Fprintf(os.Stderr, "brain serve: state observer active\n")
+
+		// 钱学森 Phase B: 启动反馈控制器（控制论主线2 — 反馈伺服）
+		couplingMatrix := kernel.DefaultCouplingMatrix()
+		feedbackCtrl := kernel.NewMemFeedbackController(kernel.DefaultPerformanceSpec(), stateObserver)
+		feedbackCtrl.SetCouplingMatrix(couplingMatrix)
+		mgr.controller = feedbackCtrl
+		go feedbackCtrl.Start(serveCtx)
+		fmt.Fprintf(os.Stderr, "brain serve: feedback controller active\n")
+
+		// 钱学森 Phase C: 启动自稳定器（控制论主线5 — 长期可靠）
+		stabilizer := kernel.NewMemSelfStabilizer(stateObserver, couplingMatrix)
+		mgr.stabilizer = stabilizer
+		go stabilizer.Start(serveCtx)
+		fmt.Fprintf(os.Stderr, "brain serve: self stabilizer active\n")
 	}
 
 	// Task #16: 人类接管协调器。工具层 human.request_takeover 阻塞等待,
@@ -773,7 +889,43 @@ func runServe(args []string) int {
 		json.NewEncoder(w).Encode(map[string]interface{}{"tools": items, "total": len(items)})
 	})
 
-	// POST /v1/runs — submit a new Run
+	// GET /v1/brains — list all registered brains with their capabilities
+	mux.HandleFunc("/v1/brains", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		idx := runtime.Kernel.CapabilityIndex
+		if idx == nil {
+			http.Error(w, `{"error":"capability index not available"}`, http.StatusServiceUnavailable)
+			return
+		}
+		brains := idx.AllBrains()
+		type brainItem struct {
+			Kind         string   `json:"kind"`
+			Capabilities []string `json:"capabilities"`
+		}
+		items := make([]brainItem, 0, len(brains))
+		for _, kind := range brains {
+			items = append(items, brainItem{
+				Kind:         string(kind),
+				Capabilities: idx.BrainCapabilities(kind),
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"brains": items, "total": len(items)})
+	})
+
+			// POST /v1/contracts/execute - direct contract execution on a sidecar brain
+		mux.HandleFunc("/v1/contracts/execute", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "{\"error\":\"method not allowed\"}", http.StatusMethodNotAllowed)
+				return
+			}
+			handleContractExecute(w, r, mgr, cfg)
+		})
+
+// POST /v1/runs — submit a new Run
 	// GET  /v1/runs — list all Runs
 	mux.HandleFunc("/v1/runs", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -856,6 +1008,74 @@ func runServe(args []string) int {
 		}
 	})
 
+	// ---------------------------------------------------------------
+	// v3 Jobs 路由族 — /v1/jobs
+	// 轻量级后台任务入口，内部复用 execution/run 基础设施
+	// ---------------------------------------------------------------
+	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			handleCreateJob(w, r, mgr, runtime, cfg, *maxRuns, mode, env.Workdir, runWorkdirPolicy)
+		case http.MethodGet:
+			handleListJobs(w, r, mgr)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/v1/jobs/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/v1/jobs/")
+		if id == "" {
+			http.Error(w, "missing job id", http.StatusBadRequest)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			handleGetJob(w, r, mgr, id)
+		case http.MethodDelete:
+			handleCancelJob(w, r, mgr, id)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// ---------------------------------------------------------------
+	// v3 Workflow 路由族 — /v1/workflows
+	// DAG 编排执行入口，节点间并行/串行由 WorkflowEngine 调度
+	// ---------------------------------------------------------------
+	mux.HandleFunc("/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			handleCreateWorkflow(w, r, mgr, cfg, mode, env.Workdir)
+		case http.MethodGet:
+			handleListWorkflows(w, r, mgr)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/v1/workflows/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/v1/workflows/")
+		if path == "" {
+			http.Error(w, `{"error":"missing workflow id"}`, http.StatusBadRequest)
+			return
+		}
+		parts := strings.SplitN(path, "/", 2)
+		id := parts[0]
+		sub := ""
+		if len(parts) > 1 {
+			sub = parts[1]
+		}
+		switch {
+		case sub == "events" && r.Method == http.MethodGet:
+			handleWorkflowEvents(w, r, mgr, id)
+		case sub == "" && r.Method == http.MethodGet:
+			handleGetWorkflow(w, r, mgr, id)
+		case sub == "" && r.Method == http.MethodDelete:
+			handleCancelWorkflow(w, r, mgr, id)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
 	// Dashboard API 路由
 	serverStart := time.Now().UTC()
 	// Task #17: LearningProvider 聚合 PatternLibrary + LearningStore 供 Dashboard。
@@ -866,14 +1086,15 @@ func runServe(args []string) int {
 			learning:   runtime.Stores.LearningStore,
 		}
 	}
-	wsHub := registerDashboardRoutes(mux, mgr, pool, globalEventBus, cfg, serverStart, leaseManager, learningProvider)
+	wsHub := registerDashboardRoutes(mux, mgr, pool, mcpPool, globalEventBus, cfg, serverStart, leaseManager, learningProvider)
 	if wsHub != nil {
 		wsHub.Start(context.Background())
 	}
 
 	// Dashboard 静态文件服务（嵌入式 SPA）
 	staticFS, _ := iofs.Sub(dashboard.StaticFS, "static")
-	mux.Handle("/dashboard/", http.StripPrefix("/dashboard/", http.FileServer(http.FS(staticFS))))
+	staticHandler := dashboard.AuthMiddleware(os.Getenv("BRAIN_DASHBOARD_TOKEN"), http.StripPrefix("/dashboard/", http.FileServer(http.FS(staticFS))))
+	mux.Handle("/dashboard/", staticHandler)
 	// 根路径重定向到 dashboard
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -884,10 +1105,12 @@ func runServe(args []string) int {
 	})
 
 	server := &http.Server{
-		Addr:         *listen,
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Addr:        *listen,
+		Handler:     mux,
+		ReadTimeout: 30 * time.Second,
+		// WriteTimeout disabled — SSE streaming responses may last arbitrarily
+		// long (LLM token generation can take 10s–60s+). The per-request ctx
+		// timeout in handleContractExecute already guards against hung handlers.
 	}
 
 	ln, err := net.Listen("tcp", *listen)
@@ -927,6 +1150,9 @@ func runServe(args []string) int {
 		if mgr.remotePool != nil {
 			mgr.remotePool.Shutdown(shutCtx)
 		}
+		if mgr.mcpPool != nil {
+			mgr.mcpPool.Shutdown(shutCtx)
+		}
 		if runtime.Stores != nil {
 			runtime.Stores.Close()
 		}
@@ -962,6 +1188,10 @@ type createRunRequest struct {
 	Restart       string `json:"restart,omitempty"`        // never / on-failure / always，默认 never
 	WatchInterval string `json:"watch_interval,omitempty"` // watch 模式执行间隔，如 "60s"/"5m"，默认 60s
 
+	// 任务级权限覆盖（可选）。当非空时，覆盖 brain serve 启动时的全局 mode。
+	// 支持: restricted, default, accept-edits, auto, bypass-permissions
+	PermissionMode string `json:"permission_mode,omitempty"`
+
 	timeoutDuration       time.Duration `json:"-"`
 	watchIntervalDuration time.Duration `json:"-"`
 }
@@ -988,7 +1218,7 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		return
 	}
 	req.Workdir = effectiveWorkdir
-	req.timeoutDuration, err = resolveRunTimeoutWithConfig(cfg, req.Timeout, 5*time.Minute)
+	req.timeoutDuration, err = resolveRunTimeoutWithConfig(cfg, req.Timeout, 15*time.Minute)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest)
 		return
@@ -1014,15 +1244,33 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		return
 	}
 
+	// 任务级权限覆盖：请求体中的 permission_mode 优先于全局 mode。
+	// 如果请求的权限超过全局上限，使用全局 mode 作为安全上限。
+	effectiveMode := mode
+	if req.PermissionMode != "" {
+		if requestedMode, err := parsePermissionMode(req.PermissionMode); err == nil {
+			// 安全检查：请求的任务权限不能超过全局 mode 的宽松度。
+			// 全局 mode 越严格，对任务权限的限制越强。
+			if isModeMorePermissive(requestedMode, mode) {
+				// 任务请求更宽松的权限，但全局 mode 不允许 — 降级到全局 mode。
+				// 日志记录降级行为以便审计。
+				fmt.Fprintf(os.Stderr, "[serve] task permission_mode '%s' downgraded to global mode '%s' for brain=%s\n",
+					req.PermissionMode, string(mode), req.Brain)
+			} else {
+				effectiveMode = requestedMode
+			}
+		}
+	}
+
 	// Validate execution environment BEFORE creating the run record,
 	// so failed validation doesn't leave orphan "running" records.
-	env := newExecutionEnvironment(req.Workdir, mode, cfg, nil, false)
+	env := newExecutionEnvironment(req.Workdir, effectiveMode, cfg, nil, false)
 	req.FilePolicy = resolveFilePolicyInput(cfg, req.FilePolicy)
 	if err := applyFilePolicy(env, req.FilePolicy); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest)
 		return
 	}
-	if mode == modeRestricted && env.FilePolicy == nil {
+	if effectiveMode == modeRestricted && env.FilePolicy == nil {
 		http.Error(w, `{"error":"restricted mode requires file_policy (config or request body)"}`, http.StatusBadRequest)
 		return
 	}
@@ -1048,7 +1296,7 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		return
 	}
 
-	runRec, err := runtime.RunStore.Create(req.Brain, req.Prompt, string(mode), req.Workdir)
+	runRec, err := runtime.RunStore.Create(req.Brain, req.Prompt, string(effectiveMode), req.Workdir)
 	if err != nil {
 		mgr.releaseSlot()
 		http.Error(w, fmt.Sprintf(`{"error":"create run record: %s"}`, err), http.StatusInternalServerError)
@@ -1114,7 +1362,7 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 	}
 	_ = runtime.RunStore.AppendEvent(runRec.ID, "run.accepted", "run accepted by serve API", nil)
 	mgr.launchReserved(entry, func() {
-		executeRun(ctx, entry, mgr, runtime, providerSession, req, runRec, cfg, mode)
+		executeRun(ctx, entry, mgr, runtime, providerSession, req, runRec, cfg, effectiveMode)
 	})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1127,6 +1375,13 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 	// 复用 runEntry 中创建的 TaskExecution 状态机实例
 	te := entry.taskExec
 	_ = te.Transition(kernel.StateRunning)
+
+	// 控制论：任务完成时统计（cancelled 不计入完成）
+	defer func() {
+		if entry.status() != "cancelled" {
+			mgr.completedCount.Add(1)
+		}
+	}()
 
 	env := newExecutionEnvironment(runRec.Workdir, mode, cfg, nil, false)
 	_ = applyFilePolicy(env, req.FilePolicy)
@@ -1143,11 +1398,14 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 				return session.Provider
 			},
 		}
+		_ = env
 		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 			kernel.WithCapabilityMatcher(mgr.capMatcher),
 			kernel.WithLearningEngine(mgr.learner),
 			kernel.WithContextEngine(mgr.ctxEngine),
+			kernel.WithLeaseManager(mgr.leaseManager),
+			kernel.WithMCPBrainPool(mgr.mcpPool),
 		)
 		installHumanTakeoverBridge(orch)
 	}
@@ -1155,6 +1413,13 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 	runReg := buildManagedRegistry(cfg, env, req.Brain, func(reg tool.Registry) {
 		registerDelegateToolForEnvironment(reg, orch, env)
 		registerSpecialistBridgeTools(reg, orch)
+		if orch != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := orch.RegisterMCPTools(ctx, reg); err != nil {
+				fmt.Fprintf(os.Stderr, "brain serve: warning: register mcp tools for run: %v\n", err)
+			}
+		}
 	})
 	systemPrompt := buildSystemPrompt(mode, env.Sandbox)
 	if orch != nil {
@@ -1410,4 +1675,273 @@ func handleExecutionEvents(w http.ResponseWriter, r *http.Request, mgr *runManag
 			return
 		}
 	}
+}
+
+// --- v3 Jobs 端点处理函数 ---
+// Jobs 是后台任务的轻量级入口，内部复用 execution/run 基础设施。
+
+func handleCreateJob(w http.ResponseWriter, r *http.Request, mgr *runManager, runtime *cliRuntime, cfg *brainConfig, maxConcurrent int, mode permissionMode, defaultWorkdir string, workdirPolicy serveWorkdirPolicy) {
+	// Jobs 默认后台模式；若请求体已显式指定 mode，则尊重用户选择。
+	var req createRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid JSON body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = "background"
+	}
+	body, _ := json.Marshal(req)
+	newR := r.Clone(r.Context())
+	newR.Body = io.NopCloser(bytes.NewReader(body))
+	newR.ContentLength = int64(len(body))
+	handleCreateRun(w, newR, mgr, runtime, cfg, maxConcurrent, mode, defaultWorkdir, workdirPolicy)
+}
+
+func handleListJobs(w http.ResponseWriter, _ *http.Request, mgr *runManager) {
+	runs := mgr.list()
+	var jobs []*runEntry
+	for _, e := range runs {
+		if e.Mode == "background" {
+			jobs = append(jobs, e)
+		}
+	}
+	if jobs == nil {
+		jobs = []*runEntry{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"jobs": jobs})
+}
+
+func handleGetJob(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
+	entry, ok := mgr.get(id)
+	if !ok {
+		http.Error(w, `{"error":"job not found"}`, http.StatusNotFound)
+		return
+	}
+	snap := entry.snapshot()
+	if snap.ExecutionID == "" {
+		snap.ExecutionID = snap.ID
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(snap)
+}
+
+func handleCancelJob(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
+	entry, ok := mgr.get(id)
+	if !ok {
+		http.Error(w, `{"error":"job not found"}`, http.StatusNotFound)
+		return
+	}
+	status := entry.markCancelled()
+	if mgr.store != nil && status == "cancelled" {
+		data, _ := json.Marshal(map[string]string{"reason": "api cancel job"})
+		_ = mgr.store.AppendEvent(id, "job.cancel.requested", "api cancel job", data)
+		_, _ = mgr.store.Finish(id, status, entry.Result, "")
+	}
+	mgr.runs.Store(id, entry)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"job_id": id, "status": status})
+}
+
+
+// --- v3 Workflow 端点处理函数 ---
+
+type createWorkflowRequest struct {
+	Workflow kernel.Workflow `json:"workflow"`
+	Mode     string          `json:"mode,omitempty"`
+	Workdir  string          `json:"workdir,omitempty"`
+}
+
+func handleCreateWorkflow(w http.ResponseWriter, r *http.Request, mgr *runManager, cfg *brainConfig, defaultMode permissionMode, defaultWorkdir string) {
+	var req createWorkflowRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid JSON body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Workflow.Nodes) == 0 {
+		http.Error(w, `{"error":"workflow has no nodes"}`, http.StatusBadRequest)
+		return
+	}
+
+	wfMode := defaultMode
+	if req.Mode != "" {
+		if m, err := parsePermissionMode(req.Mode); err == nil {
+			wfMode = m
+		}
+	}
+	workdir := req.Workdir
+	if workdir == "" {
+		workdir = defaultWorkdir
+	}
+
+	wfID := fmt.Sprintf("wf-%d", time.Now().UnixNano())
+	ctx, cancel := context.WithCancel(mgr.rootCtx)
+
+	entry := &workflowEntry{
+		ID:        wfID,
+		Status:    "running",
+		CreatedAt: time.Now().UTC(),
+		cancel:    cancel,
+	}
+	mgr.workflows.Store(wfID, entry)
+
+	// 创建轻量 Orchestrator（复用全局共享资源）
+	var orch *kernel.Orchestrator
+	if mgr.pool != nil {
+		llmProxy := &kernel.LLMProxy{
+			ProviderFactory: func(kind agent.Kind) llm.Provider {
+				session, err := openConfiguredProvider(cfg, string(kind), nil, "", "", "", "")
+				if err != nil {
+					return nil
+				}
+				return session.Provider
+			},
+		}
+		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
+			kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
+			kernel.WithCapabilityMatcher(mgr.capMatcher),
+			kernel.WithLearningEngine(mgr.learner),
+			kernel.WithContextEngine(mgr.ctxEngine),
+			kernel.WithLeaseManager(mgr.leaseManager),
+			kernel.WithMCPBrainPool(mgr.mcpPool),
+		)
+	}
+
+	go func() {
+		defer cancel()
+		if orch == nil {
+			entry.mu.Lock()
+			entry.Status = "failed"
+			entry.mu.Unlock()
+			mgr.workflows.Store(wfID, entry)
+			return
+		}
+
+		reporter := func(eventType, nodeID, status, output, errMsg string) {
+			if mgr.eventBus != nil {
+				mgr.eventBus.Publish(ctx, events.Event{
+					ExecutionID: wfID,
+					Type:        eventType,
+					Data: json.RawMessage(marshalJSON(map[string]interface{}{
+						"workflow_id": wfID,
+						"node_id":     nodeID,
+						"status":      status,
+						"output":      output,
+						"error":       errMsg,
+						"workdir":     workdir,
+						"mode":        string(wfMode),
+					})),
+				})
+			}
+		}
+
+		result, err := orch.ExecuteWorkflow(ctx, &req.Workflow, reporter)
+
+		entry.mu.Lock()
+		if err != nil {
+			entry.Status = "failed"
+		} else {
+			entry.Status = string(result.State)
+		}
+		entry.Result = result
+		entry.mu.Unlock()
+		mgr.workflows.Store(wfID, entry)
+
+		if mgr.eventBus != nil {
+			finalType := "workflow.completed"
+			if err != nil {
+				finalType = "workflow.failed"
+			}
+			mgr.eventBus.Publish(ctx, events.Event{
+				ExecutionID: wfID,
+				Type:        finalType,
+				Data: json.RawMessage(marshalJSON(map[string]interface{}{
+					"workflow_id": wfID,
+					"status":      entry.Status,
+				})),
+			})
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"workflow_id": wfID, "status": "running"})
+}
+
+func handleListWorkflows(w http.ResponseWriter, _ *http.Request, mgr *runManager) {
+	var out []*workflowEntry
+	mgr.workflows.Range(func(_, v interface{}) bool {
+		out = append(out, v.(*workflowEntry).snapshot())
+		return true
+	})
+	if out == nil {
+		out = []*workflowEntry{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"workflows": out})
+}
+
+func handleGetWorkflow(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
+	v, ok := mgr.workflows.Load(id)
+	if !ok {
+		http.Error(w, `{"error":"workflow not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v.(*workflowEntry).snapshot())
+}
+
+func handleCancelWorkflow(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
+	v, ok := mgr.workflows.Load(id)
+	if !ok {
+		http.Error(w, `{"error":"workflow not found"}`, http.StatusNotFound)
+		return
+	}
+	entry := v.(*workflowEntry)
+	entry.mu.Lock()
+	if entry.Status == "running" {
+		entry.Status = "cancelled"
+		if entry.cancel != nil {
+			entry.cancel()
+		}
+	}
+	status := entry.Status
+	entry.mu.Unlock()
+	mgr.workflows.Store(id, entry)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"workflow_id": id, "status": status})
+}
+
+func handleWorkflowEvents(w http.ResponseWriter, r *http.Request, mgr *runManager, id string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch, cancel := mgr.eventBus.Subscribe(r.Context(), id)
+	defer cancel()
+
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+// marshalJSON 是 json.Marshal 的便捷包装，忽略错误。
+func marshalJSON(v interface{}) []byte {
+	data, _ := json.Marshal(v)
+	return data
 }

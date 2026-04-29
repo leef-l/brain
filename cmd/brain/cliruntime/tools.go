@@ -1,6 +1,8 @@
 package cliruntime
 
 import (
+	"os"
+
 	"github.com/leef-l/brain/cmd/brain/env"
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/toolguard"
@@ -12,6 +14,9 @@ func NewManagedShellTool(brainKind string, e *env.Environment) tool.Tool {
 	if e.CmdSandbox != nil {
 		st.SetCommandSandbox(e.CmdSandbox)
 	}
+	// Chat / run CLI: stream shell output in real time so the user can see
+	// what a long-running command (e.g. npm install, vite dev) is doing.
+	st.StreamTo = os.Stderr
 	managed := e.WrapPathChecks(st)
 	managed = toolguard.WrapCommandPolicy(managed, e.CmdSandbox, e.SandboxCfg, e.FilePolicy)
 	return e.WrapApproval(managed, env.ToolClassCommand, env.WrapConfirm)
@@ -23,6 +28,7 @@ func NewManagedRunTestsTool(e *env.Environment) tool.Tool {
 	if e.CmdSandbox != nil {
 		rt.SetCommandSandbox(e.CmdSandbox)
 	}
+	rt.StreamTo = os.Stderr
 	managed := e.WrapPathChecks(rt)
 	managed = toolguard.WrapCommandPolicy(managed, e.CmdSandbox, e.SandboxCfg, e.FilePolicy)
 	return e.WrapApproval(managed, env.ToolClassCommand, env.WrapConfirm)

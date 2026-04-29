@@ -4,9 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/shared"
+	"github.com/leef-l/brain/sdk/tool"
 )
 
-func TestNewFaultHandler_AppliesDelegateToolPolicy(t *testing.T) {
+func TestRunBrain_FaultRegistryFiltered(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	data := `{
   "tool_profiles": {
@@ -24,11 +28,17 @@ func TestNewFaultHandler_AppliesDelegateToolPolicy(t *testing.T) {
 	}
 	t.Setenv("BRAIN_CONFIG", configPath)
 
-	h := newFaultHandler()
-	if _, ok := h.registry.Lookup("fault.kill_process"); ok {
+	reg := shared.RegisterWithPolicy(agent.KindFault,
+		tool.NewInjectErrorTool(),
+		tool.NewInjectLatencyTool(),
+		tool.NewKillProcessTool(),
+		tool.NewCorruptResponseTool(),
+		tool.NewNoteTool("fault"),
+	)
+	if _, ok := reg.Lookup("fault.kill_process"); ok {
 		t.Fatalf("fault.kill_process should be filtered out")
 	}
-	if _, ok := h.registry.Lookup("fault.inject_latency"); !ok {
+	if _, ok := reg.Lookup("fault.inject_latency"); !ok {
 		t.Fatalf("fault.inject_latency should remain available")
 	}
 }

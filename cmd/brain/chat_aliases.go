@@ -26,6 +26,7 @@ func init() {
 		SaveRunPlan:             saveRunPlan,
 		RegisterDelegateTool:    registerDelegateToolForEnvironment,
 		RegisterBridgeTools:     registerSpecialistBridgeTools,
+		RegisterWorkflowTool:    registerWorkflowToolForEnvironment,
 		OpenConfiguredProvider:  provider.OpenConfigured,
 		OpenMockProvider:        provider.OpenMock,
 	})

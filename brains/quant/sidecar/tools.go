@@ -230,6 +230,13 @@ func (t *globalRiskStatusTool) Execute(ctx context.Context, _ json.RawMessage) (
 // quant.strategy_weights
 // ---------------------------------------------------------------------------
 
+// StrategyWeight represents a single strategy with its base and regime weights.
+type StrategyWeight struct {
+	Name         string  `json:"name"`
+	BaseWeight   float64 `json:"base_weight"`
+	RegimeWeight float64 `json:"regime_weight"`
+}
+
 type strategyWeightsTool struct {
 	qb *quant.QuantBrain
 }
@@ -251,19 +258,63 @@ func (t *strategyWeightsTool) Schema() tool.Schema {
 
 func (t *strategyWeightsTool) Execute(_ context.Context, _ json.RawMessage) (*tool.Result, error) {
 	type unitWeights struct {
-		UnitID     string              `json:"unit_id"`
-		Strategies []string            `json:"strategies"`
+		UnitID     string           `json:"unit_id"`
+		Strategies []StrategyWeight `json:"strategies"`
+	}
+
+	// Get L1 base weights from weight adapter (if available).
+	var globalBaseWeights map[string]float64
+	if wa := t.qb.WeightAdapter(); wa != nil {
+		globalBaseWeights = wa.Weights()
 	}
 
 	var units []unitWeights
 	for _, u := range t.qb.Units() {
-		var names []string
-		for _, s := range u.Pool.Strategies() {
-			names = append(names, s.Name())
+		// Collect all strategy names from the pool.
+		poolStrategies := u.Pool.Strategies()
+
+		// Get effective (regime-applied) weights from the aggregator.
+		effectiveWeights := make(map[string]float64)
+		if u.Aggregator != nil {
+			baseAgg := u.Aggregator.BaseAggregator()
+			for name, w := range baseAgg.Weights {
+				effectiveWeights[name] = w
+			}
 		}
+
+		// Build per-strategy weight records.
+		strategies := make([]StrategyWeight, 0, len(poolStrategies))
+		for _, s := range poolStrategies {
+			name := s.Name()
+			if name == "" {
+				continue
+			}
+
+			// Base weight: from L1 adapter, then fallback to effective, then default.
+			baseWeight := globalBaseWeights[name]
+			if baseWeight == 0 {
+				baseWeight = effectiveWeights[name]
+			}
+			if baseWeight == 0 {
+				baseWeight = strategy.DefaultWeights()[name]
+			}
+
+			// Regime weight: currently effective weight (post-regime-override).
+			regimeWeight := effectiveWeights[name]
+			if regimeWeight == 0 {
+				regimeWeight = baseWeight
+			}
+
+			strategies = append(strategies, StrategyWeight{
+				Name:         name,
+				BaseWeight:   baseWeight,
+				RegimeWeight: regimeWeight,
+			})
+		}
+
 		units = append(units, unitWeights{
 			UnitID:     u.ID,
-			Strategies: names,
+			Strategies: strategies,
 		})
 	}
 
@@ -1107,12 +1158,11 @@ func (t *backtestStartTool) Execute(_ context.Context, args json.RawMessage) (*t
 	}
 
 	cfg := backtest.Config{
-		Symbol:        input.Symbol,
-		Timeframe:     input.Timeframe,
-		InitialEquity: input.InitialEquity,
-		MaxLeverage:   input.MaxLeverage,
-		SlippageBps:   input.SlippageBps,
-		FeeBps:        input.FeeBps,
+		Symbol:      input.Symbol,
+		Timeframe:   input.Timeframe,
+		MaxLeverage: input.MaxLeverage,
+		SlippageBps: input.SlippageBps,
+		FeeBps:      input.FeeBps,
 	}
 	if cfg.SlippageBps == 0 {
 		cfg.SlippageBps = 5
@@ -1122,7 +1172,7 @@ func (t *backtestStartTool) Execute(_ context.Context, args json.RawMessage) (*t
 	}
 
 	engine := backtest.NewEngine(cfg)
-	report, err := engine.Run(input.Candles)
+	report, err := engine.Run(nil, input.Candles, input.InitialEquity, time.Time{}, time.Time{})
 	if err != nil {
 		return errorResult("backtest failed: " + err.Error())
 	}

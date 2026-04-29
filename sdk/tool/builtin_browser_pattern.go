@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -161,6 +162,22 @@ func SharedPatternLibrary() *PatternLibrary {
 	return lib
 }
 
+// CloseSharedPatternLibrary closes the process-wide pattern-library singleton
+// and resets internal state so that the next call to SharedPatternLibrary() or
+// RefreshSharedPatternLibraryIfChanged() re-opens it. Intended for test
+// teardown on Windows where open SQLite handles prevent temp-directory cleanup.
+func CloseSharedPatternLibrary() {
+	patternLibMu.Lock()
+	defer patternLibMu.Unlock()
+	if patternLib != nil {
+		_ = patternLib.Close()
+		patternLib = nil
+		patternLibErr = nil
+		patternLibDSN = ""
+		patternLibCheckedAt = time.Time{}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // browser.pattern_match
 // ---------------------------------------------------------------------------
@@ -286,10 +303,31 @@ type patternExecRegistry struct {
 	tools map[string]Tool
 }
 
-func (r *patternExecRegistry) Register(_ Tool) error           { return nil }
+func (r *patternExecRegistry) Register(t Tool) error {
+	if r.tools == nil {
+		r.tools = make(map[string]Tool)
+	}
+	r.tools[t.Name()] = t
+	return nil
+}
 func (r *patternExecRegistry) Lookup(name string) (Tool, bool) { t, ok := r.tools[name]; return t, ok }
-func (r *patternExecRegistry) List() []Tool                    { return nil }
-func (r *patternExecRegistry) ListByBrain(_ string) []Tool     { return nil }
+func (r *patternExecRegistry) List() []Tool {
+	out := make([]Tool, 0, len(r.tools))
+	for _, t := range r.tools {
+		out = append(out, t)
+	}
+	return out
+}
+func (r *patternExecRegistry) ListByBrain(brain string) []Tool {
+	out := make([]Tool, 0)
+	prefix := brain + "."
+	for _, t := range r.tools {
+		if strings.HasPrefix(t.Name(), prefix) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 type browserPatternExecTool struct {
 	holder *browserSessionHolder

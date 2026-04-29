@@ -141,12 +141,6 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		}, nil
 	}
 
-	if input.TargetKind == "" {
-		return &tool.Result{
-			Output:  json.RawMessage(`"target_kind is required"`),
-			IsError: true,
-		}, nil
-	}
 	if input.Instruction == "" {
 		return &tool.Result{
 			Output:  json.RawMessage(`"instruction is required"`),
@@ -155,7 +149,7 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 	}
 
 	renderMode := resolveBrowserRenderMode(ctx, input.TargetKind, input.Instruction, input.RenderMode)
-	req := &kernel.SubtaskRequest{
+	req := &kernel.DelegateRequest{
 		TaskID:      fmt.Sprintf("delegate-%s", input.TargetKind),
 		TargetKind:  agent.Kind(input.TargetKind),
 		Instruction: input.Instruction,

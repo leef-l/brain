@@ -139,5 +139,40 @@ func (ql *QuantBrainLearner) ExportMetrics() kernel.BrainMetrics {
 	}
 }
 
+// Adapt 触发 quant 领域学习组件的参数自适应调整。
+// 遍历所有 trading unit，找到第一个可用的 TradeStore，然后依次驱动：
+//   - WeightAdapter.Update  （策略权重重新分配）
+//   - SymbolScorer.Update   （品种评分更新）
+//   - SLTPOptimizer.Update  （止损止盈参数优化）
+func (ql *QuantBrainLearner) Adapt(ctx context.Context) error {
+	var store tradestore.Store
+	for _, u := range ql.qb.Units() {
+		if u.TradeStore != nil {
+			store = u.TradeStore
+			break
+		}
+	}
+	if store == nil {
+		return nil
+	}
+
+	ql.qb.mu.RLock()
+	wa := ql.qb.weightAdapter
+	ss := ql.qb.symbolScorer
+	opt := ql.qb.sltpOptimizer
+	ql.qb.mu.RUnlock()
+
+	if wa != nil {
+		wa.Update(ctx, store)
+	}
+	if ss != nil {
+		ss.Update(store)
+	}
+	if opt != nil {
+		opt.Update(store)
+	}
+	return nil
+}
+
 // 编译时断言：确保 QuantBrainLearner 实现 kernel.BrainLearner 接口。
 var _ kernel.BrainLearner = (*QuantBrainLearner)(nil)

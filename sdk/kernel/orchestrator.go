@@ -11,77 +11,25 @@ package kernel
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/diaglog"
-	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/events"
+	"github.com/leef-l/brain/sdk/flow"
+	"github.com/leef-l/brain/sdk/kernel/mcpadapter"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
+	"github.com/leef-l/brain/sdk/tool"
 )
-
-// SubtaskRequest is the payload of a subtask.delegate RPC from Central.
-type SubtaskRequest struct {
-	// TaskID is a caller-assigned identifier for correlation.
-	TaskID string `json:"task_id"`
-
-	// TargetKind is the specialist brain to delegate to.
-	TargetKind agent.Kind `json:"target_kind"`
-
-	// Instruction is the natural-language task description.
-	Instruction string `json:"instruction"`
-
-	// Context is optional structured context (file paths, prior results).
-	Context json.RawMessage `json:"context,omitempty"`
-
-	// Subtask carries immutable caller intent such as the original user
-	// utterance and explicit render preferences. Unlike Instruction, this
-	// metadata must not be rewritten by the delegating LLM.
-	Subtask *protocol.SubtaskContext `json:"subtask,omitempty"`
-
-	// Budget constrains the subtask execution.
-	Budget *SubtaskBudget `json:"budget,omitempty"`
-
-	// Execution carries the effective workdir / file policy boundary the
-	// specialist must inherit from the caller.
-	Execution *executionpolicy.ExecutionSpec `json:"execution,omitempty"`
-
-	// RequiredCaps 是硬匹配标签（全部必须满足，否则 brain 被过滤）。
-	RequiredCaps []string `json:"required_caps,omitempty"`
-
-	// PreferredCaps 是软匹配标签（命中越多分越高）。
-	PreferredCaps []string `json:"preferred_caps,omitempty"`
-
-	// TaskType 用于 LearningEngine 的 L1 能力画像查询和更新。
-	TaskType string `json:"task_type,omitempty"`
-}
-
-// SubtaskBudget limits a single delegated subtask.
-type SubtaskBudget struct {
-	MaxTurns   int           `json:"max_turns,omitempty"`
-	MaxCostUSD float64       `json:"max_cost_usd,omitempty"`
-	Timeout    time.Duration `json:"timeout,omitempty"`
-}
-
-// SubtaskResult is the response returned to Central after a subtask completes.
-type SubtaskResult struct {
-	TaskID string          `json:"task_id"`
-	Status string          `json:"status"` // "completed", "failed", "rejected"
-	Output json.RawMessage `json:"output,omitempty"`
-	Error  string          `json:"error,omitempty"`
-	Usage  SubtaskUsage    `json:"usage"`
-}
-
-// SubtaskUsage tracks resource consumption of a subtask.
-type SubtaskUsage struct {
-	Turns    int           `json:"turns"`
-	CostUSD  float64       `json:"cost_usd"`
-	Duration time.Duration `json:"duration"`
-}
 
 // BrainRegistration describes a specialist brain that the Orchestrator can
 // delegate to. When provided via OrchestratorConfig.Brains, the Orchestrator
@@ -108,6 +56,10 @@ type BrainRegistration struct {
 	// AutoStart launches the sidecar immediately on Orchestrator creation
 	// rather than lazily on first delegation.
 	AutoStart bool `json:"auto_start,omitempty"`
+
+	// MinApprovalLevel 是此 brain 的 manifest 最小审批等级。
+	// 当非空时，SemanticApprover 会将其与工具显式声明的等级取最大值。
+	MinApprovalLevel string `json:"min_approval_level,omitempty"`
 }
 
 // OrchestratorConfig configures the Orchestrator. When Brains is non-empty,
@@ -115,7 +67,8 @@ type BrainRegistration struct {
 // Brains is empty, the Orchestrator falls back to probing agent.BuiltinKinds()
 // via the BinResolver for backward compatibility.
 type OrchestratorConfig struct {
-	Brains []BrainRegistration `json:"brains,omitempty"`
+	Brains     []BrainRegistration          `json:"brains,omitempty"`
+	MCPServers []mcpadapter.MCPServerConfig `json:"mcp_servers,omitempty"`
 }
 
 // Orchestrator manages specialist brain lifecycle and subtask delegation.
@@ -145,6 +98,15 @@ type Orchestrator struct {
 	// 委托给 pool.GetBrain，使多个 Run 共享同一个全局池。
 	pool BrainPool
 
+	// leaseManager 是可选的租约管理器。当非 nil 时，Delegate 在获取
+	// sidecar 之前会调用 AcquireSet 获取目标 brain 的租约，完成后释放。
+	leaseManager LeaseManager
+
+	// mcpBrainPool 是可选的 MCP brain 池。当非 nil 时，getOrStartSidecar
+	// 会 fallback 到 mcpBrainPool.GetBrain，使 MCP 服务器可以像普通
+	// sidecar 一样被 CallTool 调用。
+	mcpBrainPool *mcpadapter.MCPBrainPool
+
 	// available records which sidecar binaries exist on disk.
 	available map[agent.Kind]bool
 
@@ -166,7 +128,32 @@ type Orchestrator struct {
 	// 透传子任务进度。
 	brainProgressHandler BrainProgressHandler
 
+	// EventBus 用于将 sidecar 的 brain/progress 事件实时发布到统一事件总线，
+	// 供 HTTP SSE 客户端订阅。非 nil 时与 brainProgressHandler 同时生效。
+	EventBus events.EventBus
+
+	// streamPipes 用于 Workflow streaming edge 的跨进程流式数据传输。
+	// 当 sidecar 通过 brain/stream/write 通知发送 chunk 时，写入此 registry。
+	// ExecuteWorkflow 会将 WorkflowEngine 的 pipe registry 注入此处，使 sidecar
+	// 和 host 共享同一组 pipe。
+	streamPipes *flow.PipeRegistry
+	streamMu    sync.Mutex
+
 	mu sync.Mutex
+}
+
+// Learner returns the attached LearningEngine, or nil if none was configured.
+func (o *Orchestrator) Learner() *LearningEngine {
+	return o.learner
+}
+
+// RegisterMCPTools discovers and registers all MCP brain tools into the given
+// registry. It is a no-op if no MCPBrainPool is configured.
+func (o *Orchestrator) RegisterMCPTools(ctx context.Context, registry tool.Registry) error {
+	if o.mcpBrainPool == nil {
+		return nil
+	}
+	return o.mcpBrainPool.RegisterAllTools(ctx, registry)
 }
 
 // NewOrchestrator creates an Orchestrator. It probes the filesystem for
@@ -207,9 +194,15 @@ func NewOrchestratorWithConfig(runner BrainRunner, llmProxy *LLMProxy, binResolv
 		}
 	}
 
+	// Initialize MCP brain pool from config.
+	if len(cfg.MCPServers) > 0 {
+		o.mcpBrainPool = mcpadapter.NewMCPBrainPool(cfg.MCPServers)
+	}
+
 	// Sync Model fields from registrations into LLMProxy.ModelForKind
 	// so that the LLM proxy knows which model each brain should use.
 	o.syncLLMModels()
+	o.initSemanticApprover()
 
 	return o
 }
@@ -226,7 +219,7 @@ func WithContextEngine(ce ContextEngine) OrchestratorOption {
 }
 
 // WithCapabilityMatcher 设置可选的能力匹配器。
-// 当 SubtaskRequest.TargetKind 为空时，用匹配算法自动选择最佳 brain。
+// 当 DelegateRequest.TargetKind 为空时，用匹配算法自动选择最佳 brain。
 func WithCapabilityMatcher(cm *CapabilityMatcher) OrchestratorOption {
 	return func(o *Orchestrator) {
 		o.capMatcher = cm
@@ -249,6 +242,24 @@ func WithSemanticApprover(sa SemanticApprover) OrchestratorOption {
 	}
 }
 
+// WithLeaseManager 设置可选的租约管理器。
+// 当设置后，Delegate 在获取 sidecar 之前会尝试获取目标 brain 的租约，
+// 在 delegate 完成后（无论成功/失败）通过 defer 释放租约。
+func WithLeaseManager(lm LeaseManager) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.leaseManager = lm
+	}
+}
+
+// WithMCPBrainPool 设置可选的 MCP brain 池。
+// 当设置后，getOrStartSidecar 会在 ProcessBrainPool 失败后 fallback 到
+// MCPBrainPool，使 MCP 服务器可以像普通 sidecar 一样被调度。
+func WithMCPBrainPool(pool *mcpadapter.MCPBrainPool) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.mcpBrainPool = pool
+	}
+}
+
 // NewOrchestratorWithPool 创建一个使用外部 BrainPool 的 Orchestrator。
 // 当 pool 非 nil 时，getOrStartSidecar 会委托给 pool.GetBrain，
 // 使多个 Orchestrator / Run 共享同一个全局进程池。
@@ -261,6 +272,30 @@ func NewOrchestratorWithPool(pool BrainPool, runner BrainRunner, llmProxy *LLMPr
 		opt(o)
 	}
 	return o
+}
+
+// initSemanticApprover 若 approver 是 *DefaultSemanticApprover 且未设置
+// ManifestMinLevel，则从 registrations 中自动构建查询回调。
+func (o *Orchestrator) initSemanticApprover() {
+	if o.approver == nil {
+		return
+	}
+	dsa, ok := o.approver.(*DefaultSemanticApprover)
+	if !ok {
+		return
+	}
+	if dsa.ManifestMinLevel != nil {
+		return // 已被外部显式设置
+	}
+	dsa.ManifestMinLevel = func(targetKind agent.Kind) ApprovalClass {
+		o.mu.Lock()
+		reg := o.registrations[targetKind]
+		o.mu.Unlock()
+		if reg != nil && reg.MinApprovalLevel != "" {
+			return ApprovalClass(reg.MinApprovalLevel)
+		}
+		return ""
+	}
 }
 
 func (o *Orchestrator) syncFromPoolCatalog() {
@@ -329,11 +364,16 @@ func (o *Orchestrator) syncLLMModels() {
 // long-lived context (e.g. the serve context). Errors are logged to stderr
 // but do not prevent other brains from starting.
 func (o *Orchestrator) AutoStartBrains(ctx context.Context) {
-	if o.pool == nil {
+	if o.pool == nil && o.mcpBrainPool == nil {
 		fmt.Fprintf(os.Stderr, "orchestrator: AutoStartBrains skipped (no pool)\n")
 		return
 	}
-	o.pool.AutoStart(ctx)
+	if o.pool != nil {
+		o.pool.AutoStart(ctx)
+	}
+	if o.mcpBrainPool != nil {
+		o.mcpBrainPool.AutoStart(ctx)
+	}
 }
 
 // StartBrain explicitly starts a sidecar for the given kind. Returns an
@@ -367,18 +407,35 @@ func (o *Orchestrator) StopBrain(ctx context.Context, kind agent.Kind) error {
 
 // BrainStatus describes the state of a specialist brain.
 type BrainStatus struct {
-	Kind    agent.Kind `json:"kind"`
-	Running bool       `json:"running"`
-	Binary  string     `json:"binary,omitempty"`
+	Kind        agent.Kind `json:"kind"`
+	Running     bool       `json:"running"`
+	Binary      string     `json:"binary,omitempty"`
+	AutoStart   bool       `json:"auto_start,omitempty"`
+	Description string     `json:"description,omitempty"`
+	Version     string     `json:"version,omitempty"`
+	Model       string     `json:"model,omitempty"`
+	MinApprovalLevel string `json:"min_approval_level,omitempty"`
+	Instances   int        `json:"instances,omitempty"` // 存活实例数（v3 多实例负载均衡）
 }
 
 // ListBrains returns the status of all available specialist brains.
 func (o *Orchestrator) ListBrains() []BrainStatus {
+	var out []BrainStatus
 	if o.pool != nil {
-		var out []BrainStatus
 		for _, bs := range o.pool.Status() {
 			out = append(out, bs)
 		}
+	}
+	if o.mcpBrainPool != nil {
+		for _, bs := range o.mcpBrainPool.Status() {
+			out = append(out, BrainStatus{
+				Kind:    bs.Kind,
+				Running: bs.Running,
+				Binary:  bs.Binary,
+			})
+		}
+	}
+	if len(out) > 0 {
 		return out
 	}
 	// 无 pool 时返回静态可用性列表（不含运行状态）。
@@ -435,19 +492,149 @@ func (o *Orchestrator) SetSpecialistToolCallAuthorizer(authorizer SpecialistTool
 	o.toolCalls = authorizer
 }
 
-// CanDelegate reports whether a specialist binary exists for the given kind.
+// CanDelegate reports whether a specialist binary or MCP server exists for the given kind.
 func (o *Orchestrator) CanDelegate(kind agent.Kind) bool {
-	return o.available[kind]
+	if o.available[kind] {
+		return true
+	}
+	if o.mcpBrainPool != nil {
+		for _, k := range o.mcpBrainPool.AvailableKinds() {
+			if k == kind {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AvailableKinds returns the set of specialist kinds that have sidecar
-// binaries on disk.
+// binaries on disk or MCP servers configured.
+// Filters out meta-brains (central, easymvp) that should not be directly
+// delegated to by the task execution orchestrator.
 func (o *Orchestrator) AvailableKinds() []agent.Kind {
 	kinds := make([]agent.Kind, 0, len(o.available))
 	for k := range o.available {
+		if k == agent.KindCentral || k == agent.KindEasyMVP {
+			continue
+		}
 		kinds = append(kinds, k)
 	}
+	if o.mcpBrainPool != nil {
+		for _, k := range o.mcpBrainPool.AvailableKinds() {
+			if o.available[k] || k == agent.KindCentral || k == agent.KindEasyMVP {
+				continue
+			}
+			kinds = append(kinds, k)
+		}
+	}
 	return kinds
+}
+
+// DelegateBatch 并行派发多个无依赖的子任务到不同的 specialist brain。
+// 这是实现"多方审核同时执行"的核心 API —— Central 可以同时向 code、verifier、
+// browser 下发独立子任务，并在所有 brain 完成后统一收集结果。
+//
+// 注意：如果请求之间存在依赖关系（如 verifier 必须等待 code 完成后才能审核），
+// 应使用 ExecuteWorkflow（DAG 分层执行）而非 DelegateBatch。
+func (o *Orchestrator) DelegateBatch(ctx context.Context, batch *DelegateBatchRequest) (*DelegateBatchResult, error) {
+	if batch == nil || len(batch.Requests) == 0 {
+		return &DelegateBatchResult{}, nil
+	}
+
+	start := time.Now()
+	diaglog.Info("delegate_batch", "batch start",
+		"count", len(batch.Requests),
+	)
+
+	// 为所有请求生成统一的 TraceID（如果调用方未提供）。
+	traceID := ""
+	for _, req := range batch.Requests {
+		if req.TraceID != "" {
+			traceID = req.TraceID
+			break
+		}
+	}
+	if traceID == "" {
+		traceID = genTraceID()
+	}
+
+	// 为每个请求注入统一的 trace 上下文和独立的 span ID。
+	for i, req := range batch.Requests {
+		if req.TraceID == "" {
+			req.TraceID = traceID
+		}
+		if req.SpanID == "" {
+			req.SpanID = fmt.Sprintf("span-%s-%d", traceID, i)
+		}
+	}
+
+	results := make([]*DelegateResult, len(batch.Requests))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for i, req := range batch.Requests {
+		wg.Add(1)
+		go func(idx int, r *DelegateRequest) {
+			defer wg.Done()
+			res, err := o.Delegate(ctx, r)
+			mu.Lock()
+			results[idx] = res
+			mu.Unlock()
+			if err != nil {
+				diaglog.Error("delegate_batch", "item failed",
+					"idx", idx,
+					"task_id", r.TaskID,
+					"target_kind", r.TargetKind,
+					"err", err,
+				)
+			}
+		}(i, req)
+	}
+
+	wg.Wait()
+
+	completed := 0
+	failed := 0
+	for _, res := range results {
+		if res != nil && res.Status == "completed" {
+			completed++
+		} else {
+			failed++
+		}
+	}
+
+	diaglog.Info("delegate_batch", "batch finished",
+		"count", len(batch.Requests),
+		"completed", completed,
+		"failed", failed,
+		"duration", time.Since(start),
+	)
+
+	return &DelegateBatchResult{
+		Results:        results,
+		CompletedCount: completed,
+		FailedCount:    failed,
+	}, nil
+}
+
+// genTraceID 生成一个简短的分布式追踪 ID。
+func genTraceID() string {
+	b := make([]byte, 8)
+	if _, err := randRead(b); err != nil {
+		return fmt.Sprintf("trace-%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("trace-%x", b)
+}
+
+// randRead 是 crypto/rand.Read 的抽象，便于测试注入。
+var randRead = func(b []byte) (int, error) {
+	// 使用 time.Now().UnixNano() 的低 8 字节做伪随机，避免 import crypto/rand
+	// 在简单场景下的开销。生产环境可替换为 crypto/rand.Read。
+	n := time.Now().UnixNano()
+	for i := 0; i < len(b) && i < 8; i++ {
+		b[i] = byte(n >> (i * 8))
+	}
+	return len(b), nil
 }
 
 // Delegate handles a subtask.delegate request: starts the specialist sidecar
@@ -456,7 +643,7 @@ func (o *Orchestrator) AvailableKinds() []agent.Kind {
 //
 // If the sidecar crashes during execution, Delegate automatically removes it
 // from the pool, restarts it, and retries once.
-func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*SubtaskResult, error) {
+func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*DelegateResult, error) {
 	start := time.Now()
 	diaglog.Info("delegate", "delegate start",
 		"task_id", req.TaskID,
@@ -468,7 +655,7 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 	if req.TargetKind == "" && o.capMatcher != nil {
 		resolved := o.resolveTargetKind(req)
 		if resolved == "" {
-			return &SubtaskResult{
+			return &DelegateResult{
 				TaskID: req.TaskID,
 				Status: "rejected",
 				Error:  "no brain matches the required capabilities",
@@ -480,7 +667,7 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 
 	// Check availability.
 	if !o.CanDelegate(req.TargetKind) {
-		return &SubtaskResult{
+		return &DelegateResult{
 			TaskID: req.TaskID,
 			Status: "rejected",
 			Error:  fmt.Sprintf("no sidecar binary available for %s; handle locally", req.TargetKind),
@@ -488,11 +675,53 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 		}, nil
 	}
 
-	// Apply timeout from budget. Each attempt gets its own timeout so that
-	// a slow first attempt doesn't starve the retry.
+	// Acquire lease for target brain before delegation.
+	var leases []Lease
+	if o.leaseManager != nil {
+		leaseReqs := []LeaseRequest{
+			{
+				Capability:  "brain-delegate",
+				ResourceKey: string(req.TargetKind),
+				AccessMode:  AccessExclusiveSession,
+				Scope:       ScopeTask,
+				HolderID:    req.TaskID,
+			},
+		}
+		acquired, acquireErr := o.leaseManager.AcquireSet(ctx, leaseReqs)
+		if acquireErr != nil {
+			errMsg := fmt.Sprintf("brain %s is currently leased by another task", req.TargetKind)
+			if errors.Is(acquireErr, ErrAcquireTimeout) {
+				errMsg = fmt.Sprintf("brain %s is currently leased by another task (acquire timeout)", req.TargetKind)
+			}
+			return &DelegateResult{
+				TaskID: req.TaskID,
+				Status: "rejected",
+				Error:  errMsg,
+				Usage:  SubtaskUsage{Duration: time.Since(start)},
+			}, nil
+		}
+		leases = acquired
+		defer o.leaseManager.ReleaseAll(leases)
+	}
+
+	// ─── Adaptive Timeout ─────────────────────────────────────────────────
+	// 如果调用方未指定超时，且学习引擎可用，基于历史 EWMA 延迟动态估算超时。
 	budgetTimeout := time.Duration(0)
 	if req.Budget != nil && req.Budget.Timeout > 0 {
 		budgetTimeout = req.Budget.Timeout
+	} else if o.learner != nil {
+		taskType := req.TaskType
+		if taskType == "" {
+			taskType = "delegation"
+		}
+		budgetTimeout = o.learner.EstimateTimeout(req.TargetKind, taskType)
+		if budgetTimeout > 0 {
+			diaglog.Info("delegate", "adaptive timeout applied",
+				"task_id", req.TaskID,
+				"target_kind", req.TargetKind,
+				"timeout", budgetTimeout,
+			)
+		}
 	}
 
 	attemptCtx := ctx
@@ -559,22 +788,28 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *SubtaskRequest) (*Subt
 }
 
 // delegateOnce performs a single delegation attempt.
-func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, start time.Time) (*SubtaskResult, error) {
+func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, start time.Time) (*DelegateResult, error) {
 	// Get or start sidecar.
 	ag, err := o.getOrStartSidecar(ctx, req.TargetKind)
 	if err != nil {
-		return &SubtaskResult{
+		return &DelegateResult{
 			TaskID: req.TaskID,
 			Status: "failed",
 			Error:  fmt.Sprintf("start sidecar %s: %v", req.TargetKind, err),
 			Usage:  SubtaskUsage{Duration: time.Since(start)},
 		}, err
 	}
+	// 释放负载计数，让负载均衡策略知道该实例可用容量增加。
+	defer func() {
+		if releaser, ok := o.pool.(interface{ ReleaseAgent(agent.Agent) }); ok {
+			releaser.ReleaseAgent(ag)
+		}
+	}()
 
 	// Get the RPC session.
 	rpcAgent, ok := ag.(agent.RPCAgent)
 	if !ok {
-		return &SubtaskResult{
+		return &DelegateResult{
 			TaskID: req.TaskID,
 			Status: "failed",
 			Error:  "agent does not implement RPCAgent",
@@ -584,7 +819,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 
 	rpc, ok := rpcAgent.RPC().(protocol.BidirRPC)
 	if !ok {
-		return &SubtaskResult{
+		return &DelegateResult{
 			TaskID: req.TaskID,
 			Status: "failed",
 			Error:  "agent RPC is not BidirRPC",
@@ -618,6 +853,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 			TaskType:    "delegation",
 			Messages:    messages,
 			TokenBudget: tokenBudget,
+			ProjectID:   req.ProjectID,
 		})
 		if assembleErr != nil {
 			fmt.Fprintf(os.Stderr, "orchestrator: context assemble warning: %v\n", assembleErr)
@@ -646,6 +882,22 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 	if req.Subtask != nil {
 		payload["subtask"] = req.Subtask
 	}
+	if req.PipeID != "" {
+		payload["pipe_id"] = req.PipeID
+	}
+	// ─── Distributed Tracing & Project Memory ─────────────────────────────
+	if req.TraceID != "" {
+		payload["trace_id"] = req.TraceID
+	}
+	if req.SpanID != "" {
+		payload["span_id"] = req.SpanID
+	}
+	if req.ProjectID != "" {
+		payload["project_id"] = req.ProjectID
+	}
+	if req.ParentSpanID != "" {
+		payload["parent_span_id"] = req.ParentSpanID
+	}
 
 	// Send brain/execute and wait for result.
 	var execResult json.RawMessage
@@ -664,7 +916,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 			"target_kind", req.TargetKind,
 			"err", rpcErr,
 		)
-		return &SubtaskResult{
+		return &DelegateResult{
 			TaskID: req.TaskID,
 			Status: "failed",
 			Error:  fmt.Sprintf("brain/execute: %v", rpcErr),
@@ -678,7 +930,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *SubtaskRequest, st
 	)
 
 	status, execErrMsg := normalizeExecuteResult(execResult)
-	return &SubtaskResult{
+	return &DelegateResult{
 		TaskID: req.TaskID,
 		Status: status,
 		Output: execResult,
@@ -729,6 +981,25 @@ func (o *Orchestrator) CallTool(ctx context.Context, req *protocol.SpecialistToo
 	if err != nil {
 		return nil, fmt.Errorf("start sidecar %s: %w", req.TargetKind, err)
 	}
+	defer func() {
+		if releaser, ok := o.pool.(interface{ ReleaseAgent(agent.Agent) }); ok {
+			releaser.ReleaseAgent(ag)
+		}
+	}()
+
+	// MCP agent path: forward via Adapter.Invoke.
+	if mcpAgent, ok := ag.(*mcpadapter.MCPAgent); ok {
+		adapter := mcpAgent.Adapter()
+		mcpToolName := strings.TrimPrefix(req.ToolName, adapter.ToolPrefix)
+		res, err := adapter.Invoke(ctx, mcpToolName, req.Arguments)
+		if err != nil {
+			return nil, fmt.Errorf("mcp invoke %s: %w", req.ToolName, err)
+		}
+		return &protocol.ToolCallResult{
+			Output:  res.Output,
+			IsError: res.IsError,
+		}, nil
+	}
 
 	rpcAgent, ok := ag.(agent.RPCAgent)
 	if !ok {
@@ -751,25 +1022,57 @@ func (o *Orchestrator) CallTool(ctx context.Context, req *protocol.SpecialistToo
 	return &result, nil
 }
 
-// getOrStartSidecar returns an existing running sidecar or starts a new one.
-// Delegates entirely to the BrainPool. Returns an error if no pool is set.
-func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (agent.Agent, error) {
+// poolClaimsKind reports whether the ProcessBrainPool explicitly claims a kind.
+func (o *Orchestrator) poolClaimsKind(kind agent.Kind) bool {
 	if o.pool == nil {
+		return false
+	}
+	if catalog, ok := o.pool.(brainPoolCatalog); ok {
+		for _, k := range catalog.AvailableKinds() {
+			if k == kind {
+				return true
+			}
+		}
+		return false
+	}
+	if av, ok := o.pool.(interface{ Available(agent.Kind) bool }); ok {
+		return av.Available(kind)
+	}
+	return true
+}
+
+// getOrStartSidecar returns an existing running sidecar or starts a new one.
+// Delegates first to the ProcessBrainPool, then falls back to MCPBrainPool.
+// Returns an error if no pool is set and no MCP brain matches.
+func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (agent.Agent, error) {
+	if o.pool == nil && o.mcpBrainPool == nil {
 		return nil, fmt.Errorf("no BrainPool available; cannot start sidecar %s", kind)
 	}
-	ag, err := o.pool.GetBrain(ctx, kind)
-	if err != nil {
+
+	if o.pool != nil && o.poolClaimsKind(kind) {
+		ag, err := o.pool.GetBrain(ctx, kind)
+		if err == nil {
+			// Register LLM proxy and reverse RPC handlers on the sidecar's session.
+			if rpcAgent, ok := ag.(agent.RPCAgent); ok {
+				if rpc, ok := rpcAgent.RPC().(protocol.BidirRPC); ok {
+					o.registerReverseHandlers(rpc, kind)
+				}
+			}
+			return ag, nil
+		}
+		// Pool claims this kind but failed to start — don't fallback to MCP.
 		return nil, err
 	}
 
-	// Register LLM proxy and reverse RPC handlers on the sidecar's session.
-	if rpcAgent, ok := ag.(agent.RPCAgent); ok {
-		if rpc, ok := rpcAgent.RPC().(protocol.BidirRPC); ok {
-			o.registerReverseHandlers(rpc, kind)
+	if o.mcpBrainPool != nil {
+		for _, k := range o.mcpBrainPool.AvailableKinds() {
+			if k == kind {
+				return o.mcpBrainPool.GetBrain(ctx, kind)
+			}
 		}
 	}
 
-	return ag, nil
+	return nil, fmt.Errorf("brain %q not available", kind)
 }
 
 func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind agent.Kind) {
@@ -790,16 +1093,26 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 	if o.llmProxy != nil {
 		o.llmProxy.RegisterHandlers(rpc, callerKind)
 	}
-	rpc.Handle(protocol.MethodSubtaskDelegate, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+
+	// Defensive: another Orchestrator instance may have already registered
+	// handlers on this shared sidecar RPC session. Use HandlerExists to avoid
+	// duplicate-registration panic.
+	registerHandlerIfMissing := func(method string, handler protocol.HandlerFunc) {
+		if !rpc.HandlerExists(method) {
+			rpc.Handle(method, handler)
+		}
+	}
+
+	registerHandlerIfMissing(protocol.MethodSubtaskDelegate, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 		if callerKind != agent.KindCentral {
 			return nil, fmt.Errorf("subtask.delegate is only allowed from central")
 		}
 		return o.HandleSubtaskDelegate()(ctx, params)
 	})
-	rpc.Handle(protocol.MethodSpecialistCallTool, o.HandleSpecialistCallToolFrom(callerKind))
+	registerHandlerIfMissing(protocol.MethodSpecialistCallTool, o.HandleSpecialistCallToolFrom(callerKind))
 
 	// L0 学习指标上报：sidecar 调用 brain/metrics 将聚合指标喂给 LearningEngine。
-	rpc.Handle(protocol.MethodBrainMetrics, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	registerHandlerIfMissing(protocol.MethodBrainMetrics, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 		if o.learner == nil {
 			return map[string]string{"status": "ignored"}, nil
 		}
@@ -819,7 +1132,7 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 	// HumanTakeoverBridge 把请求送到这里,我们转给上层注入的 handler
 	// (cmd/brain 在 serve/chat 启动时注入,指向真正的协调器),阻塞等
 	// /resume 或 /abort。未注入时返回 aborted。
-	rpc.Handle(protocol.MethodHumanRequestTakeover, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	registerHandlerIfMissing(protocol.MethodHumanRequestTakeover, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 		handler := o.humanTakeoverHandler
 		if handler == nil {
 			return map[string]string{
@@ -830,12 +1143,74 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 		return handler(ctx, string(callerKind), params)
 	})
 
-	// 专家大脑的细粒度进度事件(tool_start / tool_end / turn / content)。
-	// 转给上层注入的 handler,让 chat REPL 流式打印 subtask 进度。
-	rpc.Handle(protocol.MethodBrainProgress, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	// 专家大脑的细粒度进度事件(tool_start / tool_end / turn / content / llm_*)。
+	// 转给上层注入的 handler,让 chat REPL 流式打印 subtask 进度；
+	// 同时转发到 EventBus，供 HTTP SSE 客户端实时订阅。
+	registerHandlerIfMissing(protocol.MethodBrainProgress, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 		h := o.brainProgressHandler
 		if h != nil {
 			h(ctx, string(callerKind), params)
+		}
+		if o.EventBus != nil {
+			var ev struct {
+				Kind        string `json:"kind"`
+				ExecutionID string `json:"execution_id,omitempty"`
+				ToolName    string `json:"tool_name,omitempty"`
+				Message     string `json:"message,omitempty"`
+				Detail      string `json:"detail,omitempty"`
+				OK          bool   `json:"ok,omitempty"`
+			}
+			if err := json.Unmarshal(params, &ev); err == nil && ev.ExecutionID != "" {
+				// Map sidecar progress kinds to unified event types.
+				evType := "agent.progress"
+				switch ev.Kind {
+				case "tool_start":
+					evType = "agent.tool_start"
+				case "tool_end":
+					evType = "agent.tool_end"
+				case "turn":
+					evType = "agent.turn"
+				case "content", "llm_delta":
+					evType = "llm.content_delta"
+				case "llm_start":
+					evType = "llm.message_start"
+				case "llm_end":
+					evType = "llm.message_end"
+				case "tool_call_delta":
+					evType = "llm.tool_call_delta"
+				}
+				data, _ := json.Marshal(map[string]interface{}{
+					"tool_name": ev.ToolName,
+					"message":   ev.Message,
+					"detail":    ev.Detail,
+					"ok":        ev.OK,
+				})
+				o.EventBus.Publish(ctx, events.Event{
+					ExecutionID: ev.ExecutionID,
+					Type:        evType,
+					Data:        data,
+				})
+			}
+		}
+		return map[string]string{"ok": "1"}, nil
+	})
+
+	// Workflow streaming edge 的跨进程流式数据写入。
+	// sidecar 在 brain/execute 执行过程中,通过此方法将中间输出实时写入 PipeRegistry。
+	registerHandlerIfMissing(protocol.MethodBrainStreamWrite, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		var req struct {
+			PipeID string `json:"pipe_id"`
+			Chunk  string `json:"chunk"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return map[string]string{"ok": "0", "error": err.Error()}, nil
+		}
+		data, err := base64.StdEncoding.DecodeString(req.Chunk)
+		if err != nil {
+			return map[string]string{"ok": "0", "error": "decode chunk: " + err.Error()}, nil
+		}
+		if err := o.streamPipes.Write(ctx, req.PipeID, data); err != nil {
+			return map[string]string{"ok": "0", "error": "write pipe: " + err.Error()}, nil
 		}
 		return map[string]string{"ok": "1"}, nil
 	})
@@ -855,6 +1230,25 @@ func (o *Orchestrator) SetBrainProgressHandler(h BrainProgressHandler) {
 // HumanTakeoverHandler 由上层(cmd/brain)实现,收到 sidecar 反向 RPC 后
 // 调真正的协调器并返回 {outcome, note}。避免 kernel 直接依赖 sdk/tool。
 type HumanTakeoverHandler func(ctx context.Context, callerKind string, params json.RawMessage) (interface{}, error)
+
+// RegisterStreamPipe 注册一个 streaming edge 的 pipe，供跨进程流式传输使用。
+func (o *Orchestrator) RegisterStreamPipe(edgeID string, pipe *flow.PipeBackend) {
+	o.streamMu.Lock()
+	defer o.streamMu.Unlock()
+	if o.streamPipes == nil {
+		o.streamPipes = flow.NewPipeRegistry()
+	}
+	o.streamPipes.SetPipe(edgeID, pipe)
+}
+
+// UnregisterStreamPipe 注销 streaming edge 的 pipe。
+func (o *Orchestrator) UnregisterStreamPipe(edgeID string) {
+	o.streamMu.Lock()
+	defer o.streamMu.Unlock()
+	if o.streamPipes != nil {
+		_ = o.streamPipes.Close(edgeID)
+	}
+}
 
 // SetHumanTakeoverHandler 注入 handler。多次调用取最后一次。nil 清空。
 func (o *Orchestrator) SetHumanTakeoverHandler(h HumanTakeoverHandler) {
@@ -909,12 +1303,20 @@ func (o *Orchestrator) CollectMetrics(ctx context.Context) {
 	}
 }
 
-// Shutdown gracefully stops all running specialist sidecars.
+// Shutdown gracefully stops all running specialist sidecars and MCP connections.
 func (o *Orchestrator) Shutdown(ctx context.Context) error {
+	var lastErr error
 	if o.pool != nil {
-		return o.pool.Shutdown(ctx)
+		if err := o.pool.Shutdown(ctx); err != nil {
+			lastErr = err
+		}
 	}
-	return nil
+	if o.mcpBrainPool != nil {
+		if err := o.mcpBrainPool.Shutdown(ctx); err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
 }
 
 // DegradationNotice returns a human-readable notice describing which specialist
@@ -937,7 +1339,7 @@ func (o *Orchestrator) DegradationNotice() string {
 
 	var missing []string
 	for _, k := range checkKinds {
-		if !o.available[k] {
+		if !o.CanDelegate(k) {
 			missing = append(missing, string(k))
 		}
 	}
@@ -949,7 +1351,7 @@ func (o *Orchestrator) DegradationNotice() string {
 }
 
 // resolveTargetKind 通过 CapabilityMatcher（+可选的 LearningEngine）自动选择最佳 brain。
-func (o *Orchestrator) resolveTargetKind(req *SubtaskRequest) agent.Kind {
+func (o *Orchestrator) resolveTargetKind(req *DelegateRequest) agent.Kind {
 	matchReq := MatchRequest{
 		Required:  req.RequiredCaps,
 		Preferred: req.PreferredCaps,
@@ -989,7 +1391,7 @@ func (o *Orchestrator) resolveTargetKind(req *SubtaskRequest) agent.Kind {
 }
 
 // recordDelegateOutcome 将委派结果反馈给 LearningEngine (L1 EWMA 更新)。
-func (o *Orchestrator) recordDelegateOutcome(req *SubtaskRequest, result *SubtaskResult) {
+func (o *Orchestrator) recordDelegateOutcome(req *DelegateRequest, result *DelegateResult) {
 	if o.learner == nil || result == nil {
 		return
 	}
@@ -1020,6 +1422,9 @@ func (o *Orchestrator) recordDelegateOutcome(req *SubtaskRequest, result *Subtas
 
 	o.learner.RecordDelegateResult(req.TargetKind, taskType, accuracy, speed, cost, stability)
 
+	// L1-Latency: 记录实际延迟用于自适应超时估算。
+	o.learner.RecordDelegateLatency(req.TargetKind, taskType, result.Usage.Duration)
+
 	// L2: 记录单步序列（单次委派作为一个 step，由调用方聚合多步序列）
 	o.learner.RecordSequence(TaskSequenceRecord{
 		SequenceID: req.TaskID,
@@ -1035,7 +1440,7 @@ func (o *Orchestrator) recordDelegateOutcome(req *SubtaskRequest, result *Subtas
 }
 
 // sendBrainLearn 异步通知 sidecar 本次执行结果，激活 sidecar 侧的 L0 学习。
-func (o *Orchestrator) sendBrainLearn(ctx context.Context, req *SubtaskRequest, result *SubtaskResult) {
+func (o *Orchestrator) sendBrainLearn(ctx context.Context, req *DelegateRequest, result *DelegateResult) {
 	if result == nil {
 		return
 	}
@@ -1058,6 +1463,11 @@ func (o *Orchestrator) sendBrainLearn(ctx context.Context, req *SubtaskRequest, 
 		"duration":  result.Usage.Duration.Seconds(),
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "orchestrator: learn goroutine panic: %v\n", r)
+			}
+		}()
 		learnCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = rpc.Call(learnCtx, "brain/learn", payload, nil)
@@ -1068,9 +1478,9 @@ func (o *Orchestrator) sendBrainLearn(ctx context.Context, req *SubtaskRequest, 
 // on a central brain's RPC session to handle subtask.delegate requests.
 func (o *Orchestrator) HandleSubtaskDelegate() protocol.HandlerFunc {
 	return func(ctx context.Context, params json.RawMessage) (interface{}, error) {
-		var req SubtaskRequest
+		var req DelegateRequest
 		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, fmt.Errorf("unmarshal SubtaskRequest: %w", err)
+			return nil, fmt.Errorf("unmarshal DelegateRequest: %w", err)
 		}
 		return o.Delegate(ctx, &req)
 	}
@@ -1115,4 +1525,168 @@ func (o *Orchestrator) HandleSpecialistCallToolFrom(callerKind agent.Kind) proto
 		}
 		return o.CallTool(ctx, &req)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// WorkflowEngine integration — DAG execution via Orchestrator
+// ---------------------------------------------------------------------------
+
+// WorkflowNodeReporter 是 Workflow 执行过程中的可选事件回调。
+// 调用方（serve/chat/run）可注入自己的 reporter 来发送 SSE/进度事件。
+type WorkflowNodeReporter func(eventType string, nodeID string, status string, output string, errMsg string)
+
+// ExecuteWorkflow 用 WorkflowEngine 执行一个 DAG 工作流。
+// 每个节点映射为一次 Delegate 调用，目标 brain 由 node.BrainID 指定，
+// 为空时通过 capMatcher 自动选择。
+//
+// reporter 可选，用于实时报告节点状态（started/completed/failed）。
+func (o *Orchestrator) ExecuteWorkflow(ctx context.Context, wf *Workflow, reporter WorkflowNodeReporter) (*WorkflowResult, error) {
+	store := flow.NewMemStore()
+	executor := o.makeWorkflowNodeExecutor(ctx, reporter)
+	engine := NewWorkflowEngine(store, executor)
+
+	// Streaming edge 跨进程共享：若 Orchestrator 已持有 streamPipes，
+	// 将其注入 WorkflowEngine，使 sidecar brain/stream/write 通知
+	// 直接写入 WorkflowEngine 内部消费的同一组 pipe。
+	if o.streamPipes != nil {
+		engine.SetPipeRegistry(o.streamPipes)
+	}
+
+	// L2: 如果 learner 存在，使用 RecommendOrder 优化无依赖节点的执行顺序
+	if o.learner != nil && len(wf.Nodes) > 1 {
+		nodeMap := make(map[string]WorkflowNode, len(wf.Nodes))
+		for _, n := range wf.Nodes {
+			nodeMap[n.ID] = n
+		}
+		var steps []TaskStep
+		for _, n := range wf.Nodes {
+			steps = append(steps, TaskStep{
+				BrainKind: agent.Kind(n.BrainID),
+				TaskType:  n.TaskType,
+			})
+		}
+		recommended := o.learner.RecommendOrder(steps)
+		if len(recommended) == len(steps) {
+			// 按推荐顺序重新排列 wf.Nodes（保持依赖关系不变）
+			order := make(map[string]int, len(recommended))
+			for i, s := range recommended {
+				// 找到匹配的节点 ID
+				for _, n := range wf.Nodes {
+					if n.BrainID == string(s.BrainKind) && n.TaskType == s.TaskType {
+						if _, ok := order[n.ID]; !ok {
+							order[n.ID] = i
+							break
+						}
+					}
+				}
+			}
+			sort.SliceStable(wf.Nodes, func(i, j int) bool {
+				ii, oki := order[wf.Nodes[i].ID]
+				ji, okj := order[wf.Nodes[j].ID]
+				if oki && okj {
+					return ii < ji
+				}
+				return false
+			})
+		}
+	}
+
+	result, err := engine.Execute(ctx, wf)
+	if err != nil {
+		return result, err
+	}
+
+	// L2: 记录完整 Workflow DAG 执行序列
+	if o.learner != nil && result != nil {
+		var steps []TaskStep
+		var totalScore float64
+		for nodeID, nodeResult := range result.Nodes {
+			// 查找对应节点的 BrainID 和 TaskType
+			var brainID, taskType string
+			for _, n := range wf.Nodes {
+				if n.ID == nodeID {
+					brainID = n.BrainID
+					taskType = n.TaskType
+					break
+				}
+			}
+			score := 0.0
+			if nodeResult.State == StateCompleted {
+				score = 1.0
+			}
+			duration := nodeResult.EndedAt.Sub(nodeResult.StartedAt)
+			steps = append(steps, TaskStep{
+				BrainKind: agent.Kind(brainID),
+				TaskType:  taskType,
+				Duration:  duration,
+				Score:     score,
+			})
+			totalScore += score
+		}
+		if len(steps) > 1 {
+			avgScore := totalScore / float64(len(steps))
+			o.learner.RecordSequence(TaskSequenceRecord{
+				SequenceID: wf.ID,
+				TotalScore: avgScore,
+				RecordedAt: time.Now(),
+				Steps:      steps,
+			})
+		}
+	}
+
+	return result, nil
+}
+
+// makeWorkflowNodeExecutor 构造 WorkflowEngine 所需的 NodeExecutor。
+// 内部将 WorkflowNode 转为 DelegateRequest，调用 Orchestrator.Delegate 执行。
+func (o *Orchestrator) makeWorkflowNodeExecutor(ctx context.Context, reporter WorkflowNodeReporter) NodeExecutor {
+	return func(execCtx context.Context, node WorkflowNode, input string) (string, error) {
+		if reporter != nil {
+			reporter("workflow.node.started", node.ID, "running", "", "")
+		}
+
+		req := &DelegateRequest{
+			TaskID:        node.ID,
+			TargetKind:    agent.Kind(node.BrainID),
+			Instruction:   buildWorkflowNodePrompt(node, input),
+			RequiredCaps:  node.RequiredCaps,
+			PreferredCaps: node.PreferredCaps,
+			TaskType:      node.TaskType,
+			PipeID:        node.PipeID,
+		}
+
+		result, err := o.Delegate(execCtx, req)
+		if err != nil {
+			if reporter != nil {
+				reporter("workflow.node.failed", node.ID, "failed", "", err.Error())
+			}
+			return "", err
+		}
+
+		if result.Status != "completed" {
+			errMsg := result.Error
+			if errMsg == "" {
+				errMsg = fmt.Sprintf("task %s", result.Status)
+			}
+			if reporter != nil {
+				reporter("workflow.node.failed", node.ID, result.Status, "", errMsg)
+			}
+			return "", fmt.Errorf("node %s: %s", node.ID, errMsg)
+		}
+
+		output := string(result.Output)
+		if reporter != nil {
+			reporter("workflow.node.completed", node.ID, "completed", output, "")
+		}
+		return output, nil
+	}
+}
+
+// buildWorkflowNodePrompt 把上游输入和当前节点 prompt 合并。
+// 如果上游有输出，作为上下文前置。
+func buildWorkflowNodePrompt(node WorkflowNode, upstreamInput string) string {
+	if upstreamInput == "" {
+		return node.Prompt
+	}
+	return fmt.Sprintf("Previous results:\n%s\n\nTask: %s", upstreamInput, node.Prompt)
 }

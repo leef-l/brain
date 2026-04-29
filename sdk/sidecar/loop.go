@@ -27,6 +27,12 @@ type ExecuteRequest struct {
 	Subtask     *protocol.SubtaskContext       `json:"subtask,omitempty"`
 	Budget      *ExecuteBudget                 `json:"budget,omitempty"`
 	Execution   *executionpolicy.ExecutionSpec `json:"execution,omitempty"`
+	// PipeID 用于 Workflow streaming edge 的跨进程流式传输。
+	// 非空时，sidecar 会在 tool 执行后通过 brain/stream/write 将输出实时写入 host 端的 PipeRegistry。
+	PipeID string `json:"pipe_id,omitempty"`
+	// ExecutionID 用于端到端流式事件关联，host 生成后传给 sidecar，
+	// sidecar 通过 brain/progress Notify 将实时事件回传时携带此 ID。
+	ExecutionID string `json:"execution_id,omitempty"`
 }
 
 // ExecuteBudget constrains the sidecar Agent Loop.
@@ -101,12 +107,14 @@ type FaultAnomaly struct {
 
 // llmRequest is the payload sent to the Kernel via llm.complete.
 type llmRequest struct {
-	System     []systemBlock `json:"system,omitempty"`
-	Messages   []message     `json:"messages"`
-	Tools      []toolSchema  `json:"tools,omitempty"`
-	Model      string        `json:"model,omitempty"`
-	ToolChoice string        `json:"tool_choice,omitempty"`
-	MaxTokens  int           `json:"max_tokens,omitempty"`
+	System      []systemBlock `json:"system,omitempty"`
+	Messages    []message     `json:"messages"`
+	Tools       []toolSchema  `json:"tools,omitempty"`
+	Model       string        `json:"model,omitempty"`
+	ToolChoice  string        `json:"tool_choice,omitempty"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
+	StreamID    string        `json:"stream_id,omitempty"`
+	ExecutionID string        `json:"execution_id,omitempty"`
 }
 
 type systemBlock struct {
@@ -166,30 +174,38 @@ func RunAgentLoop(ctx context.Context, caller KernelCaller, registry tool.Regist
 func RunAgentLoopWithContext(ctx context.Context, caller KernelCaller, registry tool.Registry,
 	systemPrompt string, instruction string, maxTurns int, extraContext json.RawMessage) *ExecuteResult {
 	b := &ExecuteBudget{MaxTurns: maxTurns}
-	return RunAgentLoopFull(ctx, caller, registry, systemPrompt, instruction, b, extraContext)
+	return RunAgentLoopFull(ctx, caller, registry, systemPrompt, instruction, b, extraContext, nil, "")
 }
 
 // RunAgentLoopFull 是完整版 Agent Loop 入口。接受完整 ExecuteBudget，
 // 接入 MessageCompressor 实现上下文自动压缩。
+// observer 为 nil 时使用默认的 stderrToolObserver。
+// executionID 用于端到端流式事件关联；为空时不启用流式输出。
 func RunAgentLoopFull(ctx context.Context, caller KernelCaller, registry tool.Registry,
-	systemPrompt string, instruction string, eb *ExecuteBudget, extraContext json.RawMessage) *ExecuteResult {
+	systemPrompt string, instruction string, eb *ExecuteBudget, extraContext json.RawMessage, observer loop.ToolObserver, executionID string) *ExecuteResult {
 
 	maxTurns := 10
 	if eb != nil && eb.MaxTurns > 0 {
 		maxTurns = eb.MaxTurns
 	}
 
-	provider := NewKernelLLMProvider(caller, "kernel")
+	provider := NewKernelLLMProvider(caller, "kernel", executionID)
 
 	const defaultTokenBudget = 100_000
 
+	if observer == nil {
+		observer = StderrToolObserver{}
+	}
+	if executionID != "" {
+		observer = &progressToolObserver{base: observer, executionID: executionID}
+	}
 	runner := &loop.Runner{
 		Provider:     provider,
 		ToolRegistry: registry,
 		Sanitizer:    loop.NewMemSanitizer(),
 		LoopDetector: loop.NewMemLoopDetector(),
 		CacheBuilder: loop.NewMemCacheBuilder(),
-		ToolObserver: stderrToolObserver{},
+		ToolObserver: observer,
 		TokenBudget:       defaultTokenBudget,
 		MessageCompressor: loop.DefaultMessageCompressor,
 	}
@@ -281,6 +297,11 @@ func RunAgentLoopFull(ctx context.Context, caller KernelCaller, registry tool.Re
 		Tools:      tools,
 		ToolChoice: "auto",
 		MaxTokens:  4096,
+		Stream:     executionID != "",
+	}
+
+	if executionID != "" {
+		runner.StreamConsumer = newExecutionStreamConsumer(executionID)
 	}
 
 	result, err := runner.Execute(ctx, run, messages, opts)
@@ -1810,14 +1831,15 @@ func derefInt(v *int) int {
 // stderrToolObserver：把工具执行生命周期打到 stderr，和旧版行为一致。
 // ---------------------------------------------------------------------------
 
-type stderrToolObserver struct{}
+// StderrToolObserver 把工具执行生命周期打到 stderr，和旧版行为一致。
+type StderrToolObserver struct{}
 
-func (stderrToolObserver) OnToolStart(_ context.Context, _ *loop.Run, _ *loop.Turn, toolName string, _ json.RawMessage) {
+func (StderrToolObserver) OnToolStart(_ context.Context, _ *loop.Run, _ *loop.Turn, toolName string, _ json.RawMessage) {
 	fmt.Fprintf(os.Stderr, "  [sidecar] executing %s\n", toolName)
 	diaglog.Logf("tool", "tool=%s start", toolName)
 }
 
-func (stderrToolObserver) OnToolEnd(ctx context.Context, _ *loop.Run, _ *loop.Turn, toolName string, ok bool, _ json.RawMessage) {
+func (StderrToolObserver) OnToolEnd(ctx context.Context, _ *loop.Run, _ *loop.Turn, toolName string, ok bool, _ json.RawMessage) {
 	if !ok {
 		fmt.Fprintf(os.Stderr, "  [sidecar] tool %s FAILED\n", toolName)
 		diaglog.Logf("tool", "tool=%s failed", toolName)
@@ -1830,6 +1852,64 @@ func (stderrToolObserver) OnToolEnd(ctx context.Context, _ *loop.Run, _ *loop.Tu
 	// 只记 error——成功工具太多,写进去会把错误窗口冲掉。
 	if !ok && toolName != "browser.pattern_exec" {
 		tool.RecordTurnOutcome(ctx, "error")
+	}
+}
+
+// StreamingToolObserver 在 tool 执行后通过 brain/stream/write 将输出实时发送到 host。
+// 用于 Workflow streaming edge 的跨进程流式传输。
+type StreamingToolObserver struct {
+	PipeID string
+	Base   loop.ToolObserver // 可选的底层 observer（如 StderrToolObserver）
+}
+
+func (s *StreamingToolObserver) OnToolStart(ctx context.Context, run *loop.Run, turn *loop.Turn, toolName string, input json.RawMessage) {
+	if s.Base != nil {
+		s.Base.OnToolStart(ctx, run, turn, toolName, input)
+	}
+}
+
+func (s *StreamingToolObserver) OnToolEnd(ctx context.Context, run *loop.Run, turn *loop.Turn, toolName string, ok bool, output json.RawMessage) {
+	if s.Base != nil {
+		s.Base.OnToolEnd(ctx, run, turn, toolName, ok, output)
+	}
+	if ok && s.PipeID != "" {
+		EmitStreamChunk(ctx, s.PipeID, output)
+	}
+}
+
+// progressToolObserver 包装一个 ToolObserver，并在工具生命周期事件发生时
+// 通过 brain/progress Notify 将事件实时推送到 host Brain。
+type progressToolObserver struct {
+	base        loop.ToolObserver
+	executionID string
+}
+
+func (o *progressToolObserver) OnToolStart(ctx context.Context, run *loop.Run, turn *loop.Turn, toolName string, input json.RawMessage) {
+	if o.base != nil {
+		o.base.OnToolStart(ctx, run, turn, toolName, input)
+	}
+	if o.executionID != "" {
+		EmitProgress(ctx, ProgressEvent{
+			Kind:        "tool_start",
+			ExecutionID: o.executionID,
+			ToolName:    toolName,
+			Args:        string(input),
+		})
+	}
+}
+
+func (o *progressToolObserver) OnToolEnd(ctx context.Context, run *loop.Run, turn *loop.Turn, toolName string, ok bool, output json.RawMessage) {
+	if o.base != nil {
+		o.base.OnToolEnd(ctx, run, turn, toolName, ok, output)
+	}
+	if o.executionID != "" {
+		EmitProgress(ctx, ProgressEvent{
+			Kind:        "tool_end",
+			ExecutionID: o.executionID,
+			ToolName:    toolName,
+			OK:          ok,
+			Detail:      string(output),
+		})
 	}
 }
 

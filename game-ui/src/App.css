@@ -1,0 +1,102 @@
+.app {
+  width: 100%;
+  max-width: 640px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  gap: 20px;
+  position: relative;
+}
+
+.app__title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-align: center;
+  color: var(--color-text);
+}
+
+.app__title span {
+  color: var(--color-primary-light);
+}
+
+/* Controls row: timer + difficulty */
+.app__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+/* Action buttons */
+.app__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.app__restart {
+  padding: 10px 28px;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: white;
+  cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.app__restart:hover {
+  background: var(--color-primary-light);
+  transform: translateY(-1px);
+}
+
+.app__restart:active {
+  transform: translateY(0);
+}
+
+.app__back {
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: 1px solid var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.app__back:hover {
+  border-color: var(--color-text);
+  color: var(--color-text);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .app {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .app__title {
+    font-size: 1.35rem;
+  }
+
+  .app__controls {
+    gap: 8px;
+  }
+
+  .app__restart,
+  .app__back {
+    font-size: 0.85rem;
+    padding: 8px 18px;
+  }
+}

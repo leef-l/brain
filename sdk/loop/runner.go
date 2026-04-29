@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -82,6 +83,11 @@ type Runner struct {
 
 	// Now returns the current time. Defaults to time.Now().UTC when nil.
 	Now func() time.Time
+
+	// CheckpointStore 用于任务级断点续传。当非 nil 时，Runner 在每个
+	// Turn 完成后自动保存 checkpoint，并在 Run 进入 StatePaused/StateCrashed
+	// 后恢复时从 checkpoint 重建状态。See checkpoint.go.
+	CheckpointStore CheckpointStore
 }
 
 // PreTurnState 描述某一轮的动态工具视图。
@@ -150,7 +156,15 @@ func (r *Runner) now() time.Time {
 // conversation (typically a single user message).
 //
 // See 22-Agent-Loop规格.md §4 and §6.
-func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Message, opts RunOptions) (*RunResult, error) {
+func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Message, opts RunOptions) (result *RunResult, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("runner panic: %v", rec)
+			if result == nil {
+				result = &RunResult{Run: run}
+			}
+		}
+	}()
 	now := r.now()
 
 	// Transition pending → running.
@@ -170,6 +184,15 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 	copy(messages, initialMessages)
 
 	var turns []*TurnResult
+
+	// ─── Checkpoint Resume ────────────────────────────────────────────────
+	// 如果 Run 状态为 paused/crashed 且有 CheckpointStore，尝试从 checkpoint 恢复。
+	if r.CheckpointStore != nil && (run.State == StatePaused || run.State == StateCrashed) {
+		if restoredMessages, restoredTurns, ok := RestoreFromCheckpoint(r.CheckpointStore, run); ok {
+			messages = restoredMessages
+			turns = restoredTurns
+		}
+	}
 
 	for {
 		now = r.now()
@@ -324,6 +347,7 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 				Response:  resp,
 				NextState: StateCompleted,
 			})
+			CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
 			run.Complete(r.now())
 			break
 		}
@@ -367,6 +391,7 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 						NextState: StateFailed,
 						Error:     be,
 					})
+					CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
 					run.Fail(r.now())
 					goto done
 				}
@@ -379,9 +404,19 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			Response:  resp,
 			NextState: StateRunning,
 		})
+		CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
 	}
 
 done:
+	// Run 成功完成后清理 checkpoint，节省磁盘空间。
+	if r.CheckpointStore != nil && run.State == StateCompleted {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if delErr := r.CheckpointStore.Delete(ctx, run.ID); delErr != nil {
+			fmt.Fprintf(os.Stderr, "checkpoint: delete failed for run %s: %v\n", run.ID, delErr)
+		}
+	}
+
 	return &RunResult{
 		Run:           run,
 		Turns:         turns,

@@ -1,0 +1,21 @@
+=== RUN   TestExtractContractKind
+--- PASS: TestExtractContractKind (0.00s)
+=== RUN   TestIsValidJSON
+--- PASS: TestIsValidJSON (0.00s)
+=== RUN   TestExtractBracketContent
+--- PASS: TestExtractBracketContent (0.00s)
+=== RUN   TestExtractJSONFromText
+--- PASS: TestExtractJSONFromText (0.00s)
+=== RUN   TestIsValidArchitectChatJSON
+--- PASS: TestIsValidArchitectChatJSON (0.00s)
+=== RUN   TestNormalizePlanReviewDecision
+--- PASS: TestNormalizePlanReviewDecision (0.00s)
+=== RUN   TestBuildEnvelope
+--- PASS: TestBuildEnvelope (0.00s)
+=== RUN   TestBuildEnvelopeWithRawMessage
+--- PASS: TestBuildEnvelopeWithRawMessage (0.00s)
+=== RUN   TestBuildEnvelopeWithInvalidRawMessage
+--- PASS: TestBuildEnvelopeWithInvalidRawMessage (0.00s)
+PASS
+ok  	github.com/leef-l/brain/brains/easymvp	0.882s
+?   	github.com/leef-l/brain/brains/easymvp/cmd/brain-easymvp-sidecar	[no test files]

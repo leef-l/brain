@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -45,9 +46,7 @@ func NewAnthropicProvider(baseURL, authToken, model string, opts ...AnthropicOpt
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		authToken: authToken,
 		model:     model,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Minute,
-		},
+		httpClient: newDefaultHTTPClient(),
 	}
 	for _, o := range opts {
 		o(p)
@@ -235,6 +234,11 @@ func (p *AnthropicProvider) buildContentBlocks(blocks []ContentBlock) []map[stri
 				"type": "text",
 				"text": b.Text,
 			})
+		case "thinking":
+			out = append(out, map[string]interface{}{
+				"type":      "thinking",
+				"thinking":  b.Text,
+			})
 		case "tool_use":
 			block := map[string]interface{}{
 				"type": "tool_use",
@@ -301,12 +305,13 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*
 	}
 
 	var rawBlocks []struct {
-		Type     string          `json:"type"`
-		Text     string          `json:"text"`
-		ID       string          `json:"id"`
-		Name     string          `json:"name"`
-		ToolName string          `json:"tool_name"`
-		Input    json.RawMessage `json:"input"`
+		Type             string          `json:"type"`
+		Text             string          `json:"text"`
+		Thinking         string          `json:"thinking"`
+		ID               string          `json:"id"`
+		Name             string          `json:"name"`
+		ToolName         string          `json:"tool_name"`
+		Input            json.RawMessage `json:"input"`
 	}
 	if err := json.Unmarshal(ar.Content, &rawBlocks); err != nil {
 		return nil, fmt.Errorf("invalid anthropic content: %w; body=%s", err, truncateBody(rawBody, 512))
@@ -316,6 +321,10 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*
 		switch rb.Type {
 		case "text":
 			cb.Text = rb.Text
+		case "thinking":
+			cb.Text = rb.Thinking
+		case "redacted_thinking":
+			cb.Text = "[redacted thinking]"
 		case "tool_use":
 			toolName := rb.Name
 			if strings.TrimSpace(toolName) == "" {
@@ -377,11 +386,12 @@ func (p *AnthropicProvider) setHeaders(req *http.Request) {
 // ---------------------------------------------------------------------------
 
 type sseReader struct {
-	body    io.ReadCloser
-	scanner *bufio.Scanner
-	mu      sync.Mutex
-	closed  bool
-	toolUse map[int]*streamToolUse
+	body        io.ReadCloser
+	scanner     *bufio.Scanner
+	mu          sync.Mutex
+	closed      bool
+	toolUse     map[int]*streamToolUse
+	readTimeout time.Duration
 }
 
 type streamToolUse struct {
@@ -392,9 +402,10 @@ type streamToolUse struct {
 
 func newSSEReader(body io.ReadCloser) *sseReader {
 	return &sseReader{
-		body:    body,
-		scanner: bufio.NewScanner(body),
-		toolUse: make(map[int]*streamToolUse),
+		body:        body,
+		scanner:     bufio.NewScanner(body),
+		toolUse:     make(map[int]*streamToolUse),
+		readTimeout: 30 * time.Second,
 	}
 }
 
@@ -413,24 +424,26 @@ func (r *sseReader) Next(ctx context.Context) (StreamEvent, error) {
 		default:
 		}
 
-		if !r.scanner.Scan() {
-			if err := r.scanner.Err(); err != nil {
-				return StreamEvent{}, fmt.Errorf("anthropic: stream scan: %w", err)
+		line, err := r.scanLine()
+		if err != nil {
+			if err == io.EOF {
+				return StreamEvent{}, io.EOF
 			}
-			return StreamEvent{}, io.EOF
+			return StreamEvent{}, fmt.Errorf("anthropic: stream scan: %w", err)
 		}
-
-		line := r.scanner.Text()
 
 		// SSE format: "event: <type>\ndata: <json>\n\n"
 		if strings.HasPrefix(line, "event: ") {
 			eventType := strings.TrimPrefix(line, "event: ")
 
 			// Read data line
-			if !r.scanner.Scan() {
-				return StreamEvent{}, io.EOF
+			dataLine, err := r.scanLine()
+			if err != nil {
+				if err == io.EOF {
+					return StreamEvent{}, io.EOF
+				}
+				return StreamEvent{}, fmt.Errorf("anthropic: stream scan data line: %w", err)
 			}
-			dataLine := r.scanner.Text()
 			var data json.RawMessage
 			if strings.HasPrefix(dataLine, "data: ") {
 				data = json.RawMessage(strings.TrimPrefix(dataLine, "data: "))
@@ -506,6 +519,16 @@ func (r *sseReader) mapSSEEvent(eventType string, data json.RawMessage) (StreamE
 				Type: EventContentDelta,
 				Data: marshalRaw(map[string]string{"text": start.ContentBlock.Text}),
 			}, true
+		case "thinking":
+			return StreamEvent{
+				Type: EventContentDelta,
+				Data: marshalRaw(map[string]string{"text": start.ContentBlock.Text, "kind": "thinking"}),
+			}, true
+		case "redacted_thinking":
+			return StreamEvent{
+				Type: EventContentDelta,
+				Data: marshalRaw(map[string]string{"text": "[redacted thinking]", "kind": "thinking"}),
+			}, true
 		case "tool_use":
 			toolName := start.ContentBlock.Name
 			if strings.TrimSpace(toolName) == "" {
@@ -554,6 +577,11 @@ func (r *sseReader) mapSSEEvent(eventType string, data json.RawMessage) (StreamE
 			return StreamEvent{
 				Type: EventContentDelta,
 				Data: marshalRaw(map[string]string{"text": delta.Delta.Text}),
+			}, true
+		case "thinking_delta":
+			return StreamEvent{
+				Type: EventContentDelta,
+				Data: marshalRaw(map[string]string{"text": delta.Delta.Text, "kind": "thinking"}),
 			}, true
 		case "input_json_delta":
 			if block := r.toolUse[delta.Index]; block != nil {
@@ -628,6 +656,33 @@ func marshalRaw(v interface{}) json.RawMessage {
 	return json.RawMessage(data)
 }
 
+func (r *sseReader) scanLine() (string, error) {
+	type result struct {
+		line string
+		ok   bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		if r.scanner.Scan() {
+			done <- result{line: r.scanner.Text(), ok: true}
+		} else {
+			done <- result{ok: false}
+		}
+	}()
+	select {
+	case res := <-done:
+		if !res.ok {
+			if err := r.scanner.Err(); err != nil {
+				return "", err
+			}
+			return "", io.EOF
+		}
+		return res.line, nil
+	case <-time.After(r.readTimeout):
+		return "", fmt.Errorf("SSE line read timeout after %v", r.readTimeout)
+	}
+}
+
 func (r *sseReader) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -636,6 +691,25 @@ func (r *sseReader) Close() error {
 	}
 	r.closed = true
 	return r.body.Close()
+}
+
+// newDefaultHTTPClient returns an http.Client with fine-grained timeouts.
+// The total timeout is 90s; connection, TLS handshake, and response-header
+// timeouts are much shorter so that hung API calls fail fast instead of
+// blocking for minutes.
+func newDefaultHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 90 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}
 }
 
 // sanitizeToolName replaces dots with double underscores for API proxies

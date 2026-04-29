@@ -1,14 +1,19 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/config"
+	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/kernel/mcpadapter"
 )
 
 // RunManager is the interface dashboard needs from the serve subsystem.
@@ -104,14 +109,43 @@ func handleBrains(w http.ResponseWriter, _ *http.Request, pool *kernel.ProcessBr
 
 	statuses := pool.Status()
 	type brainItem struct {
-		Kind    string `json:"kind"`
-		Running bool   `json:"running"`
-		Binary  string `json:"binary,omitempty"`
+		Kind       string `json:"kind"`
+		Running    bool   `json:"running"`
+		Binary     string `json:"binary,omitempty"`
+		AutoStart  bool   `json:"auto_start,omitempty"`
 	}
 
 	items := make([]brainItem, 0, len(statuses))
 	for kind, bs := range statuses {
 		items = append(items, brainItem{
+			Kind:      string(kind),
+			Running:   bs.Running,
+			Binary:    bs.Binary,
+			AutoStart: bs.AutoStart,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"brains": items, "total": len(items)})
+}
+
+func handleMCP(w http.ResponseWriter, _ *http.Request, mcpPool *mcpadapter.MCPBrainPool) {
+	if mcpPool == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"adapters": []interface{}{}, "total": 0})
+		return
+	}
+
+	statuses := mcpPool.Status()
+	type adapterItem struct {
+		Kind    string `json:"kind"`
+		Running bool   `json:"running"`
+		Binary  string `json:"binary,omitempty"`
+	}
+
+	items := make([]adapterItem, 0, len(statuses))
+	for kind, bs := range statuses {
+		items = append(items, adapterItem{
 			Kind:    string(kind),
 			Running: bs.Running,
 			Binary:  bs.Binary,
@@ -119,7 +153,78 @@ func handleBrains(w http.ResponseWriter, _ *http.Request, pool *kernel.ProcessBr
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"brains": items, "total": len(items)})
+	json.NewEncoder(w).Encode(map[string]interface{}{"adapters": items, "total": len(items)})
+}
+
+func handleBrainDetail(w http.ResponseWriter, r *http.Request, pool *kernel.ProcessBrainPool) {
+	if pool == nil {
+		http.Error(w, `{"error":"brain pool not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	kind := strings.TrimPrefix(r.URL.Path, "/v1/dashboard/brains/")
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		http.Error(w, `{"error":"kind is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	status, ok := pool.BrainDetail(agent.Kind(kind))
+	if !ok {
+		http.Error(w, fmt.Sprintf(`{"error":"brain %q not found"}`, kind), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+func handleBrainRestart(w http.ResponseWriter, r *http.Request, pool *kernel.ProcessBrainPool) {
+	if pool == nil {
+		http.Error(w, `{"error":"brain pool not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	kind := strings.TrimPrefix(r.URL.Path, "/v1/dashboard/brains/")
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		http.Error(w, `{"error":"kind is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	if err := pool.RestartBrain(ctx, agent.Kind(kind)); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"restart failed: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "restarted", "kind": kind})
+}
+
+func handleDeleteLease(w http.ResponseWriter, r *http.Request, lp LeaseProvider) {
+	capability := r.URL.Query().Get("capability")
+	resourceKey := r.URL.Query().Get("resource_key")
+	if capability == "" || resourceKey == "" {
+		http.Error(w, `{"error":"capability and resource_key are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if mlm, ok := lp.(interface{ ForceRevoke(string, string) int }); ok {
+		n := mlm.ForceRevoke(capability, resourceKey)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":       "revoked",
+			"count":        n,
+			"capability":   capability,
+			"resource_key": resourceKey,
+		})
+		return
+	}
+
+	http.Error(w, `{"error":"lease provider does not support force revoke"}`, http.StatusNotImplemented)
 }
 
 func handleEvents(w http.ResponseWriter, r *http.Request, bus *events.MemEventBus) {
@@ -250,70 +355,218 @@ func handleProviders(w http.ResponseWriter, _ *http.Request, cfg *config.Config)
 	})
 }
 
+// AuthMiddleware returns an http.Handler that enforces Bearer token auth.
+// If token is empty, it passes through without checks.
+func extractBearerToken(r *http.Request, token string) bool {
+	if token == "" {
+		return true
+	}
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") && strings.TrimPrefix(auth, "Bearer ") == token {
+		return true
+	}
+	// SSE/EventSource does not support custom headers, fallback to query param
+	if r.URL.Query().Get("token") == token {
+		return true
+	}
+	return false
+}
+
+// AuthMiddleware returns an http.Handler that enforces Bearer token auth.
+// If token is empty, it passes through without checks.
+func AuthMiddleware(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !extractBearerToken(r, token) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func authWrap(token string, h http.HandlerFunc) http.HandlerFunc {
+	if token == "" {
+		return h
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !extractBearerToken(r, token) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			return
+		}
+		h(w, r)
+	}
+}
+
 // RegisterRoutes registers all /v1/dashboard/* routes.
 // Returns the WSHub so callers can start it with hub.Start(ctx).
 // learnP 允许为 nil(运行在无学习库的早期配置),对应端点返回空集。
-func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *config.Config, startTime time.Time, lp LeaseProvider, learnP LearningProvider) *WSHub {
+// dashboardToken 从环境变量 BRAIN_DASHBOARD_TOKEN 读取;若为空则跳过认证。
+func RegisterRoutes(mux *http.ServeMux, mgr RunManager, pool *kernel.ProcessBrainPool, mcpPool *mcpadapter.MCPBrainPool, bus *events.MemEventBus, cfg *config.Config, startTime time.Time, lp LeaseProvider, learnP LearningProvider, quantCaller QuantToolCaller) *WSHub {
+	token := os.Getenv("BRAIN_DASHBOARD_TOKEN")
 	wsHub := NewWSHub(bus)
-	mux.HandleFunc("/v1/dashboard/overview", func(w http.ResponseWriter, r *http.Request) {
+
+	// 交易 API 路由 (映射到 quant sidecar tools)
+	mux.HandleFunc("/api/v1/portfolio", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handlePortfolio(w, r, quantCaller)
+	})
+	mux.HandleFunc("/api/v1/accounts", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleAccounts(w, r, quantCaller)
+	})
+	mux.HandleFunc("/api/v1/risk", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleRisk(w, r, quantCaller)
+	})
+	mux.HandleFunc("/api/v1/trading/pause", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleTradingPause(w, r, quantCaller)
+	})
+	mux.HandleFunc("/api/v1/trading/resume", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleTradingResume(w, r, quantCaller)
+	})
+	mux.HandleFunc("/api/v1/accounts/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/accounts/")
+		if path == "" {
+			http.Error(w, `{"error":"missing account id"}`, http.StatusBadRequest)
+			return
+		}
+		switch {
+		case strings.HasSuffix(path, "/pause") && r.Method == http.MethodPost:
+			handleAccountPause(w, r, quantCaller)
+		case strings.HasSuffix(path, "/resume") && r.Method == http.MethodPost:
+			handleAccountResume(w, r, quantCaller)
+		case strings.HasSuffix(path, "/close-all") && r.Method == http.MethodPost:
+			handleAccountCloseAll(w, r, quantCaller)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/v1/positions/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1/positions/")
+		if path == "" {
+			http.Error(w, `{"error":"missing position id"}`, http.StatusBadRequest)
+			return
+		}
+		if strings.HasSuffix(path, "/close") && r.Method == http.MethodPost {
+			handlePositionClose(w, r, quantCaller)
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	mux.HandleFunc("/v1/dashboard/overview", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleOverview(w, r, mgr, pool, startTime)
-	})
+	}))
 
-	mux.HandleFunc("/v1/dashboard/brains", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/dashboard/brains", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/dashboard/brains/") && len(r.URL.Path) > len("/v1/dashboard/brains/") {
+			if r.Method == http.MethodPost {
+				handleBrainRestart(w, r, pool)
+				return
+			}
+			handleBrainDetail(w, r, pool)
+			return
+		}
 		handleBrains(w, r, pool)
-	})
+	}))
 
-	mux.HandleFunc("/v1/dashboard/events", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/dashboard/events", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleEvents(w, r, bus)
-	})
+	}))
 
-	mux.HandleFunc("/v1/dashboard/auth", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/dashboard/auth", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleAuth(w, r, cfg)
-	})
+	}))
 
-	mux.HandleFunc("/v1/dashboard/leases", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+	mux.HandleFunc("/v1/dashboard/leases", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			handleLeases(w, r, lp)
+		case http.MethodDelete:
+			handleDeleteLease(w, r, lp)
+		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
 		}
-		handleLeases(w, r, lp)
-	})
+	}))
 
-	mux.HandleFunc("/v1/dashboard/providers", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/dashboard/providers", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleProviders(w, r, cfg)
-	})
+	}))
 
-	mux.HandleFunc("/v1/dashboard/learning", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/dashboard/mcp", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleMCP(w, r, mcpPool)
+	}))
+
+	mux.HandleFunc("/v1/dashboard/learning", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleLearning(w, r, learnP)
-	})
+	}))
 
-	mux.HandleFunc("/v1/dashboard/ws", func(w http.ResponseWriter, r *http.Request) {
+	// B-5: Browser pattern stats endpoint.
+	mux.HandleFunc("/v1/dashboard/browser/pattern-stats", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handleBrowserPatternStats(w, r)
+	}))
+
+	mux.HandleFunc("/v1/dashboard/executions", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = "/v1/executions"
+		http.Redirect(w, r, "/v1/executions", http.StatusTemporaryRedirect)
+	}))
+
+	mux.HandleFunc("/v1/dashboard/ws", authWrap(token, func(w http.ResponseWriter, r *http.Request) {
 		wsHub.HandleWS(w, r)
-	})
+	}))
 
 	return wsHub
 }

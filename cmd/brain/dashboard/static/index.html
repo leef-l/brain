@@ -12,63 +12,226 @@
         <div id="connection-status" class="status-indicator">Connecting...</div>
     </header>
 
+    <nav class="tabs">
+        <button class="tab-btn active" data-tab="monitor">Monitor</button>
+        <button class="tab-btn" data-tab="trading">Trading</button>
+        <button class="tab-btn" data-tab="analytics">Analytics</button>
+        <button class="tab-btn" data-tab="chat">Chat</button>
+        <button class="tab-btn" data-tab="easymvp">EasyMVP</button>
+        <button class="tab-btn" data-tab="settings">Settings</button>
+    </nav>
+
     <main class="grid">
-        <section class="panel" id="panel-overview">
-            <h2>Overview</h2>
-            <div class="panel-content">
-                <div class="stat-grid">
-                    <div class="stat-card">
-                        <span class="stat-value" id="stat-active-brains">-</span>
-                        <span class="stat-label">Active Brains</span>
+        <div class="tab-content active" id="tab-monitor">
+            <section class="panel" id="panel-overview">
+                <h2>Overview</h2>
+                <div class="panel-content">
+                    <div class="stat-grid">
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-active-brains">-</span>
+                            <span class="stat-label">Active Brains</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-running">-</span>
+                            <span class="stat-label">Running</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-completed">-</span>
+                            <span class="stat-label">Completed</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-failed">-</span>
+                            <span class="stat-label">Failed</span>
+                        </div>
                     </div>
-                    <div class="stat-card">
-                        <span class="stat-value" id="stat-running">-</span>
-                        <span class="stat-label">Running</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-value" id="stat-completed">-</span>
-                        <span class="stat-label">Completed</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-value" id="stat-failed">-</span>
-                        <span class="stat-label">Failed</span>
+                    <div class="meta-info">
+                        <span id="server-uptime"></span>
                     </div>
                 </div>
-                <div class="meta-info">
-                    <span id="server-uptime"></span>
+            </section>
+
+            <section class="panel" id="panel-brains">
+                <h2>Brains</h2>
+                <div class="panel-content" id="brains-list">
+                    <div class="placeholder">Loading brains...</div>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <section class="panel" id="panel-brains">
-            <h2>Brains</h2>
-            <div class="panel-content" id="brains-list">
-                <div class="placeholder">Loading brains...</div>
-            </div>
-        </section>
+            <section class="panel" id="panel-events">
+                <h2>Events <span class="badge" id="event-count">0</span></h2>
+                <div class="panel-content scrollable" id="events-list">
+                    <div class="placeholder">Waiting for events...</div>
+                </div>
+            </section>
 
-        <section class="panel" id="panel-events">
-            <h2>Events <span class="badge" id="event-count">0</span></h2>
-            <div class="panel-content scrollable" id="events-list">
-                <div class="placeholder">Waiting for events...</div>
-            </div>
-        </section>
+            <section class="panel" id="panel-executions">
+                <h2>Executions</h2>
+                <div class="panel-content scrollable" id="executions-list">
+                    <div class="placeholder">Loading executions...</div>
+                </div>
+            </section>
 
-        <section class="panel" id="panel-executions">
-            <h2>Executions</h2>
-            <div class="panel-content scrollable" id="executions-list">
-                <div class="placeholder">Loading executions...</div>
-            </div>
-        </section>
+            <section class="panel panel-wide" id="panel-learning">
+                <h2>Learning</h2>
+                <div class="panel-content scrollable" id="learning-content">
+                    <div class="placeholder">Loading learning overview...</div>
+                </div>
+            </section>
+        </div>
 
-        <section class="panel panel-wide" id="panel-learning">
-            <h2>Learning</h2>
-            <div class="panel-content scrollable" id="learning-content">
-                <div class="placeholder">Loading learning overview...</div>
-            </div>
-        </section>
+        <div class="tab-content" id="tab-trading">
+            <section class="panel" id="panel-kline">
+                <h2>K-Line</h2>
+                <div class="panel-content canvas-panel">
+                    <canvas id="kline-canvas"></canvas>
+                    <div id="kline-legend" class="chart-legend"></div>
+                </div>
+            </section>
+            <section class="panel panel-wide" id="panel-trade-history">
+                <h2>Trade History</h2>
+                <div class="panel-content">
+                    <div class="trade-controls">
+                        <label>Symbol:
+                            <select id="trade-filter-symbol"><option value="">All</option></select>
+                        </label>
+                        <button class="btn" id="trade-export-btn">Export CSV</button>
+                    </div>
+                    <div class="scrollable trade-table-wrap">
+                        <table class="learning-table" id="trade-history-table">
+                            <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Price</th><th>Size</th><th>PnL</th></tr></thead>
+                            <tbody><tr><td colspan="6" class="placeholder">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination" id="trade-pagination"></div>
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-content" id="tab-analytics">
+            <section class="panel" id="panel-decision-trace">
+                <h2>Decision Trace</h2>
+                <div class="panel-content scrollable">
+                    <table class="learning-table" id="decision-table">
+                        <thead><tr><th>Time</th><th>Strategy</th><th>Signal</th><th>Confidence</th><th>Result</th></tr></thead>
+                        <tbody><tr><td colspan="5" class="placeholder">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="panel" id="panel-daily-pnl">
+                <h2>Daily PnL</h2>
+                <div class="panel-content canvas-panel">
+                    <canvas id="pnl-canvas"></canvas>
+                    <div id="pnl-tooltip" class="chart-tooltip" style="display:none;"></div>
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-content" id="tab-chat">
+            <section class="panel panel-wide" id="panel-chat">
+                <h2>Chat</h2>
+                <div class="panel-content chat-panel">
+                    <div class="chat-messages scrollable" id="chat-messages">
+                        <div class="placeholder">Connect to start chatting...</div>
+                    </div>
+                    <div class="chat-input-row">
+                        <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off">
+                        <button class="btn" id="chat-send-btn">Send</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- EasyMVP Tab -->
+        <div class="tab-content" id="tab-easymvp">
+            <section class="panel" id="panel-easymvp-projects">
+                <h2>Projects <span class="badge" id="easymvp-project-count">0</span></h2>
+                <div class="panel-content scrollable" id="easymvp-projects-list">
+                    <div class="placeholder">Loading projects...</div>
+                </div>
+            </section>
+
+            <section class="panel" id="panel-easymvp-plan">
+                <h2>Plan Review</h2>
+                <div class="panel-content scrollable" id="easymvp-plan-content">
+                    <div class="placeholder">Select a project to view plan</div>
+                </div>
+            </section>
+
+            <section class="panel" id="panel-easymvp-tasks">
+                <h2>Compiled Tasks</h2>
+                <div class="panel-content scrollable" id="easymvp-tasks-content">
+                    <div class="placeholder">Select a project to view tasks</div>
+                </div>
+            </section>
+
+            <section class="panel" id="panel-easymvp-chat">
+                <h2>Architect Chat</h2>
+                <div class="panel-content chat-panel">
+                    <div class="chat-messages scrollable" id="easymvp-chat-messages">
+                        <div class="placeholder">Send a message to start architect chat...</div>
+                    </div>
+                    <div class="chat-input-row">
+                        <input type="text" id="easymvp-chat-input" placeholder="Describe what you want to build..." autocomplete="off">
+                        <button class="btn" id="easymvp-chat-send-btn">Send</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel panel-wide" id="panel-easymvp-workflow">
+                <h2>Workflow Visualization</h2>
+                <div class="panel-content canvas-panel" style="min-height:200px;">
+                    <canvas id="easymvp-workflow-canvas"></canvas>
+                    <div id="easymvp-workflow-legend" class="chart-legend"></div>
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-content" id="tab-settings">
+            <section class="panel panel-wide" id="panel-settings">
+                <h2>Settings</h2>
+                <div class="panel-content settings-panel">
+                    <div class="setting-row">
+                        <label for="setting-poll-interval">Polling Interval (ms)</label>
+                        <input type="number" id="setting-poll-interval" min="1000" max="60000" step="1000" value="10000">
+                    </div>
+                    <div class="setting-row">
+                        <label for="setting-max-events">Max Events Displayed</label>
+                        <input type="number" id="setting-max-events" min="10" max="1000" step="10" value="100">
+                    </div>
+                    <div class="setting-row">
+                        <label for="setting-theme">Dashboard Theme</label>
+                        <select id="setting-theme">
+                            <option value="dark">Dark</option>
+                            <option value="light">Light</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <label for="setting-auto-start">Brain Auto-Start</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="setting-auto-start">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <button class="btn" id="settings-save-btn">Save Settings</button>
+                        <span id="settings-save-status" class="save-status"></span>
+                    </div>
+                </div>
+            </section>
+        </div>
     </main>
 
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <h2>Dashboard Login</h2>
+            <p>Enter your access token to continue.</p>
+            <input type="password" id="login-token" placeholder="Bearer token">
+            <button class="btn" id="login-btn">Login</button>
+            <div id="login-error" class="login-error"></div>
+        </div>
+    </div>
+
+    <script src="easymvp.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

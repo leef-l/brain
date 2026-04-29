@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/leef-l/brain/sdk/diaglog"
+	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
 )
 
@@ -197,7 +198,9 @@ func handleWSSession(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	// 注入反向 RPC 能力
 	if rich, ok := handler.(RichBrainHandler); ok {
-		rich.SetKernelCaller(&rpcKernelCaller{rpc: rpc})
+		caller := &rpcKernelCaller{rpc: rpc}
+		rich.SetKernelCaller(caller)
+		SetProgressContext(caller, string(handler.Kind()))
 	}
 
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
@@ -255,10 +258,28 @@ func registerBuiltinMethods(rpc protocol.BidirRPC, handler BrainHandler) {
 
 	for _, method := range []string{"brain/execute", "brain/plan", "brain/verify", "brain/metrics", "brain/learn"} {
 		m := method
-		rpc.Handle(m, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		rpc.Handle(m, func(ctx context.Context, params json.RawMessage) (result interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "sidecar: handler panic on %s: %v\n", m, r)
+					err = fmt.Errorf("handler panic: %v", r)
+				}
+			}()
 			return handler.HandleMethod(ctx, m, params)
 		})
 	}
+
+	// Register llm/stream/delta — host pushes incremental stream events to sidecar.
+	rpc.Handle(protocol.MethodLLMStreamDelta, func(_ context.Context, params json.RawMessage) (interface{}, error) {
+		var delta struct {
+			StreamID string          `json:"stream_id"`
+			Event    llm.StreamEvent `json:"event"`
+		}
+		if err := json.Unmarshal(params, &delta); err == nil {
+			pushStreamEvent(delta.StreamID, delta.Event)
+		}
+		return nil, nil
+	})
 }
 
 // sidecarWSReader/Writer 是轻量的 WebSocket FrameReader/FrameWriter 实现。

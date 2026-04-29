@@ -73,4 +73,10 @@ func (cl *CentralBrainLearner) ExportMetrics() kernel.BrainMetrics {
 	}
 }
 
+// Adapt 是 Central brain 的空操作适配。
+// Central 作为编排层无领域参数需自适应，故直接返回 nil。
+func (cl *CentralBrainLearner) Adapt(_ context.Context) error {
+	return nil
+}
+
 var _ kernel.BrainLearner = (*CentralBrainLearner)(nil)

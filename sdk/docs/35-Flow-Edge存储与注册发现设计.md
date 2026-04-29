@@ -4,7 +4,7 @@
 
 > **状态**：v1 · 2026-04-17
 > **归属**：§7.10 Flow Edge（32-v3-Brain架构.md）的详细规格
-> **Phase 映射**：Phase C-1 Workflow Engine 核心子系统
+> **Phase 映射**：Phase C-1 Workflow Engine 核心子系统 ✅（`WorkflowEngine` 已使用 `flow.MemStore` + materialized/streaming edge 完成 DAG 节点间数据传递）
 > **依赖文档**：[32-v3-Brain架构.md](./32-v3-Brain架构.md) §7.10 / §7.7.1
 
 ---

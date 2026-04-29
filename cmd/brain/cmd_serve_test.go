@@ -119,6 +119,18 @@ func (stubAnomalyTemplateStore) GetSitemapSnapshot(context.Context, string, int)
 func (stubAnomalyTemplateStore) PurgeSitemapSnapshots(context.Context, time.Time) (int64, error) {
 	return 0, nil
 }
+func (stubAnomalyTemplateStore) GetHumanDemoSequence(context.Context, int64) (*persistence.HumanDemoSequence, error) {
+	return nil, nil
+}
+func (stubAnomalyTemplateStore) ApproveHumanDemoSequence(context.Context, int64) error {
+	return nil
+}
+func (stubAnomalyTemplateStore) DeleteHumanDemoSequence(context.Context, int64) error {
+	return nil
+}
+func (stubAnomalyTemplateStore) PurgeHumanDemoSequences(context.Context, time.Time) (int64, error) {
+	return 0, nil
+}
 
 func TestSharedBrowserHumanEventSourceFactory_DegradesWithoutSession(t *testing.T) {
 	if sess, ok := tool.CurrentSharedBrowserSession(); ok || sess != nil {

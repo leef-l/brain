@@ -443,14 +443,14 @@ func DiffOldLabel(path string, exists bool) string {
 	if !exists {
 		return "/dev/null"
 	}
-	if filepath.IsAbs(path) {
+	if strings.HasPrefix(path, "/") {
 		return "a" + path
 	}
 	return "a/" + path
 }
 
 func DiffNewLabel(path string) string {
-	if filepath.IsAbs(path) {
+	if strings.HasPrefix(path, "/") {
 		return "b" + path
 	}
 	return "b/" + path

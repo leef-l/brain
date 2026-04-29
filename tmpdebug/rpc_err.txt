@@ -1,0 +1,2 @@
+brain-easymvp sidecar v1.0.0 starting (stdio mode)
+brain-easymvp sidecar v1.0.0 ready

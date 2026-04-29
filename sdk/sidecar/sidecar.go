@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
 )
 
@@ -48,6 +49,11 @@ type KernelCaller interface {
 	// CallKernel sends an RPC request to the Kernel and blocks until
 	// the response arrives.
 	CallKernel(ctx context.Context, method string, params interface{}, result interface{}) error
+
+	// NotifyKernel sends an RPC Notification to the Kernel (no id, no
+	// response). Used for best-effort streaming chunks and progress
+	// events to avoid blocking the sidecar main loop.
+	NotifyKernel(ctx context.Context, method string, params interface{}) error
 }
 
 // RichBrainHandler extends BrainHandler with outbound RPC capability.
@@ -67,6 +73,10 @@ type rpcKernelCaller struct {
 
 func (c *rpcKernelCaller) CallKernel(ctx context.Context, method string, params interface{}, result interface{}) error {
 	return c.rpc.Call(ctx, method, params, result)
+}
+
+func (c *rpcKernelCaller) NotifyKernel(ctx context.Context, method string, params interface{}) error {
+	return c.rpc.Notify(ctx, method, params)
 }
 
 // Run starts the sidecar runtime with the given brain handler.
@@ -129,6 +139,18 @@ func Run(handler BrainHandler) error {
 		return nil, nil
 	})
 
+	// Register llm/stream/delta — host pushes incremental stream events to sidecar.
+	rpc.Handle(protocol.MethodLLMStreamDelta, func(_ context.Context, params json.RawMessage) (interface{}, error) {
+		var delta struct {
+			StreamID string          `json:"stream_id"`
+			Event    llm.StreamEvent `json:"event"`
+		}
+		if err := json.Unmarshal(params, &delta); err == nil {
+			pushStreamEvent(delta.StreamID, delta.Event)
+		}
+		return nil, nil
+	})
+
 	// Register tools/list.
 	rpc.Handle("tools/list", func(_ context.Context, _ json.RawMessage) (interface{}, error) {
 		specs := toolSpecsForHandler(handler)
@@ -150,14 +172,22 @@ func Run(handler BrainHandler) error {
 	// a few common ones that brains might need.
 	for _, method := range []string{"brain/execute", "brain/plan", "brain/verify", "brain/metrics", "brain/learn"} {
 		m := method // capture
-		rpc.Handle(m, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		rpc.Handle(m, func(ctx context.Context, params json.RawMessage) (result interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "sidecar: handler panic on %s: %v\n", m, r)
+					err = fmt.Errorf("handler panic: %v", r)
+				}
+			}()
 			return handler.HandleMethod(ctx, m, params)
 		})
 	}
 
 	// Inject KernelCaller if the handler supports outbound RPC.
 	if rich, ok := handler.(RichBrainHandler); ok {
-		rich.SetKernelCaller(&rpcKernelCaller{rpc: rpc})
+		caller := &rpcKernelCaller{rpc: rpc}
+		rich.SetKernelCaller(caller)
+		SetProgressContext(caller, string(handler.Kind()))
 	}
 
 	// Start the RPC reader loop.

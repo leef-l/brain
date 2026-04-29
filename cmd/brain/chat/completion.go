@@ -20,6 +20,7 @@ func AllSlashCommands() []SlashCommand {
 		{"/brain start all", "启动所有大脑"},
 		{"/brain stop <kind>", "停止指定大脑"},
 		{"/brain stop all", "停止所有大脑"},
+		{"/workflow", "提交 DAG workflow 执行"},
 		{"/keys", "查看快捷键配置"},
 		{"/exit", "退出 chat"},
 	}

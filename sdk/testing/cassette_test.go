@@ -83,6 +83,7 @@ func TestRecorder_DuplicateStart(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on second Start, got nil")
 	}
+	_ = rec.Finish(ctx)
 	be, ok := err.(*brainerrors.BrainError)
 	if !ok || be.ErrorCode != brainerrors.CodeInvariantViolated {
 		t.Errorf("expected CodeInvariantViolated, got %v", err)

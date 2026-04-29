@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -59,6 +60,12 @@ func NormalizeCommandRequest(toolName string, req CommandRequest) CommandRequest
 }
 
 func ExecuteCommandRequest(ctx context.Context, req CommandRequest, sb *Sandbox, cmdSandbox CommandSandbox) (CommandOutcome, error) {
+	return ExecuteCommandRequestWithStreams(ctx, req, sb, cmdSandbox, nil, nil)
+}
+
+// ExecuteCommandRequestWithStreams is like ExecuteCommandRequest but also streams
+// stdout/stderr to the provided writers in real time (e.g. os.Stderr for CLI visibility).
+func ExecuteCommandRequestWithStreams(ctx context.Context, req CommandRequest, sb *Sandbox, cmdSandbox CommandSandbox, stdoutStream, stderrStream io.Writer) (CommandOutcome, error) {
 	var (
 		stdout bytes.Buffer
 		stderr bytes.Buffer
@@ -75,13 +82,23 @@ func ExecuteCommandRequest(ctx context.Context, req CommandRequest, sb *Sandbox,
 	stdoutW := &limitWriter{buf: &stdout, max: maxCommandOutputBytes}
 	stderrW := &limitWriter{buf: &stderr, max: maxCommandOutputBytes}
 
+	// If stream writers are provided, tee output so the user can see progress.
+	var stdoutOut io.Writer = stdoutW
+	var stderrOut io.Writer = stderrW
+	if stdoutStream != nil {
+		stdoutOut = io.MultiWriter(stdoutW, stdoutStream)
+	}
+	if stderrStream != nil {
+		stderrOut = io.MultiWriter(stderrW, stderrStream)
+	}
+
 	var (
 		exitCode  int
 		sandboxed bool
 	)
 
 	if cmdSandbox != nil && cmdSandbox.Available() {
-		code, runErr := cmdSandbox.Run(execCtx, req.Command, workDir, stdoutW, stderrW)
+		code, runErr := cmdSandbox.Run(execCtx, req.Command, workDir, stdoutOut, stderrOut)
 		if runErr != nil {
 			return CommandOutcome{}, runErr
 		}
@@ -92,8 +109,8 @@ func ExecuteCommandRequest(ctx context.Context, req CommandRequest, sb *Sandbox,
 		if workDir != "" {
 			cmd.Dir = workDir
 		}
-		cmd.Stdout = stdoutW
-		cmd.Stderr = stderrW
+		cmd.Stdout = stdoutOut
+		cmd.Stderr = stderrOut
 
 		err := cmd.Run()
 		if err != nil {

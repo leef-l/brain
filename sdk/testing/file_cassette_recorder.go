@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ func validateCassetteName(name string) error {
 		return brainerrors.New(brainerrors.CodeToolInputInvalid,
 			brainerrors.WithMessage("cassette name must not be empty"))
 	}
-	if filepath.IsAbs(name) {
+	if filepath.IsAbs(name) || strings.HasPrefix(name, "/") || strings.HasPrefix(name, `\`) {
 		return brainerrors.New(brainerrors.CodeToolInputInvalid,
 			brainerrors.WithMessage(fmt.Sprintf(
 				"cassette name %q must not be an absolute path", name)))

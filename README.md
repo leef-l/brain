@@ -161,6 +161,67 @@ curl -X POST http://127.0.0.1:7701/v1/runs \
 curl http://127.0.0.1:7701/v1/tools
 ```
 
+#### Contract Execute（同步 + SSE 流式）
+
+**同步模式**（默认）：一次性返回完整结果。
+
+```bash
+curl -X POST http://127.0.0.1:7701/v1/contracts/execute \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "brain_kind": "easymvp",
+    "contract_kind": "architect_chat",
+    "context_json": {"project_name": "my-app", "tech_stack": "Go"},
+    "instruction": "设计一个用户登录系统"
+  }'
+# 返回：{"status":"ok","summary":"...","result":{...}}
+```
+
+**SSE 流式模式**（`?stream=true`）：实时推送执行过程事件。
+
+```bash
+curl -X POST 'http://127.0.0.1:7701/v1/contracts/execute?stream=true' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "brain_kind": "easymvp",
+    "contract_kind": "architect_chat",
+    "context_json": {"project_name": "my-app", "tech_stack": "Go"},
+    "instruction": "设计一个用户登录系统"
+  }'
+```
+
+SSE 响应格式（`Content-Type: text/event-stream`）：
+
+```
+data: {"id":"evt-1","execution_id":"exec-...","type":"execution.started","timestamp":"...","data":{"execution_id":"exec-..."}}
+
+data: {"id":"evt-2","execution_id":"exec-...","type":"llm.content_delta","timestamp":"...","data":{"text":"首先"}}
+
+data: {"id":"evt-3","execution_id":"exec-...","type":"agent.tool_start","timestamp":"...","data":{"tool_name":"code.write_file"}}
+
+data: {"id":"evt-4","execution_id":"exec-...","type":"agent.tool_end","timestamp":"...","data":{"tool_name":"code.write_file","ok":true}}
+
+data: {"id":"evt-5","execution_id":"exec-...","type":"execution.done","timestamp":"...","data":{"status":"ok","summary":"..."}}
+```
+
+**事件类型说明**：
+
+| 事件类型 | 来源 | 说明 |
+|----------|------|------|
+| `execution.started` | Brain | 执行开始 |
+| `llm.message_start` | Brain | LLM 开始生成 |
+| `llm.content_delta` | Brain/Sidecar | 文本/token 增量 |
+| `llm.thinking_delta` | Brain | 推理过程增量（DeepSeek 等） |
+| `llm.tool_call_delta` | Brain/Sidecar | 工具调用参数增量 |
+| `llm.message_end` | Brain | LLM 完成，携带 usage |
+| `agent.tool_start` | Sidecar | 工具开始执行 |
+| `agent.tool_end` | Sidecar | 工具执行完成 |
+| `execution.done` | Brain | 执行完成，携带最终结果 |
+| `execution.error` | Brain | 执行出错 |
+| `execution.cancelled` | Brain | 执行被取消（客户端断开 SSE） |
+
+**客户端断开 = 取消执行**：关闭 SSE 连接会触发取消链路，Brain 会中断正在进行的 LLM 调用并清理状态。
+
 ### 工具管理
 
 ```bash
@@ -284,12 +345,12 @@ brain config set file_policy '{
 | 大脑 | 二进制 | 工具数 | 说明 |
 |------|--------|--------|------|
 | Central | `brain`（内置） | - | 协调器，LLM 复审，日终分析 |
-| Code | `brain-code` | 8 | 读写/编辑文件、列目录、搜索（带上下文）、命令执行、TODO 规划 |
-| Browser | `brain-browser` | 16 | CDP 浏览器自动化（导航、交互、截图、JS 执行）、TODO 规划 |
+| Code | `brain-code` | 8 | read_file/write_file/edit_file/delete_file/list_files/search/execute_command/note |
+| Browser | `brain-browser` | 16 | navigate/click/type/scroll/screenshot/evaluate/wait/hover/upload/get_text/get_url/drag/new_tab/close_tab/get_cookies/note |
 | Data | `brain-data-sidecar` | 9 | OKX 行情采集、192 维特征向量 |
 | Quant | `brain-quant-sidecar` | 14 | 策略聚合、风控、交易执行 |
-| Verifier | `brain-verifier` | 5 | 只读独立验证、TODO 规划 |
-| Fault | `brain-fault` | 5 | 混沌工程、TODO 规划 |
+| Verifier | `brain-verifier` | 5 | read_file/run_tests/check_output/browser_action/note |
+| Fault | `brain-fault` | 5 | inject_error/inject_latency/kill_process/corrupt_response/note |
 
 所有基础大脑（code/browser/verifier/fault）共享同一套工业级 Agent Loop 引擎（`sdk/loop.Runner`）：
 

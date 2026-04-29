@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/dashboard"
+	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/kernel/mcpadapter"
 	"github.com/leef-l/brain/sdk/persistence"
+	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/tool"
 )
 
@@ -107,6 +112,36 @@ func (a *learningProviderAdapter) LearningOverview() dashboard.LearningOverview 
 	return out
 }
 
-func registerDashboardRoutes(mux *http.ServeMux, mgr *runManager, pool *kernel.ProcessBrainPool, bus *events.MemEventBus, cfg *brainConfig, startTime time.Time, leaseManager *kernel.MemLeaseManager, learnP dashboard.LearningProvider) *dashboard.WSHub {
-	return dashboard.RegisterRoutes(mux, &runManagerAdapter{mgr: mgr}, pool, bus, cfg, startTime, &leaseProviderAdapter{lm: leaseManager}, learnP)
+func registerDashboardRoutes(mux *http.ServeMux, mgr *runManager, pool *kernel.ProcessBrainPool, mcpPool *mcpadapter.MCPBrainPool, bus *events.MemEventBus, cfg *brainConfig, startTime time.Time, leaseManager *kernel.MemLeaseManager, learnP dashboard.LearningProvider) *dashboard.WSHub {
+	var orch *kernel.Orchestrator
+	if pool != nil {
+		orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{})
+	}
+
+	quantCaller := dashboard.QuantToolCaller(func(ctx context.Context, toolName string, args map[string]interface{}) (json.RawMessage, error) {
+		if orch == nil {
+			return nil, fmt.Errorf("quant sidecar not available")
+		}
+		if !orch.CanDelegate(agent.KindQuant) {
+			return nil, fmt.Errorf("quant sidecar not available")
+		}
+		argsJSON, _ := json.Marshal(args)
+		res, err := orch.CallTool(ctx, &protocol.SpecialistToolCallRequest{
+			TargetKind: agent.KindQuant,
+			ToolName:   toolName,
+			Arguments:  argsJSON,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if res.IsError {
+			if res.Error != nil {
+				return nil, fmt.Errorf("%s", res.Error.Message)
+			}
+			return nil, fmt.Errorf("tool call failed")
+		}
+		return res.CanonicalOutput(), nil
+	})
+
+	return dashboard.RegisterRoutes(mux, &runManagerAdapter{mgr: mgr}, pool, mcpPool, bus, cfg, startTime, &leaseProviderAdapter{lm: leaseManager}, learnP, quantCaller)
 }

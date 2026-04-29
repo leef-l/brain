@@ -128,6 +128,15 @@ type understoodElement struct {
 	Confidence    float64 `json:"confidence,omitempty"`
 }
 
+// understandResult is the structured output of understandPage.
+type understandResult struct {
+	URLPattern      string              `json:"url_pattern"`
+	DOMHash         string              `json:"dom_hash"`
+	SemanticQuality string              `json:"semantic_quality"`
+	SourceStats     map[string]int      `json:"source_stats"`
+	Elements        []understoodElement `json:"elements"`
+}
+
 func (t *browserUnderstandTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
 	var input understandInput
 	if len(args) > 0 && string(args) != "null" {
@@ -139,15 +148,33 @@ func (t *browserUnderstandTool) Execute(ctx context.Context, args json.RawMessag
 		input.MaxElements = 60
 	}
 
+	res, err := t.understandPage(ctx, input)
+	if err != nil {
+		return errResult("%v", err), nil
+	}
+
+	return okResult(map[string]interface{}{
+		"url_pattern":      res.URLPattern,
+		"dom_hash":         res.DOMHash,
+		"semantic_quality": res.SemanticQuality,
+		"source_stats":     res.SourceStats,
+		"elements":         res.Elements,
+	}), nil
+}
+
+// understandPage analyses the current page snapshot and returns semantic
+// annotations for each interactive element. It implements the three-tier
+// source precedence: cache → static DOM rules → LLM batch.
+func (t *browserUnderstandTool) understandPage(ctx context.Context, input understandInput) (*understandResult, error) {
 	sess, err := t.holder.get(ctx)
 	if err != nil {
-		return errResult("no browser session: %v", err), nil
+		return nil, fmt.Errorf("no browser session: %w", err)
 	}
 
 	// 1. Fetch interactive snapshot from the page.
 	allElements, err := collectInteractive(ctx, sess)
 	if err != nil {
-		return errResult("snapshot: %v", err), nil
+		return nil, fmt.Errorf("snapshot: %w", err)
 	}
 	pageURL, _ := readPageMeta(ctx, sess)
 
@@ -170,12 +197,13 @@ func (t *browserUnderstandTool) Execute(ctx context.Context, args json.RawMessag
 		}
 	}
 	if len(selected) == 0 {
-		return okResult(map[string]interface{}{
-			"url_pattern":      urlPattern(pageURL),
-			"dom_hash":         domHash(allElements),
-			"semantic_quality": "full",
-			"elements":         []understoodElement{},
-		}), nil
+		return &understandResult{
+			URLPattern:      urlPattern(pageURL),
+			DOMHash:         domHash(allElements),
+			SemanticQuality: "full",
+			Elements:        []understoodElement{},
+			SourceStats:     map[string]int{"cache": 0, "rules": 0, "llm": 0, "fallback": 0},
+		}, nil
 	}
 
 	// 3. Cache lookup bulk.
@@ -309,13 +337,22 @@ func (t *browserUnderstandTool) Execute(ctx context.Context, args json.RawMessag
 		}
 	}
 
-	return okResult(map[string]interface{}{
-		"url_pattern":      urlPat,
-		"dom_hash":         dhash,
-		"semantic_quality": quality,
-		"source_stats":     stats,
-		"elements":         out,
-	}), nil
+	// B-6: track consecutive text understanding failures.
+	t.holder.mu.Lock()
+	if quality == "structural_only" || quality == "low_confidence" {
+		t.holder.understandFailCount++
+	} else {
+		t.holder.understandFailCount = 0
+	}
+	t.holder.mu.Unlock()
+
+	return &understandResult{
+		URLPattern:      urlPat,
+		DOMHash:         dhash,
+		SemanticQuality: quality,
+		SourceStats:     stats,
+		Elements:        out,
+	}, nil
 }
 
 // ensureCache lazily opens the SQLite cache.

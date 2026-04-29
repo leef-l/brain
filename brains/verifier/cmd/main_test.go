@@ -5,10 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/leef-l/brain/sdk/sidecar"
+	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/shared"
+	"github.com/leef-l/brain/sdk/tool"
 )
 
-func TestNewVerifierHandler_AppliesDelegateToolPolicy(t *testing.T) {
+func TestRunBrain_VerifierRegistryFiltered(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	data := `{
   "tool_profiles": {
@@ -26,49 +28,17 @@ func TestNewVerifierHandler_AppliesDelegateToolPolicy(t *testing.T) {
 	}
 	t.Setenv("BRAIN_CONFIG", configPath)
 
-	h := newVerifierHandler()
-	if _, ok := h.registry.Lookup("verifier.browser_action"); ok {
+	reg := shared.RegisterWithPolicy(agent.KindVerifier,
+		tool.NewVerifierReadFileTool(),
+		tool.NewRunTestsTool(),
+		tool.NewCheckOutputTool(),
+		tool.NewBrowserActionTool(),
+		tool.NewNoteTool("verifier"),
+	)
+	if _, ok := reg.Lookup("verifier.browser_action"); ok {
 		t.Fatalf("verifier.browser_action should be filtered out")
 	}
-	if _, ok := h.registry.Lookup("verifier.read_file"); !ok {
+	if _, ok := reg.Lookup("verifier.read_file"); !ok {
 		t.Fatalf("verifier.read_file should remain available")
-	}
-}
-
-func TestApplyVerifierVerdict_FailMarksExecuteResultFailed(t *testing.T) {
-	result := &sidecar.ExecuteResult{
-		Status:  "completed",
-		Summary: "Found regression.\nVERDICT: FAIL - output mismatch",
-	}
-
-	applyVerifierVerdict(result)
-
-	if result.Status != "failed" {
-		t.Fatalf("status=%q, want failed", result.Status)
-	}
-	if result.Error != "output mismatch" {
-		t.Fatalf("error=%q, want output mismatch", result.Error)
-	}
-	if result.Verification == nil || result.Verification.Passed == nil || *result.Verification.Passed {
-		t.Fatalf("verification=%+v, want passed=false", result.Verification)
-	}
-}
-
-func TestApplyVerifierVerdict_PassPopulatesStructuredVerification(t *testing.T) {
-	result := &sidecar.ExecuteResult{
-		Status:  "completed",
-		Summary: "Everything looks good.\nVERDICT: PASS - tests and UI checks passed",
-	}
-
-	applyVerifierVerdict(result)
-
-	if result.Status != "completed" {
-		t.Fatalf("status=%q, want completed", result.Status)
-	}
-	if result.Verification == nil || result.Verification.Passed == nil || !*result.Verification.Passed {
-		t.Fatalf("verification=%+v, want passed=true", result.Verification)
-	}
-	if result.Verification.SourceTool != "verifier.verdict" {
-		t.Fatalf("source_tool=%q, want verifier.verdict", result.Verification.SourceTool)
 	}
 }

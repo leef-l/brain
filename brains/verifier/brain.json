@@ -40,6 +40,16 @@
       "brain/verify"
     ]
   },
+  "tools_manifest": {
+    "source": "sdk/tool",
+    "tools": [
+      "verifier.read_file",
+      "verifier.run_tests",
+      "verifier.check_output",
+      "verifier.browser_action",
+      "verifier.note"
+    ]
+  },
   "compatibility": {
     "protocol": "1.0",
     "tested_kernel": "1.0.x",

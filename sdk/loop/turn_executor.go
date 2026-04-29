@@ -124,26 +124,31 @@ func (e *TurnExecutor) consumeStream(ctx context.Context, run *Run, turn *Turn, 
 // drainStream reads all events from a StreamReader and assembles a
 // ChatResponse. It forwards events to consumer when non-nil. This is a
 // shared helper used by both TurnExecutor and Runner.
-func drainStream(ctx context.Context, reader llm.StreamReader, run *Run, turn *Turn, consumer StreamConsumer) (*llm.ChatResponse, error) {
-	resp := &llm.ChatResponse{}
+func drainStream(ctx context.Context, reader llm.StreamReader, run *Run, turn *Turn, consumer StreamConsumer) (resp *llm.ChatResponse, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("stream panic: %v", r)
+			resp = nil
+		}
+	}()
+	resp = &llm.ChatResponse{}
 
 	// Accumulators for building content blocks from stream deltas.
 	var textAccum string
+	var reasoningAccum string
+	var blockOrder []string // tracks which accumulators appeared first, for ordered flush
 	var toolCalls []llm.ContentBlock
 	var currentToolCall *llm.ContentBlock
 
 	for {
 		ev, err := reader.Next(ctx)
 		if err != nil {
-			// End of stream or error — if we have accumulated data, use it.
-			// MockProvider signals EOF via a BrainError with "EOF" in the message.
-			if resp.StopReason != "" {
-				break
-			}
-			// If we have no data at all, propagate the error.
-			if len(resp.Content) == 0 && textAccum == "" && len(toolCalls) == 0 {
+			// End of stream or error.
+			// If we have no accumulated data at all, propagate the error.
+			if len(resp.Content) == 0 && textAccum == "" && reasoningAccum == "" && len(toolCalls) == 0 {
 				return nil, err
 			}
+			// We have some data — tolerate EOF and assemble what we have.
 			break
 		}
 
@@ -165,9 +170,20 @@ func drainStream(ctx context.Context, reader llm.StreamReader, run *Run, turn *T
 		case llm.EventContentDelta:
 			var deltaData struct {
 				Text string `json:"text"`
+				Kind string `json:"kind"`
 			}
 			if json.Unmarshal(ev.Data, &deltaData) == nil {
-				textAccum += deltaData.Text
+				if deltaData.Kind == "thinking" {
+					if reasoningAccum == "" {
+						blockOrder = append(blockOrder, "thinking")
+					}
+					reasoningAccum += deltaData.Text
+				} else {
+					if textAccum == "" {
+						blockOrder = append(blockOrder, "text")
+					}
+					textAccum += deltaData.Text
+				}
 				if consumer != nil {
 					consumer.OnContentDelta(ctx, run, turn, deltaData.Text)
 				}
@@ -232,12 +248,24 @@ func drainStream(ctx context.Context, reader llm.StreamReader, run *Run, turn *T
 	}
 
 done:
-	// Flush any pending text accumulator into a content block.
-	if textAccum != "" {
-		resp.Content = append(resp.Content, llm.ContentBlock{
-			Type: "text",
-			Text: textAccum,
-		})
+	// Flush accumulators in the order they first appeared in the stream.
+	for _, kind := range blockOrder {
+		switch kind {
+		case "text":
+			if textAccum != "" {
+				resp.Content = append(resp.Content, llm.ContentBlock{
+					Type: "text",
+					Text: textAccum,
+				})
+			}
+		case "thinking":
+			if reasoningAccum != "" {
+				resp.Content = append(resp.Content, llm.ContentBlock{
+					Type: "thinking",
+					Text: reasoningAccum,
+				})
+			}
+		}
 	}
 
 	// Flush any pending tool call.
@@ -251,7 +279,15 @@ done:
 	}
 
 	if err := llm.ValidateToolUseResponse("stream", resp); err != nil {
-		return nil, err
+		// Defensive: if the upstream provider claims stop_reason=tool_use but
+		// never emitted any content_block_start for tool_use (malformed stream),
+		// and we DO have accumulated text/reasoning, treat it as a normal text
+		// response rather than failing the entire turn.
+		if resp.StopReason == "tool_use" && (textAccum != "" || reasoningAccum != "" || len(resp.Content) > 0) {
+			resp.StopReason = "end_turn"
+		} else {
+			return nil, err
+		}
 	}
 
 	return resp, nil

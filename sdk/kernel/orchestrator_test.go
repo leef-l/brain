@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -543,14 +546,14 @@ func TestOrchestratorHandleSubtaskDelegate_EndToEnd(t *testing.T) {
 
 	kernelRPC.Handle(protocol.MethodSubtaskDelegate, orch.HandleSubtaskDelegate())
 
-	req := &SubtaskRequest{
+	req := &DelegateRequest{
 		TaskID:      "task-code-1",
 		TargetKind:  agent.KindCode,
 		Instruction: "fix the orchestrator tests",
 		Context:     json.RawMessage(`{"files":["kernel/orchestrator.go"]}`),
 	}
 
-	var result SubtaskResult
+	var result DelegateResult
 	if err := centralRPC.Call(ctx, protocol.MethodSubtaskDelegate, req, &result); err != nil {
 		t.Fatalf("subtask.delegate: %v", err)
 	}
@@ -660,7 +663,7 @@ func TestOrchestratorDelegate_ReusedSidecarDoesNotPanicAcrossBrains(t *testing.T
 				pool: pool,
 			}
 
-			first, err := orch.Delegate(ctx, &SubtaskRequest{
+			first, err := orch.Delegate(ctx, &DelegateRequest{
 				TaskID:      "reuse-1-" + string(kind),
 				TargetKind:  kind,
 				Instruction: "first delegate for " + string(kind),
@@ -672,7 +675,7 @@ func TestOrchestratorDelegate_ReusedSidecarDoesNotPanicAcrossBrains(t *testing.T
 				t.Fatalf("first status = %q, want completed", first.Status)
 			}
 
-			second, err := orch.Delegate(ctx, &SubtaskRequest{
+			second, err := orch.Delegate(ctx, &DelegateRequest{
 				TaskID:      "reuse-2-" + string(kind),
 				TargetKind:  kind,
 				Instruction: "second delegate for " + string(kind),
@@ -742,7 +745,7 @@ func TestOrchestratorDelegate_RetriesAfterSidecarCrash(t *testing.T) {
 		pool: pool,
 	}
 
-	result, err := orch.Delegate(ctx, &SubtaskRequest{
+	result, err := orch.Delegate(ctx, &DelegateRequest{
 		TaskID:      "retry-1",
 		TargetKind:  agent.KindCode,
 		Instruction: "retry after crash",
@@ -798,7 +801,7 @@ func TestOrchestratorDelegate_PropagatesSidecarFailedStatusWithoutRetry(t *testi
 		pool: pool,
 	}
 
-	result, err := orch.Delegate(ctx, &SubtaskRequest{
+	result, err := orch.Delegate(ctx, &DelegateRequest{
 		TaskID:      "failed-status-1",
 		TargetKind:  agent.KindBrowser,
 		Instruction: "search today gold price",
@@ -863,6 +866,10 @@ func TestNewOrchestratorWithConfig_OnlyConfiguredBrains(t *testing.T) {
 }
 
 func TestOrchestratorRegister_HotPlug(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping hot-plug test on Windows: no /bin/sh")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -899,7 +906,7 @@ func TestOrchestratorRegister_HotPlug(t *testing.T) {
 	}
 
 	// Delegate should work.
-	result, err := orch.Delegate(ctx, &SubtaskRequest{
+	result, err := orch.Delegate(ctx, &DelegateRequest{
 		TaskID:      "quant-1",
 		TargetKind:  agent.KindQuant,
 		Instruction: "run backtest",
@@ -952,9 +959,16 @@ func TestNewOrchestratorWithPool_SyncsPoolCatalog(t *testing.T) {
 }
 
 func TestOrchestratorDegradationNotice_ConfigDriven(t *testing.T) {
+	// Use a temporary file as the existing binary so the test works cross-platform.
+	tmp := t.TempDir()
+	existingBin := filepath.Join(tmp, "fake-code")
+	if err := os.WriteFile(existingBin, []byte("fake"), 0o644); err != nil {
+		t.Fatalf("write fake binary: %v", err)
+	}
+
 	cfg := OrchestratorConfig{
 		Brains: []BrainRegistration{
-			{Kind: agent.KindCode, Binary: "/bin/sh"},    // exists
+			{Kind: agent.KindCode, Binary: existingBin}, // exists
 			{Kind: agent.KindQuant, Binary: "/no/exist"}, // does not exist
 		},
 	}
@@ -1438,10 +1452,17 @@ func TestSpecialistCallTool_UnauthorizedRoute_Denied(t *testing.T) {
 }
 
 func TestNewOrchestrator_BackwardCompatible(t *testing.T) {
+	// Use a temporary file as the existing binary so the test works cross-platform.
+	tmp := t.TempDir()
+	existingBin := filepath.Join(tmp, "fake-code")
+	if err := os.WriteFile(existingBin, []byte("fake"), 0o644); err != nil {
+		t.Fatalf("write fake binary: %v", err)
+	}
+
 	// When no config is provided, all built-in kinds should be probed.
 	orch := NewOrchestrator(nil, nil, func(kind agent.Kind) (string, error) {
 		if kind == agent.KindCode {
-			return "/bin/sh", nil // exists
+			return existingBin, nil // exists
 		}
 		return "", fmt.Errorf("not found")
 	})

@@ -3,7 +3,6 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"unicode"
 
@@ -171,10 +170,12 @@ func PrintPrompt(m env.PermissionMode) int {
 	return 0
 }
 
-func BuildPromptHeaderLines(activity *Activity, queueLines []string, running bool, completionLines ...[]string) []string {
+func BuildPromptHeaderLines(activities []*Activity, queueLines []string, running bool, completionLines ...[]string) []string {
 	lines := make([]string, 0, 8)
 	if running {
-		lines = append(lines, activity.RenderLines()...)
+		for _, a := range activities {
+			lines = append(lines, a.RenderLines()...)
+		}
 	}
 	lines = append(lines, queueLines...)
 	if len(completionLines) > 0 && len(completionLines[0]) > 0 {
@@ -320,95 +321,6 @@ func DisplayWidth(text string) int {
 		width += term.RuneWidth(r)
 	}
 	return width
-}
-
-func CompactPreview(text string, max int) string {
-	text = strings.Join(strings.Fields(text), " ")
-	if max > 0 && DisplayWidth(text) > max {
-		return truncateDisplayWidth(text, max)
-	}
-	return text
-}
-
-func HandleChatRunResult(state *State, provider llm.Provider, brainID string,
-	maxTurns int, session *term.LineReadSession, mode env.PermissionMode, providerName, model,
-	workdir string, queueLines []string, running *bool, rr RunResult,
-	resultCh chan<- RunResult, progressCh chan<- ProgressEvent,
-	activity *Activity, stdinCh <-chan []byte, stdinErrCh <-chan error) {
-
-	DetachPromptFrame(session)
-	defer RenderPromptFrame(session, state.Mode, providerName, model, workdir, queueLines, *running)
-	defer func() {
-		if !*running {
-			activity.Stop()
-			if state.PlanResumeAfterRun {
-				state.PlanResumeAfterRun = false
-				state.SwitchMode(env.ModePlan)
-				fmt.Println("  \033[2m(returned to plan mode)\033[0m")
-				fmt.Println()
-			}
-		}
-	}()
-
-	if rr.Canceled {
-		fmt.Println("  \033[1;33m! Cancelled\033[0m")
-		fmt.Println()
-		return
-	}
-	if rr.Err != nil {
-		fmt.Fprintf(os.Stderr, "\033[1;31m! Error: %v\033[0m\n\n", rr.Err)
-		return
-	}
-
-	if rr.Result != nil && rr.Result.Run.State == loop.StateFailed {
-		errMsg := LastTurnError(rr.Result)
-		if errMsg == "" {
-			errMsg = "unexpected error: run failed"
-		}
-		fmt.Fprintf(os.Stderr, "\033[1;31m! Error: %s\033[0m\n\n", errMsg)
-		return
-	}
-
-	state.Messages = rr.Result.FinalMessages
-
-	replyText := rr.ReplyText
-	if strings.TrimSpace(replyText) == "" {
-		replyText = strings.TrimSpace(activity.Content.String())
-	}
-	if strings.TrimSpace(replyText) == "" {
-		replyText = BuildToolCallSummary(rr.Result.FinalMessages)
-	}
-
-	if shouldPrintAssistantReply(activity.Content.String(), replyText) {
-		PrintAssistantMessage(replyText)
-	}
-
-	elapsed := rr.Result.Run.Budget.ElapsedTime.Milliseconds()
-	unit := "ms"
-	val := elapsed
-	if elapsed >= 1000 {
-		unit = "s"
-		val = elapsed / 1000
-	}
-	fmt.Printf("\033[2m[turns:%d llm:%d tools:%d %d%s]\033[0m\n\n",
-		rr.Result.Run.Budget.UsedTurns,
-		rr.Result.Run.Budget.UsedLLMCalls,
-		rr.Result.Run.Budget.UsedToolCalls,
-		val, unit)
-
-	if shouldShowResponseSelector(state.BrainID, replyText) {
-		outcome := showResponseSelector(state.Mode, stdinCh, stdinErrCh)
-		if outcome.followUp != "" {
-			if outcome.planProceed && state.Mode == env.ModePlan {
-				state.SwitchMode(env.ModeAcceptEdits)
-				state.PlanResumeAfterRun = true
-			}
-			activity.Start()
-			StartChatRun(state, provider, brainID, maxTurns, outcome.followUp, resultCh, progressCh)
-			*running = true
-			queueLines = BuildPromptHeaderLines(activity, state.QueueDisplayLines(), *running)
-		}
-	}
 }
 
 func shouldPrintAssistantReply(streamedContent, replyText string) bool {

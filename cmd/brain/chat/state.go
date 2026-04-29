@@ -31,9 +31,11 @@ type State struct {
 	SandboxCfg   *tool.SandboxConfig
 	Orchestrator *kernel.Orchestrator
 
-	CancelRun context.CancelFunc
-	CancelGen uint64
-	CancelMu  sync.Mutex
+	// ActiveRuns 管理所有正在执行的 run。
+	// key 是 runID（如 "run-0", "run-1"）。
+	ActiveRuns map[string]*RunHandle
+	RunsMu     sync.Mutex
+	NextRunID  int
 
 	InputQueue []string
 	InputMu    sync.Mutex
@@ -52,32 +54,114 @@ type State struct {
 	HumanCoord *ChatHumanCoordinator
 }
 
-func (s *State) SetCancelRun(cancel context.CancelFunc) uint64 {
-	s.CancelMu.Lock()
-	defer s.CancelMu.Unlock()
-	s.CancelGen++
-	s.CancelRun = cancel
-	return s.CancelGen
+// RunHandle 代表一个正在执行的 run。
+type RunHandle struct {
+	ID        string
+	Cancel    context.CancelFunc
+	Input     string
+	StartedAt time.Time
 }
 
-func (s *State) ClearCancelRun(gen uint64) {
-	s.CancelMu.Lock()
-	defer s.CancelMu.Unlock()
-	if s.CancelGen == gen {
-		s.CancelRun = nil
+// StartRun 注册一个新的 run，返回分配的 runID。
+func (s *State) StartRun(input string, cancel context.CancelFunc) string {
+	s.RunsMu.Lock()
+	defer s.RunsMu.Unlock()
+	id := fmt.Sprintf("run-%d", s.NextRunID)
+	s.NextRunID++
+	if s.ActiveRuns == nil {
+		s.ActiveRuns = make(map[string]*RunHandle)
 	}
+	s.ActiveRuns[id] = &RunHandle{
+		ID:        id,
+		Cancel:    cancel,
+		Input:     input,
+		StartedAt: time.Now(),
+	}
+	return id
 }
 
-func (s *State) CancelCurrentRun() bool {
-	s.CancelMu.Lock()
-	cancel := s.CancelRun
-	s.CancelRun = nil
-	s.CancelMu.Unlock()
-	if cancel != nil {
-		cancel()
+// CancelRun 取消指定 runID 的任务。
+func (s *State) CancelRun(id string) bool {
+	s.RunsMu.Lock()
+	h, ok := s.ActiveRuns[id]
+	s.RunsMu.Unlock()
+	if ok && h.Cancel != nil {
+		h.Cancel()
+		return true
 	}
-	s.ClearQueue()
-	return cancel != nil
+	return false
+}
+
+// CancelAllRuns 取消所有正在执行的 run。
+func (s *State) CancelAllRuns() bool {
+	s.RunsMu.Lock()
+	handles := make([]*RunHandle, 0, len(s.ActiveRuns))
+	for _, h := range s.ActiveRuns {
+		handles = append(handles, h)
+	}
+	s.RunsMu.Unlock()
+
+	canceledAny := false
+	for _, h := range handles {
+		if h.Cancel != nil {
+			h.Cancel()
+			canceledAny = true
+		}
+	}
+	return canceledAny
+}
+
+// RemoveRun 从 ActiveRuns 中移除已完成的 run。
+func (s *State) RemoveRun(id string) {
+	s.RunsMu.Lock()
+	delete(s.ActiveRuns, id)
+	s.RunsMu.Unlock()
+}
+
+// AnyRunning 返回是否有正在执行的 run。
+func (s *State) AnyRunning() bool {
+	s.RunsMu.Lock()
+	defer s.RunsMu.Unlock()
+	return len(s.ActiveRuns) > 0
+}
+
+// RunningCount 返回正在执行的 run 数量。
+func (s *State) RunningCount() int {
+	s.RunsMu.Lock()
+	defer s.RunsMu.Unlock()
+	return len(s.ActiveRuns)
+}
+
+// LatestRunID 返回最新（编号最大）的 runID，如果没有则返回空字符串。
+func (s *State) LatestRunID() string {
+	s.RunsMu.Lock()
+	defer s.RunsMu.Unlock()
+	if len(s.ActiveRuns) == 0 {
+		return ""
+	}
+	// 由于 runID 是 run-N 格式，找最大的 N
+	latest := ""
+	maxN := -1
+	for id := range s.ActiveRuns {
+		var n int
+		fmt.Sscanf(id, "run-%d", &n)
+		if n > maxN {
+			maxN = n
+			latest = id
+		}
+	}
+	return latest
+}
+
+// ActiveRunIDs 返回所有正在执行的 runID 列表（按编号排序）。
+func (s *State) ActiveRunIDs() []string {
+	s.RunsMu.Lock()
+	defer s.RunsMu.Unlock()
+	ids := make([]string, 0, len(s.ActiveRuns))
+	for id := range s.ActiveRuns {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (s *State) RequestApproval(ctx context.Context, req env.ApprovalRequest) bool {
@@ -203,6 +287,9 @@ func (s *State) SwitchMode(m env.PermissionMode) {
 
 	deps.RegisterDelegateTool(s.Registry, s.Orchestrator, s.Env)
 	deps.RegisterBridgeTools(s.Registry, s.Orchestrator)
+	if deps.RegisterWorkflowTool != nil && s.Orchestrator != nil {
+		deps.RegisterWorkflowTool(s.Registry, s.Orchestrator)
+	}
 
 	if s.Orchestrator != nil {
 		s.Registry.Register(NewBrainManageTool(s.Orchestrator))

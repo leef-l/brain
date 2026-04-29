@@ -106,6 +106,18 @@ func (f *fakeAnomalyStore) SaveHumanDemoSequence(context.Context, *persistence.H
 func (f *fakeAnomalyStore) ListHumanDemoSequences(context.Context, bool) ([]*persistence.HumanDemoSequence, error) {
 	return nil, nil
 }
+func (f *fakeAnomalyStore) GetHumanDemoSequence(context.Context, int64) (*persistence.HumanDemoSequence, error) {
+	return nil, nil
+}
+func (f *fakeAnomalyStore) ApproveHumanDemoSequence(context.Context, int64) error {
+	return nil
+}
+func (f *fakeAnomalyStore) DeleteHumanDemoSequence(context.Context, int64) error {
+	return nil
+}
+func (f *fakeAnomalyStore) PurgeHumanDemoSequences(context.Context, time.Time) (int64, error) {
+	return 0, nil
+}
 func (f *fakeAnomalyStore) SaveSitemapSnapshot(context.Context, *persistence.SitemapSnapshot) error {
 	return nil
 }

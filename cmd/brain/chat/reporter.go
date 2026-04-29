@@ -26,6 +26,7 @@ const (
 )
 
 type ProgressEvent struct {
+	RunID        string
 	Kind         ProgressEventKind
 	Text         string
 	ToolName     string
@@ -35,7 +36,17 @@ type ProgressEvent struct {
 	PreviewLines []string
 }
 
+// ChatEvent 是统一的事件通道类型，repl.go 通过单个 select 消费所有 run 的事件。
+type ChatEvent struct {
+	RunID    string
+	Type     string // "progress" | "result"
+	Progress *ProgressEvent
+	Result   *RunResult
+}
+
 type Activity struct {
+	RunID       string
+	Input       string
 	StartedAt   time.Time
 	Status      string
 	CurrentTool string
@@ -161,7 +172,8 @@ func (a *Activity) StatusLine() string {
 }
 
 type LiveReporter struct {
-	Ch      chan<- ProgressEvent
+	RunID   string
+	Ch      chan<- ChatEvent
 	Workdir string
 
 	pendingSnap *diff.FileSnapshot
@@ -171,8 +183,9 @@ func (r *LiveReporter) emit(ev ProgressEvent) {
 	if r == nil || r.Ch == nil {
 		return
 	}
+	ev.RunID = r.RunID
 	select {
-	case r.Ch <- ev:
+	case r.Ch <- ChatEvent{RunID: r.RunID, Type: "progress", Progress: &ev}:
 	default:
 	}
 }
@@ -226,6 +239,12 @@ func (r *LiveReporter) OnToolEnd(_ context.Context, _ *loop.Run, _ *loop.Turn, t
 	detail := ""
 	if !ok && len(output) > 0 {
 		detail = CompactPreview(string(output), 88)
+		// 美化常见的 sandbox 受限错误
+		if strings.Contains(detail, "restricted policy") {
+			detail = "sandbox: command tried to modify files outside allowed scope (restricted mode)"
+		} else if strings.Contains(detail, "sandbox escape") {
+			detail = "sandbox: command tried to escape working directory"
+		}
 	}
 
 	r.emit(ProgressEvent{
@@ -284,4 +303,25 @@ func formatElapsed(d time.Duration) string {
 		return fmt.Sprintf("%ds", int(d/time.Second))
 	}
 	return fmt.Sprintf("%dm%02ds", int(d/time.Minute), int(d/time.Second)%60)
+}
+
+func CompactPreview(s string, max int) string {
+	if max <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	var out []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+	s = strings.Join(out, " ")
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "..."
 }

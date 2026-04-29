@@ -346,15 +346,26 @@
 
 > 依据 `/www/wwwroot/project/easymvp/docs/钱学森总纲设计/easymvp-brain-职责与边界定义.md` 和 `EasyMVP-中央大脑与四专精大脑IO合同及升级规则.md`。
 
-### 9.1 背景
+### 9.1 背景与架构定位
 
-EasyMVP 定义了一个**领域专精大脑** `easymvp-brain`,它消费 brain-v3 的四个基础专精大脑(code / browser / verifier / fault)的结果。消费方式是:
+`easymvp-brain` 是 EasyMVP 领域的**第三方专精大脑**，遵循 [29-第三方专精大脑开发指南.md](./29-第三方专精大脑开发指南.md) 的规范实现。它以**独立 sidecar 二进制**形式存在，通过 BrainKernel 标准 sidecar 协议（`stdin/stdout` 上的 Content-Length framed JSON-RPC）接入主进程，**不特殊于**任何内置大脑。
+
+消费方式是:
 
 ```
 brain-v3 central + (code/browser/verifier/fault)
    ↓ runtime adapter 归一化
 EasyMVP 领域层 → easymvp-brain(审核/编译/裁决/返工/验收规则)
+   ↑
+   第三方专精大脑 sidecar，独立二进制/独立版本/独立进程
 ```
+
+**关键点**：
+- `easymvp-brain` 不是 brain-v3 内置组件，它**消费** brain-v3 四个基础专精大脑的结果，属于**下游消费者**
+- 实现层面：独立 `main()` + `sidecar.BrainHandler` + 独立版本号（见 [29-第三方专精大脑开发指南 §2](./29-第三方专精大脑开发指南.md#2-版本号要怎么管)）
+- 分发层面：通过 `brain brain install` 或 `brain.json` manifest 自动发现注册，与内置 sidecar 走同一套发现机制（详见 [29-第三方专精大脑开发指南 §3.2](./29-第三方专精大脑开发指南.md#32-注册到-v3-的四种方式)）
+- 协议层面：支持 `initialize` / `brain/execute` / `tools/call`，可反向调用主进程 `llm.*` / `tool.*` / `plan.*` / `trace.*`
+
 
 ### 9.2 brain-v3 侧已提供/仍需扩展的接口
 

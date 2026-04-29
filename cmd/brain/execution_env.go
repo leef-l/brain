@@ -36,6 +36,31 @@ func parsePermissionMode(s string) (permissionMode, error) {
 	return env.ParsePermissionMode(s)
 }
 
+// modePermissivenessRank 返回权限模式的宽松度排名（数字越大越宽松）。
+func modePermissivenessRank(m permissionMode) int {
+	switch m {
+	case modeRestricted:
+		return 0
+	case modePlan:
+		return 1
+	case modeDefault:
+		return 2
+	case modeAcceptEdits:
+		return 3
+	case modeAuto:
+		return 4
+	case modeBypassPermissions:
+		return 5
+	default:
+		return 2 // unknown mode 视为 default
+	}
+}
+
+// isModeMorePermissive 报告 a 是否比 b 更宽松。
+func isModeMorePermissive(a, b permissionMode) bool {
+	return modePermissivenessRank(a) > modePermissivenessRank(b)
+}
+
 func parseChatMode(s string) (chatMode, error) {
 	return env.ParsePermissionMode(s)
 }

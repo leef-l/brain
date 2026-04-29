@@ -291,6 +291,12 @@ func CheckAnomalies(ctx context.Context, sess *cdp.BrowserSession, buf *netBuf, 
 		}
 	}
 
+	// Step 4: B-8 extended anomaly detection.
+	report.Anomalies = append(report.Anomalies, checkPageLoadErrorsExtended(buf, input.SinceTS)...)
+	report.Anomalies = append(report.Anomalies, checkMissingCriticalElements(ctx, sess)...)
+	report.Anomalies = append(report.Anomalies, checkDOMMutation(ctx, sess, hist)...)
+	report.Anomalies = append(report.Anomalies, checkFormFieldAnomalies(ctx, sess, hist)...)
+
 	// Filter by since_ts
 	if input.SinceTS > 0 {
 		filtered := report.Anomalies[:0]

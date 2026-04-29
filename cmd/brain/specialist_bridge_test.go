@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/leef-l/brain/sdk/agent"
@@ -11,10 +14,37 @@ import (
 	"github.com/leef-l/brain/sdk/tool"
 )
 
+func sidecarPath(name string) string {
+	var names []string
+	if runtime.GOOS == "windows" {
+		names = []string{name + ".exe"}
+	} else {
+		names = []string{name, name + ".exe"}
+	}
+	candidates := []string{
+		filepath.Join("..", "..", "dist"),
+		filepath.Join("dist"),
+	}
+	for _, dir := range candidates {
+		for _, n := range names {
+			p := filepath.Join(dir, n)
+			if _, err := os.Stat(p); err == nil {
+				abs, _ := filepath.Abs(p)
+				return abs
+			}
+		}
+	}
+	return ""
+}
+
 func TestRegisterSpecialistBridgeTools_QuantAvailable(t *testing.T) {
+	quantPath := sidecarPath("brain-quant-sidecar")
+	if quantPath == "" {
+		t.Skip("quant sidecar not available")
+	}
 	orch := kernel.NewOrchestrator(nil, nil, func(kind agent.Kind) (string, error) {
 		if kind == agent.KindQuant {
-			return "/bin/sh", nil
+			return quantPath, nil
 		}
 		return "", nil
 	})
@@ -42,9 +72,17 @@ func TestRegisterSpecialistBridgeTools_QuantAvailable(t *testing.T) {
 }
 
 func TestRegisterSpecialistBridgeTools_BothAvailable(t *testing.T) {
+	quantPath := sidecarPath("brain-quant-sidecar")
+	dataPath := sidecarPath("brain-data-sidecar")
+	if quantPath == "" || dataPath == "" {
+		t.Skip("quant or data sidecar not available")
+	}
 	orch := kernel.NewOrchestrator(nil, nil, func(kind agent.Kind) (string, error) {
-		if kind == agent.KindQuant || kind == agent.KindData {
-			return "/bin/sh", nil
+		if kind == agent.KindQuant {
+			return quantPath, nil
+		}
+		if kind == agent.KindData {
+			return dataPath, nil
 		}
 		return "", nil
 	})
@@ -127,8 +165,19 @@ func TestBridgeTool_UnavailableSidecar(t *testing.T) {
 }
 
 func TestBridgeTool_SchemaAndRisk(t *testing.T) {
+	quantPath := sidecarPath("brain-quant-sidecar")
+	dataPath := sidecarPath("brain-data-sidecar")
+	if quantPath == "" || dataPath == "" {
+		t.Skip("quant or data sidecar not available")
+	}
 	orch := kernel.NewOrchestrator(nil, nil, func(kind agent.Kind) (string, error) {
-		return "/bin/sh", nil
+		if kind == agent.KindQuant {
+			return quantPath, nil
+		}
+		if kind == agent.KindData {
+			return dataPath, nil
+		}
+		return "", nil
 	})
 
 	reg := tool.NewMemRegistry()

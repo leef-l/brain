@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/cliruntime"
@@ -18,20 +19,24 @@ import (
 )
 
 type RunResult struct {
-	Result    *loop.RunResult
-	Err       error
-	ReplyText string
-	Canceled  bool
+	Result       *loop.RunResult
+	Err          error
+	ReplyText    string
+	Canceled     bool
+	BaseMsgCount int // 执行前 state.Messages 的长度，用于追加而非覆盖
 }
 
+// StartChatRun 启动一个新的 chat run，返回分配的 runID。
+// 事件（progress + result）通过 eventCh 统一发送。
 func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns int,
-	input string, resultCh chan<- RunResult, progressCh chan<- ProgressEvent) {
+	input string, eventCh chan<- ChatEvent) string {
 
 	state.TurnCount++
 	turnIndex := state.TurnCount
 
 	baseMessages := make([]llm.Message, len(state.Messages))
 	copy(baseMessages, state.Messages)
+	baseMsgCount := len(state.Messages)
 	registry := state.Registry
 	opts := state.Opts
 	runtime, _ := deps.NewDefaultCLIRuntime(brainID)
@@ -41,10 +46,22 @@ func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns 
 	}
 
 	ctx, cancel := config.WithOptionalTimeout(context.Background(), state.RunTimeout)
-	gen := state.SetCancelRun(cancel)
+	runID := state.StartRun(input, cancel)
 
 	go func() {
-		defer state.ClearCancelRun(gen)
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "\n[brain panic] run %s: %v\n", runID, r)
+				select {
+				case eventCh <- ChatEvent{RunID: runID, Type: "result", Result: &RunResult{
+					Err:          fmt.Errorf("internal panic: %v", r),
+					BaseMsgCount: baseMsgCount,
+				}}:
+				case <-ctx.Done():
+				}
+			}
+			state.RemoveRun(runID)
+		}()
 
 		if runtime != nil && runRec != nil {
 			_ = deps.SaveRunCheckpoint(ctx, runtime, runRec, "running", 0, runRec.ID+"-start")
@@ -53,26 +70,32 @@ func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns 
 			}))
 		}
 		result, err := runChatTurn(ctx, provider, registry, opts, brainID, maxTurns,
-			turnIndex, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, progressCh)
+			turnIndex, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, runID, eventCh)
 		if runtime != nil && runRec != nil {
 			persistChatTurn(ctx, runtime, runRec, provider.Name(), input, state.Mode, state.Sandbox.Primary(), opts.System, result, err)
 		}
 		rr := RunResult{
-			Result:   result,
-			Err:      err,
-			Canceled: ctx.Err() == context.Canceled,
+			Result:       result,
+			Err:          err,
+			Canceled:     ctx.Err() == context.Canceled,
+			BaseMsgCount: baseMsgCount,
 		}
 		if result != nil {
 			rr.ReplyText = extractAssistantReply(result.FinalMessages)
 		}
-		resultCh <- rr
+		select {
+		case eventCh <- ChatEvent{RunID: runID, Type: "result", Result: &rr}:
+		case <-ctx.Done():
+		}
 	}()
+
+	return runID
 }
 
 func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Registry,
 	opts loop.RunOptions, brainID string, maxTurns int, turnIndex int,
 	baseMessages []llm.Message, input, workdir string, maxDuration time.Duration,
-	progressCh chan<- ProgressEvent) (*loop.RunResult, error) {
+	runID string, eventCh chan<- ChatEvent) (*loop.RunResult, error) {
 	ctx = kernel.WithSubtaskContext(ctx, &protocol.SubtaskContext{
 		UserUtterance: input,
 		TurnIndex:     turnIndex,
@@ -95,11 +118,12 @@ func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Regis
 		},
 	)
 
+	reporter := &LiveReporter{RunID: runID, Ch: eventCh, Workdir: workdir}
 	runner := &loop.Runner{
 		Provider:       provider,
 		ToolRegistry:   registry,
-		StreamConsumer: &LiveReporter{Ch: progressCh, Workdir: workdir},
-		ToolObserver:   &LiveReporter{Ch: progressCh, Workdir: workdir},
+		StreamConsumer: reporter,
+		ToolObserver:   reporter,
 		Sanitizer:      loop.NewMemSanitizer(),
 		LoopDetector:   loop.NewMemLoopDetector(),
 		CacheBuilder:   loop.NewMemCacheBuilder(),

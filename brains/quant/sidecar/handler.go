@@ -14,6 +14,7 @@ import (
 	"github.com/leef-l/brain/brains/quant/tradestore"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/diaglog"
+	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/sidecar"
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/toolpolicy"
@@ -174,6 +175,8 @@ func (h *quantHandler) HandleMethod(ctx context.Context, method string, params j
 		return h.handleExecute(ctx, params)
 	case "brain/metrics":
 		return h.learner.ExportMetrics(), nil
+	case "brain/learn":
+		return h.handleLearn(ctx, params)
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
@@ -215,6 +218,11 @@ func (h *quantHandler) handleExecute(ctx context.Context, params json.RawMessage
 	default:
 		result = h.execNaturalLanguage(ctx, &req)
 	}
+	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType: "quant." + req.Instruction,
+		Success:  result != nil && result.Status == "completed",
+		Duration: time.Since(start),
+	})
 	if result != nil {
 		diaglog.Logf("brain", "kind=%s instruction=%s status=%s duration=%s err=%v", h.Kind(), req.Instruction, result.Status, time.Since(start), err)
 	} else {
@@ -262,6 +270,34 @@ RULES:
 // ---------------------------------------------------------------------------
 // brain/execute instruction handlers
 // ---------------------------------------------------------------------------
+
+// handleLearn handles brain/learn RPC from Orchestrator.
+// 完成 L0 闭环：RecordOutcome → Adapt → 参数自适应调整。
+func (h *quantHandler) handleLearn(_ context.Context, params json.RawMessage) (interface{}, error) {
+	var payload struct {
+		TaskType string  `json:"task_type"`
+		Success  bool    `json:"success"`
+		Duration float64 `json:"duration"` // seconds
+	}
+	if err := json.Unmarshal(params, &payload); err != nil {
+		return nil, fmt.Errorf("parse learn payload: %w", err)
+	}
+	ctx := context.Background()
+	if err := h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
+		TaskType: payload.TaskType,
+		Success:  payload.Success,
+		Duration: time.Duration(payload.Duration * float64(time.Second)),
+	}); err != nil {
+		h.logger.Warn("brain/learn RecordOutcome failed", "err", err)
+		return nil, err
+	}
+	// 触发领域参数自适应调整（WeightAdapter / SymbolScorer / SLTPOptimizer）
+	if err := h.learner.Adapt(ctx); err != nil {
+		h.logger.Warn("brain/learn Adapt failed", "err", err)
+		// Adapt 失败不阻断 learn 响应
+	}
+	return map[string]string{"status": "ok"}, nil
+}
 
 func (h *quantHandler) execGlobalPortfolio(ctx context.Context) (*sidecar.ExecuteResult, error) {
 	type accountInfo struct {

@@ -92,6 +92,7 @@ func RunRun(args []string, deps RunDeps) int {
 	workDir := fs.String("workdir", "", "working directory sandbox (default: current directory)")
 	filePolicyJSON := fs.String("file-policy-json", "", "fine-grained file mutation policy JSON")
 	timeoutFlag := fs.String("timeout", "", "overall run timeout (e.g. 5m, 30m, 0 to disable)")
+	workflowFlag := fs.String("workflow", "", "path to workflow JSON file (DAG execution mode)")
 	if err := fs.Parse(args); err != nil {
 		return cli.ExitUsage
 	}
@@ -158,9 +159,31 @@ func RunRun(args []string, deps RunDeps) int {
 					return session.Provider
 				},
 			}
+			var learner *kernel.LearningEngine
+			if runtime.Stores != nil && runtime.Stores.LearningStore != nil {
+				learner = kernel.NewLearningEngineWithStore(runtime.Stores.LearningStore)
+				if err := learner.Load(context.Background()); err != nil {
+					fmt.Fprintf(os.Stderr, "brain run: warning: load learning data: %v\n", err)
+				}
+			} else {
+				learner = kernel.NewLearningEngine()
+			}
+			defer func() {
+				_ = learner.Save(context.Background())
+			}()
+			// 上下文引擎：注入 LLM Summarizer
+			ctxEngine := kernel.NewDefaultContextEngine()
+			if session, err := provider.OpenConfigured(cfg, "central", modelInput, *providerFlag, *apiKey, *baseURL, *model); err == nil {
+				ctxEngine.Summarizer = session.Provider
+				ctxEngine.SummaryModel = session.Model
+			}
+
+			leaseManager := kernel.NewMemLeaseManager()
 			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver()}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
-				kernel.WithLearningEngine(kernel.NewLearningEngine()),
+				kernel.WithLearningEngine(learner),
+				kernel.WithContextEngine(ctxEngine),
+				kernel.WithLeaseManager(leaseManager),
 			)
 		}
 	}
@@ -192,6 +215,62 @@ func RunRun(args []string, deps RunDeps) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain run: create run record: %v\n", err)
 		return cli.ExitSoftware
+	}
+
+	// Workflow 模式：直接执行 DAG，不走单 run loop
+	if *workflowFlag != "" {
+		if orch == nil {
+			fmt.Fprintln(os.Stderr, "brain run: workflow mode requires central brain with pool")
+			return cli.ExitUsage
+		}
+		data, err := os.ReadFile(*workflowFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "brain run: read workflow file: %v\n", err)
+			return cli.ExitUsage
+		}
+		var wf kernel.Workflow
+		if err := json.Unmarshal(data, &wf); err != nil {
+			fmt.Fprintf(os.Stderr, "brain run: parse workflow JSON: %v\n", err)
+			return cli.ExitUsage
+		}
+		if wf.ID == "" {
+			wf.ID = fmt.Sprintf("wf-cli-%d", time.Now().UnixNano())
+		}
+
+		reporter := func(eventType, nodeID, status, output, errMsg string) {
+			switch eventType {
+			case "workflow.node.started":
+				fmt.Fprintf(os.Stderr, "[workflow] node %s started\n", nodeID)
+			case "workflow.node.completed":
+				fmt.Fprintf(os.Stderr, "[workflow] node %s completed\n", nodeID)
+			case "workflow.node.failed":
+				fmt.Fprintf(os.Stderr, "[workflow] node %s failed: %s\n", nodeID, errMsg)
+			}
+		}
+
+		result, err := orch.ExecuteWorkflow(ctx, &wf, reporter)
+		if err != nil {
+			return failRun(err, "execute workflow")
+		}
+
+		if *jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(result)
+		} else {
+			fmt.Printf("workflow %s %s\n", wf.ID, result.State)
+			for nid, nr := range result.Nodes {
+				statusIcon := "✓"
+				if nr.State != kernel.StateCompleted {
+					statusIcon = "✗"
+				}
+				fmt.Printf("  %s %s: %s\n", statusIcon, nid, nr.State)
+				if nr.Error != "" {
+					fmt.Printf("      error: %s\n", nr.Error)
+				}
+			}
+		}
+		return cli.ExitOK
 	}
 
 	systemPrompt := deps.BuildSystemPrompt(mode, e.Sandbox)

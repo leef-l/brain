@@ -42,6 +42,7 @@ type Config struct {
 
 	Brains       []kernel.BrainRegistration `json:"brains,omitempty"`
 	RemoteBrains []RemoteBrainEntry         `json:"remote_brains,omitempty"`
+	MCPServers   []MCPServerEntry           `json:"mcp_servers,omitempty"`
 
 	ToolProfiles map[string]*ToolProfileConfig `json:"tool_profiles,omitempty"`
 	ActiveTools  map[string]string             `json:"active_tools,omitempty"`
@@ -84,6 +85,16 @@ type RemoteBrainEntry struct {
 type BudgetConfig struct {
 	MaxTurns   int     `json:"max_turns,omitempty"`
 	MaxCostUSD float64 `json:"max_cost_usd,omitempty"`
+}
+
+// MCPServerEntry configures a single MCP server for use as a brain.
+type MCPServerEntry struct {
+	Kind       string   `json:"kind"`
+	BinPath    string   `json:"bin_path"`
+	Args       []string `json:"args,omitempty"`
+	Env        []string `json:"env,omitempty"`
+	ToolPrefix string   `json:"tool_prefix"`
+	AutoStart  bool     `json:"auto_start,omitempty"`
 }
 
 type ResolvedProvider struct {

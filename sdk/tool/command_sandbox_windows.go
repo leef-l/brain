@@ -49,7 +49,7 @@ func (w *windowsSandbox) Run(ctx context.Context, command string, workDir string
 	}
 	defer closeHandle(job)
 
-	cmd := exec.CommandContext(ctx, "cmd.exe", "/C", command)
+	cmd := exec.CommandContext(ctx, shellName(), shellFlag(), command)
 
 	if workDir != "" {
 		cmd.Dir = workDir
@@ -246,5 +246,10 @@ func closeHandle(h syscall.Handle) {
 	syscall.CloseHandle(h)
 }
 
-func shellName() string { return "cmd.exe" }
+func shellName() string {
+	if p := os.Getenv("COMSPEC"); p != "" {
+		return p
+	}
+	return `C:\Windows\System32\cmd.exe`
+}
 func shellFlag() string { return "/C" }

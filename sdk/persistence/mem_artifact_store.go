@@ -1,3 +1,9 @@
+// Package persistence provides in-process storage implementations.
+//
+// MemArtifactStore is the in-memory ArtifactStore from 26-持久化与恢复.md §6.
+// It stores raw content bytes keyed by CAS Ref and delegates metadata
+// bookkeeping to MemArtifactMetaStore. Production deployments should
+// replace it with a persistent backend.
 package persistence
 
 import (

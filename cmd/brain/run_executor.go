@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/leef-l/brain/sdk/events"
@@ -42,7 +43,12 @@ type managedRunOutcome struct {
 	FinalStatus string
 }
 
-func executeManagedRun(ctx context.Context, req managedRunExecution) (*managedRunOutcome, error) {
+func executeManagedRun(ctx context.Context, req managedRunExecution) (outcome *managedRunOutcome, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("run panic: %v", r)
+		}
+	}()
 	parentRunID := ""
 	if req.Record != nil {
 		parentRunID = req.Record.ID

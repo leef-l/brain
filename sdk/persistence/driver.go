@@ -17,6 +17,7 @@
 package persistence
 
 import (
+	"database/sql"
 	"fmt"
 	"sort"
 	"sync"
@@ -40,6 +41,13 @@ type Stores struct {
 	AuditLogger        AuditLogger
 	LearningStore      LearningStore
 	SharedMessageStore SharedMessageStore
+	ProjectStore       ProjectStore
+
+	// RawDB is the underlying *sql.DB connection for SQL-backed drivers.
+	// Domain-specific stores (e.g. quant persistence) can reuse this
+	// connection to avoid opening a second handle to the same database.
+	// Non-SQL drivers leave this nil.
+	RawDB *sql.DB
 
 	// CloseFunc is an optional callback that releases resources held by the
 	// driver (DB connections, file handles). If non-nil, persistence.Open

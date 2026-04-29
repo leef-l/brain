@@ -13,6 +13,8 @@
 
 Brain Pool 从 Orchestrator 中抽取出来，职责边界极度清晰：
 
+> **⚠️ WorkflowEngine 使用说明（2026-04-26）：** `WorkflowEngine`（`sdk/kernel/workflow.go`）通过 `Orchestrator.Delegate()` 调用 `BrainPool.GetBrain()` 获取 sidecar RPC 连接。Workflow 的 DAG 节点执行是 BrainPool 的典型消费者场景——每个节点可能调用不同 kind 的 brain，BrainPool 负责进程的启动、复用和回收。
+
 > **只管进程，不管锁。**
 
 - Pool 负责：sidecar 进程的启动、复用、健康检查、回收、关闭

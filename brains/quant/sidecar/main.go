@@ -1,8 +1,8 @@
-// Command brain-quant is the QuantBrain sidecar binary.
+﻿// Command brain-quant is the QuantBrain sidecar binary.
 //
 // It reads market data from the Data sidecar via Kernel's
 // specialist.call_tool RPC and runs the strategy→aggregate→risk→execute
-// pipeline. No embedded DataBrain — single data source architecture.
+// pipeline. No embedded DataBrain �?single data source architecture.
 //
 // Configuration is read from the path in QUANT_CONFIG env var,
 // or falls back to paper-trading defaults.
@@ -34,110 +34,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Main is the sidecar entry point. It is exported so that a thin cmd/
-// wrapper can call it (package main cannot be inside a library package).
-func Main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+// ---------------------------------------------------------------------------
+// Load + Build (exported for thin cmd/ wrappers)
+// ---------------------------------------------------------------------------
 
-	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-quant: license config: %v\n", err)
-		os.Exit(1)
-	}
-	if _, err := license.CheckSidecar("brain-quant", verifyOpts); err != nil {
-		fmt.Fprintf(os.Stderr, "brain-quant: license: %v\n", err)
-		os.Exit(1)
-	}
-
-	cfg := loadConfig(logger)
-	accounts, qb, paperSaver, pgStore, wsManager := buildQuantBrain(cfg, logger)
-
-	handler := NewHandler(qb, accounts, logger)
-
-	// Start the quant brain evaluation loop in background.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := qb.Start(ctx); err != nil {
-		// Non-fatal: sidecar tools still work for status queries even if
-		// the evaluation loop can't start (e.g. no units configured).
-		logger.Warn("quant brain start", "err", err)
-	}
-
-	// Start OKX private WebSocket for real-time order/position notifications.
-	if wsManager != nil {
-		if err := wsManager.StartAll(ctx); err != nil {
-			logger.Warn("OKX private WS start", "err", err)
-		}
-	}
-
-	// Start periodic paper state saver (every 30s).
-	if paperSaver != nil {
-		go paperSaver.Run(ctx, 30*time.Second)
-	}
-
-	// Start WebUI HTTP/WebSocket dashboard if enabled.
-	if cfg.WebUI.Enabled {
-		addr := cfg.WebUI.Addr
-		if addr == "" {
-			addr = ":8380"
-		}
-		// Build account config map for WebUI (initial equity, etc.)
-		acConfigs := make(map[string]quant.AccountConfig, len(cfg.Accounts))
-		for _, ac := range cfg.Accounts {
-			acConfigs[ac.ID] = ac
-		}
-		webServer := webui.NewServer(webui.ServerConfig{
-			Addr:           addr,
-			QB:             qb,
-			Accounts:       accounts,
-			AccountConfigs: acConfigs,
-			PGStore:        pgStore,
-			FullConfig:     &cfg,
-			Logger:         logger,
-		})
-		go webServer.Start(ctx)
-	}
-
-	// 检查 --listen 参数决定运行模式
-	listenAddr := ""
-	for i, arg := range os.Args[1:] {
-		if arg == "--listen" && i+1 < len(os.Args[1:]) {
-			listenAddr = os.Args[i+2]
-		}
-	}
-
-	var runErr error
-	if listenAddr != "" {
-		runErr = sidecar.ListenAndServe(listenAddr, handler)
-	} else {
-		runErr = sidecar.Run(handler)
-	}
-
-	// sidecar.Run returned — stop quant brain first to prevent new trades.
-	cancel()
-	qb.Stop(context.Background())
-
-	// Stop OKX private WebSocket connections.
-	if wsManager != nil {
-		wsManager.StopAll()
-	}
-
-	// Then save paper state (no concurrent writes now).
-	if paperSaver != nil {
-		logger.Info("saving paper state before exit...")
-		paperSaver.SaveAll()
-	}
-
-	if runErr != nil {
-		fmt.Fprintf(os.Stderr, "brain-quant: %v\n", runErr)
-		os.Exit(1)
-	}
-}
-
-// loadConfig reads the quant config from QUANT_CONFIG env or defaults.
-func loadConfig(logger *slog.Logger) quant.FullConfig {
+// Load reads the quant config in this order:
+//   1. QUANT_CONFIG env var (explicit path)
+//   2. ~/.brain/quant-brain.yaml
+//   3. Built-in paper-trading defaults
+func Load(logger *slog.Logger) quant.FullConfig {
 	configPath := os.Getenv("QUANT_CONFIG")
+	if configPath == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			candidate := filepath.Join(home, ".brain", "quant-brain.yaml")
+			if _, err := os.Stat(candidate); err == nil {
+				configPath = candidate
+				logger.Info("found default config", "path", configPath)
+			}
+		}
+	}
+
 	if configPath == "" {
 		logger.Info("QUANT_CONFIG not set, using paper-trading defaults")
 		return quant.DefaultFullConfig()
@@ -168,10 +85,118 @@ func loadConfig(logger *slog.Logger) quant.FullConfig {
 	return cfg
 }
 
+// Build constructs a QuantBrain from config, starts background services,
+// and returns the sidecar handler plus a cleanup function that must be
+// called after sidecar.Run returns.
+func Build(cfg quant.FullConfig, logger *slog.Logger) (sidecar.BrainHandler, func()) {
+	accounts, qb, paperSaver, pgStore, wsManager := buildQuantBrain(cfg, logger)
+	handler := NewHandler(qb, accounts, logger)
+
+	// Start the quant brain evaluation loop in background.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if err := qb.Start(ctx); err != nil {
+		logger.Warn("quant brain start", "err", err)
+	}
+
+	if wsManager != nil {
+		if err := wsManager.StartAll(ctx); err != nil {
+			logger.Warn("OKX private WS start", "err", err)
+		}
+	}
+
+	if paperSaver != nil {
+		go paperSaver.Run(ctx, 30*time.Second)
+	}
+
+	if cfg.WebUI.Enabled {
+		addr := cfg.WebUI.Addr
+		if addr == "" {
+			addr = ":8380"
+		}
+		acConfigs := make(map[string]quant.AccountConfig, len(cfg.Accounts))
+		for _, ac := range cfg.Accounts {
+			acConfigs[ac.ID] = ac
+		}
+		webServer := webui.NewServer(webui.ServerConfig{
+			Addr:           addr,
+			QB:             qb,
+			Accounts:       accounts,
+			AccountConfigs: acConfigs,
+			PGStore:        pgStore,
+			FullConfig:     &cfg,
+			Logger:         logger,
+		})
+		go webServer.Start(ctx)
+	}
+
+	stop := func() {
+		cancel()
+		qb.Stop(context.Background())
+		if wsManager != nil {
+			wsManager.StopAll()
+		}
+		if paperSaver != nil {
+			logger.Info("saving paper state before exit...")
+			paperSaver.SaveAll()
+		}
+	}
+
+	return handler, stop
+}
+
+// ---------------------------------------------------------------------------
+// Main (legacy entry point, kept for backward compat)
+// ---------------------------------------------------------------------------
+
+// Main is the sidecar entry point. Thin cmd/ wrappers should prefer
+// calling Load + Build + sidecar.Run directly so that the license and
+// stdio wiring live in main.
+func Main() {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain-quant: license config: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := license.CheckSidecar("brain-quant", verifyOpts); err != nil {
+		fmt.Fprintf(os.Stderr, "brain-quant: license: %v\n", err)
+		os.Exit(1)
+	}
+
+	cfg := Load(logger)
+	handler, stop := Build(cfg, logger)
+	defer stop()
+
+	listenAddr := ""
+	for i, arg := range os.Args[1:] {
+		if arg == "--listen" && i+1 < len(os.Args[1:]) {
+			listenAddr = os.Args[i+2]
+		}
+	}
+
+	var runErr error
+	if listenAddr != "" {
+		runErr = sidecar.ListenAndServe(listenAddr, handler)
+	} else {
+		runErr = sidecar.Run(handler)
+	}
+
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "brain-quant: %v\n", runErr)
+		os.Exit(1)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
 // paperStateSaver manages periodic saving of paper exchange state to PG.
 type paperStateSaver struct {
 	store  *tradestore.PaperPGStore
-	papers map[string]*exchange.PaperExchange // accountID → PaperExchange
+	papers map[string]*exchange.PaperExchange // accountID �?PaperExchange
 	logger *slog.Logger
 }
 
@@ -208,7 +233,7 @@ func (s *paperStateSaver) SaveAll() {
 func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*quant.Account, *quant.QuantBrain, *paperStateSaver, *tradestore.PGStore, *exchange.PrivateWSManager) {
 	ctx := context.Background()
 
-	// Build accounts — track paper exchanges for PG persistence.
+	// Build accounts �?track paper exchanges for PG persistence.
 	accounts := make(map[string]*quant.Account, len(cfg.Accounts))
 	paperExchanges := make(map[string]*exchange.PaperExchange)
 	for _, ac := range cfg.Accounts {
@@ -231,7 +256,6 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 				BaseURL:    ac.BaseURL,
 				Simulated:  ac.Simulated,
 			})
-			// Set hedge mode (long/short) on first OKX account init.
 			if err := okxEx.Init(ctx); err != nil {
 				logger.Error("okx init failed", "account", ac.ID, "err", err)
 			} else {
@@ -249,13 +273,13 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		}
 	}
 
-	// Placeholder buffers — replaced by RemoteBufferManager in SetKernelCaller.
+	// Placeholder buffers �?replaced by RemoteBufferManager in SetKernelCaller.
 	placeholder := ringbuf.NewBufferManager(1)
 
 	// Build quant brain
 	qb := quant.New(cfg.Brain, placeholder, logger.With("brain", "quant"))
 
-	// Apply global risk config from YAML (zero values → use defaults).
+	// Apply global risk config from YAML (zero values �?use defaults).
 	if cfg.GlobalRisk.MaxGlobalExposurePct > 0 {
 		qb.SetGlobalRiskConfig(cfg.GlobalRisk)
 		logger.Info("global risk config applied from config file")
@@ -300,20 +324,16 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			qb.SetTraceStore(pgTraceStore)
 			logger.Info("trade store: PostgreSQL connected")
 
-			// Paper exchange PG persistence.
 			if len(paperExchanges) > 0 {
 				paperStore = tradestore.NewPaperPGStore(pgStore.Pool(), logger)
 				if err := paperStore.Migrate(ctx); err != nil {
 					logger.Error("paper pg store migrate failed", "err", err)
-					paperStore = nil // prevent use of unmigrated store
+					paperStore = nil
 				} else {
-					// Restore paper exchange state from PG.
 					for id, pe := range paperExchanges {
 						if err := pe.RestoreState(ctx, id, paperStore, logger); err != nil {
 							logger.Warn("restore paper state failed (starting fresh)", "account", id, "err", err)
 						}
-						// Restore cumulative realized PnL from closed trade records.
-						// Without this, equity resets to initial value on restart.
 						if pgStore != nil {
 							stats := pgStore.Stats(tradestore.Filter{AccountID: id})
 							if stats.TotalPnL != 0 {
@@ -333,7 +353,7 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 		}
 	}
 
-	// Build risk components — auto-scale per account if enabled.
+	// Build risk components �?auto-scale per account if enabled.
 	type accountRisk struct {
 		guard *risk.AdaptiveGuard
 		sizer *risk.BayesianSizer
@@ -342,8 +362,6 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 
 	if cfg.AutoRisk.Enabled {
 		for id, acc := range accounts {
-			// Use configured initial_equity as budget cap if set;
-			// otherwise fall back to exchange balance.
 			var equity float64
 			for _, ac := range cfg.Accounts {
 				if ac.ID == id && ac.InitialEquity > 0 {
@@ -411,16 +429,13 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			tf = cfg.Brain.DefaultTimeframe
 		}
 
-		// Per-unit strategy override: use unit-level config if set, else global.
 		stratCfg := cfg.Strategy
 		if uc.Strategy != nil {
 			stratCfg = *uc.Strategy
 		}
 
-		// Build aggregator with timeframe-adaptive thresholds.
 		agg := stratCfg.BuildAggregator(tf)
 
-		// Resolve route config + budget equity from account definition.
 		var routeCfg quant.RouteConfig
 		var budgetEquity float64
 		for _, ac := range cfg.Accounts {
@@ -433,7 +448,6 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			}
 		}
 
-		// Per-unit risk override.
 		ar := perAccountRisk[uc.AccountID]
 		if uc.Risk != nil {
 			ar = accountRisk{
@@ -477,7 +491,8 @@ func buildQuantBrain(cfg quant.FullConfig, logger *slog.Logger) (map[string]*qua
 			MinSamples: 20,
 			WindowDays: 14,
 		}, logger.With("component", "sltp_optimizer"))
-		qb.SetLearning(wa, ss, opt)
+		ho := learning.NewHyperOptimizer("default", nil, learning.HyperOptimizerConfig{}, logger.With("component", "hyper_optimizer"))
+		qb.SetLearning(wa, ss, opt, ho)
 		logger.Info("L1 adaptive learning enabled")
 	}
 

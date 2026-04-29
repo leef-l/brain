@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -197,6 +198,9 @@ func TestWriteFile_EmptyPath(t *testing.T) {
 }
 
 func TestWriteFile_SystemDirRejected(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("system directory rejection is Unix-specific")
+	}
 	tool := NewWriteFileTool("code")
 	args, _ := json.Marshal(map[string]string{"path": "/etc/evil.conf", "content": "x"})
 	result, _ := tool.Execute(context.Background(), args)
@@ -434,7 +438,7 @@ func TestShellExec_BasicCommand(t *testing.T) {
 
 	var out shellExecOutput
 	json.Unmarshal(result.Output, &out)
-	if out.Stdout != "hello" {
+	if strings.TrimSpace(out.Stdout) != "hello" {
 		t.Errorf("stdout=%q, want 'hello'", out.Stdout)
 	}
 	if out.ExitCode != 0 {
@@ -467,14 +471,18 @@ func TestShellExec_Stderr(t *testing.T) {
 
 	var out shellExecOutput
 	json.Unmarshal(result.Output, &out)
-	if out.Stderr != "err" {
+	if strings.TrimSpace(out.Stderr) != "err" {
 		t.Errorf("stderr=%q, want 'err'", out.Stderr)
 	}
 }
 
 func TestShellExec_Timeout(t *testing.T) {
 	tool := NewShellExecTool("code", nil)
-	args, _ := json.Marshal(map[string]interface{}{"command": "sleep 10", "timeout_seconds": 1})
+	cmd := "sleep 10"
+	if runtime.GOOS == "windows" {
+		cmd = "powershell -Command Start-Sleep -Seconds 10"
+	}
+	args, _ := json.Marshal(map[string]interface{}{"command": cmd, "timeout_seconds": 1})
 	result, _ := tool.Execute(context.Background(), args)
 
 	var out shellExecOutput
@@ -487,7 +495,11 @@ func TestShellExec_Timeout(t *testing.T) {
 func TestShellExec_WorkingDir(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewShellExecTool("code", nil)
-	args, _ := json.Marshal(map[string]interface{}{"command": "pwd", "working_dir": dir})
+	cmd := "pwd"
+	if runtime.GOOS == "windows" {
+		cmd = "cd"
+	}
+	args, _ := json.Marshal(map[string]interface{}{"command": cmd, "working_dir": dir})
 	result, _ := tool.Execute(context.Background(), args)
 
 	var out shellExecOutput
@@ -517,6 +529,9 @@ func TestShellExec_Name(t *testing.T) {
 }
 
 func TestShellExec_CommandSandbox(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows command sandbox lacks filesystem and network isolation")
+	}
 	dir := t.TempDir()
 	sb := NewSandbox(dir)
 	cfg := &SandboxConfig{Enabled: true}

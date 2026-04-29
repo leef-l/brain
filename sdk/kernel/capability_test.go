@@ -313,3 +313,159 @@ func TestMatcher_EmptyIndexReturnsEmpty(t *testing.T) {
 		t.Fatalf("expected 0 from empty index, got %d", len(results))
 	}
 }
+
+func TestMatcher_BestMatch(t *testing.T) {
+	idx := setupTestIndex()
+	matcher := NewCapabilityMatcher(idx)
+
+	best, ok := matcher.BestMatch(MatchRequest{
+		Required:  []string{"coding.review"},
+		Preferred: []string{"domain.devops", "mode.streaming"},
+	})
+	if !ok {
+		t.Fatal("expected BestMatch to succeed")
+	}
+	if best.BrainKind != agent.KindCode {
+		t.Fatalf("expected code brain, got %s", best.BrainKind)
+	}
+	if best.CombinedScore != 1.0 {
+		t.Fatalf("expected CombinedScore=1.0, got %f", best.CombinedScore)
+	}
+}
+
+func TestMatcher_BestMatchNoCandidates(t *testing.T) {
+	idx := NewCapabilityIndex()
+	matcher := NewCapabilityMatcher(idx)
+
+	_, ok := matcher.BestMatch(MatchRequest{Required: []string{"nonexistent"}})
+	if ok {
+		t.Fatal("expected BestMatch to fail on empty index")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Version parsing & matching
+// ---------------------------------------------------------------------------
+
+func TestParseCapabilityTag_WithVersion(t *testing.T) {
+	cases := []struct {
+		raw      string
+		category string
+		primary  string
+		sub      string
+		version  string
+	}{
+		{"function.write_file.v2", "function", "function", "write_file", "v2"},
+		{"domain.code.v2", "domain", "code", "", "v2"},
+		{"resource.api.v3", "resource", "api", "", "v3"},
+		{"function.review.code.v3", "function", "function", "review", "v3"},
+		{"mode.background", "mode", "background", "", ""},
+		{"trading.execute", "function", "trading", "execute", ""},
+	}
+	for _, c := range cases {
+		tag := ParseCapabilityTag(c.raw)
+		if tag.Category != c.category {
+			t.Fatalf("ParseCapabilityTag(%q) category=%s want %s", c.raw, tag.Category, c.category)
+		}
+		if tag.Primary != c.primary {
+			t.Fatalf("ParseCapabilityTag(%q) primary=%s want %s", c.raw, tag.Primary, c.primary)
+		}
+		if tag.Sub != c.sub {
+			t.Fatalf("ParseCapabilityTag(%q) sub=%s want %s", c.raw, tag.Sub, c.sub)
+		}
+		if tag.Version != c.version {
+			t.Fatalf("ParseCapabilityTag(%q) version=%s want %s", c.raw, tag.Version, c.version)
+		}
+	}
+}
+
+func TestMatcher_VersionedHardFilter(t *testing.T) {
+	idx := NewCapabilityIndex()
+	idx.AddBrain(agent.KindCode, []string{
+		"function.write_file.v2",
+		"function.read_file.v1",
+	})
+	idx.AddBrain(agent.KindBrowser, []string{
+		"function.write_file.v1",
+		"function.screenshot.v3",
+	})
+
+	matcher := NewCapabilityMatcher(idx)
+
+	// Request v2 write_file — only code brain (v2) should match.
+	results := matcher.Match(MatchRequest{Required: []string{"function.write_file.v2"}})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 match for v2, got %d", len(results))
+	}
+	if results[0].BrainKind != agent.KindCode {
+		t.Fatalf("expected code brain for v2, got %s", results[0].BrainKind)
+	}
+
+	// Request v1 write_file — both code (v1) and browser (v1) should match,
+	// but code actually has v2. Code should still match because v2 >= v1.
+	results = matcher.Match(MatchRequest{Required: []string{"function.write_file.v1"}})
+	if len(results) != 2 {
+		t.Fatalf("expected 2 matches for v1 (code v2 >= v1, browser v1), got %d", len(results))
+	}
+
+	// Request v3 screenshot — only browser brain (v3) should match.
+	results = matcher.Match(MatchRequest{Required: []string{"function.screenshot.v3"}})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 match for v3 screenshot, got %d", len(results))
+	}
+	if results[0].BrainKind != agent.KindBrowser {
+		t.Fatalf("expected browser brain for v3, got %s", results[0].BrainKind)
+	}
+}
+
+func TestMatcher_NoVersionMatchesAnyVersion(t *testing.T) {
+	idx := NewCapabilityIndex()
+	idx.AddBrain(agent.KindCode, []string{
+		"function.write_file.v2",
+	})
+	matcher := NewCapabilityMatcher(idx)
+
+	// Request without version should match brain that has versioned capability.
+	results := matcher.Match(MatchRequest{Required: []string{"function.write_file"}})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 match for unversioned request, got %d", len(results))
+	}
+}
+
+func TestParseVersion(t *testing.T) {
+	cases := []struct {
+		s    string
+		want versionTuple
+	}{
+		{"v2", versionTuple{2, 0, 0}},
+		{"v1.3", versionTuple{1, 3, 0}},
+		{"v2.1.0", versionTuple{2, 1, 0}},
+		{"V10.5.3", versionTuple{10, 5, 3}},
+	}
+	for _, c := range cases {
+		got := parseVersion(c.s)
+		if got != c.want {
+			t.Fatalf("parseVersion(%q) = %+v, want %+v", c.s, got, c.want)
+		}
+	}
+}
+
+func TestVersionGTE(t *testing.T) {
+	cases := []struct {
+		a, b versionTuple
+		want bool
+	}{
+		{versionTuple{2, 0, 0}, versionTuple{1, 0, 0}, true},
+		{versionTuple{1, 3, 0}, versionTuple{1, 2, 0}, true},
+		{versionTuple{1, 2, 1}, versionTuple{1, 2, 0}, true},
+		{versionTuple{1, 2, 0}, versionTuple{1, 2, 0}, true},
+		{versionTuple{1, 1, 0}, versionTuple{1, 2, 0}, false},
+		{versionTuple{0, 0, 0}, versionTuple{1, 0, 0}, false},
+	}
+	for _, c := range cases {
+		got := versionGTE(c.a, c.b)
+		if got != c.want {
+			t.Fatalf("versionGTE(%+v, %+v) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}

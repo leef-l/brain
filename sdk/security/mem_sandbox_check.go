@@ -144,17 +144,20 @@ func (c *SandboxChecker) CheckCPU(used time.Duration) error {
 // matchesAny reports whether s is prefix-matched by any entry in list.
 // Exact equality and path-prefix equality are both accepted.
 func matchesAny(list []string, s string) bool {
+	// Normalise separators to '/' for cross-platform prefix matching.
+	normS := strings.ReplaceAll(s, string(filepath.Separator), "/")
 	for _, p := range list {
 		if p == "" {
 			continue
 		}
-		if p == s {
+		normP := strings.ReplaceAll(p, string(filepath.Separator), "/")
+		if normP == normS {
 			return true
 		}
-		if strings.HasSuffix(p, "/") && strings.HasPrefix(s, p) {
+		if strings.HasSuffix(normP, "/") && strings.HasPrefix(normS, normP) {
 			return true
 		}
-		if !strings.HasSuffix(p, "/") && strings.HasPrefix(s, p+"/") {
+		if !strings.HasSuffix(normP, "/") && strings.HasPrefix(normS, normP+"/") {
 			return true
 		}
 	}

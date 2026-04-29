@@ -363,9 +363,11 @@ func (t *providerHealthTool) Schema() tool.Schema {
 func (t *providerHealthTool) Execute(ctx context.Context, _ json.RawMessage) (*tool.Result, error) {
 	ph := t.db.ProviderHealth()
 	health := t.db.Health()
+	cb := t.db.CircuitBreakerState()
 
 	result := map[string]any{
-		"brain_health": health,
+		"brain_health":     health,
+		"circuit_breaker": cb,
 	}
 	if ph != nil {
 		result["provider"] = map[string]any{
@@ -555,14 +557,41 @@ func (t *replayStartTool) Schema() tool.Schema {
 }
 
 func (t *replayStartTool) Execute(ctx context.Context, args json.RawMessage) (*tool.Result, error) {
-	// Replay requires a store and is non-trivial to implement at the sidecar
-	// level (the DataBrain manages its own provider lifecycle). For now, return
-	// a not-yet-implemented response. This placeholder satisfies the Doc 36 §13
-	// interface contract; the full implementation will wire into DataBrain's
-	// provider swap mechanism.
+	var input struct {
+		InstrumentIDs []string  `json:"instrument_ids"`
+		Timeframes    []string  `json:"timeframes"`
+		FromTS        int64     `json:"from_ts"`
+		ToTS          int64     `json:"to_ts"`
+		Speed         float64   `json:"speed"`
+	}
+	if len(args) > 0 {
+		_ = json.Unmarshal(args, &input)
+	}
+
+	if len(input.InstrumentIDs) == 0 {
+		return errorResult("instrument_ids is required")
+	}
+	if input.FromTS == 0 {
+		return errorResult("from_ts is required")
+	}
+	if len(input.Timeframes) == 0 {
+		input.Timeframes = []string{"1m"}
+	}
+	if input.Speed < 0 {
+		input.Speed = 0
+	}
+
+	if err := t.db.StartReplay(ctx, input.InstrumentIDs, input.Timeframes, input.FromTS, input.ToTS, input.Speed); err != nil {
+		return errorResult("replay start failed: " + err.Error())
+	}
+
 	return marshalResult(map[string]any{
-		"status":  "not_implemented",
-		"message": "replay_start requires DataBrain provider swap — use standalone replay mode via data-brain CLI",
+		"status":       "started",
+		"instruments":  input.InstrumentIDs,
+		"timeframes":   input.Timeframes,
+		"from_ts":      input.FromTS,
+		"to_ts":        input.ToTS,
+		"speed":        input.Speed,
 	})
 }
 
@@ -586,8 +615,10 @@ func (t *replayStopTool) Schema() tool.Schema {
 }
 
 func (t *replayStopTool) Execute(ctx context.Context, _ json.RawMessage) (*tool.Result, error) {
+	if err := t.db.StopReplay(ctx); err != nil {
+		return errorResult("replay stop failed: " + err.Error())
+	}
 	return marshalResult(map[string]any{
-		"status":  "not_implemented",
-		"message": "replay_stop requires DataBrain provider swap — use standalone replay mode via data-brain CLI",
+		"status": "stopped",
 	})
 }

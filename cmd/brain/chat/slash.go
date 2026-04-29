@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/leef-l/brain/cmd/brain/env"
 	"github.com/leef-l/brain/cmd/brain/term"
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/kernel"
 )
 
 func HandleSlashCommand(input string, state *State) (bool, bool) {
@@ -37,6 +39,8 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /takeover          Enter manual takeover mode (you operate the browser)")
 		fmt.Println("  /resume [note]     Signal the waiting agent to continue after human takeover")
 		fmt.Println("  /abort  [note]     Tell the waiting agent to give up this step")
+		fmt.Println("  /like  [note]      Mark the last turn as helpful (L3 learning)")
+		fmt.Println("  /dislike [note]    Mark the last turn as unhelpful (L3 learning)")
 		fmt.Println("  /keys              Show keybindings config path")
 		fmt.Println("  /exit              Exit chat")
 		fmt.Println()
@@ -108,6 +112,40 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 			fmt.Println("  \033[33m✗ Aborted — agent will give up this step.\033[0m")
 		} else {
 			fmt.Println("  \033[33mFailed to deliver abort signal.\033[0m")
+		}
+		fmt.Println()
+		return true, false
+
+	case cmd == "/like" || strings.HasPrefix(cmd, "/like "):
+		note := ""
+		if len(input) > len("/like") {
+			note = strings.TrimSpace(input[len("/like"):])
+		}
+		if state.Orchestrator != nil && state.Orchestrator.Learner() != nil {
+			state.Orchestrator.Learner().RecordUserFeedback("chat_feedback", "like", 1.0)
+			fmt.Println("  \033[32m✓ Feedback recorded: like\033[0m")
+			if note != "" {
+				fmt.Printf("  Note: %s\n", note)
+			}
+		} else {
+			fmt.Println("  \033[33mLearning engine not available.\033[0m")
+		}
+		fmt.Println()
+		return true, false
+
+	case cmd == "/dislike" || strings.HasPrefix(cmd, "/dislike "):
+		note := ""
+		if len(input) > len("/dislike") {
+			note = strings.TrimSpace(input[len("/dislike"):])
+		}
+		if state.Orchestrator != nil && state.Orchestrator.Learner() != nil {
+			state.Orchestrator.Learner().RecordUserFeedback("chat_feedback", "dislike", 1.0)
+			fmt.Println("  \033[31m✓ Feedback recorded: dislike\033[0m")
+			if note != "" {
+				fmt.Printf("  Note: %s\n", note)
+			}
+		} else {
+			fmt.Println("  \033[33mLearning engine not available.\033[0m")
 		}
 		fmt.Println()
 		return true, false
@@ -216,6 +254,73 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /brain start all    Start all available sidecars")
 		fmt.Println("  /brain stop <kind>  Stop a specialist brain sidecar")
 		fmt.Println("  /brain stop all     Stop all running sidecars")
+		fmt.Println()
+		return true, false
+
+	case cmd == "/workflow" || cmd == "/workflow help":
+		fmt.Println("  /workflow <file.json>     Load and execute a workflow from file")
+		fmt.Println("  /workflow '{\"nodes\":...}' Execute inline workflow JSON")
+		fmt.Println()
+		return true, false
+
+	case strings.HasPrefix(cmd, "/workflow "):
+		arg := strings.TrimSpace(cmd[len("/workflow "):])
+		var data []byte
+		var err error
+		if strings.HasPrefix(arg, "{") {
+			data = []byte(arg)
+		} else {
+			data, err = os.ReadFile(arg)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  \033[1;31m! Failed to read file: %v\033[0m\n\n", err)
+				return true, false
+			}
+		}
+		var wf kernel.Workflow
+		if err := json.Unmarshal(data, &wf); err != nil {
+			fmt.Fprintf(os.Stderr, "  \033[1;31m! Invalid workflow JSON: %v\033[0m\n\n", err)
+			return true, false
+		}
+		if len(wf.Nodes) == 0 {
+			fmt.Fprintln(os.Stderr, "  \033[1;31m! Workflow has no nodes\033[0m")
+			return true, false
+		}
+		if wf.ID == "" {
+			wf.ID = fmt.Sprintf("wf-chat-%d", time.Now().UnixNano())
+		}
+		if state.Orchestrator == nil {
+			fmt.Fprintln(os.Stderr, "  \033[1;31m! No orchestrator available\033[0m")
+			return true, false
+		}
+		fmt.Printf("  Executing workflow %s (%d nodes)...\n", wf.ID, len(wf.Nodes))
+		reporter := func(eventType, nodeID, status, output, errMsg string) {
+			switch eventType {
+			case "workflow.node.started":
+				fmt.Printf("  \033[2m→ node %s started\033[0m\n", nodeID)
+			case "workflow.node.completed":
+				fmt.Printf("  \033[32m✓ node %s completed\033[0m\n", nodeID)
+			case "workflow.node.failed":
+				fmt.Printf("  \033[1;31m✗ node %s failed: %s\033[0m\n", nodeID, errMsg)
+			}
+		}
+		ctx := context.Background()
+		result, err := state.Orchestrator.ExecuteWorkflow(ctx, &wf, reporter)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  \033[1;31m! Workflow failed: %v\033[0m\n\n", err)
+			return true, false
+		}
+		fmt.Printf("  Workflow %s: %s\n", wf.ID, result.State)
+		for nid, nr := range result.Nodes {
+			icon := "\033[32m✓\033[0m"
+			if nr.State != kernel.StateCompleted {
+				icon = "\033[1;31m✗\033[0m"
+			}
+			fmt.Printf("    %s %s: %s", icon, nid, nr.State)
+			if nr.Error != "" {
+				fmt.Printf("  (%s)", nr.Error)
+			}
+			fmt.Println()
+		}
 		fmt.Println()
 		return true, false
 

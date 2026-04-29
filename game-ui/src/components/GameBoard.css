@@ -1,0 +1,22 @@
+.game-board {
+  display: grid;
+  grid-template-columns: repeat(var(--columns, 4), 1fr);
+  gap: 10px;
+  width: 100%;
+  max-width: 500px;
+  perspective: 800px;
+}
+
+/* Responsive */
+@media (max-width: 520px) {
+  .game-board {
+    gap: 7px;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 380px) {
+  .game-board {
+    gap: 5px;
+  }
+}

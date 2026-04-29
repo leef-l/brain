@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/leef-l/brain/sdk/executionpolicy"
@@ -91,7 +92,11 @@ func TestRunTests_Fail(t *testing.T) {
 
 func TestRunTests_Timeout(t *testing.T) {
 	tool := NewRunTestsTool()
-	args, _ := json.Marshal(map[string]interface{}{"command": "sleep 10", "timeout_seconds": 1})
+	cmd := "sleep 10"
+	if runtime.GOOS == "windows" {
+		cmd = "powershell -Command Start-Sleep -Seconds 10"
+	}
+	args, _ := json.Marshal(map[string]interface{}{"command": cmd, "timeout_seconds": 1})
 	result, _ := tool.Execute(context.Background(), args)
 
 	var out runTestsOutput

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/kernel"
@@ -364,4 +366,33 @@ func RegisterSpecialistBridgeTools(reg tool.Registry, orch *kernel.Orchestrator)
 			Orch: orch,
 		})
 	}
+}
+
+// discoverToolsFromBrainJSON reads a brain.json and returns its capabilities as SpecialistToolDef slices.
+// This is the first step toward runtime self-discovery (Phase 3 bridge refactor).
+func discoverToolsFromBrainJSON(path string) ([]SpecialistToolDef, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var meta struct {
+		Kind        string   `json:"kind"`
+		Name        string   `json:"name"`
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, err
+	}
+	var defs []SpecialistToolDef
+	for _, cap := range meta.Capabilities {
+		defs = append(defs, SpecialistToolDef{
+			Name:        meta.Kind + "." + strings.ReplaceAll(cap, ".", "_"),
+			Description: cap,
+			Brain:       meta.Kind,
+			Kind:        agent.Kind(meta.Kind),
+			Risk:        tool.RiskMedium,
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		})
+	}
+	return defs, nil
 }

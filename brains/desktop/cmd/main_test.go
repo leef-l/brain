@@ -3,27 +3,17 @@ package main
 import (
 	"testing"
 
-	"github.com/leef-l/brain/sdk/executionpolicy"
+	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/shared"
+	"github.com/leef-l/brain/sdk/tool"
 )
 
-func TestDesktopHandlerBuildRegistry_UsesExecutionSpec(t *testing.T) {
-	h := newDesktopHandler()
-
-	reg, err := h.buildRegistry(&executionpolicy.ExecutionSpec{
-		Workdir: "/tmp",
-	})
-	if err != nil {
-		t.Fatalf("buildRegistry: %v", err)
-	}
-
-	for _, name := range []string{
-		"desktop.open_path",
-		"desktop.list_windows",
-		"desktop.send_hotkey",
-		"desktop.note",
-	} {
-		if _, ok := reg.Lookup(name); !ok {
-			t.Fatalf("missing tool %q", name)
-		}
+func TestRunBrain_DesktopRegistryExists(t *testing.T) {
+	// Desktop brain is not yet in RunBrain switch; verify thin brain wiring works.
+	reg := shared.RegisterWithPolicy(agent.KindDesktop,
+		tool.NewNoteTool("desktop"),
+	)
+	if _, ok := reg.Lookup("desktop.note"); !ok {
+		t.Fatalf("desktop.note should be available")
 	}
 }

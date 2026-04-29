@@ -25,6 +25,7 @@ func RegisterToolsForMode(reg tool.Registry, mode env.PermissionMode, brainKind 
 	reg.Register(cliruntime.ManageTool(&e, tool.NewSearchTool(brainKind), env.ToolClassRead))
 	reg.Register(tool.NewNoteTool(brainKind))
 	reg.Register(tool.NewCheckOutputTool())
+	reg.Register(tool.NewTaskCompleteTool(brainKind))
 
 	if mode == env.ModePlan {
 		return

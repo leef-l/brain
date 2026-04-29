@@ -1072,6 +1072,7 @@ func TestSQLiteAuditLoggerPurge(t *testing.T) {
 		EventID:    "old-evt",
 		EventType:  "test",
 		StatusCode: "success",
+		Timestamp:  time.Now().UTC().Add(-time.Hour),
 	})
 
 	// Purge with 0 days should remove everything

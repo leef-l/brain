@@ -77,8 +77,9 @@ func TestNewBoundaries_WithSpec(t *testing.T) {
 	if b.FilePolicy == nil {
 		t.Error("FilePolicy should be set")
 	}
-	if b.Workdir != dir {
-		t.Errorf("Workdir = %q, want %q", b.Workdir, dir)
+	sb := tool.NewSandbox(dir)
+	if b.Workdir != sb.Primary() {
+		t.Errorf("Workdir = %q, want %q", b.Workdir, sb.Primary())
 	}
 }
 

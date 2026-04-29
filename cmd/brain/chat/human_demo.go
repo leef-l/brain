@@ -17,7 +17,7 @@ type startHumanDemoTool struct {
 	orchestrator *kernel.Orchestrator
 	env          *env.Environment
 	humanCoord   *ChatHumanCoordinator
-	delegate     func(context.Context, *kernel.SubtaskRequest) (*kernel.SubtaskResult, error)
+	delegate     func(context.Context, *kernel.DelegateRequest) (*kernel.DelegateResult, error)
 }
 
 func NewStartHumanDemoTool(orch *kernel.Orchestrator, e *env.Environment, coord *ChatHumanCoordinator) tool.Tool {
@@ -105,7 +105,7 @@ func (t *startHumanDemoTool) Execute(ctx context.Context, args json.RawMessage) 
 	}
 
 	instruction := buildHumanDemoInstruction(input.URL, reason, guidance)
-	req := &kernel.SubtaskRequest{
+	req := &kernel.DelegateRequest{
 		TaskID:      "human-demo-browser",
 		TargetKind:  agent.KindBrowser,
 		Instruction: instruction,

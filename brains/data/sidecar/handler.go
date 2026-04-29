@@ -54,12 +54,45 @@ func NewHandler(db *data.DataBrain, logger *slog.Logger) *dataHandler {
 		filtered = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindData))...)
 	}
 
-	return &dataHandler{
+	h := &dataHandler{
 		db:       db,
 		registry: filtered,
 		logger:   logger,
 		learner:  data.NewDataBrainLearner(db),
 	}
+
+	// 注册校验拒绝回调：上报到 Kernel（通过 diaglog 和 brain/progress）
+	db.OnValidationRejected(func(result data.ValidationResult) {
+		h.logger.Warn("validation rejected",
+			"symbol", result.Symbol,
+			"reason", result.Reason,
+			"alert_type", result.AlertType,
+		)
+		// 通过 trace.emit 风格上报到 Kernel
+		diaglog.Logf("brain", "kind=%s trace=validation_rejected symbol=%s reason=%s alert_type=%s",
+			string(agent.KindData),
+			result.Symbol,
+			result.Reason,
+			result.AlertType,
+		)
+		// 如果 KernelCaller 可用，通过 brain/progress 上报
+		if h.caller != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_ = h.caller.CallKernel(ctx, "brain/progress", map[string]any{
+					"brain":       string(agent.KindData),
+					"event":       "validation_rejected",
+					"symbol":      result.Symbol,
+					"reason":      result.Reason,
+					"alert_type":  result.AlertType,
+					"timestamp":   time.Now().UnixMilli(),
+				}, nil)
+			}()
+		}
+	})
+
+	return h
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +126,8 @@ func (h *dataHandler) HandleMethod(ctx context.Context, method string, params js
 		return h.handleExecute(ctx, params)
 	case "brain/metrics":
 		return h.learner.ExportMetrics(), nil
+	case "brain/learn":
+		return h.handleLearn(ctx, params)
 	default:
 		return nil, sidecar.ErrMethodNotFound
 	}
@@ -176,6 +211,27 @@ RULES:
 // ---------------------------------------------------------------------------
 // brain/execute instruction handlers
 // ---------------------------------------------------------------------------
+
+// handleLearn handles brain/learn RPC from Orchestrator.
+func (h *dataHandler) handleLearn(_ context.Context, params json.RawMessage) (interface{}, error) {
+	var payload struct {
+		TaskType string  `json:"task_type"`
+		Success  bool    `json:"success"`
+		Duration float64 `json:"duration"` // seconds
+	}
+	if err := json.Unmarshal(params, &payload); err != nil {
+		return nil, fmt.Errorf("parse learn payload: %w", err)
+	}
+	if err := h.learner.RecordOutcome(context.Background(), kernel.TaskOutcome{
+		TaskType: payload.TaskType,
+		Success:  payload.Success,
+		Duration: time.Duration(payload.Duration * float64(time.Second)),
+	}); err != nil {
+		h.logger.Warn("brain/learn failed", "err", err)
+		return nil, err
+	}
+	return map[string]string{"status": "ok"}, nil
+}
 
 func (h *dataHandler) execHealth() (*sidecar.ExecuteResult, error) {
 	health := h.db.Health()

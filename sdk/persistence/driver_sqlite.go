@@ -146,17 +146,19 @@ CREATE TABLE IF NOT EXISTS learning_profiles (
 );
 
 CREATE TABLE IF NOT EXISTS learning_task_scores (
-	brain_kind      TEXT    NOT NULL,
-	task_type       TEXT    NOT NULL,
-	sample_count    INTEGER NOT NULL DEFAULT 0,
-	accuracy_value  REAL    NOT NULL DEFAULT 0,
-	accuracy_alpha  REAL    NOT NULL DEFAULT 0.2,
-	speed_value     REAL    NOT NULL DEFAULT 0,
-	speed_alpha     REAL    NOT NULL DEFAULT 0.2,
-	cost_value      REAL    NOT NULL DEFAULT 0,
-	cost_alpha      REAL    NOT NULL DEFAULT 0.2,
-	stability_value REAL    NOT NULL DEFAULT 0,
-	stability_alpha REAL    NOT NULL DEFAULT 0.2,
+	brain_kind       TEXT    NOT NULL,
+	task_type        TEXT    NOT NULL,
+	sample_count     INTEGER NOT NULL DEFAULT 0,
+	accuracy_value   REAL    NOT NULL DEFAULT 0,
+	accuracy_alpha   REAL    NOT NULL DEFAULT 0.2,
+	speed_value      REAL    NOT NULL DEFAULT 0,
+	speed_alpha      REAL    NOT NULL DEFAULT 0.2,
+	cost_value       REAL    NOT NULL DEFAULT 0,
+	cost_alpha       REAL    NOT NULL DEFAULT 0.2,
+	stability_value  REAL    NOT NULL DEFAULT 0,
+	stability_alpha  REAL    NOT NULL DEFAULT 0.2,
+	latency_ms_value REAL    NOT NULL DEFAULT 0,
+	latency_ms_alpha REAL    NOT NULL DEFAULT 0.2,
 	PRIMARY KEY (brain_kind, task_type)
 );
 
@@ -216,6 +218,17 @@ CREATE TABLE IF NOT EXISTS shared_messages (
 	created_at TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_shared_messages_brains ON shared_messages(from_brain, to_brain);
+
+-- Project-level conversation history for cross-Run context inheritance.
+CREATE TABLE IF NOT EXISTS project_conversations (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	project_id   TEXT    NOT NULL,
+	role         TEXT    NOT NULL,
+	content_json TEXT    NOT NULL,
+	created_at   TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_conv_project ON project_conversations(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_conv_created ON project_conversations(project_id, created_at);
 
 -- P3.1 — Anomaly template library.
 CREATE TABLE IF NOT EXISTS anomaly_templates (
@@ -280,6 +293,47 @@ CREATE TABLE IF NOT EXISTS sitemap_snapshots (
 	collected_at TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sitemap_site_depth ON sitemap_snapshots(site_origin, depth, id DESC);
+
+-- Q-11 — Quant trade journal.
+CREATE TABLE IF NOT EXISTS quant_trade_records (
+	id          TEXT PRIMARY KEY,
+	symbol      TEXT    NOT NULL DEFAULT '',
+	direction   TEXT    NOT NULL DEFAULT '',
+	entry_price REAL    NOT NULL DEFAULT 0,
+	exit_price  REAL    NOT NULL DEFAULT 0,
+	quantity    REAL    NOT NULL DEFAULT 0,
+	pnl         REAL    NOT NULL DEFAULT 0,
+	pnl_pct     REAL    NOT NULL DEFAULT 0,
+	entry_time  INTEGER NOT NULL DEFAULT 0,
+	exit_time   INTEGER NOT NULL DEFAULT 0,
+	strategy    TEXT    NOT NULL DEFAULT '',
+	regime      TEXT    NOT NULL DEFAULT '',
+	metadata    TEXT    NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_quant_trades_symbol     ON quant_trade_records(symbol);
+CREATE INDEX IF NOT EXISTS idx_quant_trades_strategy   ON quant_trade_records(strategy);
+CREATE INDEX IF NOT EXISTS idx_quant_trades_entry_time ON quant_trade_records(entry_time);
+
+-- Q-12 — Quant backtest results.
+CREATE TABLE IF NOT EXISTS quant_backtest_results (
+	id            TEXT PRIMARY KEY,
+	symbol        TEXT    NOT NULL DEFAULT '',
+	timeframe     TEXT    NOT NULL DEFAULT '',
+	start_time    INTEGER NOT NULL DEFAULT 0,
+	end_time      INTEGER NOT NULL DEFAULT 0,
+	bars          INTEGER NOT NULL DEFAULT 0,
+	trades_count  INTEGER NOT NULL DEFAULT 0,
+	total_return  REAL    NOT NULL DEFAULT 0,
+	win_rate      REAL    NOT NULL DEFAULT 0,
+	profit_factor REAL    NOT NULL DEFAULT 0,
+	max_drawdown  REAL    NOT NULL DEFAULT 0,
+	sharpe_ratio  REAL    NOT NULL DEFAULT 0,
+	calmar_ratio  REAL    NOT NULL DEFAULT 0,
+	equity_curve  TEXT    NOT NULL DEFAULT '[]',
+	trades_json   TEXT    NOT NULL DEFAULT '[]',
+	created_at    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_quant_backtest_symbol ON quant_backtest_results(symbol, created_at DESC);
 `
 
 // ── sqliteDriver ────────────────────────────────────────────────────────
@@ -345,6 +399,11 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 	auditLogger := &sqliteAuditLogger{c: core}
 	learningStore := &sqliteLearningStore{c: core}
 	sharedMsgStore := &sqliteSharedMessageStore{c: core}
+	projectStore := &sqliteProjectStore{c: core}
+	if err := projectStore.ensureSchema(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sqlite driver: ensure project schema: %w", err)
+	}
 
 	// ArtifactStore uses filesystem CAS alongside SQLite metadata.
 	artifactDir := filepath.Join(filepath.Dir(dsn), "artifacts")
@@ -366,6 +425,8 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 		AuditLogger:        auditLogger,
 		LearningStore:      learningStore,
 		SharedMessageStore: sharedMsgStore,
+		ProjectStore:       projectStore,
+		RawDB:              db,
 		CloseFunc:          db.Close,
 	}, nil
 }
@@ -1306,7 +1367,8 @@ func (s *sqliteLearningStore) ListTaskScores(ctx context.Context, brainKind stri
 	rows, err := s.c.db.QueryContext(ctx,
 		`SELECT brain_kind, task_type, sample_count,
 		        accuracy_value, accuracy_alpha, speed_value, speed_alpha,
-		        cost_value, cost_alpha, stability_value, stability_alpha
+		        cost_value, cost_alpha, stability_value, stability_alpha,
+		        latency_ms_value, latency_ms_alpha
 		 FROM learning_task_scores WHERE brain_kind = ? ORDER BY task_type`, brainKind)
 	if err != nil {
 		return nil, err
@@ -1319,7 +1381,8 @@ func (s *sqliteLearningStore) ListTaskScores(ctx context.Context, brainKind stri
 			&ts.AccuracyValue, &ts.AccuracyAlpha,
 			&ts.SpeedValue, &ts.SpeedAlpha,
 			&ts.CostValue, &ts.CostAlpha,
-			&ts.StabilityValue, &ts.StabilityAlpha); err != nil {
+			&ts.StabilityValue, &ts.StabilityAlpha,
+			&ts.LatencyMsValue, &ts.LatencyMsAlpha); err != nil {
 			continue
 		}
 		out = append(out, ts)

@@ -41,6 +41,10 @@ type anomalyHistory struct {
 	buckets  map[AnomalyType][]time.Time // keyed by type
 	jsErrors []jsErrorEvent              // last 50 JS errors from console
 	siteHist *siteHistory                // per-host aggregation (P3.1-B)
+
+	// B-8 DOM mutation / form field tracking.
+	lastDOMHash    string
+	lastFormFields []string
 }
 
 type jsErrorEvent struct {

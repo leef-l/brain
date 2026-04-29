@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 )
 
 // ShellExecTool executes a shell command and returns its output.
@@ -13,6 +14,7 @@ type ShellExecTool struct {
 	brainKind  string
 	sandbox    *Sandbox       // path-level sandbox for default workdir
 	cmdSandbox CommandSandbox // OS-level isolation; nil = no isolation
+	StreamTo   io.Writer      // optional real-time stdout/stderr stream (e.g. os.Stderr)
 }
 
 // NewShellExecTool constructs a ShellExecTool.
@@ -82,8 +84,14 @@ func (t *ShellExecTool) Execute(ctx context.Context, args json.RawMessage) (*Res
 	}
 	req = NormalizeCommandRequest(t.Name(), req)
 
-	outcome, err := ExecuteCommandRequest(ctx, req, t.sandbox, t.cmdSandbox)
-	if err != nil {
+	var outcome CommandOutcome
+	var execErr error
+	if t.StreamTo != nil {
+		outcome, execErr = ExecuteCommandRequestWithStreams(ctx, req, t.sandbox, t.cmdSandbox, t.StreamTo, t.StreamTo)
+	} else {
+		outcome, execErr = ExecuteCommandRequest(ctx, req, t.sandbox, t.cmdSandbox)
+	}
+	if execErr != nil {
 		prefix := "exec error"
 		if t.cmdSandbox != nil && t.cmdSandbox.Available() {
 			prefix = "sandbox error"

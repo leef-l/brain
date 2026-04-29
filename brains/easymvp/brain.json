@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "easymvp",
+  "name": "EasyMVP Domain Brain",
+  "brain_version": "1.0.0",
+  "description": "EasyMVP domain contract execution brain: architect_chat, plan_review, plan_compile, etc.",
+  "capabilities": [
+    "easymvp.plan_review",
+    "easymvp.plan_compile",
+    "easymvp.plan_redesign",
+    "easymvp.repair_design",
+    "easymvp.acceptance_mapping",
+    "easymvp.completion_adjudication",
+    "easymvp.workspace_explanation"
+  ],
+  "task_patterns": [
+    "easymvp",
+    "architect",
+    "plan",
+    "contract"
+  ],
+  "runtime": {
+    "type": "native",
+    "entrypoint": "brain-easymvp-sidecar"
+  },
+  "policy": {
+    "tool_scope": "delegate.easymvp",
+    "approval_mode": "default"
+  },
+  "compatibility": {
+    "protocol": "1.0",
+    "tested_kernel": "1.0.x"
+  },
+  "health": {
+    "startup_timeout_ms": 10000
+  }
+}

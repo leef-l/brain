@@ -1,6 +1,6 @@
 # 31. Browser Brain 免费版与 Pro 版规划
 
-> **⚠️ 路径迁移说明（2026-04-24）：** 代码路径已从 `/www/wwwroot/project/brain/cmd/brain-browser/` 迁移到 `brain-v3/brains/browser/cmd/`，工具代码从 `brain/tool/` 迁移到 `brain-v3/sdk/tool/`。
+> **⚠️ 路径说明：** 代码路径 `brains/browser/cmd/`，工具代码 `sdk/tool/`。
 
 > 目标：明确 `brain-browser` 当前免费版边界，以及未来 `brain-browser-pro`
 > 的收费能力范围，避免产品线混乱。
@@ -32,8 +32,8 @@
 
 代码入口：
 
-- [`cmd/brain-browser/main.go`](/www/wwwroot/project/brain/cmd/brain-browser/main.go:1)
-- [`tool/builtin_browser.go`](/www/wwwroot/project/brain/tool/builtin_browser.go:56)
+- [`brains/browser/cmd/main.go`](../../brains/browser/cmd/main.go:1)
+- [`sdk/tool/builtin_browser.go`](../../sdk/tool/builtin_browser.go:56)
 
 这意味着：
 
@@ -70,7 +70,7 @@
 
 现有实现位置：
 
-- [`tool/builtin_browser.go`](/www/wwwroot/project/brain/tool/builtin_browser.go:60)
+- [`sdk/tool/builtin_browser.go`](../../sdk/tool/builtin_browser.go:60)
 
 ### 2.1 免费版定位
 

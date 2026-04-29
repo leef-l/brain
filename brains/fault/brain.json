@@ -39,6 +39,16 @@
       "brain/metrics"
     ]
   },
+  "tools_manifest": {
+    "source": "sdk/tool",
+    "tools": [
+      "fault.inject_error",
+      "fault.inject_latency",
+      "fault.kill_process",
+      "fault.corrupt_response",
+      "fault.note"
+    ]
+  },
   "compatibility": {
     "protocol": "1.0",
     "tested_kernel": "1.0.x",

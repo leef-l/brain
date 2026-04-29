@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager — Interactive</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <h1 class="app-title">
+                <span class="logo-icon">&#x2714;</span> Task Manager
+            </h1>
+            <div class="header-actions">
+                <button id="theme-toggle-btn" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+                    &#x263E;
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar" id="stats-bar">
+            <div class="stat-item">
+                <span class="stat-value" id="stat-total">0</span>
+                <span class="stat-label">Total</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="stat-active">0</span>
+                <span class="stat-label">Active</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="stat-completed">0</span>
+                <span class="stat-label">Done</span>
+            </div>
+            <div class="stat-item progress-item">
+                <div class="progress-ring-container">
+                    <svg class="progress-ring" width="48" height="48" viewBox="0 0 48 48">
+                        <circle class="progress-ring-bg" cx="24" cy="24" r="20" />
+                        <circle class="progress-ring-fill" id="progress-ring-fill" cx="24" cy="24" r="20" />
+                    </svg>
+                    <span class="progress-text" id="progress-percent">0%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Task Form -->
+        <form id="task-form" class="task-form" autocomplete="off">
+            <div class="input-group">
+                <input
+                    type="text"
+                    id="task-input"
+                    class="task-input"
+                    placeholder="What needs to be done? Press Enter to add..."
+                    maxlength="200"
+                    required
+                >
+                <select id="priority-select" class="priority-select" title="Priority">
+                    <option value="medium" selected>&#x26AC; Medium</option>
+                    <option value="high">&#x26A0; High</option>
+                    <option value="low">&#x2B07; Low</option>
+                </select>
+                <button type="submit" class="btn btn-primary" id="add-btn">
+                    <span class="btn-text">Add Task</span>
+                    <span class="btn-shortcut">Ctrl+Enter</span>
+                </button>
+            </div>
+            <div class="form-hint" id="form-hint"></div>
+        </form>
+
+        <!-- Filter & Search Bar -->
+        <div class="filter-bar">
+            <div class="filter-tabs">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="active">Active</button>
+                <button class="filter-btn" data-filter="completed">Completed</button>
+            </div>
+            <div class="search-group">
+                <input
+                    type="text"
+                    id="search-input"
+                    class="search-input"
+                    placeholder="&#x1F50D; Search tasks..."
+                >
+                <button id="clear-completed-btn" class="btn btn-sm btn-outline" title="Clear all completed tasks">
+                    Clear Done
+                </button>
+                <button id="sort-toggle-btn" class="icon-btn" title="Toggle sort order" aria-label="Toggle sort">
+                    &#x21C5;
+                </button>
+            </div>
+        </div>
+
+        <!-- Task List -->
+        <div class="task-list-container">
+            <div id="task-list" class="task-list">
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-icon">&#x1F4CB;</div>
+                    <p class="empty-title">No tasks yet</p>
+                    <p class="empty-subtitle">Add your first task above and start being productive!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Actions -->
+        <div class="bulk-actions" id="bulk-actions" style="display: none;">
+            <span id="bulk-count">0 selected</span>
+            <button id="bulk-complete-btn" class="btn btn-sm btn-primary">Complete All</button>
+            <button id="bulk-delete-btn" class="btn btn-sm btn-danger">Delete All</button>
+            <button id="bulk-cancel-btn" class="btn btn-sm btn-outline">Cancel</button>
+        </div>
+
+        <!-- Undo Toast -->
+        <div class="toast" id="toast">
+            <span class="toast-message" id="toast-message"></span>
+            <button class="toast-undo" id="toast-undo">Undo</button>
+            <button class="toast-close" id="toast-close">&times;</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

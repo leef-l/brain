@@ -337,7 +337,13 @@ func buildOrchestrator(oc orchestratorConfig) *kernel.Orchestrator {
 	orch := kernel.NewOrchestratorWithConfig(runner, llmProxy, binResolver, orchCfg)
 
 	// 注入自适应学习引擎（L1 协作级学习）
-	learner := kernel.NewLearningEngine()
+	var learner *kernel.LearningEngine
+	if runtime, _ := newDefaultCLIRuntime("central"); runtime != nil && runtime.Stores != nil && runtime.Stores.LearningStore != nil {
+		learner = kernel.NewLearningEngineWithStore(runtime.Stores.LearningStore)
+		_ = learner.Load(context.Background())
+	} else {
+		learner = kernel.NewLearningEngine()
+	}
 	kernel.WithLearningEngine(learner)(orch)
 
 	if len(orch.AvailableKinds()) == 0 {

@@ -1,0 +1,4 @@
+malformed import path ";": invalid char ';'
+package type is not in std (C:\Users\Administrator\.g\go\src\type)
+no required module provides package build_output.txt; to add it:
+	go get build_output.txt

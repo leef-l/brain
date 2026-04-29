@@ -236,6 +236,7 @@ func TestCompress_ZeroBudget_ReturnsOriginal(t *testing.T) {
 func TestShare_LimitsTo10Messages(t *testing.T) {
 	// Share 最多传递 10 条消息
 	eng := NewDefaultContextEngine()
+	eng.MaxShareMessages = 10
 
 	var msgs []llm.Message
 	for i := 0; i < 20; i++ {
@@ -301,6 +302,7 @@ func TestShare_EmptyMessages(t *testing.T) {
 func TestShare_KeepsRecentMessages(t *testing.T) {
 	// 超过 10 条时应保留最新的
 	eng := NewDefaultContextEngine()
+	eng.MaxShareMessages = 10
 
 	var msgs []llm.Message
 	for i := 0; i < 15; i++ {

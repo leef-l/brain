@@ -39,6 +39,10 @@ type OrderRequest struct {
 	Leverage      int
 	ATR           float64
 	AccountEquity float64
+
+	// AnomalyScore is optional. When provided, Guard.CheckOrder will also
+	// evaluate anomaly rules via AnomalyGuard.
+	AnomalyScore *strategy.AnomalyScore
 }
 
 // PortfolioSnapshot captures the aggregate exposure state.

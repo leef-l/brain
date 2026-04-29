@@ -860,7 +860,28 @@ LLM 返回 N 个 tool_use blocks
 
 ---
 
-## 11. 设计取舍说明
+## 11. 与 WorkflowEngine 的关系
+
+本文档描述的 **BatchPlanner** 与 **WorkflowEngine**（`sdk/kernel/workflow.go`）是**互补而非替代**的两层并发机制：
+
+| 维度 | BatchPlanner（本文档） | WorkflowEngine |
+|------|----------------------|----------------|
+| **并发范围** | 单个 Turn 内的 tool_call 分组 | 跨 brain 的 DAG 节点编排 |
+| **执行单元** | tool_use block | WorkflowNode（一个 brain 的完整子任务） |
+| **进程边界** | 同进程内 goroutine 并行 | 多进程 sidecar 并行（通过 `Orchestrator.Delegate`） |
+| **调度决策** | 基于 ToolConcurrencySpec 的冲突图推导 | 基于 DAG 拓扑排序 + 分层并行 |
+| **错误处理** | `ContinueBatch` / `FailBatch` / `FailAll` | 单个节点失败 → 整个 workflow 失败（可扩展为 partial failure） |
+| **数据传递** | tool_result 直接回填 messages | Flow Edge（materialized / streaming） |
+
+**使用场景**：
+- BatchPlanner：LLM 在一次响应中发出多个工具调用（如同时读多个文件、搜索代码），在单 brain 内并行执行
+- WorkflowEngine：中央大脑将复杂任务拆分为多个子任务，每个子任务分配给一个 specialist brain，跨 brain 并行执行
+
+**调用关系**：WorkflowEngine 的每个节点执行时，内部仍走正常的 Agent Loop → BatchPlanner → tool_call 并发路径。Workflow 是宏观编排，BatchPlanner 是微观并发。
+
+---
+
+## 12. 设计取舍说明
 
 | 设计决策 | 选择 | 被放弃的方案 | 理由 |
 |----------|------|-------------|------|

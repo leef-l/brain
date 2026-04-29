@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -45,6 +46,9 @@ type TaskTypeScore struct {
 	Speed       EWMAScore
 	Cost        EWMAScore
 	Stability   EWMAScore
+	// LatencyMs 记录该 brain 执行该类任务的平均延迟（毫秒，EWMA）。
+	// 用于自适应超时估算：EstimateTimeout 基于此计算建议超时。
+	LatencyMs EWMAScore
 }
 
 // BrainCapabilityProfile 是对某个 brain 的能力认知模型
@@ -284,6 +288,39 @@ func NewLearningEngineWithStore(store persistence.LearningStore) *LearningEngine
 	return le
 }
 
+// Profiles 返回 L1 能力画像的快照（防御性拷贝）。
+func (le *LearningEngine) Profiles() map[agent.Kind]*BrainCapabilityProfile {
+	le.mu.RLock()
+	defer le.mu.RUnlock()
+	out := make(map[agent.Kind]*BrainCapabilityProfile, len(le.profiles))
+	for k, v := range le.profiles {
+		if v == nil {
+			continue
+		}
+		cp := &BrainCapabilityProfile{
+			BrainKind: v.BrainKind,
+			UpdatedAt: v.UpdatedAt,
+			ColdStart: v.ColdStart,
+			TaskScores: make(map[string]*TaskTypeScore, len(v.TaskScores)),
+		}
+		for tk, tv := range v.TaskScores {
+			if tv == nil {
+				continue
+			}
+			cp.TaskScores[tk] = &TaskTypeScore{
+				TaskType:    tv.TaskType,
+				SampleCount: tv.SampleCount,
+				Accuracy:    tv.Accuracy,
+				Speed:       tv.Speed,
+				Cost:        tv.Cost,
+				Stability:   tv.Stability,
+			}
+		}
+		out[k] = cp
+	}
+	return out
+}
+
 // Load 从持久化后端恢复全部学习数据到内存
 func (le *LearningEngine) Load(ctx context.Context) error {
 	if le.store == nil {
@@ -434,6 +471,7 @@ func (le *LearningEngine) RecordDelegateResult(
 			Speed:     EWMAScore{Alpha: 0.2},
 			Cost:      EWMAScore{Alpha: 0.2},
 			Stability: EWMAScore{Alpha: 0.2},
+			LatencyMs: EWMAScore{Alpha: 0.2},
 		}
 		profile.TaskScores[taskType] = ts
 	}
@@ -467,13 +505,91 @@ func (le *LearningEngine) RecordDelegateResult(
 			CostAlpha:      ts.Cost.Alpha,
 			StabilityValue: ts.Stability.Value,
 			StabilityAlpha: ts.Stability.Alpha,
+			LatencyMsValue: ts.LatencyMs.Value,
+			LatencyMsAlpha: ts.LatencyMs.Alpha,
 		}
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "learning: save profile panic: %v\n", r)
+				}
+			}()
 			ctx := context.Background()
 			le.store.SaveProfile(ctx, &profileSnap)
 			le.store.SaveTaskScore(ctx, &scoreSnap)
 		}()
 	}
+}
+
+// RecordDelegateLatency 记录一次委派的实际延迟（毫秒）。
+// 与 RecordDelegateResult 分离，避免破坏已有接口。
+func (le *LearningEngine) RecordDelegateLatency(brainKind agent.Kind, taskType string, d time.Duration) {
+	le.mu.Lock()
+	defer le.mu.Unlock()
+
+	profile, ok := le.profiles[brainKind]
+	if !ok {
+		profile = &BrainCapabilityProfile{
+			BrainKind:  brainKind,
+			TaskScores: make(map[string]*TaskTypeScore),
+			ColdStart:  true,
+		}
+		le.profiles[brainKind] = profile
+	}
+
+	ts, ok := profile.TaskScores[taskType]
+	if !ok {
+		ts = &TaskTypeScore{
+			TaskType:  taskType,
+			Accuracy:  EWMAScore{Alpha: 0.2},
+			Speed:     EWMAScore{Alpha: 0.2},
+			Cost:      EWMAScore{Alpha: 0.2},
+			Stability: EWMAScore{Alpha: 0.2},
+			LatencyMs: EWMAScore{Alpha: 0.2},
+		}
+		profile.TaskScores[taskType] = ts
+	}
+
+	ms := float64(d.Milliseconds())
+	if ms < 0 {
+		ms = 0
+	}
+	ts.LatencyMs.Update(ms)
+	profile.UpdatedAt = time.Now()
+}
+
+// EstimateTimeout 基于历史 EWMA 延迟估算建议超时。
+// 返回 P95 估算值（EWMA * 2），并钳制在 [30s, 300s] 区间内。
+// 冷启动（样本不足）时返回 0，表示"无建议，使用默认值"。
+func (le *LearningEngine) EstimateTimeout(brainKind agent.Kind, taskType string) time.Duration {
+	le.mu.RLock()
+	defer le.mu.RUnlock()
+
+	profile, ok := le.profiles[brainKind]
+	if !ok {
+		return 0
+	}
+	ts, ok := profile.TaskScores[taskType]
+	if !ok || ts.SampleCount < coldStartThreshold {
+		return 0
+	}
+
+	// P95 估算 = EWMA * 2（基于正态分布近似）。
+	p95Ms := ts.LatencyMs.Value * 2
+	if p95Ms <= 0 {
+		return 0
+	}
+
+	timeout := time.Duration(p95Ms) * time.Millisecond
+	const minTimeout = 30 * time.Second
+	const maxTimeout = 300 * time.Second
+	if timeout < minTimeout {
+		timeout = minTimeout
+	}
+	if timeout > maxTimeout {
+		timeout = maxTimeout
+	}
+	return timeout
 }
 
 // RankBrains 对所有已知 brain 按 taskType 排名 (L1 入口)
@@ -520,6 +636,11 @@ func (le *LearningEngine) RecordSequence(record TaskSequenceRecord) {
 	le.sequences.RecordSequence(record)
 	if le.store != nil {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "learning: save sequence panic: %v\n", r)
+				}
+			}()
 			seq := &persistence.LearningSequence{
 				SequenceID: record.SequenceID,
 				TotalScore: record.TotalScore,
@@ -568,6 +689,11 @@ func (le *LearningEngine) RecordUserFeedback(category, value string, weight floa
 	le.prefs.RecordFeedback(category, value, weight)
 	if le.store != nil {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "learning: save preference panic: %v\n", r)
+				}
+			}()
 			pref := le.prefs.GetPreference(category)
 			if pref != nil {
 				le.store.SavePreference(context.Background(), &persistence.LearningPreference{
@@ -693,6 +819,16 @@ type BrainLearner interface {
 	RecordOutcome(ctx context.Context, outcome TaskOutcome) error
 	// ExportMetrics 导出当前 brain 的聚合指标快照。
 	ExportMetrics() BrainMetrics
+	// Adapt 根据历史指标触发领域参数自适应调整。
+	// 由 LearningEngine 定期调用（如每小时）或 brain 空闲时自触发。
+	Adapt(ctx context.Context) error
+}
+
+// ToolOutcomeRecorder 是 BrainLearner 的可选扩展接口。
+// 实现此接口的 learner 可以在每次单工具调用后接收更细粒度的成功/失败
+// 信号，从而构建领域特化的指标（如编译成功率、页面加载成功率等）。
+type ToolOutcomeRecorder interface {
+	RecordToolOutcome(toolName string, success bool)
 }
 
 // TaskOutcome 是一次任务执行的结果报告。
@@ -833,4 +969,13 @@ func (d *DefaultBrainLearner) ExportMetrics() BrainMetrics {
 		AvgLatencyMs:    d.latencyEWMA.Value * 1000,
 		ConfidenceTrend: trend,
 	}
+}
+
+// Adapt 触发一次持久化保存（如果配置了 store）。
+// DefaultBrainLearner 的领域无关，因此 Adapt 仅做数据落盘。
+func (d *DefaultBrainLearner) Adapt(ctx context.Context) error {
+	if d.store == nil {
+		return nil
+	}
+	return d.Save(ctx)
 }

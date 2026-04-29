@@ -11,7 +11,7 @@
 >
 > **实现快照（2026-04-13）**：
 > 当前仓库主干已经切到共享 file-backed CLI runtime：`brain run/chat/serve/status/list/logs/cancel/resume/replay`
-> 共用持久化与权限边界；`run_id` 对外统一为字符串；`brain serve` 已支持 `/health`、`/v1/version`、`/v1/tools`、`/v1/runs*`。
+> 共用持久化与权限边界；`run_id` 对外统一为字符串；`brain serve` 已支持 `/health`、`/v1/version`、`/v1/tools`、`/v1/runs*`、`/v1/contracts/execute`（同步 + SSE 流式）。
 > 本文档仍保留部分面向未来的 cluster/marketplace 约束，但 `run`/`chat`/`serve` 的模型配置覆写与文件策略边界已在实现中生效。
 
 ## 目录
@@ -217,6 +217,7 @@ brain run [options]
 | `--stream` | bool | 打开 provider streaming 路径；当前最终输出仍是最终 summary，不是 NDJSON follow |
 | `--json` | bool | 输出 Run summary JSON；当前默认 `true` |
 | `--reply` | string | 仅 `--provider mock` 时使用的固定回复 |
+| `--workflow` | path | DAG 工作流 JSON 文件路径；与 `--prompt` 互斥，直接执行 DAG 而非 LLM 交互 |
 
 `--model-config-json` 的优先级为：
 
@@ -307,6 +308,10 @@ brain
 - `chat` 会话与 `run` 共用同一套执行环境、受限策略、provider 解析与持久化骨架
 - 每轮消息会建立持久化 run 记录，因此 `restricted` / `file_policy` / 审批 / policy 拒绝同样会留下可追踪事件
 - 当前支持交互式审批、diff 预览、slash command、delegate specialist brain
+- **Slash 命令**（交互式 REPL 中可用）：
+  - `/workflow <dag.json>` 或 `/workflow '{"nodes":[...]}'` —— 手动提交 DAG 工作流，跳过 LLM 拆任务直接执行
+  - `/cancel` —— 取消当前 Run
+  - `/brain <kind>` —— 切换当前会话 brain
 
 ---
 
@@ -651,6 +656,45 @@ brain serve [--listen <addr>] [--max-concurrent-runs <n>] [--mode <mode>] [--wor
 - `POST /v1/runs`
 - `GET /v1/runs/:id`
 - `DELETE /v1/runs/:id`
+- `POST /v1/contracts/execute` —— Contract 执行（同步 JSON 返回）
+- `POST /v1/contracts/execute?stream=true` —— Contract 执行 SSE 流式（`text/event-stream`）
+- `POST /v1/workflows` —— 创建并执行 DAG 工作流
+- `GET /v1/workflows` —— 列出所有工作流
+- `GET /v1/workflows/:id` —— 查询工作流状态
+- `DELETE /v1/workflows/:id` —— 取消工作流
+- `GET /v1/workflows/:id/events` —— SSE 实时推送工作流节点事件
+- `GET /v1/executions/:id/events` —— SSE 实时推送 execution 生命周期事件
+
+`POST /v1/contracts/execute` 请求体字段：
+
+```json
+{
+  "brain_kind": "easymvp",
+  "contract_kind": "architect_chat",
+  "context_json": {"project_name": "my-app", "tech_stack": "Go"},
+  "instruction": "设计一个用户登录系统",
+  "max_turns": 6,
+  "timeout": "30s",
+  "stream": false
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `brain_kind` | string | 否 | 大脑类型，默认 `easymvp` |
+| `contract_kind` | string | **是** | Contract 类型，如 `architect_chat` / `plan_review` / `plan_compile` 等 |
+| `context_json` | object | 否 | Contract 上下文数据，结构取决于 `contract_kind` |
+| `instruction` | string | 否 | 额外指令，附加到 contract 提示词 |
+| `max_turns` | int | 否 | Agent Loop 最大轮数，默认 `6` |
+| `timeout` | string | 否 | 执行超时，如 `30s` / `5m`，默认 `30s` |
+| `stream` | bool | 否 | 是否启用 SSE 流式；也可通过 URL query `?stream=true` 开启 |
+
+**SSE 流式响应格式**：
+
+- `Content-Type: text/event-stream`
+- 每帧格式：`data: <events.Event JSON>\n\n`
+- 事件类型：`execution.started` → `llm.*` / `agent.*` → `execution.done` / `execution.error`
+- 客户端断开 SSE 连接会取消正在进行的执行
 
 `POST /v1/runs` 当前支持请求体字段：
 

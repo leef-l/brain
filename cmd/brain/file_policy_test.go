@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -13,8 +14,37 @@ import (
 	"github.com/leef-l/brain/sdk/toolguard"
 )
 
+func normalizeRoot(t *testing.T, root string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q): %v", root, err)
+	}
+	return resolved
+}
+
+func probeReadCommand() string {
+	if runtime.GOOS == "windows" {
+		return `if exist blocked.txt (echo visible) else (echo missing)`
+	}
+	return `if [ -e blocked.txt ]; then echo visible; else echo missing; fi`
+}
+
+func probeEditCommand() string {
+	if runtime.GOOS == "windows" {
+		// Use PowerShell with -EncodedCommand to avoid cmd quote-escaping issues.
+		// Script: 'hidden'; [System.IO.File]::WriteAllText('hidden.txt', 'rewritten')
+		return `if exist hidden.txt (findstr /M "." hidden.txt >nul && echo visible || echo hidden) else (echo hidden) & powershell -NoProfile -EncodedCommand WwBTAHkAcwB0AGUAbQAuAEkATwAuAEYAaQBsAGUAXQA6ADoAVwByAGkAdABlAEEAbABsAFQAZQB4AHQAKAAnAGgAaQBkAGQAZQBuAC4AdAB4AHQAJwAsACAAJwByAGUAdwByAGkAdAB0AGUAbgAnACkA`
+	}
+	return `if [ -s hidden.txt ]; then echo visible; else echo hidden; fi; printf rewritten > hidden.txt`
+}
+
+func normalizeStdout(s string) string {
+	return strings.TrimSuffix(s, "\r")
+}
+
 func TestFilePolicy_AllowsEditButBlocksCreate(t *testing.T) {
-	root := t.TempDir()
+	root := normalizeRoot(t, t.TempDir())
 	existing := filepath.Join(root, "allowed.go")
 	if err := os.WriteFile(existing, []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -36,7 +66,7 @@ func TestFilePolicy_AllowsEditButBlocksCreate(t *testing.T) {
 }
 
 func TestFilePolicy_ValidatesCommandDiffs(t *testing.T) {
-	root := t.TempDir()
+	root := normalizeRoot(t, t.TempDir())
 	env := newExecutionEnvironment(root, modeAuto, nil, nil, false)
 	if err := applyFilePolicy(env, &filePolicyInput{AllowEdit: []string{"allowed.txt"}}); err != nil {
 		t.Fatalf("applyFilePolicy: %v", err)
@@ -72,7 +102,7 @@ func TestFilePolicy_ValidatesCommandDiffs(t *testing.T) {
 }
 
 func TestFilePolicy_ReadDeleteAndCommandFlags(t *testing.T) {
-	root := t.TempDir()
+	root := normalizeRoot(t, t.TempDir())
 	allowed := filepath.Join(root, "allowed.txt")
 	blocked := filepath.Join(root, "blocked.txt")
 	if err := os.WriteFile(allowed, []byte("ok"), 0o644); err != nil {
@@ -132,7 +162,7 @@ func TestFilePolicy_ReadDeleteAndCommandFlags(t *testing.T) {
 }
 
 func TestFilePolicy_RestrictsCommandReadSurface(t *testing.T) {
-	root := t.TempDir()
+	root := normalizeRoot(t, t.TempDir())
 	if err := os.WriteFile(filepath.Join(root, "allowed.txt"), []byte("ok"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +183,7 @@ func TestFilePolicy_RestrictsCommandReadSurface(t *testing.T) {
 	st.SetCommandSandbox(env.CmdSandbox)
 	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.Sandbox), env.CmdSandbox, env.SandboxCfg, env.FilePolicy)
 
-	result, err := cmd.Execute(context.Background(), json.RawMessage(`{"command":"if [ -e blocked.txt ]; then echo visible; else echo missing; fi"}`))
+	result, err := cmd.Execute(context.Background(), json.RawMessage(fmtJSON(map[string]string{"command": probeReadCommand()})))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -167,13 +197,13 @@ func TestFilePolicy_RestrictsCommandReadSurface(t *testing.T) {
 	if err := json.Unmarshal(result.Output, &out); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
-	if out.Stdout != "missing" {
+	if normalizeStdout(out.Stdout) != "missing" {
 		t.Fatalf("stdout=%q, want missing", out.Stdout)
 	}
 }
 
 func TestFilePolicy_CommandCanBlindEditWithoutRead(t *testing.T) {
-	root := t.TempDir()
+	root := normalizeRoot(t, t.TempDir())
 	target := filepath.Join(root, "hidden.txt")
 	if err := os.WriteFile(target, []byte("secret"), 0o644); err != nil {
 		t.Fatal(err)
@@ -192,7 +222,7 @@ func TestFilePolicy_CommandCanBlindEditWithoutRead(t *testing.T) {
 	st.SetCommandSandbox(env.CmdSandbox)
 	cmd := toolguard.WrapCommandPolicy(tool.WrapSandbox(st, env.Sandbox), env.CmdSandbox, env.SandboxCfg, env.FilePolicy)
 
-	result, err := cmd.Execute(context.Background(), json.RawMessage(`{"command":"if [ -s hidden.txt ]; then echo visible; else echo hidden; fi; printf rewritten > hidden.txt"}`))
+	result, err := cmd.Execute(context.Background(), json.RawMessage(fmtJSON(map[string]string{"command": probeEditCommand()})))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -206,7 +236,7 @@ func TestFilePolicy_CommandCanBlindEditWithoutRead(t *testing.T) {
 	if err := json.Unmarshal(result.Output, &out); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
-	if out.Stdout != "hidden" {
+	if normalizeStdout(out.Stdout) != "hidden" {
 		t.Fatalf("stdout=%q, want hidden", out.Stdout)
 	}
 
@@ -220,7 +250,7 @@ func TestFilePolicy_CommandCanBlindEditWithoutRead(t *testing.T) {
 }
 
 func TestRegisterToolsForMode_AppliesFilePolicyToChatWrites(t *testing.T) {
-	root := t.TempDir()
+	root := normalizeRoot(t, t.TempDir())
 	env := newExecutionEnvironment(root, modeAcceptEdits, nil, nil, true)
 	if err := applyFilePolicy(env, &filePolicyInput{AllowEdit: []string{"*.go"}}); err != nil {
 		t.Fatalf("applyFilePolicy: %v", err)

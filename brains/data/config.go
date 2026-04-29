@@ -8,9 +8,10 @@ type Config struct {
 	ActiveList ActiveListConfig  `json:"active_list" yaml:"active_list"`
 	Providers  []ProviderConfig  `json:"providers" yaml:"providers"`
 	Backfill   BackfillConfig    `json:"backfill" yaml:"backfill"`
-	Validation ValidationConfig  `json:"validation" yaml:"validation"`
-	RingBuffer RingBufferConfig  `json:"ring_buffer" yaml:"ring_buffer"`
-	Feature    FeatureConfig     `json:"feature" yaml:"feature"`
+	Validation     ValidationConfig     `json:"validation" yaml:"validation"`
+	RingBuffer     RingBufferConfig     `json:"ring_buffer" yaml:"ring_buffer"`
+	Feature        FeatureConfig        `json:"feature" yaml:"feature"`
+	CircuitBreaker CircuitBreakerConfig `json:"circuit_breaker" yaml:"circuit_breaker"`
 }
 
 // ActiveListConfig controls which instruments are actively tracked.
@@ -51,6 +52,18 @@ type RingBufferConfig struct {
 	CandleDepth    int `json:"candle_depth" yaml:"candle_depth"`
 	TradeDepth     int `json:"trade_depth" yaml:"trade_depth"`
 	OrderBookDepth int `json:"order_book_depth" yaml:"order_book_depth"`
+}
+
+// CircuitBreakerConfig holds the configuration for the data brain
+// circuit breaker. When validation rejection rate exceeds Threshold
+// for at least Duration, the circuit breaker opens and data
+// collection pauses. After Cooldown the breaker half-opens; if
+// health checks pass it fully closes.
+type CircuitBreakerConfig struct {
+	Enabled   bool          `json:"enabled" yaml:"enabled"`
+	Threshold float64       `json:"threshold" yaml:"threshold"` // rejection rate, e.g. 0.30
+	Duration  time.Duration `json:"duration" yaml:"duration"`   // e.g. 60s
+	Cooldown  time.Duration `json:"cooldown" yaml:"cooldown"`   // e.g. 30s
 }
 
 // FeatureConfig controls real-time feature computation.

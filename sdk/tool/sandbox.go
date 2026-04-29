@@ -136,8 +136,11 @@ func isUnder(path, dir string) bool {
 	if path == dir {
 		return true
 	}
-	prefix := dir + "/"
-	return strings.HasPrefix(path, prefix)
+	// Normalize to forward slashes for cross-platform comparison.
+	pathSlash := filepath.ToSlash(path)
+	dirSlash := filepath.ToSlash(dir)
+	prefix := dirSlash + "/"
+	return strings.HasPrefix(pathSlash, prefix)
 }
 
 // SandboxError is returned when a path escapes the sandbox.

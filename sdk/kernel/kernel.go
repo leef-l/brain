@@ -75,6 +75,10 @@ type Kernel struct {
 	// Logs is the log event exporter (24 §6).
 	Logs observability.LogExporter
 
+	// CapabilityIndex indexes all registered brains and their capability tags.
+	// Used by the orchestrator and exposed via API for brain selection.
+	CapabilityIndex *CapabilityIndex
+
 	// Orchestrator manages specialist brain delegation. When nil, the
 	// system operates in single-brain mode (Central does everything).
 	Orchestrator interface{}

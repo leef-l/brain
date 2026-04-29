@@ -200,6 +200,25 @@ func (p *MCPBrainPool) Shutdown(ctx context.Context) error {
 	return lastErr
 }
 
+// RegisterAllTools discovers and registers all MCP brain tools into the given
+// registry. It starts each adapter lazily if not already running.
+func (p *MCPBrainPool) RegisterAllTools(ctx context.Context, registry tool.Registry) error {
+	for _, kind := range p.AvailableKinds() {
+		ag, err := p.GetBrain(ctx, kind)
+		if err != nil {
+			return fmt.Errorf("mcpadapter: get brain %q: %w", kind, err)
+		}
+		mcpAgent, ok := ag.(*MCPAgent)
+		if !ok {
+			continue
+		}
+		if _, err := mcpAgent.Adapter().RegisterTools(ctx, registry); err != nil {
+			return fmt.Errorf("mcpadapter: register tools %q: %w", kind, err)
+		}
+	}
+	return nil
+}
+
 // AvailableKinds 返回所有已配置的 MCP brain kind 列表。
 func (p *MCPBrainPool) AvailableKinds() []agent.Kind {
 	p.mu.Lock()

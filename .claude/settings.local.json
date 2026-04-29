@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh release:*)",
+      "Bash(where gh:*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(PGPASSWORD=brain123 psql:*)",
+      "Bash(where psql:*)",
+      "Read(//c/Program Files/PostgreSQL/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(PGPASSWORD=brain123 /c/Program Files/PostgreSQL/16/bin/psql.exe:*)",
+      "Bash(git pull *)",
+      "Bash(go build *)",
+      "Bash(go test *)",
+      "Bash(where brain-data-sidecar.exe)",
+      "Bash(where brain-data.exe)",
+      "Bash(where brain-quant-sidecar.exe)",
+      "Bash(where brain.exe)"
+    ]
+  }
+}

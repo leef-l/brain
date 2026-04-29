@@ -62,7 +62,10 @@ func TestSandboxTool_BlockedPath(t *testing.T) {
 	wrapped := WrapSandbox(inner, sb)
 
 	// Try to read a path outside the sandbox.
-	args, _ := json.Marshal(map[string]string{"path": "/etc/hostname"})
+	blockedDir := t.TempDir()
+	blockedFile := filepath.Join(blockedDir, "blocked.txt")
+	os.WriteFile(blockedFile, []byte("blocked"), 0644)
+	args, _ := json.Marshal(map[string]string{"path": blockedFile})
 	result, err := wrapped.Execute(context.Background(), args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -82,9 +85,10 @@ func TestSandboxTool_BlockedWorkingDir(t *testing.T) {
 	wrapped := WrapSandbox(inner, sb)
 
 	// Try to use a working_dir outside the sandbox.
+	blockedDir := t.TempDir()
 	args, _ := json.Marshal(map[string]interface{}{
 		"command":     "echo hello",
-		"working_dir": "/tmp/somewhere_else_not_in_sandbox",
+		"working_dir": blockedDir,
 	})
 	result, err := wrapped.Execute(context.Background(), args)
 	if err != nil {
@@ -199,8 +203,8 @@ func TestSandboxTool_EmptyPathUsesSandboxPrimary(t *testing.T) {
 	if err := json.Unmarshal(inner.lastArgs, &got); err != nil {
 		t.Fatalf("decode forwarded args: %v", err)
 	}
-	if got["path"] != dir {
-		t.Fatalf("forwarded path=%q, want sandbox primary %q", got["path"], dir)
+	if got["path"] != sb.Primary() {
+		t.Fatalf("forwarded path=%q, want sandbox primary %q", got["path"], sb.Primary())
 	}
 }
 

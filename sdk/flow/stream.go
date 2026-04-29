@@ -157,6 +157,27 @@ func (r *PipeRegistry) CloseAll() error {
 	return firstErr
 }
 
+// Write 向指定 pipe 写入数据。若 pipe 不存在返回 ErrPipeNotFound。
+func (r *PipeRegistry) Write(ctx context.Context, name string, data []byte) error {
+	r.mu.RLock()
+	p, ok := r.pipes[name]
+	r.mu.RUnlock()
+	if !ok {
+		return ErrPipeNotFound
+	}
+	return p.Write(ctx, data)
+}
+
+// SetPipe 直接设置一个已存在的 pipe（覆盖模式）。用于跨组件共享 pipe 实例。
+func (r *PipeRegistry) SetPipe(name string, p *PipeBackend) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pipes == nil {
+		r.pipes = make(map[string]*PipeBackend)
+	}
+	r.pipes[name] = p
+}
+
 // Names 返回所有活跃 pipe 的名称
 func (r *PipeRegistry) Names() []string {
 	r.mu.RLock()

@@ -70,7 +70,9 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 			"\nYou have access to tools for reading files, writing files, " +
 			"searching code, and executing shell commands. Safe operations " +
 			"are auto-approved. Use them freely. " +
-			"Be concise. Briefly explain what you're doing before using a tool."
+			"Be concise. Briefly explain what you're doing before using a tool.\n" +
+			"When you have fully completed the task and there is nothing more to do, " +
+			"call `task_complete` with a summary, or simply reply with text and do NOT call any more tools."
 	case env.ModeRestricted:
 		return base +
 			"\nYou are in RESTRICTED mode. All file reads, searches, creates, edits, deletes, " +
@@ -121,6 +123,15 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	}
 	if RegistryHasTool(reg, "central.start_human_demo") {
 		prompt += "For explicit human-demonstration / forced-learning requests such as '我来操作你学习', '我演示给你看', '进入人工学习模式', or 'start human demo', use `central.start_human_demo`. It opens a headed browser flow and triggers real `human.request_takeover` recording instead of relying on the browser model to remember to ask.\n\n"
+	}
+	if RegistryHasTool(reg, "central.submit_workflow") {
+		prompt += "Use the `central.submit_workflow` tool when the user's request naturally splits into MULTIPLE independent subtasks that can run in parallel or in a specific order. "
+		prompt += "Instead of calling `central.delegate` multiple times sequentially (which is slow), build a Workflow DAG with one node per subtask and submit it once. "
+		prompt += "Each node specifies a `brain_id` (e.g. code, browser, verifier) and a `prompt`. Use `depends_on` when one task needs another's output. "
+		prompt += "The WorkflowEngine will execute nodes at the same layer in parallel automatically. After execution, summarize the combined results for the user.\n\n"
+		prompt += "Example — user asks 'write tests and open the docs page simultaneously':\n"
+		prompt += "  CORRECT: submit_workflow with nodes=[{id:\"A\",brain_id:\"code\",prompt:\"write unit tests\"},{id:\"B\",brain_id:\"browser\",prompt:\"open docs.example.com\"}]\n"
+		prompt += "  WRONG:   call delegate to code, wait, then call delegate to browser (unnecessarily sequential)\n\n"
 	}
 	if RegistryHasTool(reg, "central.delegate") {
 		prompt += "Use the `central.delegate` tool to delegate tasks to the appropriate specialist:\n"
@@ -175,7 +186,8 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	prompt += "3. For trading/data queries, use the specialist tools directly\n"
 	prompt += "4. For any website opening, web search, page reading, or browser interaction task, delegate to the browser brain instead of using shell_exec + curl/wget\n"
 	prompt += "5. After code changes, delegate verification to the verifier brain\n"
-	prompt += "6. Summarize the results to the user\n\n"
+	prompt += "6. When ALL work is finished and there are no more actions needed, call `central.task_complete` with a summary of what was accomplished. Do NOT continue checking status, calling workspace explanations, or verifying after the specialist has reported success.\n"
+	prompt += "7. If you have nothing more to do, do NOT call any additional tools — simply reply with a text summary.\n\n"
 	prompt += "Never treat shell_exec HTTP fetches as a substitute for browser delegation on normal web tasks.\n"
 	prompt += "If browser delegation fails, report the browser failure clearly instead of retrying the same web task through shell_exec, curl, wget, or verifier.browser_action.\n"
 	prompt += "If a tool call fails (specialist unavailable), try `central.delegate` as fallback.\n\n"
@@ -195,6 +207,13 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 
 	if notice := orch.DegradationNotice(); notice != "" {
 		prompt += "\n" + notice + "\n"
+	}
+
+	// L3: 注入用户偏好
+	if learner := orch.Learner(); learner != nil {
+		if pref := learner.GetPreference("chat_feedback"); pref != nil {
+			prompt += fmt.Sprintf("\n### User Preference\n\nHistorical feedback trend: %s (weight: %.2f)\n", pref.Value, pref.Weight)
+		}
 	}
 
 	return prompt

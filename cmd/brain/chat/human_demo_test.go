@@ -25,12 +25,12 @@ func TestBuildHumanDemoInstruction(t *testing.T) {
 }
 
 func TestStartHumanDemoTool_DelegatesHeadedBrowserTakeover(t *testing.T) {
-	var captured *kernel.SubtaskRequest
+	var captured *kernel.DelegateRequest
 	tool := NewStartHumanDemoTool(nil, nil, nil).(*startHumanDemoTool)
 	tool.orchestrator = &kernel.Orchestrator{}
-	tool.delegate = func(_ context.Context, req *kernel.SubtaskRequest) (*kernel.SubtaskResult, error) {
+	tool.delegate = func(_ context.Context, req *kernel.DelegateRequest) (*kernel.DelegateResult, error) {
 		captured = req
-		return &kernel.SubtaskResult{
+		return &kernel.DelegateResult{
 			Status: "completed",
 			Output: json.RawMessage(`{"status":"completed"}`),
 		}, nil
@@ -77,7 +77,7 @@ func TestStartHumanDemoTool_RejectsWhenTakeoverPending(t *testing.T) {
 
 	startTool := NewStartHumanDemoTool(nil, nil, coord).(*startHumanDemoTool)
 	startTool.orchestrator = &kernel.Orchestrator{}
-	startTool.delegate = func(_ context.Context, req *kernel.SubtaskRequest) (*kernel.SubtaskResult, error) {
+	startTool.delegate = func(_ context.Context, req *kernel.DelegateRequest) (*kernel.DelegateResult, error) {
 		t.Fatalf("delegate should not be called while takeover is pending: %+v", req)
 		return nil, nil
 	}

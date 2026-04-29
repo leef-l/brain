@@ -26,6 +26,8 @@ type LearningTaskScore struct {
 	CostAlpha       float64 `json:"cost_alpha"`
 	StabilityValue  float64 `json:"stability_value"`
 	StabilityAlpha  float64 `json:"stability_alpha"`
+	LatencyMsValue  float64 `json:"latency_ms_value"`
+	LatencyMsAlpha  float64 `json:"latency_ms_alpha"`
 }
 
 // LearningSequence is the serializable form of a task sequence record (L2).

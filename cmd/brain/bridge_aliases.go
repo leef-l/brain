@@ -19,6 +19,10 @@ var (
 	registerDelegateToolForEnvironment = bridge.RegisterDelegateToolForEnvironment
 )
 
+func registerWorkflowToolForEnvironment(reg tool.Registry, orch *kernel.Orchestrator) {
+	bridge.RegisterWorkflowTool(reg, orch, nil)
+}
+
 func newBatchPlannerAdapter(leaseManager kernel.LeaseManager) *batchPlannerAdapter {
 	return bridge.NewBatchPlannerAdapter(leaseManager)
 }

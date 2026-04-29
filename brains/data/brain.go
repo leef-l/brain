@@ -45,10 +45,29 @@ type DataBrain struct {
 	buffers   *ringbuf.BufferManager
 
 	// 状态
-	running     atomic.Bool
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	fundingRates sync.Map // map[instID string]float64 — 最新资金费率快照
+	running       atomic.Bool
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	fundingRates  sync.Map // map[instID string]float64 — 最新资金费率快照
+
+	// 回放状态（用于 replay_start/replay_stop Tool）
+	replayProvider   *provider.ReplayProvider
+	originalProvider provider.DataProvider
+	replayMu         sync.Mutex
+
+	// 熔断状态
+	circuitBroken   atomic.Bool
+	circuitMu       sync.Mutex
+	circuitOpenTS   time.Time
+	circuitHalfOpen bool
+	circuitHistory  *circuitHistory
+
+	// 子引擎启动时间（用于 uptime 计算）
+	startTimes map[string]time.Time
+
+	// 校验拒绝回调
+	validationRejectedCallbacks []func(validator.ValidationResult)
+	valRejectMu                  sync.RWMutex
 
 	// 指标
 	metrics Metrics
@@ -62,7 +81,73 @@ type Metrics struct {
 	PGWriteTotal      atomic.Int64
 	PGWriteErrors     atomic.Int64
 	FeatureComputeMs  atomic.Int64 // 最后一次计算耗时（毫秒）
+
+	// v2: 时间戳字段，用于 IsHealthy() "最近 N 秒" 精确检查
+	LastRingBufWriteTS   atomic.Int64 // 最后一次 ring buffer 写入时间戳（毫秒）
+	LastFeatureComputeTS atomic.Int64 // 最后一次 feature 计算时间戳（毫秒）
 }
+
+// SubEngineInfo describes the status of one sub-engine.
+type SubEngineInfo struct {
+	Name     string `json:"name"`
+	Status   string `json:"status"` // "running"/"stopped"/"error"
+	Uptime   string `json:"uptime"`
+	LastErr  string `json:"last_error,omitempty"`
+}
+
+// circuitHistory tracks recent validation results for the circuit breaker.
+type circuitHistory struct {
+	mu         sync.Mutex
+	results    []circuitResult
+	windowSize int
+}
+
+type circuitResult struct {
+	rejected bool
+	ts       time.Time
+}
+
+func newCircuitHistory(windowSize int) *circuitHistory {
+	if windowSize <= 0 {
+		windowSize = 1000
+	}
+	return &circuitHistory{windowSize: windowSize}
+}
+
+func (h *circuitHistory) add(rejected bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.results = append(h.results, circuitResult{rejected: rejected, ts: time.Now()})
+	if len(h.results) > h.windowSize {
+		h.results = h.results[len(h.results)-h.windowSize:]
+	}
+}
+
+func (h *circuitHistory) rejectionRate(duration time.Duration) float64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.results) == 0 {
+		return 0
+	}
+	cutoff := time.Now().Add(-duration)
+	var total, rejected int
+	for i := len(h.results) - 1; i >= 0; i-- {
+		if h.results[i].ts.Before(cutoff) {
+			break
+		}
+		total++
+		if h.results[i].rejected {
+			rejected++
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return float64(rejected) / float64(total)
+}
+
+// ValidationResult is an alias for the validator package type.
+type ValidationResult = validator.ValidationResult
 
 // candleDepth returns the ring buffer candle depth from config with a default.
 func candleDepth(cfg Config) int {
@@ -168,6 +253,8 @@ func New(cfg Config, st store.Store, logger *slog.Logger) *DataBrain {
 		feature:    feat,
 		assembler:  assembler,
 		buffers:    ringbuf.NewBufferManager(candleDepth(cfg)),
+		circuitHistory: newCircuitHistory(5000),
+		startTimes: make(map[string]time.Time),
 	}
 }
 
@@ -326,6 +413,23 @@ func (b *DataBrain) Start(ctx context.Context) error {
 		return fmt.Errorf("start provider: %w", err)
 	}
 
+	// 记录子引擎启动时间
+	now := time.Now()
+	b.startTimes["provider"] = now
+	b.startTimes["validator"] = now
+	b.startTimes["feature"] = now
+	b.startTimes["ringbuf"] = now
+	b.startTimes["store"] = now
+
+	// 启动熔断检查循环（如果启用）
+	if b.config.CircuitBreaker.Enabled {
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.circuitBreakerLoop(ctx)
+		}()
+	}
+
 	b.running.Store(true)
 	b.logger.Info("data brain started", "instruments", len(instIDs))
 	return nil
@@ -383,9 +487,18 @@ func (b *DataBrain) consumeRealtime(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case event := <-b.router.RealtimeCh:
-			b.metrics.WSMessagesTotal.Add(1)
-			if !b.validator.Validate(&event) {
+			// 熔断时跳过数据
+			if b.IsCircuitBroken() {
+				b.circuitHistory.add(true)
 				b.metrics.ValidatorRejected.Add(1)
+				continue
+			}
+			b.metrics.WSMessagesTotal.Add(1)
+			valid := b.validator.Validate(&event)
+			b.circuitHistory.add(!valid)
+			if !valid {
+				b.metrics.ValidatorRejected.Add(1)
+				b.triggerValidationRejected(event, "realtime")
 				continue
 			}
 			b.dispatchEvent(event)
@@ -400,9 +513,18 @@ func (b *DataBrain) consumeNearRT(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case event := <-b.router.NearRTCh:
-			b.metrics.WSMessagesTotal.Add(1)
-			if !b.validator.Validate(&event) {
+			// 熔断时跳过数据
+			if b.IsCircuitBroken() {
+				b.circuitHistory.add(true)
 				b.metrics.ValidatorRejected.Add(1)
+				continue
+			}
+			b.metrics.WSMessagesTotal.Add(1)
+			valid := b.validator.Validate(&event)
+			b.circuitHistory.add(!valid)
+			if !valid {
+				b.metrics.ValidatorRejected.Add(1)
+				b.triggerValidationRejected(event, "near_rt")
 				continue
 			}
 			b.dispatchEvent(event)
@@ -513,6 +635,9 @@ func (b *DataBrain) updateFeatures() {
 		b.metrics.RingBufWriteTotal.Add(1)
 	}
 	b.metrics.FeatureComputeMs.Store(time.Since(start).Milliseconds())
+	nowMs := time.Now().UnixMilli()
+	b.metrics.LastFeatureComputeTS.Store(nowMs)
+	b.metrics.LastRingBufWriteTS.Store(nowMs)
 }
 
 // loadCandlesForFeature 从数据库加载最近 N 条 K 线用于特征计算。
@@ -685,6 +810,146 @@ func (b *DataBrain) Health() map[string]any {
 	}
 }
 
+// IsHealthy 返回数据大脑是否处于健康运行状态。
+// 检查项（按任务要求§9）：
+//  1. Provider 连接状态
+//  2. Ring Buffer 活跃度（最近 healthCheckWindow 秒内是否有数据写入）
+//  3. Feature 引擎状态（最近 healthCheckWindow 秒内是否有计算）
+//  4. 校验器状态（拒绝率 < 10%）
+//  5. PG 写入错误率（< 5%）
+//  6. 活跃品种数 > 0
+func (b *DataBrain) IsHealthy() bool {
+	if !b.running.Load() {
+		return false
+	}
+
+	// 1. Provider 连接状态
+	ph := b.ProviderHealth()
+	if ph == nil || ph.Status != "connected" {
+		return false
+	}
+
+	// 2. Ring Buffer 活跃度 — 最近 30 秒内必须有写入
+	lastRingWrite := b.metrics.LastRingBufWriteTS.Load()
+	if lastRingWrite == 0 {
+		return false // 从未写入
+	}
+	if time.Since(time.UnixMilli(lastRingWrite)) > 30*time.Second {
+		return false // 超过 30 秒无写入
+	}
+
+	// 3. Feature 引擎状态 — 最近 30 秒内必须有计算
+	lastFeatureCompute := b.metrics.LastFeatureComputeTS.Load()
+	if lastFeatureCompute == 0 {
+		return false // 从未计算
+	}
+	if time.Since(time.UnixMilli(lastFeatureCompute)) > 30*time.Second {
+		return false // 超过 30 秒无计算
+	}
+
+	// 4. 校验拒绝率不能过高（< 10%）
+	wsTotal := b.metrics.WSMessagesTotal.Load()
+	rejected := b.metrics.ValidatorRejected.Load()
+	if wsTotal > 100 && float64(rejected)/float64(wsTotal) > 0.10 {
+		return false
+	}
+
+	// 5. PG 写入错误率不能过高（< 5%）
+	pgWrites := b.metrics.PGWriteTotal.Load()
+	pgErrors := b.metrics.PGWriteErrors.Load()
+	if pgWrites > 100 && float64(pgErrors)/float64(pgWrites) > 0.05 {
+		return false
+	}
+
+	// 6. 活跃品种数必须 > 0
+	if b.activeList.Count() == 0 {
+		return false
+	}
+
+	return true
+}
+
+// DataQualityScore 返回 [0,1] 范围的数据质量综合评分。
+// 按文档§9要求，综合以下维度：
+//  1. 校验通过率（权重 30%）— 最近 N 次校验中通过的比例
+//  2. 数据延迟（权重 25%）— 最近数据时间戳与当前时间的差距
+//  3. 数据完整性（权重 25%）— 活跃品种覆盖率 + 时间框架覆盖
+//  4. 异常计数（权重 20%）— 价格跳变/重复等异常的发生率
+func (b *DataBrain) DataQualityScore() float64 {
+	var score float64
+
+	// 1. 校验通过率 (权重 30%)
+	wsTotal := b.metrics.WSMessagesTotal.Load()
+	rejected := b.metrics.ValidatorRejected.Load()
+	if wsTotal > 0 {
+		passRate := 1.0 - float64(rejected)/float64(wsTotal)
+		score += clamp(passRate, 0, 1) * 0.30
+	} else {
+		score += 0.30 // 尚无数据时假设完美
+	}
+
+	// 2. 数据延迟 (权重 25%)
+	lastWrite := b.metrics.LastRingBufWriteTS.Load()
+	if lastWrite > 0 {
+		latency := time.Since(time.UnixMilli(lastWrite))
+		switch {
+		case latency < time.Second:
+			score += 1.0 * 0.25
+		case latency < 5*time.Second:
+			score += (1.0 - 0.2*latency.Seconds()/5.0) * 0.25
+		case latency < 30*time.Second:
+			score += (0.8 - 0.3*(latency.Seconds()-5.0)/25.0) * 0.25
+		case latency < 60*time.Second:
+			score += (0.5 - 0.3*(latency.Seconds()-30.0)/30.0) * 0.25
+		default:
+			score += 0.0 // 延迟 > 60s，延迟分为 0
+		}
+	} else {
+		score += 0.25 // 无数据时假设完美
+	}
+
+	// 3. 数据完整性 (权重 25%)
+	// 基于活跃品种数 / 期望品种数 + 时间框架覆盖
+	activeCount := b.activeList.Count()
+	maxInstruments := b.config.ActiveList.MaxInstruments
+	if maxInstruments > 0 && activeCount > 0 {
+		instrumentCoverage := float64(activeCount) / float64(maxInstruments)
+		// 假设至少覆盖 1 个 instrument 和 5 个 timeframe
+		timeframeCoverage := 1.0 // 实际运行中 1m/5m/15m/1H/4H 都订阅
+		integrity := (instrumentCoverage + timeframeCoverage) / 2.0
+		score += clamp(integrity, 0, 1) * 0.25
+	} else {
+		score += 0.25
+	}
+
+	// 4. 异常发生率 (权重 20%)
+	// 使用校验拒绝率 + PG 错误率作为异常综合指标
+	pgWrites := b.metrics.PGWriteTotal.Load()
+	pgErrors := b.metrics.PGWriteErrors.Load()
+	anomalyRate := 0.0
+	if wsTotal > 0 {
+		anomalyRate += float64(rejected) / float64(wsTotal) * 0.5
+	}
+	if pgWrites > 0 {
+		anomalyRate += float64(pgErrors) / float64(pgWrites+pgErrors) * 0.5
+	}
+	anomalyScore := 1.0 - clamp(anomalyRate, 0, 1)
+	score += anomalyScore * 0.20
+
+	return clamp(score, 0, 1)
+}
+
+// clamp 将 v 限制在 [min, max] 范围内。
+func clamp(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
 // Buffers 返回 BufferManager（供 Quant Brain 使用）。
 func (b *DataBrain) Buffers() *ringbuf.BufferManager {
 	return b.buffers
@@ -732,4 +997,340 @@ func (b *DataBrain) ProviderHealth() *provider.ProviderHealth {
 // Store 返回底层存储（供 sidecar 查询回填进度等）。
 func (b *DataBrain) Store() store.Store {
 	return b.store
+}
+
+// StartReplay 启动历史数据回放模式。
+// 将当前 Provider 替换为 ReplayProvider，从存储中读取历史 K 线并回放。
+func (b *DataBrain) StartReplay(ctx context.Context, instIDs []string, timeframes []string, from, to int64, speed float64) error {
+	b.replayMu.Lock()
+	defer b.replayMu.Unlock()
+
+	if b.replayProvider != nil {
+		return fmt.Errorf("replay already running")
+	}
+	if b.store == nil {
+		return fmt.Errorf("no store available for replay")
+	}
+
+	// 保存原始 provider
+	if b.originalProvider == nil {
+		b.originalProvider = b.provider
+	}
+
+	// 停止原始 provider
+	if b.provider != nil {
+		_ = b.provider.Stop(ctx)
+	}
+
+	// 创建 ReplayProvider
+	rp := provider.NewReplayProvider("replay", provider.ReplayConfig{
+		Store:      b.store,
+		InstIDs:    instIDs,
+		Timeframes: timeframes,
+		From:       from,
+		To:         to,
+		Speed:      speed,
+	})
+
+	// 订阅 router
+	if err := rp.Subscribe(b.router); err != nil {
+		return fmt.Errorf("replay subscribe: %w", err)
+	}
+
+	// 启动回放
+	if err := rp.Start(ctx); err != nil {
+		return fmt.Errorf("replay start: %w", err)
+	}
+
+	b.replayProvider = rp
+	b.provider = rp
+	b.logger.Info("replay started", "instruments", instIDs, "timeframes", timeframes, "speed", speed)
+	return nil
+}
+
+// StopReplay 停止回放模式，恢复原始 Provider。
+func (b *DataBrain) StopReplay(ctx context.Context) error {
+	b.replayMu.Lock()
+	defer b.replayMu.Unlock()
+
+	if b.replayProvider == nil {
+		return fmt.Errorf("replay not running")
+	}
+
+	// 停止回放 provider
+	_ = b.replayProvider.Stop(ctx)
+	b.replayProvider = nil
+
+	// 恢复原始 provider
+	if b.originalProvider != nil {
+		b.provider = b.originalProvider
+		if err := b.provider.Subscribe(b.router); err != nil {
+			return fmt.Errorf("restore provider subscribe: %w", err)
+		}
+		if err := b.provider.Start(ctx); err != nil {
+			return fmt.Errorf("restore provider start: %w", err)
+		}
+		b.logger.Info("replay stopped, original provider restored")
+	} else {
+		b.logger.Info("replay stopped, no original provider to restore")
+	}
+
+	return nil
+}
+
+// IsReplaying 返回是否正在回放模式。
+func (b *DataBrain) IsReplaying() bool {
+	b.replayMu.Lock()
+	defer b.replayMu.Unlock()
+	return b.replayProvider != nil
+}
+
+// ---------------------------------------------------------------------------
+// Circuit Breaker
+// ---------------------------------------------------------------------------
+
+// circuitBreakerLoop 定期检查拒绝率并自动触发/恢复熔断。
+func (b *DataBrain) circuitBreakerLoop(ctx context.Context) {
+	cfg := b.config.CircuitBreaker
+	if cfg.Duration <= 0 {
+		cfg.Duration = 60 * time.Second
+	}
+	if cfg.Cooldown <= 0 {
+		cfg.Cooldown = 30 * time.Second
+	}
+	if cfg.Threshold <= 0 {
+		cfg.Threshold = 0.30
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			b.checkCircuitBreaker(cfg)
+		}
+	}
+}
+
+func (b *DataBrain) checkCircuitBreaker(cfg CircuitBreakerConfig) {
+	b.circuitMu.Lock()
+	defer b.circuitMu.Unlock()
+
+	// 如果已熔断，检查冷却期是否已过
+	if b.circuitBroken.Load() {
+		if b.circuitHalfOpen {
+			// 半开状态：检查最近拒绝率
+			rate := b.circuitHistory.rejectionRate(cfg.Duration)
+			if rate < cfg.Threshold*0.5 {
+				// 恢复
+				b.circuitBroken.Store(false)
+				b.circuitHalfOpen = false
+				b.circuitOpenTS = time.Time{}
+				b.logger.Info("circuit breaker closed (recovered)")
+			} else {
+				// 仍然不健康，重新熔断
+				b.circuitHalfOpen = false
+				b.circuitOpenTS = time.Now()
+				b.logger.Warn("circuit breaker re-opened")
+			}
+		} else if time.Since(b.circuitOpenTS) > cfg.Cooldown {
+			// 冷却期结束，进入半开状态
+			b.circuitHalfOpen = true
+			b.logger.Info("circuit breaker half-open")
+		}
+		return
+	}
+
+	// 未熔断，检查是否需要触发
+	rate := b.circuitHistory.rejectionRate(cfg.Duration)
+	if rate > cfg.Threshold {
+		b.circuitBroken.Store(true)
+		b.circuitOpenTS = time.Now()
+		b.circuitHalfOpen = false
+		b.logger.Warn("circuit breaker opened",
+			"rejection_rate", fmt.Sprintf("%.2f%%", rate*100),
+			"threshold", fmt.Sprintf("%.2f%%", cfg.Threshold*100),
+			"duration", cfg.Duration,
+		)
+	}
+}
+
+// IsCircuitBroken 返回当前熔断器是否处于打开状态。
+func (b *DataBrain) IsCircuitBroken() bool {
+	return b.circuitBroken.Load()
+}
+
+// CircuitBreakerState 返回熔断器详细状态（用于 tool 暴露）。
+func (b *DataBrain) CircuitBreakerState() map[string]any {
+	b.circuitMu.Lock()
+	defer b.circuitMu.Unlock()
+
+	cfg := b.config.CircuitBreaker
+	return map[string]any{
+		"enabled":      cfg.Enabled,
+		"broken":       b.circuitBroken.Load(),
+		"half_open":    b.circuitHalfOpen,
+		"open_since":   b.circuitOpenTS.Format(time.RFC3339),
+		"threshold":    cfg.Threshold,
+		"duration_sec": cfg.Duration.Seconds(),
+		"cooldown_sec": cfg.Cooldown.Seconds(),
+		"current_rate": b.circuitHistory.rejectionRate(cfg.Duration),
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SubEngines
+// ---------------------------------------------------------------------------
+
+// SubEngines 返回所有子引擎的运行状态。
+func (b *DataBrain) SubEngines() []SubEngineInfo {
+	var result []SubEngineInfo
+	now := time.Now()
+
+	// provider
+	ph := b.ProviderHealth()
+	providerStatus := "stopped"
+	if ph != nil {
+		providerStatus = ph.Status
+	}
+	if b.running.Load() && providerStatus != "connected" && providerStatus != "stopped" {
+		providerStatus = "error"
+	}
+	result = append(result, SubEngineInfo{
+		Name:   "provider",
+		Status: providerStatus,
+		Uptime: b.engineUptime("provider", now),
+	})
+
+	// validator
+	validatorStatus := "stopped"
+	if b.running.Load() {
+		validatorStatus = "running"
+	}
+	result = append(result, SubEngineInfo{
+		Name:   "validator",
+		Status: validatorStatus,
+		Uptime: b.engineUptime("validator", now),
+	})
+
+	// feature
+	featureStatus := "stopped"
+	if b.running.Load() && b.config.Feature.Enabled {
+		featureStatus = "running"
+	}
+	lastCompute := b.metrics.LastFeatureComputeTS.Load()
+	if lastCompute > 0 && time.Since(time.UnixMilli(lastCompute)) > 30*time.Second {
+		featureStatus = "error"
+	}
+	result = append(result, SubEngineInfo{
+		Name:   "feature",
+		Status: featureStatus,
+		Uptime: b.engineUptime("feature", now),
+	})
+
+	// ringbuf
+	ringbufStatus := "stopped"
+	if b.running.Load() {
+		ringbufStatus = "running"
+	}
+	lastWrite := b.metrics.LastRingBufWriteTS.Load()
+	if lastWrite > 0 && time.Since(time.UnixMilli(lastWrite)) > 30*time.Second {
+		ringbufStatus = "error"
+	}
+	result = append(result, SubEngineInfo{
+		Name:   "ringbuf",
+		Status: ringbufStatus,
+		Uptime: b.engineUptime("ringbuf", now),
+	})
+
+	// store
+	storeStatus := "not_configured"
+	if b.store != nil {
+		storeStatus = "running"
+		if b.metrics.PGWriteErrors.Load() > 10 && b.metrics.PGWriteTotal.Load() > 0 {
+			if float64(b.metrics.PGWriteErrors.Load())/float64(b.metrics.PGWriteTotal.Load()) > 0.1 {
+				storeStatus = "error"
+			}
+		}
+	}
+	result = append(result, SubEngineInfo{
+		Name:   "store",
+		Status: storeStatus,
+		Uptime: b.engineUptime("store", now),
+	})
+
+	return result
+}
+
+func (b *DataBrain) engineUptime(name string, now time.Time) string {
+	if ts, ok := b.startTimes[name]; ok {
+		return now.Sub(ts).Round(time.Second).String()
+	}
+	return "0s"
+}
+
+// ---------------------------------------------------------------------------
+// Validation Rejected Callback
+// ---------------------------------------------------------------------------
+
+// OnValidationRejected 注册一个当校验失败时触发的回调。
+func (b *DataBrain) OnValidationRejected(callback func(ValidationResult)) {
+	b.valRejectMu.Lock()
+	defer b.valRejectMu.Unlock()
+	b.validationRejectedCallbacks = append(b.validationRejectedCallbacks, callback)
+}
+
+// triggerValidationRejected 触发所有已注册的校验拒绝回调。
+func (b *DataBrain) triggerValidationRejected(event provider.DataEvent, channel string) {
+	b.valRejectMu.RLock()
+	callbacks := make([]func(ValidationResult), len(b.validationRejectedCallbacks))
+	copy(callbacks, b.validationRejectedCallbacks)
+	b.valRejectMu.RUnlock()
+
+	if len(callbacks) == 0 {
+		return
+	}
+
+	reason := "validation_failed"
+	alertType := "unknown"
+	var eventTS int64
+	switch p := event.Payload.(type) {
+	case provider.Candle:
+		alertType = "candle"
+		eventTS = p.Timestamp
+	case []provider.Candle:
+		alertType = "candle_batch"
+		if len(p) > 0 {
+			eventTS = p[len(p)-1].Timestamp
+		}
+	case provider.Trade:
+		alertType = "trade"
+		eventTS = p.Timestamp
+	case []provider.Trade:
+		alertType = "trade_batch"
+		if len(p) > 0 {
+			eventTS = p[len(p)-1].Timestamp
+		}
+	case *provider.OrderBook:
+		alertType = "orderbook"
+		eventTS = p.Timestamp
+	case provider.FundingRate:
+		alertType = "funding_rate"
+		eventTS = p.Timestamp
+	}
+
+	result := ValidationResult{
+		Valid:     false,
+		Reason:    reason,
+		Symbol:    event.Symbol,
+		EventTS:   eventTS,
+		AlertType: alertType,
+	}
+
+	for _, cb := range callbacks {
+		go cb(result)
+	}
 }

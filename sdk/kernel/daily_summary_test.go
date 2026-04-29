@@ -100,6 +100,18 @@ func (s *memLearningStore) SaveHumanDemoSequence(context.Context, *persistence.H
 func (s *memLearningStore) ListHumanDemoSequences(context.Context, bool) ([]*persistence.HumanDemoSequence, error) {
 	return nil, nil
 }
+func (s *memLearningStore) GetHumanDemoSequence(context.Context, int64) (*persistence.HumanDemoSequence, error) {
+	return nil, nil
+}
+func (s *memLearningStore) ApproveHumanDemoSequence(context.Context, int64) error {
+	return nil
+}
+func (s *memLearningStore) DeleteHumanDemoSequence(context.Context, int64) error {
+	return nil
+}
+func (s *memLearningStore) PurgeHumanDemoSequences(context.Context, time.Time) (int64, error) {
+	return 0, nil
+}
 func (s *memLearningStore) SaveSitemapSnapshot(context.Context, *persistence.SitemapSnapshot) error {
 	return nil
 }

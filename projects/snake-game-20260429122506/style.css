@@ -1,0 +1,220 @@
+/* ========================================
+   Snake Game - Dark Theme Styles
+   ======================================== */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', 'Consolas', 'Courier New', monospace;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+/* ── Game Wrapper ────────────────────── */
+.game-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 24px;
+    background: linear-gradient(145deg, #16213e, #0f3460);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ── Title ───────────────────────────── */
+.game-title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #00ff88;
+    text-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+/* ── Score Board ─────────────────────── */
+.score-board {
+    display: flex;
+    gap: 32px;
+    padding: 10px 24px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.score,
+.high-score {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.score-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #888;
+    letter-spacing: 1px;
+}
+
+.score-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #ffd700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Canvas ──────────────────────────── */
+.canvas-container {
+    position: relative;
+}
+
+#gameCanvas {
+    display: block;
+    background-color: #0a0a1a;
+    border: 2px solid #00ff88;
+    border-radius: 4px;
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.15);
+    image-rendering: pixelated;
+}
+
+/* ── Game Over Overlay ───────────────── */
+.game-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 4px;
+    transition: opacity 0.3s ease;
+}
+
+.game-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.overlay-content {
+    text-align: center;
+}
+
+#overlayTitle {
+    font-size: 2.5rem;
+    color: #ff4444;
+    text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+    margin-bottom: 8px;
+}
+
+#overlayScore {
+    font-size: 1.2rem;
+    color: #ffd700;
+}
+
+/* ── Buttons ─────────────────────────── */
+.controls {
+    display: flex;
+    gap: 12px;
+}
+
+.btn {
+    padding: 10px 28px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.btn:active {
+    transform: scale(0.96);
+}
+
+.btn-start {
+    background: linear-gradient(135deg, #00ff88, #00cc66);
+    color: #0a0a1a;
+    box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+}
+
+.btn-start:hover {
+    box-shadow: 0 6px 20px rgba(0, 255, 136, 0.5);
+    transform: translateY(-1px);
+}
+
+.btn-start:disabled {
+    background: #555;
+    color: #999;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-reset {
+    background: linear-gradient(135deg, #ff6b6b, #ee4444);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+}
+
+.btn-reset:hover {
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.5);
+    transform: translateY(-1px);
+}
+
+/* ── Instructions ────────────────────── */
+.instructions {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #666;
+    line-height: 1.6;
+}
+
+.instructions kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    color: #aaa;
+}
+
+/* ── Responsive ──────────────────────── */
+@media (max-width: 480px) {
+    .game-wrapper {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .game-title {
+        font-size: 1.4rem;
+    }
+
+    #gameCanvas {
+        width: 320px;
+        height: 320px;
+    }
+
+    .score-board {
+        gap: 16px;
+        padding: 8px 16px;
+    }
+}

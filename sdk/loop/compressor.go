@@ -166,7 +166,7 @@ func truncateMessageContent(m llm.Message, limit int) llm.Message {
 	newBlocks := make([]llm.ContentBlock, len(m.Content))
 	for i, blk := range m.Content {
 		newBlocks[i] = blk
-		if blk.Type == "text" && len(blk.Text) > limit {
+		if (blk.Type == "text" || blk.Type == "thinking") && len(blk.Text) > limit {
 			newBlocks[i].Text = blk.Text[:limit] + "[...已截断]"
 		}
 	}

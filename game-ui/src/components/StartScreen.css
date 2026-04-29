@@ -1,0 +1,141 @@
+.start-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+  animation: start-fade-in 0.5s ease;
+}
+
+@keyframes start-fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.start-screen__logo {
+  font-size: 4rem;
+  margin-bottom: 8px;
+  animation: logo-bounce 2s ease-in-out infinite;
+}
+
+@keyframes logo-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+.start-screen__title {
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+}
+
+.start-screen__title span {
+  color: var(--color-primary-light);
+}
+
+.start-screen__subtitle {
+  margin-top: 10px;
+  font-size: 1rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+/* --- Difficulty selector --- */
+.start-screen__difficulty {
+  display: flex;
+  gap: 10px;
+  margin-top: 32px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.start-screen__difficulty-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 8px;
+  background: var(--color-surface);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+
+.start-screen__difficulty-btn:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+}
+
+.start-screen__difficulty-btn--active {
+  border-color: var(--color-primary-light);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.start-screen__difficulty-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.start-screen__difficulty-desc {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+/* --- Start button --- */
+.start-screen__start-btn {
+  margin-top: 28px;
+  padding: 16px 60px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  border: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--color-primary), #7c3aed);
+  color: white;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+}
+
+.start-screen__start-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.45);
+}
+
+.start-screen__start-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.start-screen__hint {
+  margin-top: 14px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .start-screen__logo {
+    font-size: 3rem;
+  }
+
+  .start-screen__title {
+    font-size: 1.8rem;
+  }
+
+  .start-screen__difficulty {
+    gap: 6px;
+  }
+
+  .start-screen__difficulty-btn {
+    padding: 10px 6px;
+  }
+
+  .start-screen__start-btn {
+    padding: 14px 44px;
+    font-size: 1.05rem;
+  }
+}

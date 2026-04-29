@@ -2,6 +2,7 @@ package sidecar
 
 import (
 	"context"
+	"encoding/base64"
 	"sync"
 	"time"
 
@@ -9,16 +10,17 @@ import (
 )
 
 // ProgressEvent 是 sidecar→host 的细粒度进度通知。
-// Kind 典型值:tool_start / tool_end / turn / content。
+// Kind 典型值:tool_start / tool_end / turn / content / llm_start / llm_end / llm_delta / tool_call_delta。
 type ProgressEvent struct {
-	Kind     string `json:"kind"`
-	BrainKind string `json:"brain_kind,omitempty"`
-	ToolName string `json:"tool_name,omitempty"`
-	Args     string `json:"args,omitempty"`
-	Detail   string `json:"detail,omitempty"`
-	OK       bool   `json:"ok,omitempty"`
-	Message  string `json:"message,omitempty"`
-	SentAt   int64  `json:"sent_at"`
+	Kind        string `json:"kind"`
+	BrainKind   string `json:"brain_kind,omitempty"`
+	ExecutionID string `json:"execution_id,omitempty"`
+	ToolName    string `json:"tool_name,omitempty"`
+	Args        string `json:"args,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	OK          bool   `json:"ok,omitempty"`
+	Message     string `json:"message,omitempty"`
+	SentAt      int64  `json:"sent_at"`
 }
 
 var (
@@ -51,6 +53,23 @@ func EmitProgress(ctx context.Context, ev ProgressEvent) bool {
 	}
 	ev.SentAt = time.Now().UnixMilli()
 	// best-effort notify:不等 response,失败静默
-	_ = caller.CallKernel(ctx, protocol.MethodBrainProgress, ev, nil)
+	_ = caller.NotifyKernel(ctx, protocol.MethodBrainProgress, ev)
+	return true
+}
+
+// EmitStreamChunk 发送一块流式数据到 host 的 PipeRegistry。
+// 用于 Workflow streaming edge 的跨进程流式传输。
+// failure-tolerant:失败静默，不打断业务。
+func EmitStreamChunk(ctx context.Context, pipeID string, data []byte) bool {
+	progressMu.RLock()
+	caller := progressCaller
+	progressMu.RUnlock()
+	if caller == nil {
+		return false
+	}
+	_ = caller.NotifyKernel(ctx, protocol.MethodBrainStreamWrite, map[string]interface{}{
+		"pipe_id": pipeID,
+		"chunk":   base64.StdEncoding.EncodeToString(data),
+	})
 	return true
 }

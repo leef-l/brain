@@ -48,6 +48,14 @@ const (
 	MethodLLMRequestDirect = "llm.requestDirectAccess"
 )
 
+// LLM streaming delta — host→sidecar direction, fire-and-forget (notification).
+// When a sidecar requests streaming via llm.stream with a stream_id,
+// the host emits each StreamEvent incrementally through this method
+// so the sidecar can consume tokens in real time.
+const (
+	MethodLLMStreamDelta = "llm/stream/delta"
+)
+
 // Tool method — 20-协议规格.md §10.1 (sidecar→host direction).
 const (
 	// MethodToolInvoke is the sidecar→host tool invocation request; the
@@ -122,6 +130,14 @@ const (
 // 丢失不影响业务正确性,用最普通的 RPC notify(无需返回值)。
 const (
 	MethodBrainProgress = "brain/progress"
+)
+
+// Streaming — sidecar→host direction, fire-and-forget (notification).
+// 用于 Workflow streaming edge 的跨进程流式数据传输。
+// sidecar 在 brain/execute 执行过程中,通过 brain/stream/write 将中间输出
+// 实时写入 host 端的 PipeRegistry,供 consumer 节点并行消费。
+const (
+	MethodBrainStreamWrite = "brain/stream/write"
 )
 
 // Observability methods — 20-协议规格.md §10.1 (sidecar→host

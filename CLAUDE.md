@@ -20,6 +20,7 @@ go build ./...
 - 核心架构：`sdk/docs/32-v3-Brain架构.md`
 - 重构计划：`sdk/docs/35-v3重构路径与开发计划.md`
 - 目录结构：`sdk/docs/36-目录结构层次化重构设计.md`
+- 并行工作流：`docs/并行拆分任务工作流.md`（chat / run / serve 三种模式的 DAG 使用指南）
 - 第三方开发：`sdk/docs/29-第三方专精大脑开发.md`（含双模式、L0、签名）
 - 远程调用：`sdk/docs/37-远程专精大脑调用说明.md`（HTTP/WebSocket/BidirRPC）
 - 设计原则：`sdk/docs/钱学森工程控制论-设计原则.md`（反馈闭环、稳定性折衷、不互相影响、时滞、噪声过滤、适应环境、误差控制）
@@ -45,7 +46,10 @@ go build ./...
 - B-7 MCP Runtime：✅ MCPBrainPool 完整
 
 ### Phase C（编排层）✅ 完成
-- C-1 Workflow：✅ materialized + streaming edge 完整（E-8 竞态修复）
+- C-1 Workflow：✅ materialized + streaming edge 完整（E-8 竞态修复）；Orchestrator.ExecuteWorkflow 已接入 chat / run / serve
+  - chat：LLM 自动调用 `central.submit_workflow` + `/workflow` slash 命令
+  - run：`--workflow dag.json` CLI 入口
+  - serve：`POST /v1/workflows` + SSE events
 - C-2 Background Job：✅ daemon/watch/restart 已实现
 - C-3 Manifest 驱动：✅ 替代硬编码注册
 - C-4 Brain CLI：✅ upgrade/rollback 完整实现（E-10）
@@ -105,3 +109,10 @@ cmd/brain/chat/ → cmd/brain/config/, env/, term/, diff/, cliruntime/, provider
 cmd/brain/command/ → cmd/brain/config/, cliruntime/, provider/
 ```
 禁止：chat/ ↔ command/ 互相引用。
+
+### Phase F（架构重构完成）✅ 完成
+- F-1: ✅ ThinBrain 工厂化 — `sdk/shared/thin_brain.go` 统一 4 个瘦大脑启动逻辑，main.go 各 5 行
+- F-2: ✅ 工具注册统一 — `RegisterWithPolicy` 集中处理工具注册 + 策略过滤
+- F-3: ✅ 权限拦截层 — `RunThinBrainMain` 注入许可证校验 + 可选 PreRun hook
+- F-4: ✅ 零重复验证 — 4 个瘦大脑共享同一套 HandleMethod / brain/execute / brain/metrics / brain/learn 逻辑
+- F-5: ✅ 文档对齐 — README 工具列表从 brain.json 权威源派生，CLI 命令全部有实际实现

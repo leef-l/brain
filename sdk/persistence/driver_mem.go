@@ -23,6 +23,10 @@ func (memDriver) Open(dsn string) (*Stores, error) {
 		RunCheckpointStore: checkpoint,
 		UsageLedger:        usage,
 		ResumeCoordinator:  resume,
+		RunStore:           NewMemRunStore(),
+		AuditLogger:        NewMemAuditLogger(),
+		LearningStore:      NewMemLearningStore(),
+		SharedMessageStore: NewMemSharedMessageStore(),
 	}, nil
 }
 

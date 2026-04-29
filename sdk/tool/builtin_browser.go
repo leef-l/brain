@@ -35,6 +35,9 @@ type browserSessionHolder struct {
 	// observerInstalled 表示已经 Exec 过 brainInstallObserverJS,且 URL
 	// 未变化(URL 变化时自然会被 MutationObserver 本身 reset,但本侧也清零)。
 	observerInstalled bool
+
+	// B-6: consecutive text understanding failure tracking.
+	understandFailCount int
 }
 
 func newBrowserSessionHolder() *browserSessionHolder {
@@ -149,6 +152,7 @@ func NewBrowserTools() []Tool {
 	raw := []Tool{
 		&browserOpenTool{holder: holder},
 		&browserNavigateTool{holder: holder},
+		&browserListTabsTool{holder: holder},        // list all open tabs/pages
 		&browserSnapshotTool{holder: holder},        // P0-1 — semantic+interactive snapshot
 		&browserNetworkTool{holder: holder},         // P0-2 — observed request buffer
 		&browserWaitNetworkIdleTool{holder: holder}, // P0-2 — true networkIdle
@@ -384,6 +388,72 @@ func (t *browserNavigateTool) Execute(ctx context.Context, args json.RawMessage)
 		return classifyNavigateError(err, "navigate "+input.Action), nil
 	}
 	return okResult(map[string]string{"status": "ok", "action": input.Action}), nil
+}
+
+// ---------------------------------------------------------------------------
+// 2.5 browser.list_tabs — List all open tabs/pages
+// ---------------------------------------------------------------------------
+
+type browserListTabsTool struct{ holder *browserSessionHolder }
+
+func (t *browserListTabsTool) Name() string { return "browser.list_tabs" }
+func (t *browserListTabsTool) Risk() Risk   { return RiskSafe }
+func (t *browserListTabsTool) Schema() Schema {
+	return Schema{
+		Name:        t.Name(),
+		Description: "List all open browser tabs/pages with their target IDs, titles, and URLs. Use this when you need to see what pages are currently open across all browser windows, or before switching/closing tabs.",
+		InputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {},
+  "required": []
+}`),
+		OutputSchema: json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "tabs": {
+      "type": "array",
+      "description": "All open page targets",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Target ID of the tab" },
+          "type": { "type": "string", "description": "Target type (usually 'page')" },
+          "title": { "type": "string", "description": "Page title" },
+          "url": { "type": "string", "description": "Page URL" }
+        }
+      }
+    },
+    "count": { "type": "integer", "description": "Total number of open tabs" }
+  }
+}`),
+		Brain: "browser",
+		Concurrency: &ToolConcurrencySpec{
+			Capability:          "web.list_tabs",
+			ResourceKeyTemplate: "browser:session",
+			AccessMode:          "read",
+			Scope:               "task",
+			ApprovalClass:       "read-only",
+		},
+	}
+}
+
+func (t *browserListTabsTool) Execute(ctx context.Context, args json.RawMessage) (*Result, error) {
+	sess, ok := t.holder.current()
+	if !ok {
+		return okResult(map[string]interface{}{
+			"tabs":    []interface{}{},
+			"count":   0,
+			"message": "no browser session active — no browser is currently running",
+		}), nil
+	}
+	tabs, err := sess.ListTabs(ctx)
+	if err != nil {
+		return errResult("list tabs: %v", err), nil
+	}
+	return okResult(map[string]interface{}{
+		"tabs":  tabs,
+		"count": len(tabs),
+	}), nil
 }
 
 // ---------------------------------------------------------------------------

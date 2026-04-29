@@ -44,9 +44,7 @@ func NewOpenAIProvider(baseURL, authToken, model string, opts ...OpenAIOption) *
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		authToken: authToken,
 		model:     model,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Minute,
-		},
+		httpClient: newDefaultHTTPClient(),
 	}
 	for _, o := range opts {
 		o(p)
@@ -55,6 +53,12 @@ func NewOpenAIProvider(baseURL, authToken, model string, opts ...OpenAIOption) *
 }
 
 func (p *OpenAIProvider) Name() string { return "openai" }
+
+// isDeepSeek detects whether the endpoint is DeepSeek by baseURL or model name.
+func (p *OpenAIProvider) isDeepSeek() bool {
+	return strings.Contains(strings.ToLower(p.baseURL), "deepseek") ||
+		strings.Contains(strings.ToLower(p.model), "deepseek")
+}
 
 // ---------------------------------------------------------------------------
 // Complete — non-streaming
@@ -138,10 +142,11 @@ type openaiRequest struct {
 }
 
 type openaiMessage struct {
-	Role       string           `json:"role"`
-	Content    interface{}      `json:"content,omitempty"`
-	ToolCalls  []openaiToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Role             string           `json:"role"`
+	Content          interface{}      `json:"content,omitempty"`
+	ReasoningContent *string          `json:"reasoning_content,omitempty"`
+	ToolCalls        []openaiToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
 }
 
 type openaiToolCall struct {
@@ -210,20 +215,10 @@ func (p *OpenAIProvider) buildAPIRequest(req *ChatRequest, stream bool) *openaiR
 		})
 	}
 
-	// ToolChoice
-	if req.ToolChoice != "" {
-		switch req.ToolChoice {
-		case "auto", "none", "required":
-			ar.ToolChoice = req.ToolChoice
-		default:
-			ar.ToolChoice = map[string]interface{}{
-				"type": "function",
-				"function": map[string]string{
-					"name": sanitizeToolName(req.ToolChoice),
-				},
-			}
-		}
-	}
+	// ToolChoice — many OpenAI-compatible APIs (DeepSeek, etc.) do not support
+	// this field and return HTTP 400. The default behavior without tool_choice
+	// is "auto", which is sufficient for the Brain agent loop.
+	_ = req.ToolChoice
 
 	return ar
 }
@@ -232,6 +227,7 @@ func (p *OpenAIProvider) buildAssistantMessage(m Message) openaiMessage {
 	msg := openaiMessage{Role: "assistant"}
 
 	var textParts []string
+	var thinkingParts []string
 	var toolCalls []openaiToolCall
 
 	for _, b := range m.Content {
@@ -239,10 +235,8 @@ func (p *OpenAIProvider) buildAssistantMessage(m Message) openaiMessage {
 		case "text":
 			textParts = append(textParts, b.Text)
 		case "thinking":
-			// OpenAI protocol has no "thinking" role — merge into text so
-			// the reasoning trace is preserved in conversation history.
 			if b.Text != "" {
-				textParts = append(textParts, b.Text)
+				thinkingParts = append(thinkingParts, b.Text)
 			}
 		case "tool_use":
 			args := "{}"
@@ -260,13 +254,26 @@ func (p *OpenAIProvider) buildAssistantMessage(m Message) openaiMessage {
 		}
 	}
 
+	// DeepSeek reasoner API 要求：只要对话中存在 reasoning_content，
+	// 后续请求必须原样在 reasoning_content 字段中传回，否则报 400。
+	// 无论是否同时存在 tool_calls，都必须保留 reasoning_content。
+	hasThinking := len(thinkingParts) > 0
+	if hasThinking {
+		rc := strings.Join(thinkingParts, "\n")
+		msg.ReasoningContent = &rc
+	}
+
 	if len(textParts) > 0 {
 		msg.Content = strings.Join(textParts, "\n")
 	}
 	// OpenAI requires content field for assistant messages — some compatible
 	// APIs reject the request if content is missing entirely.
+	// DeepSeek reasoner API 特有约束: assistant message 包含 reasoning_content
+	// 时，content 必须为 null/省略，不能是空字符串，否则报 400。
 	if msg.Content == nil {
-		msg.Content = ""
+		if !(p.isDeepSeek() && msg.ReasoningContent != nil) {
+			msg.Content = ""
+		}
 	}
 	if len(toolCalls) > 0 {
 		msg.ToolCalls = toolCalls
@@ -486,12 +493,13 @@ func (p *OpenAIProvider) setHeaders(req *http.Request) {
 // ---------------------------------------------------------------------------
 
 type openaiSSEReader struct {
-	body    io.ReadCloser
-	scanner *bufio.Scanner
-	mu      sync.Mutex
-	closed  bool
-	toolUse map[int]*openaiStreamToolUse
-	pending []StreamEvent // queued events to emit on subsequent Next() calls
+	body        io.ReadCloser
+	scanner     *bufio.Scanner
+	mu          sync.Mutex
+	closed      bool
+	toolUse     map[int]*openaiStreamToolUse
+	pending     []StreamEvent // queued events to emit on subsequent Next() calls
+	readTimeout time.Duration
 }
 
 type openaiStreamToolUse struct {
@@ -502,9 +510,10 @@ type openaiStreamToolUse struct {
 
 func newOpenAISSEReader(body io.ReadCloser) *openaiSSEReader {
 	return &openaiSSEReader{
-		body:    body,
-		scanner: bufio.NewScanner(body),
-		toolUse: make(map[int]*openaiStreamToolUse),
+		body:        body,
+		scanner:     bufio.NewScanner(body),
+		toolUse:     make(map[int]*openaiStreamToolUse),
+		readTimeout: 30 * time.Second,
 	}
 }
 
@@ -530,18 +539,17 @@ func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 		default:
 		}
 
-		if !r.scanner.Scan() {
-			if err := r.scanner.Err(); err != nil {
-				return StreamEvent{}, fmt.Errorf("openai: stream scan: %w", err)
+		line, err := r.scanLine()
+		if err != nil {
+			if err == io.EOF {
+				// Flush any pending tool calls
+				if ev, ok := r.flushToolCalls(); ok {
+					return ev, nil // will be followed by EOF on next call
+				}
+				return StreamEvent{}, io.EOF
 			}
-			// Flush any pending tool calls
-			if ev, ok := r.flushToolCalls(); ok {
-				return ev, nil // will be followed by EOF on next call
-			}
-			return StreamEvent{}, io.EOF
+			return StreamEvent{}, fmt.Errorf("openai: stream scan: %w", err)
 		}
-
-		line := r.scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
@@ -633,7 +641,7 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 	if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
 		return StreamEvent{
 			Type: EventContentDelta,
-			Data: marshalRaw(map[string]string{"text": *delta.ReasoningContent}),
+			Data: marshalRaw(map[string]string{"text": *delta.ReasoningContent, "kind": "thinking"}),
 		}, true
 	}
 
@@ -766,6 +774,33 @@ func (r *openaiSSEReader) flushToolCalls() (StreamEvent, bool) {
 		return ev, true
 	}
 	return StreamEvent{}, false
+}
+
+func (r *openaiSSEReader) scanLine() (string, error) {
+	type result struct {
+		line string
+		ok   bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		if r.scanner.Scan() {
+			done <- result{line: r.scanner.Text(), ok: true}
+		} else {
+			done <- result{ok: false}
+		}
+	}()
+	select {
+	case res := <-done:
+		if !res.ok {
+			if err := r.scanner.Err(); err != nil {
+				return "", err
+			}
+			return "", io.EOF
+		}
+		return res.line, nil
+	case <-time.After(r.readTimeout):
+		return "", fmt.Errorf("SSE line read timeout after %v", r.readTimeout)
+	}
 }
 
 func (r *openaiSSEReader) Close() error {

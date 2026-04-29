@@ -1,6 +1,8 @@
 # 35. Context Engine 详细设计
 
 > **⚠️ 实现差异说明（2026-04-24）：** 实际实现在 `sdk/kernel/context_engine.go`（非独立 sdk/contextengine/ 包）。Compress 签名为 `(ctx, messages, budget int)`（多了 budget 参数）。Persist 方法改为 SharedFor/ClearShared。
+>
+> **✅ 实现状态（2026-04-26）：** `Compress` 已实现完整三阶段压缩：① 窗口裁剪 → ② 截断最老消息 → ③ **LLM 摘要（当 `e.Summarizer != nil`）** → 硬截断兜底。`summarizeMessages` 保留最新 2 条消息，其余由 LLM 生成摘要。chat/run/buildOrchestrator 三处均注入带 Summarizer 的 ContextEngine。
 
 > **状态**：v1 · 2026-04-16  
 > **所属阶段**：Phase B-4（见 32-v3-Brain架构.md §6）  

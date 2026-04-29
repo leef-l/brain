@@ -2,36 +2,23 @@
 //
 // Desktop Brain is a specialist brain for OS-level automation outside the
 // browser: opening local files, listing windows, sending keyboard shortcuts.
-//
-// See Task #21 — OS-level automation as an optional standalone brain. Follows
-// the same sidecar pattern as brains/fault for consistency.
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 
-	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/executionpolicy"
-	"github.com/leef-l/brain/sdk/kernel"
-	"github.com/leef-l/brain/sdk/license"
-	"github.com/leef-l/brain/sdk/sidecar"
+	"github.com/leef-l/brain/sdk/shared"
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/toolguard"
 	"github.com/leef-l/brain/sdk/toolpolicy"
 )
 
-type desktopHandler struct {
-	registry tool.Registry
-	caller   sidecar.KernelCaller
-	learner  *kernel.DefaultBrainLearner
-}
+func main() {
+	learner := NewDesktopBrainLearner()
 
-func newDesktopHandler() *desktopHandler {
 	var reg tool.Registry = tool.NewMemRegistry()
 	reg.Register(tool.NewDesktopOpenPathTool())
 	reg.Register(tool.NewDesktopListWindowsTool())
@@ -42,71 +29,6 @@ func newDesktopHandler() *desktopHandler {
 		fmt.Fprintf(os.Stderr, "brain-desktop: load tool policy: %v\n", err)
 	} else {
 		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindDesktop))...)
-	}
-	return &desktopHandler{
-		registry: reg,
-		learner:  kernel.NewDefaultBrainLearner(agent.KindDesktop),
-	}
-}
-
-func (h *desktopHandler) Kind() agent.Kind { return agent.KindDesktop }
-func (h *desktopHandler) Version() string  { return brain.SDKVersion }
-func (h *desktopHandler) Tools() []string  { return sidecar.RegistryToolNames(h.registry) }
-func (h *desktopHandler) ToolSchemas() []tool.Schema {
-	return sidecar.RegistryToolSchemas(h.registry)
-}
-
-func (h *desktopHandler) SetKernelCaller(caller sidecar.KernelCaller) {
-	h.caller = caller
-	sidecar.SetProgressContext(caller, string(h.Kind()))
-}
-
-func (h *desktopHandler) HandleMethod(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
-	switch method {
-	case "tools/call":
-		return h.handleToolsCall(ctx, params)
-	case "brain/execute":
-		return h.handleExecute(ctx, params)
-	case "brain/metrics":
-		return h.learner.ExportMetrics(), nil
-	case "brain/learn":
-		return nil, h.handleLearn(ctx, params)
-	default:
-		return nil, sidecar.ErrMethodNotFound
-	}
-}
-
-func (h *desktopHandler) handleLearn(ctx context.Context, params json.RawMessage) error {
-	var req struct {
-		TaskType string  `json:"task_type"`
-		Success  bool    `json:"success"`
-		Duration float64 `json:"duration"`
-	}
-	if err := json.Unmarshal(params, &req); err != nil {
-		return err
-	}
-	return h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
-		TaskType: req.TaskType,
-		Success:  req.Success,
-		Duration: time.Duration(req.Duration * float64(time.Second)),
-	})
-}
-
-func (h *desktopHandler) handleExecute(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	var req sidecar.ExecuteRequest
-	if err := json.Unmarshal(params, &req); err != nil {
-		return &sidecar.ExecuteResult{
-			Status: "failed",
-			Error:  fmt.Sprintf("parse request: %v", err),
-		}, nil
-	}
-
-	if h.caller == nil {
-		return &sidecar.ExecuteResult{
-			Status:  "completed",
-			Summary: "desktop brain ready (no LLM proxy available)",
-			Turns:   0,
-		}, nil
 	}
 
 	systemPrompt := `You are a specialist Desktop Brain for OS-level automation that happens
@@ -133,37 +55,14 @@ WORKFLOW:
 3. Execute the single action (open / hotkey)
 4. Report what was done and any observable effect`
 
-	budget := req.Budget
-	if budget == nil {
-		budget = &sidecar.ExecuteBudget{MaxTurns: 6}
-	} else if budget.MaxTurns <= 0 {
-		budget.MaxTurns = 6
-	}
+	tb := shared.NewThinBrain(agent.KindDesktop, reg, systemPrompt, 6).
+		WithLearner(learner).
+		WithRegistryBuilder(buildRegistry)
 
-	registry, err := h.buildRegistry(req.Execution)
-	if err != nil {
-		return &sidecar.ExecuteResult{
-			Status: "failed",
-			Error:  err.Error(),
-		}, nil
-	}
-
-	start := time.Now()
-	result := sidecar.RunAgentLoopFull(ctx, h.caller, registry, systemPrompt, req.Instruction, budget, req.Context)
-	h.learner.RecordOutcome(ctx, kernel.TaskOutcome{
-		TaskType:  "desktop.execute",
-		Success:   result.Status == "completed",
-		Duration:  time.Since(start),
-		ToolCalls: result.Turns,
-	})
-	return result, nil
+	shared.MustRun(tb)
 }
 
-func (h *desktopHandler) handleToolsCall(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	return sidecar.DispatchToolCall(ctx, params, h.registry, h.buildRegistry)
-}
-
-func (h *desktopHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (tool.Registry, error) {
+func buildRegistry(spec *executionpolicy.ExecutionSpec) (tool.Registry, error) {
 	bounds, err := toolguard.NewBoundaries(spec)
 	if err != nil {
 		return nil, err
@@ -174,42 +73,5 @@ func (h *desktopHandler) buildRegistry(spec *executionpolicy.ExecutionSpec) (too
 	reg.Register(tool.NewDesktopListWindowsTool())
 	reg.Register(tool.NewDesktopSendHotkeyTool())
 	reg.Register(tool.NewNoteTool("desktop"))
-
-	if cfg, err := toolpolicy.Load(""); err != nil {
-		fmt.Fprintf(os.Stderr, "brain-desktop: load tool policy: %v\n", err)
-	} else {
-		reg = toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForDelegate(string(agent.KindDesktop))...)
-	}
 	return reg, nil
-}
-
-func main() {
-	listen := ""
-	for i, arg := range os.Args[1:] {
-		if arg == "--listen" && i+1 < len(os.Args[1:]) {
-			listen = os.Args[i+2]
-		}
-	}
-
-	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "brain-desktop: license config: %v\n", err)
-		os.Exit(1)
-	}
-	if _, err := license.CheckSidecar("brain-desktop", verifyOpts); err != nil {
-		fmt.Fprintf(os.Stderr, "brain-desktop: license: %v\n", err)
-		os.Exit(1)
-	}
-
-	handler := newDesktopHandler()
-	var runErr error
-	if listen != "" {
-		runErr = sidecar.ListenAndServe(listen, handler)
-	} else {
-		runErr = sidecar.Run(handler)
-	}
-	if runErr != nil {
-		fmt.Fprintf(os.Stderr, "brain-desktop: %v\n", runErr)
-		os.Exit(1)
-	}
 }

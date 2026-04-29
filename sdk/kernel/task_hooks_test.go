@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -67,12 +68,16 @@ func TestHookRunnerDispatchesMatchingEvents(t *testing.T) {
 	tmp := t.TempDir()
 	marker := filepath.Join(tmp, "ran.txt")
 
+	hookCmd := "echo ok-$EXECUTION_ID > " + marker
+	if runtime.GOOS == "windows" {
+		hookCmd = `echo ok-%EXECUTION_ID% > ` + marker
+	}
 	cfg := &HookConfig{
 		Hooks: []HookSpec{
 			{
 				On:        "task.state.completed",
 				Brain:     "browser",
-				Command:   "echo ok-$EXECUTION_ID > " + marker,
+				Command:   hookCmd,
 				TimeoutMS: 5000,
 			},
 		},

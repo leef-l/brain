@@ -11,6 +11,8 @@ package kernel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -37,6 +39,9 @@ type AssembleRequest struct {
 	// TokenBudget 是本次 Assemble 允许使用的最大 token 数。
 	// 0 表示不限制。
 	TokenBudget int
+	// ProjectID 关联项目级记忆。非空时，ContextEngine 会自动加载该项目的
+	// 历史对话并前置到当前消息列表中，实现跨 Run 的上下文继承。
+	ProjectID string
 }
 
 // ContextEngine 是上下文装配层的主接口。
@@ -81,6 +86,10 @@ type DefaultContextEngine struct {
 
 	// SharedStore 是可选的持久化后端，用于保存 Share() 的跨脑消息。
 	SharedStore persistence.SharedMessageStore
+
+	// ProjectStore 是可选的项目级记忆存储。非 nil 时，Assemble() 会根据
+	// AssembleRequest.ProjectID 自动加载项目历史对话，实现跨 Run 上下文继承。
+	ProjectStore persistence.ProjectStore
 
 	// MaxShareMessages 是 Share() 传递的最大消息条数。零值回退为默认 30。
 	MaxShareMessages int
@@ -157,25 +166,37 @@ func isSystemMessage(m llm.Message) bool {
 
 // Assemble 根据请求装配消息。
 // 当 token 数超过预算时自动压缩。
+// 如果 ProjectID 非空且 ProjectStore 已配置，会自动加载项目历史对话并
+// 前置到当前消息列表中，实现跨 Run 的上下文继承。
 func (e *DefaultContextEngine) Assemble(ctx context.Context, req AssembleRequest) ([]llm.Message, error) {
-	if len(req.Messages) == 0 {
+	messages := req.Messages
+
+	// ─── Project Memory Loading ────────────────────────────────────────────
+	if req.ProjectID != "" && e.ProjectStore != nil {
+		history, err := e.ProjectStore.LoadMessages(ctx, req.ProjectID, 20)
+		if err == nil && len(history) > 0 {
+			messages = append(history, messages...)
+		}
+	}
+
+	if len(messages) == 0 {
 		return nil, nil
 	}
 
 	// 无预算限制，原样返回
 	if req.TokenBudget <= 0 {
-		return req.Messages, nil
+		return messages, nil
 	}
 
 	// 估算当前 token 数
-	tokens := estimateTokens(req.Messages)
+	tokens := estimateTokens(messages)
 	if tokens <= req.TokenBudget {
 		// 未超限，原样返回
-		return req.Messages, nil
+		return messages, nil
 	}
 
 	// 超限，调用压缩
-	return e.Compress(ctx, req.Messages, req.TokenBudget)
+	return e.Compress(ctx, messages, req.TokenBudget)
 }
 
 // Compress 执行三层压缩策略。
@@ -296,7 +317,7 @@ func truncateMessageContent(m llm.Message, limit int) llm.Message {
 	newBlocks := make([]llm.ContentBlock, len(m.Content))
 	for i, blk := range m.Content {
 		newBlocks[i] = blk
-		if blk.Type == "text" && len(blk.Text) > limit {
+		if (blk.Type == "text" || blk.Type == "thinking") && len(blk.Text) > limit {
 			newBlocks[i].Text = blk.Text[:limit] + "[...已截断]"
 		}
 	}
@@ -462,6 +483,11 @@ func (e *DefaultContextEngine) Share(ctx context.Context, from, to agent.Kind, m
 	// 异步持久化
 	if e.SharedStore != nil && len(filtered) > 0 {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "contextEngine: persist panic: %v\n", r)
+				}
+			}()
 			data, err := json.Marshal(filtered)
 			if err != nil {
 				return
