@@ -1,6 +1,8 @@
 # Brain
 
-Brain 是一个多大脑协作的 AI Agent 系统。内置中央大脑 + 6 个专精大脑（代码/浏览器/数据/量化/验证/故障），通过统一的 BrainKernel 运行时协调，支持 CLI 交互、HTTP API、sidecar 架构和第三方大脑扩展。
+Brain 是一个多大脑协作的 AI Agent 系统。内置中央大脑 + 8 个专精大脑（代码/浏览器/验证/故障/数据/量化/桌面/EasyMVP），通过统一的 BrainKernel 运行时协调，支持 CLI 交互、HTTP API、sidecar 架构和第三方大脑扩展。
+
+> **🆕 MACCS v2.0**: 当前项目已升级到 Multi-Agent Cognitive Collaboration System 架构。详见 [`docs/MACCS-文档索引.md`](docs/MACCS-文档索引.md)。
 
 ## 快速开始
 
