@@ -72,11 +72,36 @@ func (r *chatPlanRegistry) ensurePlanOrch(state *State) bool {
 		learner = state.Orchestrator.Learner()
 	}
 
+	// 复用 Orchestrator 中已生效的 ContextEngine（如果有）。chat 模式下
+	// 通常 state.Orchestrator 在 cliruntime 路径会带一个 ctxEngine；solo 模式
+	// 没有也无妨，下面会构造一个最朴素的 DefaultContextEngine 兜底。
+	var baseCtxEngine *kernel.DefaultContextEngine
+	if state.Orchestrator != nil {
+		if def, ok := state.Orchestrator.ContextEngine().(*kernel.DefaultContextEngine); ok {
+			baseCtxEngine = def
+		}
+	}
+	if baseCtxEngine == nil {
+		baseCtxEngine = kernel.NewDefaultContextEngine()
+	}
+	ctxWithMem := kernel.NewContextEngineWithMemory(baseCtxEngine, r.memory)
+
+	// MemoryRetriever 多因子排序检索器；ModelRouter 静态策略 + 学习器。
+	retriever := kernel.NewMemoryRetriever()
+	router := kernel.NewModelRouter(kernel.StrategyStatic)
+	if learner != nil {
+		router.SetLearner(learner)
+	}
+
 	r.planOrch = kernel.NewPlanOrchestrator(state.Orchestrator, kernel.PlanOrchestratorConfig{
-		Memory:        r.memory,
-		Learner:       learner,
-		TotalBudget:   200,
-		ProgressStore: r.progStore,
+		Memory:              r.memory,
+		Learner:             learner,
+		TotalBudget:         200,
+		ProgressStore:       r.progStore,
+		ModelRouter:         router,
+		ContextEngine:       ctxWithMem,
+		MemoryRetriever:     retriever,
+		MemoryRetrieveLimit: 5,
 	})
 	return true
 }

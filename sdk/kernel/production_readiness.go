@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/events"
 )
 
@@ -292,12 +293,18 @@ const memThresholdBytes = 64 << 20 // 64 MiB
 // readinessTimeout 每项检查的超时时间。
 const readinessTimeout = 3 * time.Second
 
+// BrainPoolProvider 可被外部包（如 cmd/brain）注入的 BrainPool 导出接口。
+// *ProcessBrainPool 已实现该接口（AvailableKinds 方法）。
+type BrainPoolProvider interface {
+	AvailableKinds() []agent.Kind
+}
+
 // ReadinessCheckerConfig 允许调用方注入可选依赖。
 // 所有字段均可为 nil，nil 时对应检查会降级或标记 Warning（非必需项）。
 type ReadinessCheckerConfig struct {
 	// BrainPool 注入真实 BrainPool 供 brain 数量检查使用。
-	// 实现需暴露 AvailableKinds() []agent.Kind，因此使用 brainPoolCatalog 接口。
-	BrainPool brainPoolCatalog
+	// 实现需暴露 AvailableKinds() []agent.Kind。
+	BrainPool BrainPoolProvider
 
 	// EventBus 注入真实事件总线供 health-check 事件发布测试。
 	EventBus events.EventBus

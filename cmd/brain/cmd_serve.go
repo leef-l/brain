@@ -339,6 +339,7 @@ type runManager struct {
 	scheduler    kernel.TaskScheduler      // 任务级调度引擎（B-2）
 	remotePool   *kernel.RemoteBrainPool   // 远程 brain 连接池（D-3，可为 nil）
 	interrupter  kernel.InterruptChecker   // 中断信号收发（POST /v1/runs/{id}/interrupt）
+	chaos        *kernel.ChaosEngine       // 混沌注入引擎（POST /v1/chaos/experiments，默认 nil）
 	observer     kernel.StateObserver       // 系统状态观测器（钱学森 Phase A，可选）
 	controller   kernel.FeedbackController  // 反馈控制器（钱学森 Phase B，可选）
 	stabilizer   kernel.SelfStabilizer      // 自稳定器（钱学森 Phase C，可选）
@@ -793,6 +794,9 @@ func runServe(args []string) int {
 		}
 	}
 
+	// 混沌引擎：默认创建但 disabled，只有 POST /v1/chaos/experiments 触发后才 Enable。
+	chaosEngine := kernel.NewChaosEngine()
+
 	mgr := &runManager{
 		store:        runtime.RunStore,
 		pool:         pool,
@@ -806,6 +810,7 @@ func runServe(args []string) int {
 		scheduler:    scheduler,
 		remotePool:   remotePool,
 		interrupter:  kernel.NewMemInterruptChecker(),
+		chaos:        chaosEngine,
 		rootCtx:      serveCtx,
 		startTime:    time.Now(),
 	}
@@ -847,12 +852,67 @@ func runServe(args []string) int {
 	humanCoord := newHostHumanTakeoverCoordinator(mgr, globalEventBus)
 	tool.SetHumanTakeoverCoordinator(humanCoord)
 
+	// ── 生产就绪检查（ReadinessChecker） ──────────────────────────────────────
+	// 在 mux 注册路由前执行，确保核心依赖（磁盘/内存/DB/BrainPool/EventBus/安全）
+	// 全部通过后再对外提供服务。
+	// 环境变量 BRAIN_STRICT_READINESS=true/1 时，若有 required 项未通过则拒绝启动；
+	// 默认仅打印警告并继续（适合开发/降级场景）。
+	readinessCfg := &kernel.ReadinessCheckerConfig{
+		BrainPool: pool,
+		EventBus:  globalEventBus,
+		DBPath:    "", // 自动从 BRAIN_DB_PATH 或 ~/.brain/brain.db 解析
+	}
+	readinessChecker := kernel.NewReadinessCheckerWithConfig(readinessCfg)
+	{
+		report := readinessChecker.RunAll(serveCtx)
+		if !report.Ready {
+			for _, item := range report.Results {
+				if !item.Passed {
+					// 找到对应 check 判断是否 required
+					for _, chk := range readinessChecker.ListChecks() {
+						if chk.CheckID == item.CheckID && chk.Required {
+							fmt.Fprintf(os.Stderr, "[readiness] FAIL %s (%s): %s\n",
+								item.CheckID, chk.Category, item.Message)
+							break
+						}
+					}
+				}
+			}
+			if strict := os.Getenv("BRAIN_STRICT_READINESS"); strict == "true" || strict == "1" {
+				fmt.Fprintf(os.Stderr, "[readiness] aborting: %d required item(s) failed (BRAIN_STRICT_READINESS=true)\n",
+					report.RequiredFailed)
+				return 1
+			}
+			fmt.Fprintf(os.Stderr, "[readiness] %d required item(s) failed (continuing — set BRAIN_STRICT_READINESS=true to enforce)\n",
+				report.RequiredFailed)
+		} else {
+			fmt.Fprintf(os.Stderr, "[readiness] OK — all %d item(s) passed\n", report.TotalChecks)
+		}
+	}
+
 	mux := http.NewServeMux()
 
 	// GET /health
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// GET /v1/readiness — 生产就绪报告，运维随时可查。
+	// 200 = 全部就绪，503 = 有 required 项未通过。
+	mux.HandleFunc("/v1/readiness", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		report := readinessChecker.RunAll(r.Context())
+		w.Header().Set("Content-Type", "application/json")
+		if !report.Ready {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		json.NewEncoder(w).Encode(report)
 	})
 
 	// GET /v1/version
@@ -1092,11 +1152,38 @@ func runServe(args []string) int {
 	// v3 Plan 路由族 — /v1/plans
 	// PlanOrchestrator 接入主线：Requirement → Design → TaskPlan → ExecuteProject
 	// ---------------------------------------------------------------
-	plans := newPlanService(startupOrch, learner, serveCtx)
+	plans := newPlanService(startupOrch, learner, mgr.ctxEngine, serveCtx)
 	if plans != nil {
 		mux.HandleFunc("/v1/plans", plans.handleCreatePlan)
 		mux.HandleFunc("/v1/plans/", plans.handleGetPlan)
 	}
+
+	// v3 Project 路由族 — /v1/projects（MACCS Wave 3 Batch 3）
+	// ClosedLoopController 接入主线：完整七阶段闭环（Requirement → Design →
+	// Review → Execution → Acceptance → Delivery → Retrospective）
+	// 与 /v1/plans 并列存在，互不替代：plans 走 PlanOrchestrator 轻量路径，
+	// projects 走 ClosedLoopController + ProjectSession + ProjectStateMachine 完整闭环。
+	// ---------------------------------------------------------------
+	projects := newProjectService(startupOrch, learner, serveCtx)
+	if projects != nil {
+		mux.HandleFunc("/v1/projects", projects.handleCreateProject)
+		mux.HandleFunc("/v1/projects/", projects.handleGetProject)
+	}
+
+	// ── 混沌注入路由 (/v1/chaos/*) ─────────────────────────────────────────────
+	// POST   /v1/chaos/experiments      — 创建并启动混沌实验
+	// DELETE /v1/chaos/experiments/{id} — 提前终止指定实验
+	// GET    /v1/chaos/history          — 查看所有注入/移除历史
+	mux.HandleFunc("/v1/chaos/experiments", func(w http.ResponseWriter, r *http.Request) {
+		handleChaosCreate(w, r, mgr.chaos)
+	})
+	mux.HandleFunc("/v1/chaos/experiments/", func(w http.ResponseWriter, r *http.Request) {
+		expID := strings.TrimPrefix(r.URL.Path, "/v1/chaos/experiments/")
+		handleChaosStop(w, r, mgr.chaos, expID)
+	})
+	mux.HandleFunc("/v1/chaos/history", func(w http.ResponseWriter, r *http.Request) {
+		handleChaosHistory(w, r, mgr.chaos)
+	})
 
 	// Dashboard API 路由
 	serverStart := time.Now().UTC()
@@ -1428,6 +1515,7 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			kernel.WithContextEngine(mgr.ctxEngine),
 			kernel.WithLeaseManager(mgr.leaseManager),
 			kernel.WithMCPBrainPool(mgr.mcpPool),
+			kernel.WithChaosEngine(mgr.chaos),
 		)
 		installHumanTakeoverBridge(orch)
 	}
@@ -1828,6 +1916,7 @@ func handleCreateWorkflow(w http.ResponseWriter, r *http.Request, mgr *runManage
 			kernel.WithContextEngine(mgr.ctxEngine),
 			kernel.WithLeaseManager(mgr.leaseManager),
 			kernel.WithMCPBrainPool(mgr.mcpPool),
+			kernel.WithChaosEngine(mgr.chaos),
 		)
 	}
 

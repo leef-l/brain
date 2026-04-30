@@ -560,3 +560,67 @@ func (p *PanicInjector) IsActive(experimentID string) bool {
 	_, ok := p.active[experimentID]
 	return ok
 }
+
+// ---------------------------------------------------------------------------
+// ChaosEngine 拦截路径访问器 — 供 Orchestrator / HTTP middleware 调用
+// ---------------------------------------------------------------------------
+
+// IsEnabled nil 安全地返回混沌引擎是否已启用。
+func (ce *ChaosEngine) IsEnabled() bool {
+	if ce == nil {
+		return false
+	}
+	ce.mu.RLock()
+	defer ce.mu.RUnlock()
+	return ce.enabled
+}
+
+// GetActiveDelayInjector 扫描当前活跃实验，返回首个注入了 network_delay 类型
+// 且处于活跃状态的 DelayInjector；若无则返回 nil。O(n) 但 n 通常极小（≤5）。
+func (ce *ChaosEngine) GetActiveDelayInjector() (*DelayInjector, string) {
+	if ce == nil {
+		return nil, ""
+	}
+	ce.mu.RLock()
+	injector, hasInj := ce.injectors[FaultNetworkDelay]
+	exps := make([]*ChaosExperiment, 0, len(ce.experiments))
+	for _, e := range ce.experiments {
+		if e.Active && e.FaultType == FaultNetworkDelay {
+			exps = append(exps, e)
+		}
+	}
+	ce.mu.RUnlock()
+	if !hasInj || len(exps) == 0 {
+		return nil, ""
+	}
+	d, ok := injector.(*DelayInjector)
+	if !ok {
+		return nil, ""
+	}
+	return d, exps[0].ExperimentID
+}
+
+// GetActiveErrorInjector 扫描当前活跃实验，返回首个注入了 llm_error 类型
+// 且处于活跃状态的 ErrorInjector；若无则返回 nil。
+func (ce *ChaosEngine) GetActiveErrorInjector() (*ErrorInjector, string) {
+	if ce == nil {
+		return nil, ""
+	}
+	ce.mu.RLock()
+	injector, hasInj := ce.injectors[FaultLLMError]
+	exps := make([]*ChaosExperiment, 0, len(ce.experiments))
+	for _, e := range ce.experiments {
+		if e.Active && e.FaultType == FaultLLMError {
+			exps = append(exps, e)
+		}
+	}
+	ce.mu.RUnlock()
+	if !hasInj || len(exps) == 0 {
+		return nil, ""
+	}
+	ei, ok := injector.(*ErrorInjector)
+	if !ok {
+		return nil, ""
+	}
+	return ei, exps[0].ExperimentID
+}

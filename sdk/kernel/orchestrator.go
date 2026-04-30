@@ -139,12 +139,40 @@ type Orchestrator struct {
 	streamPipes *flow.PipeRegistry
 	streamMu    sync.Mutex
 
+	// progressHandler 处理 sidecar 上报的 progress/report 请求，以及
+	// host 内部的 progress/query 请求。由上层（PlanOrchestrator）通过
+	// SetProgressHandler 注入；nil 时返回 {"status":"ignored"}。
+	progressHandler *ProgressHandler
+
+	// chaos 是可选的混沌注入引擎。当非 nil 且 enabled=true 时，
+	// delegateOnce 在 RPC 调用前注入延迟 / 错误，验证系统弹性。
+	// nil 时所有混沌路径均为零开销 no-op。
+	chaos *ChaosEngine
+
 	mu sync.Mutex
 }
 
 // Learner returns the attached LearningEngine, or nil if none was configured.
 func (o *Orchestrator) Learner() *LearningEngine {
 	return o.learner
+}
+
+// LLMProxy 返回内部 LLM 代理实例，便于上层（如 PlanOrchestrator + ModelRouter）
+// 在运行时动态写入 ModelForKind 映射。可能返回 nil（极少数测试构造路径）。
+func (o *Orchestrator) LLMProxy() *LLMProxy {
+	return o.llmProxy
+}
+
+// ContextEngine 返回当前生效的上下文装配引擎。可能为 nil。
+func (o *Orchestrator) ContextEngine() ContextEngine {
+	return o.contextEngine
+}
+
+// SetContextEngine 在运行时替换上下文装配引擎。
+// PlanOrchestrator 在构造时会用 ContextEngineWithMemory 包装现有 engine
+// 后回写，实现"项目记忆自动注入下游 brain prompt"的接入。
+func (o *Orchestrator) SetContextEngine(ce ContextEngine) {
+	o.contextEngine = ce
 }
 
 // RegisterMCPTools discovers and registers all MCP brain tools into the given
@@ -258,6 +286,30 @@ func WithMCPBrainPool(pool *mcpadapter.MCPBrainPool) OrchestratorOption {
 	return func(o *Orchestrator) {
 		o.mcpBrainPool = pool
 	}
+}
+
+// WithChaosEngine 设置可选的混沌注入引擎。
+// 当设置后，delegateOnce 在 RPC 调用前会检查是否有活跃的延迟/错误注入，
+// 若有则真实阻塞或返回 error，用于验证系统弹性。
+// 生产环境默认 disabled，只有显式调用 ChaosEngine.Enable() 后才生效。
+func WithChaosEngine(c *ChaosEngine) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.chaos = c
+	}
+}
+
+// SetChaosEngine 动态替换混沌引擎（线程安全）。
+func (o *Orchestrator) SetChaosEngine(c *ChaosEngine) {
+	o.mu.Lock()
+	o.chaos = c
+	o.mu.Unlock()
+}
+
+// Chaos 返回当前挂载的混沌引擎，若未设置则返回 nil。
+func (o *Orchestrator) Chaos() *ChaosEngine {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.chaos
 }
 
 // NewOrchestratorWithPool 创建一个使用外部 BrainPool 的 Orchestrator。
@@ -789,6 +841,33 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*Del
 
 // delegateOnce performs a single delegation attempt.
 func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, start time.Time) (*DelegateResult, error) {
+	// ── 混沌注入拦截点 ─────────────────────────────────────────────────────────
+	// O(1) 守卫：chaos==nil 或 !IsEnabled() 时立即跳过，零额外开销。
+	// 只有显式 Enable() 后才真正执行延迟/错误注入。
+	if o.chaos.IsEnabled() {
+		if delay, expID := o.chaos.GetActiveDelayInjector(); delay != nil {
+			if err := delay.ApplyDelay(ctx, expID); err != nil {
+				return &DelegateResult{
+					TaskID: req.TaskID,
+					Status: "failed",
+					Error:  fmt.Sprintf("chaos delay: %v", err),
+					Usage:  SubtaskUsage{Duration: time.Since(start)},
+				}, err
+			}
+		}
+		if errInj, expID := o.chaos.GetActiveErrorInjector(); errInj != nil {
+			if err := errInj.MaybeFail(expID); err != nil {
+				return &DelegateResult{
+					TaskID: req.TaskID,
+					Status: "failed",
+					Error:  fmt.Sprintf("chaos error: %v", err),
+					Usage:  SubtaskUsage{Duration: time.Since(start)},
+				}, err
+			}
+		}
+	}
+	// ── 混沌注入拦截点结束 ────────────────────────────────────────────────────
+
 	// Get or start sidecar.
 	ag, err := o.getOrStartSidecar(ctx, req.TargetKind)
 	if err != nil {
@@ -1214,6 +1293,25 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 		}
 		return map[string]string{"ok": "1"}, nil
 	})
+
+	// sidecar → host 进度汇报：sidecar 在任务执行过程中通过此方法
+	// 上报阶段进度，host 写入 ProjectProgress。
+	registerHandlerIfMissing(protocol.MethodProgressReport, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		h := o.progressHandler
+		if h == nil {
+			return map[string]string{"status": "ignored"}, nil
+		}
+		return h.HandleReport(ctx, params)
+	})
+
+	// host 内部进度查询：允许 sidecar 或 host 侧通过 RPC 查询当前进度快照。
+	registerHandlerIfMissing(protocol.MethodProgressQuery, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		h := o.progressHandler
+		if h == nil {
+			return map[string]string{"status": "ignored"}, nil
+		}
+		return h.HandleQuery(ctx, params)
+	})
 }
 
 // BrainProgressHandler 由 cmd/brain 层注入,收到 sidecar 反向 RPC 的
@@ -1225,6 +1323,14 @@ func (o *Orchestrator) SetBrainProgressHandler(h BrainProgressHandler) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.brainProgressHandler = h
+}
+
+// SetProgressHandler 注入 ProgressHandler，使 progress/report 和 progress/query
+// 路由生效。通常由 PlanOrchestrator 在创建 ProjectProgress 后调用。
+func (o *Orchestrator) SetProgressHandler(h *ProgressHandler) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.progressHandler = h
 }
 
 // HumanTakeoverHandler 由上层(cmd/brain)实现,收到 sidecar 反向 RPC 后

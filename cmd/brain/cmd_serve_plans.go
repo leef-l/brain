@@ -50,18 +50,43 @@ type planService struct {
 //
 // 任意参数为 nil 时返回 nil，调用方需做空指针检查。注入的 baseOrch 即 startupOrch，
 // PlanOrchestrator 内部会调用 baseOrch.ExecuteTaskPlan 真实跑任务。
-func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, serveCtx context.Context) *planService {
+//
+// baseCtxEngine 是 cmd_serve.go 中已构造的 *DefaultContextEngine（带 LLM
+// Summarizer 与 SharedStore），在这里被 ContextEngineWithMemory 包装一层后
+// 通过 PlanOrchestratorConfig.ContextEngine 注入，进而被 Orchestrator 替换为
+// 全局 contextEngine —— 这是把"项目记忆自动注入下游 brain prompt"接入主线的关键。
+func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, baseCtxEngine kernel.ContextEngine, serveCtx context.Context) *planService {
 	if baseOrch == nil {
 		return nil
 	}
 	memory := kernel.NewMemProjectMemory()
 	progStore := kernel.NewMemoryProgressStore()
+	retriever := kernel.NewMemoryRetriever()
+
+	// ModelRouter：默认 static 策略，未来可由配置切换。NewPlanOrchestrator 会
+	// 调用 SyncToLLMProxy，并在 ExecuteProject 入口对每个 SubTask 调 Resolve。
+	router := kernel.NewModelRouter(kernel.StrategyStatic)
+	if learner != nil {
+		router.SetLearner(learner)
+	}
+
+	// 把已存在的 DefaultContextEngine 包装为带项目记忆注入的版本。
+	// 当 baseCtxEngine 不是 *DefaultContextEngine（极少情况）时，ContextEngineWithMemory
+	// 退化为 nil 包装路径会失败，这里做一次类型守卫。
+	var ctxWithMem kernel.ContextEngine
+	if def, ok := baseCtxEngine.(*kernel.DefaultContextEngine); ok && def != nil {
+		ctxWithMem = kernel.NewContextEngineWithMemory(def, memory)
+	}
 
 	po := kernel.NewPlanOrchestrator(baseOrch, kernel.PlanOrchestratorConfig{
-		Memory:        memory,
-		Learner:       learner,
-		TotalBudget:   200,
-		ProgressStore: progStore,
+		Memory:              memory,
+		Learner:             learner,
+		TotalBudget:         200,
+		ProgressStore:       progStore,
+		ModelRouter:         router,
+		ContextEngine:       ctxWithMem,
+		MemoryRetriever:     retriever,
+		MemoryRetrieveLimit: 5,
 	})
 
 	return &planService{
