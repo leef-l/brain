@@ -1,3 +1,18 @@
+// review_loop.go — **任务级**通用审核闭环控制器（针对 TaskOutput / Artifact）
+//
+// 与 design_review.go 的区分：
+//   - 本文件（review_loop.go）：MACCS Wave 1 任务级审核闭环
+//     输入是 PlanSubTask 的执行产物（DelegateResult / 文件 / 代码片段），
+//     由 Verifier brain 通过 Orchestrator.Delegate 调用执行，
+//     发现问题后自动生成修复子任务并重新执行。
+//   - design_review.go：MACCS Wave 3 设计级审核闭环
+//     输入是 DesignProposal（方案规格 / 任务图），
+//     由启发式规则或 Reviewer brain 检查方案本身的完备性 / 风险 / 覆盖度，
+//     不涉及代码产物执行。
+//
+// 两者目标不同（task 输出 vs 方案规格），且字段差异大（TaskID/File/Line/AutoFixable
+// vs ProposalID/Round/Category=architecture），刻意保持独立类型。
+
 package kernel
 
 import (
@@ -11,7 +26,7 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ReviewLoop — MACCS v2 审核闭环控制器
+// ReviewLoop — MACCS v2 任务级审核闭环控制器
 //
 // 核心循环：执行 → 审核 → 发现问题 → 生成修复任务 → 执行修复 → 再审核
 // 直到审核通过或达到最大迭代次数。

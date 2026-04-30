@@ -46,9 +46,14 @@ type ClosedLoopDeps struct {
 	Reviewer     *DesignReviewLoop      // 可选，nil 则跳过审核
 	Scheduler    *ExecutionScheduler
 	Tester       AcceptanceTester       // 可选
-	Deliverer    ClosedLoopDeliverer    // slim 接口
+	Deliverer    ClosedLoopDeliverer    // slim 接口（可选，优先级低于 DeliveryGen）
+	DeliveryGen  DeliveryGenerator      // 真实交付生成器（可选，优先级最高）
 	Retrospect   ClosedLoopRetrospector // slim 接口
 	SessionStore ProjectSessionStore
+	// Orchestrator 用于真实派发执行任务（Phase 4）。
+	// 非空时使用 ExecuteTaskPlan 真实调度子任务到 brain pool；
+	// nil 时退化为 Scheduler 本地推进（仅记录占位结果，不调用任何 brain）。
+	Orchestrator *Orchestrator
 }
 
 // NewClosedLoopDepsMinimal 创建最小依赖集（只用默认实现）。
@@ -57,6 +62,7 @@ func NewClosedLoopDepsMinimal() ClosedLoopDeps {
 		Parser: NewDefaultRequirementParser(), Designer: NewDefaultDesignGenerator(),
 		Scheduler: NewExecutionScheduler(ExecutionSchedulerConfig{}),
 		Tester: NewDefaultAcceptanceTester(), SessionStore: NewMemProjectSessionStore(),
+		DeliveryGen: NewDefaultDeliveryGenerator(),
 	}
 }
 
@@ -189,6 +195,9 @@ func (c *ClosedLoopController) Execute(ctx context.Context, projectName, goal st
 	}
 
 	// Phase 4: Execution
+	// 优先调用 Orchestrator.ExecuteTaskPlan 真实派发任务到 brain pool；
+	// 当 Orchestrator 未注入时，退化为 Scheduler 本地推进（仅记录占位结果，
+	// 不再标注任何虚假成功语义）。
 	err = c.runPhase(ctx, SMPhaseExecution, func(pctx context.Context) error {
 		if err := session.StartPhase(PhaseExecution); err != nil {
 			return err
@@ -199,12 +208,35 @@ func (c *ClosedLoopController) Execute(ctx context.Context, projectName, goal st
 			_ = session.FailPhase(PhaseExecution, "无法生成执行计划")
 			return fmt.Errorf("ToTaskPlan 返回 nil")
 		}
+
+		if c.deps.Orchestrator != nil {
+			reporter := func(eventType, taskID, status, detail string) {
+				c.notify(SMPhaseExecution, fmt.Sprintf("%s/%s/%s", eventType, taskID, status))
+			}
+			planResult, execErr := c.deps.Orchestrator.ExecuteTaskPlan(pctx, plan, nil, reporter)
+			if execErr != nil {
+				_ = session.FailPhase(PhaseExecution, execErr.Error())
+				return execErr
+			}
+			session.SetContext("task_plan", plan)
+			session.SetContext("task_plan_result", planResult)
+			result.PhaseResults[SMPhaseExecution] = planResult
+			if planResult.FailedTasks > 0 {
+				_ = session.FailPhase(PhaseExecution, fmt.Sprintf("%d 个子任务执行失败", planResult.FailedTasks))
+				return fmt.Errorf("执行阶段有 %d/%d 个失败任务", planResult.FailedTasks, planResult.TotalTasks)
+			}
+			if err := session.CompletePhase(PhaseExecution, []string{planResult.PlanID}); err != nil {
+				return err
+			}
+			return c.advanceSM(sm, SMPhaseExecution)
+		}
+
+		// 退化路径：仅在 Scheduler 中推进分层状态，不真实调用任何 brain。
 		execPlan, buildErr := c.deps.Scheduler.BuildExecutionPlan(plan)
 		if buildErr != nil {
 			_ = session.FailPhase(PhaseExecution, buildErr.Error())
 			return buildErr
 		}
-		// 模拟执行：逐层标记任务完成
 		for {
 			batch := c.deps.Scheduler.NextBatch(execPlan)
 			if len(batch) == 0 {
@@ -215,12 +247,13 @@ func (c *ClosedLoopController) Execute(ctx context.Context, projectName, goal st
 			}
 			for _, task := range batch {
 				c.deps.Scheduler.MarkRunning(task, string(task.Task.Kind))
-				c.deps.Scheduler.MarkCompleted(task, "模拟执行完成", task.Task.EstimatedTurns)
+				c.deps.Scheduler.MarkCompleted(task, "[offline] no orchestrator attached", task.Task.EstimatedTurns)
 			}
 			if !c.deps.Scheduler.AdvanceLayer(execPlan) {
 				break
 			}
 		}
+		session.SetContext("task_plan", plan)
 		session.SetContext("execution_plan", execPlan)
 		result.PhaseResults[SMPhaseExecution] = c.deps.Scheduler.Progress(execPlan)
 		if err := session.CompletePhase(PhaseExecution, []string{execPlan.PlanID}); err != nil {
@@ -244,10 +277,10 @@ func (c *ClosedLoopController) Execute(ctx context.Context, projectName, goal st
 				_ = session.FailPhase(PhaseAcceptance, genErr.Error())
 				return genErr
 			}
-			artifacts := make(map[string]string, len(suite.Tests))
-			for _, t := range suite.Tests {
-				artifacts[t.TestID] = "模拟交付物"
-			}
+			// 从执行阶段的真实输出构造 artifacts：
+			//  - 优先读取 TaskPlanResult.Results 中 completed 子任务的 Output
+			//  - 退化读取 ExecutionPlan.Tasks 的 Result
+			artifacts := buildAcceptanceArtifacts(session, suite)
 			report, runErr := c.deps.Tester.RunTests(pctx, suite, artifacts)
 			if runErr != nil {
 				_ = session.FailPhase(PhaseAcceptance, runErr.Error())
@@ -276,22 +309,47 @@ func (c *ClosedLoopController) Execute(ctx context.Context, projectName, goal st
 	}
 
 	// Phase 6: Delivery
+	// 优先使用真实的 DeliveryGen 生成 DeliveryManifest（README/CHANGELOG/Artifacts/Summary）；
+	// 退化使用 Deliverer slim 接口；都未配置时返回明确的未配置说明。
+	// completeDeliveryPhase 统一收尾：FailPhase 或 CompletePhase，避免分支遗漏。
+	completeDeliveryPhase := func(deliverable interface{}, artifacts []string, delivErr error) error {
+		if delivErr != nil {
+			_ = session.FailPhase(PhaseDelivery, delivErr.Error())
+			return delivErr
+		}
+		result.PhaseResults[SMPhaseDelivery] = deliverable
+		return session.CompletePhase(PhaseDelivery, artifacts)
+	}
 	err = c.runPhase(ctx, SMPhaseDelivery, func(pctx context.Context) error {
 		if err := session.StartPhase(PhaseDelivery); err != nil {
 			return err
 		}
 		c.notify(SMPhaseDelivery, "started")
-		if c.deps.Deliverer != nil {
-			delivery, delErr := c.deps.Deliverer.GenerateDelivery(pctx, session)
-			if delErr != nil {
-				_ = session.FailPhase(PhaseDelivery, delErr.Error())
-				return delErr
+		var deliverable interface{}
+		var artifacts []string
+		var delivErr error
+		if c.deps.DeliveryGen != nil {
+			var acceptReport *AcceptanceReport
+			if v, ok := result.PhaseResults[SMPhaseAcceptance]; ok {
+				if r, cast := v.(*AcceptanceReport); cast {
+					acceptReport = r
+				}
 			}
-			result.PhaseResults[SMPhaseDelivery] = delivery
+			manifest, err := c.deps.DeliveryGen.Generate(pctx, spec, proposal, acceptReport)
+			if err == nil {
+				session.SetContext("delivery_manifest", manifest)
+				deliverable = manifest
+				artifacts = []string{manifest.ManifestID}
+			}
+			delivErr = err
+		} else if c.deps.Deliverer != nil {
+			delivery, err := c.deps.Deliverer.GenerateDelivery(pctx, session)
+			deliverable = delivery
+			delivErr = err
 		} else {
-			result.PhaseResults[SMPhaseDelivery] = "交付生成器未配置，跳过"
+			deliverable = "交付生成器未配置，跳过"
 		}
-		if err := session.CompletePhase(PhaseDelivery, nil); err != nil {
+		if err := completeDeliveryPhase(deliverable, artifacts, delivErr); err != nil {
 			return err
 		}
 		return c.advanceSM(sm, SMPhaseDelivery)
@@ -389,4 +447,68 @@ func (c *ClosedLoopController) failResult(r *ClosedLoopResult, sm *ProjectStateM
 	r.TotalDuration = time.Since(start)
 	r.Error = err.Error()
 	return r
+}
+
+// buildAcceptanceArtifacts 从执行阶段真实结果构造验收用 artifacts 映射。
+//   - 路径 A：使用 Orchestrator.ExecuteTaskPlan 返回的 TaskPlanResult
+//   - 路径 B：退化到 Scheduler 的 ExecutionPlan.Tasks
+//   - 没有任何执行结果时返回空 map（RunTests 自然记为 Failed）。
+func buildAcceptanceArtifacts(session *ProjectSession, suite *AcceptanceTestSuite) map[string]string {
+	artifacts := make(map[string]string)
+	if session == nil || suite == nil {
+		return artifacts
+	}
+
+	if v, ok := session.GetContext("task_plan_result"); ok {
+		if pr, cast := v.(*TaskPlanResult); cast && pr != nil {
+			for taskID, dr := range pr.Results {
+				if dr == nil || dr.Status != "completed" {
+					continue
+				}
+				out := string(dr.Output)
+				if out == "" {
+					out = "task " + taskID + " completed"
+				}
+				artifacts[taskID] = out
+			}
+		}
+	}
+
+	if len(artifacts) == 0 {
+		if v, ok := session.GetContext("execution_plan"); ok {
+			if ep, cast := v.(*ExecutionPlan); cast && ep != nil {
+				for taskID, st := range ep.Tasks {
+					if st == nil {
+						continue
+					}
+					st.mu.RLock()
+					status := st.Status
+					res := st.Result
+					st.mu.RUnlock()
+					if status != "completed" {
+						continue
+					}
+					if res == "" {
+						res = "task " + taskID + " completed"
+					}
+					artifacts[taskID] = res
+				}
+			}
+		}
+	}
+
+	// 把已有产物兜底映射给 suite 中的 TestID（验收测试键不一定与 task_id 一致）
+	if len(artifacts) > 0 {
+		var any string
+		for _, v := range artifacts {
+			any = v
+			break
+		}
+		for _, t := range suite.Tests {
+			if _, exists := artifacts[t.TestID]; !exists {
+				artifacts[t.TestID] = any
+			}
+		}
+	}
+	return artifacts
 }

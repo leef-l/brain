@@ -41,6 +41,9 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /abort  [note]     Tell the waiting agent to give up this step")
 		fmt.Println("  /like  [note]      Mark the last turn as helpful (L3 learning)")
 		fmt.Println("  /dislike [note]    Mark the last turn as unhelpful (L3 learning)")
+		fmt.Println("  /plan <prompt>     创建并执行智能项目计划")
+		fmt.Println("  /plan list         列出已创建的计划")
+		fmt.Println("  /plan status <id>  查看计划执行进度")
 		fmt.Println("  /keys              Show keybindings config path")
 		fmt.Println("  /exit              Exit chat")
 		fmt.Println()
@@ -255,6 +258,26 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /brain stop <kind>  Stop a specialist brain sidecar")
 		fmt.Println("  /brain stop all     Stop all running sidecars")
 		fmt.Println()
+		return true, false
+
+	case cmd == "/plan" || cmd == "/plan help":
+		fmt.Println("  /plan <prompt>            创建并执行一个智能项目计划")
+		fmt.Println("  /plan list                列出当前会话中已创建的计划")
+		fmt.Println("  /plan status <project_id> 查看指定项目的执行进度")
+		fmt.Println()
+		return true, false
+
+	case strings.HasPrefix(cmd, "/plan "):
+		arg := strings.TrimSpace(input[len("/plan "):])
+		switch {
+		case arg == "list" || strings.ToLower(arg) == "ls":
+			handlePlanList(state)
+		case strings.HasPrefix(strings.ToLower(arg), "status "):
+			projectID := strings.TrimSpace(arg[len("status "):])
+			handlePlanStatus(state, projectID)
+		default:
+			handlePlanCreate(state, arg)
+		}
 		return true, false
 
 	case cmd == "/workflow" || cmd == "/workflow help":

@@ -1,9 +1,12 @@
 package kernel
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/leef-l/brain/sdk/diaglog"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,10 +92,11 @@ type ExecutionProgress struct {
 // ExecutionScheduler 将审核通过的 TaskPlan 调度为可执行的分层并行计划，
 // 并提供任务生命周期管理（启动、完成、失败、重试）和进度追踪。
 type ExecutionScheduler struct {
-	mu       sync.RWMutex
-	config   ExecutionSchedulerConfig
-	budget   *DynamicBudgetPool // 可选
-	progress *ProjectProgress   // 可选
+	mu           sync.RWMutex
+	config       ExecutionSchedulerConfig
+	budget       *DynamicBudgetPool // 可选
+	progress     *ProjectProgress   // 可选
+	orchestrator *Orchestrator      // 可选；非空时 Run/RunPlan 通过 DelegateBatch 真实派发
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,6 +117,21 @@ func NewExecutionSchedulerWithDeps(config ExecutionSchedulerConfig, budget *Dyna
 		budget:   budget,
 		progress: progress,
 	}
+}
+
+// NewExecutionSchedulerWithOrchestrator 创建可真实派发任务的执行调度器。
+// 注入 Orchestrator 后 Run/RunPlan 会通过 DelegateBatch 把 ScheduledTask
+// 派发到 brain pool。
+func NewExecutionSchedulerWithOrchestrator(config ExecutionSchedulerConfig, orch *Orchestrator) *ExecutionScheduler {
+	cfg := applyExecDefaults(config)
+	return &ExecutionScheduler{config: cfg, orchestrator: orch}
+}
+
+// AttachOrchestrator 在已构造的 Scheduler 上注入 Orchestrator 引用。
+func (s *ExecutionScheduler) AttachOrchestrator(orch *Orchestrator) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.orchestrator = orch
 }
 
 func applyExecDefaults(cfg ExecutionSchedulerConfig) ExecutionSchedulerConfig {
@@ -340,6 +359,137 @@ func (s *ExecutionScheduler) RetryTask(task *ScheduledTask) {
 // ─────────────────────────────────────────────────────────────────────────────
 // 进度查询
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RunPlan / Run — 通过 Orchestrator 真实派发任务
+// ─────────────────────────────────────────────────────────────────────────────
+
+// RunPlan 通过 Orchestrator.DelegateBatch 按拓扑层并行执行 ExecutionPlan。
+// 每一层拾取 NextBatch → 调用 DelegateBatch → 处理结果 → 失败按 RetryLimit 重试 →
+// 推进下一层。必须先注入 Orchestrator（NewExecutionSchedulerWithOrchestrator
+// 或 AttachOrchestrator），否则返回错误。
+func (s *ExecutionScheduler) RunPlan(ctx context.Context, execPlan *ExecutionPlan) error {
+	if execPlan == nil {
+		return fmt.Errorf("execution plan is nil")
+	}
+	s.mu.RLock()
+	orch := s.orchestrator
+	retryLimit := s.config.RetryLimit
+	s.mu.RUnlock()
+	if orch == nil {
+		return fmt.Errorf("execution_scheduler: 未注入 Orchestrator，无法真实派发任务")
+	}
+
+	for execPlan.CurrentLayer < len(execPlan.Layers) {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		batch := s.NextBatch(execPlan)
+		if len(batch) == 0 {
+			if !s.AdvanceLayer(execPlan) {
+				break
+			}
+			continue
+		}
+
+		batchReq := &DelegateBatchRequest{Requests: make([]*DelegateRequest, 0, len(batch))}
+		for _, t := range batch {
+			s.MarkRunning(t, string(t.Task.Kind))
+			req := &DelegateRequest{
+				TaskID:      t.Task.TaskID,
+				TargetKind:  t.Task.Kind,
+				Instruction: t.Task.Instruction,
+			}
+			if t.Task.EstimatedTurns > 0 {
+				req.Budget = &SubtaskBudget{MaxTurns: t.Task.EstimatedTurns}
+			}
+			batchReq.Requests = append(batchReq.Requests, req)
+		}
+
+		diaglog.Info("execution_scheduler", "dispatching batch via Orchestrator.DelegateBatch",
+			"plan_id", execPlan.PlanID,
+			"layer", execPlan.CurrentLayer,
+			"size", len(batch))
+
+		batchResult, err := orch.DelegateBatch(ctx, batchReq)
+		if err != nil {
+			// 整批返回错误：按 retryLimit 决定是否还给本层一次机会
+			for _, t := range batch {
+				if !s.MarkFailed(t, err.Error()) {
+					continue
+				}
+				if retryLimit > 0 {
+					s.RetryTask(t)
+				}
+			}
+			if !s.AdvanceLayer(execPlan) {
+				break
+			}
+			continue
+		}
+
+		// succeeded：本批次成功数；retried：可重试的失败数；failed：不可重试的失败数。
+		// retried==0 有两种来源：全成功 或 全部失败且超 RetryLimit。
+		// 只有 failed==0 时才能推进下一层，否则整层已不可恢复。
+		var succeeded, retried, failed int
+		for i, t := range batch {
+			if i >= len(batchResult.Results) {
+				if s.MarkFailed(t, "no result returned") {
+					s.RetryTask(t)
+					retried++
+				} else {
+					failed++
+				}
+				continue
+			}
+			r := batchResult.Results[i]
+			if r != nil && r.Status == "completed" {
+				s.MarkCompleted(t, string(r.Output), r.Usage.Turns)
+				succeeded++
+				continue
+			}
+			errMsg := "unknown failure"
+			if r != nil && r.Error != "" {
+				errMsg = r.Error
+			}
+			if s.MarkFailed(t, errMsg) {
+				s.RetryTask(t)
+				retried++
+			} else {
+				failed++
+			}
+		}
+		_ = succeeded // 记录成功数，保留用于后续扩展（如进度上报）
+
+		if failed > 0 && retried == 0 {
+			// 整层存在不可重试的失败任务，终止计划执行
+			return fmt.Errorf("execution plan %s: layer %d 有 %d 个任务彻底失败（超过重试上限），终止执行",
+				execPlan.PlanID, execPlan.CurrentLayer, failed)
+		}
+		if retried == 0 {
+			// 本批次全部成功，推进下一层
+			if !s.AdvanceLayer(execPlan) {
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
+// Run 一站式执行：BuildExecutionPlan + RunPlan。
+// 当 Orchestrator 未注入时返回错误。
+func (s *ExecutionScheduler) Run(ctx context.Context, plan *TaskPlan) (*ExecutionPlan, error) {
+	execPlan, err := s.BuildExecutionPlan(plan)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.RunPlan(ctx, execPlan); err != nil {
+		return execPlan, err
+	}
+	return execPlan, nil
+}
 
 // Progress 返回当前 ExecutionPlan 的进度快照。
 func (s *ExecutionScheduler) Progress(execPlan *ExecutionPlan) ExecutionProgress {

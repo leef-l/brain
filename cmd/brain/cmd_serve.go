@@ -338,6 +338,7 @@ type runManager struct {
 	orgEnforcer  kernel.OrgPolicyEnforcer  // 组织级授权策略执行器（可为 nil）
 	scheduler    kernel.TaskScheduler      // 任务级调度引擎（B-2）
 	remotePool   *kernel.RemoteBrainPool   // 远程 brain 连接池（D-3，可为 nil）
+	interrupter  kernel.InterruptChecker   // 中断信号收发（POST /v1/runs/{id}/interrupt）
 	observer     kernel.StateObserver       // 系统状态观测器（钱学森 Phase A，可选）
 	controller   kernel.FeedbackController  // 反馈控制器（钱学森 Phase B，可选）
 	stabilizer   kernel.SelfStabilizer      // 自稳定器（钱学森 Phase C，可选）
@@ -804,6 +805,7 @@ func runServe(args []string) int {
 		orgEnforcer:  orgEnforcer,
 		scheduler:    scheduler,
 		remotePool:   remotePool,
+		interrupter:  kernel.NewMemInterruptChecker(),
 		rootCtx:      serveCtx,
 		startTime:    time.Now(),
 	}
@@ -938,18 +940,29 @@ func runServe(args []string) int {
 		}
 	})
 
-	// GET /v1/runs/:id — query Run status
-	// DELETE /v1/runs/:id — cancel Run
+	// GET    /v1/runs/{id}            — query Run status
+	// DELETE /v1/runs/{id}            — cancel Run
+	// POST   /v1/runs/{id}/interrupt  — 发送中断信号（pause/stop/restart）
 	mux.HandleFunc("/v1/runs/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/v1/runs/")
-		if id == "" {
+		path := strings.TrimPrefix(r.URL.Path, "/v1/runs/")
+		if path == "" {
 			http.Error(w, "missing run id", http.StatusBadRequest)
 			return
 		}
-		switch r.Method {
-		case http.MethodGet:
+		// 拆分子路径：{id} 或 {id}/interrupt
+		parts := strings.SplitN(path, "/", 2)
+		id := parts[0]
+		sub := ""
+		if len(parts) > 1 {
+			sub = parts[1]
+		}
+
+		switch {
+		case sub == "interrupt" && r.Method == http.MethodPost:
+			handleInterruptRun(w, r, mgr, id)
+		case sub == "" && r.Method == http.MethodGet:
 			handleGetRun(w, r, mgr, id)
-		case http.MethodDelete:
+		case sub == "" && r.Method == http.MethodDelete:
 			handleCancelRun(w, r, mgr, id)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1075,6 +1088,15 @@ func runServe(args []string) int {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+
+	// v3 Plan 路由族 — /v1/plans
+	// PlanOrchestrator 接入主线：Requirement → Design → TaskPlan → ExecuteProject
+	// ---------------------------------------------------------------
+	plans := newPlanService(startupOrch, learner, serveCtx)
+	if plans != nil {
+		mux.HandleFunc("/v1/plans", plans.handleCreatePlan)
+		mux.HandleFunc("/v1/plans/", plans.handleGetPlan)
+	}
 
 	// Dashboard API 路由
 	serverStart := time.Now().UTC()
@@ -1451,7 +1473,8 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			Stream:        req.Stream,
 			SystemPrompt:  systemPrompt,
 			EventBus:      mgr.eventBus,
-			BatchPlanner:  batchPlanner,
+			BatchPlanner:      batchPlanner,
+			InterruptChecker:  kernel.NewKernelInterruptCheckerAdapter(mgr.interrupter),
 			MessageCompressor: func(compCtx context.Context, msgs []llm.Message, budget int) ([]llm.Message, error) {
 				if mgr.ctxEngine == nil {
 					return msgs, nil

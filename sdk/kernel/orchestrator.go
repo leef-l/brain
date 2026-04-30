@@ -1366,28 +1366,141 @@ func (o *Orchestrator) resolveTargetKind(req *DelegateRequest) agent.Kind {
 		return candidates[0].BrainKind
 	}
 
-	// 用 learner 排名加权：capScore * 0.7 + learnScore * 0.3
+	// 用 learner 排名 + 因果推理加权：
+	//   combined = capScore*0.5 + learnScore*0.3 + causalScore*0.2
+	// 其中 causalScore 来自 CausalLearner.QueryEffect("brain", kind) 的 success 关系强度，
+	// 用于剔除"高成功率是因为该 brain 历史接的任务都简单"这类混杂相关。
 	taskType := req.TaskType
 	if taskType == "" {
 		taskType = "delegation"
 	}
+
+	// 主动学习探索（epsilon-greedy）：以 5% 概率走探索分支，
+	// 优先派给当前 ActiveLearner pending 队列中处于高不确定性的 brain，
+	// 即使它不是 capScore + learnScore 最高的候选。
+	// 探索失败（无 pending 高不确定性 brain）时回退到正常加权选择。
+	if probe := o.exploreCandidate(candidates); probe != "" {
+		diaglog.Info("active_learning", "exploration probe",
+			"selected_brain", string(probe),
+			"task_id", req.TaskID,
+			"task_type", taskType,
+		)
+		return probe
+	}
+
 	rankings := o.learner.RankBrains(taskType, WeightPolicy{})
 	rankMap := make(map[agent.Kind]float64, len(rankings))
 	for _, r := range rankings {
 		rankMap[r.BrainKind] = r.Score
 	}
 
+	causal := o.learner.Causal()
+
 	bestKind := candidates[0].BrainKind
-	bestScore := 0.0
+	bestScore := -1.0
 	for _, c := range candidates {
 		learnScore := rankMap[c.BrainKind]
-		combined := c.CombinedScore*0.7 + learnScore*0.3
+		causalScore := brainCausalScore(causal, c.BrainKind)
+		combined := c.CombinedScore*0.5 + learnScore*0.3 + causalScore*0.2
 		if combined > bestScore {
 			bestScore = combined
 			bestKind = c.BrainKind
 		}
 	}
 	return bestKind
+}
+
+// activeExplorationEpsilon 控制主动学习探索概率（5%），刻意保持低值以避免影响主线任务。
+const activeExplorationEpsilon = 0.05
+
+// exploreCandidate 在 epsilon=5% 概率下尝试从 ActiveLearner pending 请求中
+// 挑选处于高不确定性的候选 brain。命中返回该 brain.Kind，否则返回空字符串。
+//
+// 实现说明：使用 randRead（同 trace ID 复用低 8 字节伪随机源）抽样，
+// 不引入额外 math/rand 全局状态，符合 Orchestrator 现有惯例。
+func (o *Orchestrator) exploreCandidate(candidates []MatchResult) agent.Kind {
+	if o.learner == nil {
+		return ""
+	}
+	active := o.learner.Active()
+	if active == nil {
+		return ""
+	}
+
+	// epsilon 抽样：取 8 字节随机数对 1000 取模，<50 则触发探索（5%）。
+	var b [8]byte
+	if _, err := randRead(b[:]); err != nil {
+		return ""
+	}
+	var n uint64
+	for i := 0; i < 8; i++ {
+		n |= uint64(b[i]) << (i * 8)
+	}
+	if n%1000 >= uint64(activeExplorationEpsilon*1000) {
+		return ""
+	}
+
+	pending := active.GetPendingRequests()
+	if len(pending) == 0 {
+		return ""
+	}
+
+	// 构建 candidate kind 集合，仅探索仍在候选列表内的 brain。
+	candSet := make(map[agent.Kind]struct{}, len(candidates))
+	for _, c := range candidates {
+		candSet[c.BrainKind] = struct{}{}
+	}
+
+	for _, req := range pending {
+		kind := agent.Kind(req.BrainKind)
+		if _, ok := candSet[kind]; ok {
+			return kind
+		}
+	}
+	return ""
+}
+
+// brainCausalScore 从 CausalLearner 中提取某 brain 对 success 的因果分数，
+// 归一化到 [0,1]。无 learner / 无关系数据 / 无 success 关系时统一返回 0
+// （即不影响最终加权，让 capScore + learnScore 主导决策）。
+//
+// 计算方法：取 QueryEffect("brain", kind) 中 effect=="success" 的关系，
+// 按 strength * confidence 加权；direction=="negative" 视为负向证据。
+// 取所有命中关系的最大值 raw ∈ [-1,1]，再线性映射到 [0,1]。
+func brainCausalScore(c CausalLearner, kind agent.Kind) float64 {
+	if c == nil {
+		return 0
+	}
+	rels := c.QueryEffect("brain", string(kind))
+	if len(rels) == 0 {
+		return 0
+	}
+	hit := false
+	raw := -1.0
+	for i := range rels {
+		r := &rels[i]
+		if r.Effect != "success" {
+			continue
+		}
+		w := r.Strength * r.Confidence
+		if r.Cause.Direction == "negative" {
+			w = -w
+		}
+		if !hit || w > raw {
+			raw = w
+			hit = true
+		}
+	}
+	if !hit {
+		return 0
+	}
+	if raw > 1 {
+		raw = 1
+	}
+	if raw < -1 {
+		raw = -1
+	}
+	return (raw + 1) / 2
 }
 
 // recordDelegateOutcome 将委派结果反馈给 LearningEngine (L1 EWMA 更新)。
@@ -1426,17 +1539,95 @@ func (o *Orchestrator) recordDelegateOutcome(req *DelegateRequest, result *Deleg
 	o.learner.RecordDelegateLatency(req.TargetKind, taskType, result.Usage.Duration)
 
 	// L2: 记录单步序列（单次委派作为一个 step，由调用方聚合多步序列）
+	// 同时附带 CausalLearner 所需的混杂因子（context size / project / time bucket）。
+	ctxSize := len(req.Instruction) + len(req.Context)
 	o.learner.RecordSequence(TaskSequenceRecord{
 		SequenceID: req.TaskID,
 		TotalScore: accuracy,
 		RecordedAt: time.Now(),
 		Steps: []TaskStep{{
-			BrainKind: req.TargetKind,
-			TaskType:  taskType,
-			Duration:  result.Usage.Duration,
-			Score:     accuracy,
+			BrainKind:   req.TargetKind,
+			TaskType:    taskType,
+			Duration:    result.Usage.Duration,
+			Score:       accuracy,
+			ContextSize: ctxSize,
+			Complexity:  durationComplexity(result.Usage.Duration),
+			ProjectKind: req.ProjectID,
+			TimeBucket:  timeBucketOf(time.Now()),
 		}},
 	})
+
+	// 主动学习：评估当前 brain 在该 taskType 上的不确定性，必要时发起反馈请求。
+	// 该过程对主线非阻塞，仅在不确定性超阈值且 pending 队列未满时触发事件。
+	o.assessActiveLearning(req, taskType)
+}
+
+// assessActiveLearning 调用 ActiveLearner 评估 brain 在指定 taskType 上的不确定性，
+// 当 ShouldAskFeedback==true 时生成 FeedbackRequest 并发布到 EventBus，供 UI 展示。
+// 这是被动学习（recordDelegateResult）后的主动学习触发点。
+func (o *Orchestrator) assessActiveLearning(req *DelegateRequest, taskType string) {
+	if o.learner == nil {
+		return
+	}
+	active := o.learner.Active()
+	if active == nil {
+		return
+	}
+
+	// 从 L1 能力画像快照中读取 historicalSuccess（取 Accuracy.Value 作为成功率代理）
+	// 与 dataPoints（SampleCount）。Profiles() 已做防御性拷贝，无需再加锁。
+	var historicalSuccess float64
+	var dataPoints int
+	profiles := o.learner.Profiles()
+	if profile, ok := profiles[req.TargetKind]; ok && profile != nil {
+		if ts, ok := profile.TaskScores[taskType]; ok && ts != nil {
+			historicalSuccess = ts.Accuracy.Value
+			dataPoints = ts.SampleCount
+		}
+	}
+
+	score := active.AssessUncertainty(req.TaskID, string(req.TargetKind), historicalSuccess, dataPoints)
+	if !active.ShouldAskFeedback(score) {
+		return
+	}
+
+	question := active.GenerateQuestion(score)
+	if question == nil {
+		return
+	}
+
+	diaglog.Info("active_learning", "feedback requested",
+		"request_id", question.RequestID,
+		"task_id", question.TaskID,
+		"brain_kind", question.BrainKind,
+		"uncertainty", score.Uncertainty,
+		"reason", score.Reason,
+		"data_points", score.DataPoints,
+		"priority", question.Priority,
+	)
+
+	if o.EventBus != nil {
+		data, err := json.Marshal(map[string]interface{}{
+			"request_id":  question.RequestID,
+			"task_id":     question.TaskID,
+			"brain_kind":  question.BrainKind,
+			"type":        question.Type,
+			"question":    question.Question,
+			"context":     question.Context,
+			"options":     question.Options,
+			"priority":    question.Priority,
+			"uncertainty": score.Uncertainty,
+			"reason":      score.Reason,
+			"data_points": score.DataPoints,
+		})
+		if err == nil {
+			o.EventBus.Publish(context.Background(), events.Event{
+				ExecutionID: req.TaskID,
+				Type:        "brain.feedback.requested",
+				Data:        data,
+			})
+		}
+	}
 }
 
 // sendBrainLearn 异步通知 sidecar 本次执行结果，激活 sidecar 侧的 L0 学习。
@@ -1616,10 +1807,12 @@ func (o *Orchestrator) ExecuteWorkflow(ctx context.Context, wf *Workflow, report
 			}
 			duration := nodeResult.EndedAt.Sub(nodeResult.StartedAt)
 			steps = append(steps, TaskStep{
-				BrainKind: agent.Kind(brainID),
-				TaskType:  taskType,
-				Duration:  duration,
-				Score:     score,
+				BrainKind:  agent.Kind(brainID),
+				TaskType:   taskType,
+				Duration:   duration,
+				Score:      score,
+				Complexity: durationComplexity(duration),
+				TimeBucket: timeBucketOf(time.Now()),
 			})
 			totalScore += score
 		}

@@ -133,6 +133,13 @@ type TaskStep struct {
 	TaskType  string
 	Duration  time.Duration
 	Score     float64
+
+	// 以下为可选混杂因子（confounders），用于喂给 CausalLearner 以剔除虚假相关。
+	// 任何字段缺失（零值）时该因子不会被记录，向后兼容旧调用方。
+	ContextSize int    `json:",omitempty"` // 任务上下文 token 数（或近似 = len(Instruction)）
+	Complexity  string `json:",omitempty"` // "simple" / "medium" / "hard"
+	TimeBucket  string `json:",omitempty"` // "morning" / "afternoon" / "night"（按 RecordedAt 推断）
+	ProjectKind string `json:",omitempty"` // 项目领域，如 "frontend" / "data" / "infra"
 }
 
 // SequenceLearner 学习任务序列的最优排列
@@ -266,11 +273,14 @@ type LearningEngine struct {
 	profiles  map[agent.Kind]*BrainCapabilityProfile // L1
 	sequences *SequenceLearner                        // L2
 	prefs     *PreferenceLearner                      // L3
+	causal    CausalLearner                           // 可选：因果推理引擎，剔除虚假相关
+	active    ActiveLearner                           // 可选：主动学习器，评估不确定性并发起反馈请求
 	store     persistence.LearningStore               // 可选持久化后端
 	mu        sync.RWMutex
 }
 
-// NewLearningEngine 创建学习引擎
+// NewLearningEngine 创建学习引擎。默认带 DefaultCausalLearner 和 DefaultActiveLearner，
+// 调用方可用 SetCausalLearner(nil) / SetActiveLearner(nil) 关闭对应能力。
 func NewLearningEngine() *LearningEngine {
 	return &LearningEngine{
 		profiles:  make(map[agent.Kind]*BrainCapabilityProfile),
@@ -278,6 +288,8 @@ func NewLearningEngine() *LearningEngine {
 		prefs: &PreferenceLearner{
 			preferences: make(map[string]*UserPreference),
 		},
+		causal: NewCausalLearner(),
+		active: NewActiveLearner(),
 	}
 }
 
@@ -286,6 +298,34 @@ func NewLearningEngineWithStore(store persistence.LearningStore) *LearningEngine
 	le := NewLearningEngine()
 	le.store = store
 	return le
+}
+
+// SetCausalLearner 替换或清除内置 CausalLearner（传 nil 关闭因果学习）。
+func (le *LearningEngine) SetCausalLearner(c CausalLearner) {
+	le.mu.Lock()
+	defer le.mu.Unlock()
+	le.causal = c
+}
+
+// Causal 返回当前 CausalLearner（可能为 nil）。
+func (le *LearningEngine) Causal() CausalLearner {
+	le.mu.RLock()
+	defer le.mu.RUnlock()
+	return le.causal
+}
+
+// SetActiveLearner 替换或清除内置 ActiveLearner（传 nil 关闭主动学习）。
+func (le *LearningEngine) SetActiveLearner(a ActiveLearner) {
+	le.mu.Lock()
+	defer le.mu.Unlock()
+	le.active = a
+}
+
+// Active 返回当前 ActiveLearner（可能为 nil）。
+func (le *LearningEngine) Active() ActiveLearner {
+	le.mu.RLock()
+	defer le.mu.RUnlock()
+	return le.active
 }
 
 // Profiles 返回 L1 能力画像的快照（防御性拷贝）。
@@ -634,6 +674,50 @@ func (le *LearningEngine) RankBrains(taskType string, policy WeightPolicy) []Bra
 // RecordSequence 记录任务序列 (L2 入口)
 func (le *LearningEngine) RecordSequence(record TaskSequenceRecord) {
 	le.sequences.RecordSequence(record)
+
+	// 同步喂给 CausalLearner（nil 安全）：每个 step 一条 observation。
+	// outcome 二值化：Score>=0.5 视为 success，否则 failure；OutcomeVal 直接用 Score。
+	if causal := le.Causal(); causal != nil {
+		ts := record.RecordedAt
+		if ts.IsZero() {
+			ts = time.Now()
+		}
+		bucket := timeBucketOf(ts)
+		for _, s := range record.Steps {
+			factors := map[string]string{
+				"brain":     string(s.BrainKind),
+				"task_kind": s.TaskType,
+			}
+			if s.Complexity != "" {
+				factors["complexity"] = s.Complexity
+			}
+			if s.ProjectKind != "" {
+				factors["project_kind"] = s.ProjectKind
+			}
+			if s.TimeBucket != "" {
+				factors["time_bucket"] = s.TimeBucket
+			} else if bucket != "" {
+				factors["time_bucket"] = bucket
+			}
+			if s.ContextSize > 0 {
+				factors["ctx_size"] = ctxSizeBucketOf(s.ContextSize)
+			}
+			outcome := "failure"
+			if s.Score >= 0.5 {
+				outcome = "success"
+			}
+			causal.Observe(CausalObservation{
+				Factors:    factors,
+				Outcome:    outcome,
+				OutcomeVal: s.Score,
+				Timestamp:  ts,
+				TaskID:     record.SequenceID,
+			})
+		}
+		// 周期性触发关系学习；轻量调用，可每次记录后跑一次。
+		causal.LearnRelations()
+	}
+
 	if le.store != nil {
 		go func() {
 			defer func() {
@@ -978,4 +1062,50 @@ func (d *DefaultBrainLearner) Adapt(ctx context.Context) error {
 		return nil
 	}
 	return d.Save(ctx)
+}
+
+// timeBucketOf 根据本地时间小时数把时间分桶为 morning/afternoon/night，
+// 供 CausalLearner 把"时间段"作为混杂因子。
+func timeBucketOf(t time.Time) string {
+	h := t.Hour()
+	switch {
+	case h >= 6 && h < 12:
+		return "morning"
+	case h >= 12 && h < 18:
+		return "afternoon"
+	default:
+		return "night"
+	}
+}
+
+// durationComplexity 把执行耗时离散化为 simple/medium/hard，
+// 作为 CausalLearner 的 complexity 因子粗代理。零值返回空串。
+func durationComplexity(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return ""
+	case d < 5*time.Second:
+		return "simple"
+	case d < 30*time.Second:
+		return "medium"
+	default:
+		return "hard"
+	}
+}
+
+// ctxSizeBucketOf 把 token / 字符数离散化为粗粒度桶，
+// 避免 CausalLearner 因连续值产生过多稀疏因子。
+func ctxSizeBucketOf(n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n < 1024:
+		return "small"
+	case n < 8192:
+		return "medium"
+	case n < 32768:
+		return "large"
+	default:
+		return "huge"
+	}
 }

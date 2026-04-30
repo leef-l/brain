@@ -3,9 +3,15 @@ package kernel
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/leef-l/brain/sdk/diaglog"
 )
+
+// AcceptanceCommandTimeout 是单条测试命令的默认超时（在 ctx 没有 deadline 时启用）。
+var AcceptanceCommandTimeout = 60 * time.Second
 
 // ---------------------------------------------------------------------------
 // MACCS Wave 3 Batch 2 — 验收测试层
@@ -40,6 +46,9 @@ type AcceptanceTestResult struct {
 	Passed       bool          `json:"passed"`
 	ActualResult string        `json:"actual_result"`
 	ErrorMsg     string        `json:"error_msg,omitempty"`
+	Stdout       string        `json:"stdout,omitempty"`
+	Stderr       string        `json:"stderr,omitempty"`
+	ExitCode     int           `json:"exit_code,omitempty"`
 	Duration     time.Duration `json:"duration"`
 	ExecutedAt   time.Time     `json:"executed_at"`
 }
@@ -147,11 +156,17 @@ func (t *DefaultAcceptanceTester) GenerateTests(_ context.Context, spec *Require
 }
 
 // RunTests 执行验收测试套件，返回验收报告。
-// AutoRun=true 的测试通过检查 artifacts 中是否有对应 key 来模拟执行；
-// AutoRun=false 的测试标记为 skipped。
-func (t *DefaultAcceptanceTester) RunTests(_ context.Context, suite *AcceptanceTestSuite, artifacts map[string]string) (*AcceptanceReport, error) {
+// 优先级：
+//  1. AutoRun=false → skipped（需人工验证）
+//  2. AutoRun=true 且 Command 非空 → 通过 sh -c 真实执行命令；
+//     退出码 0=Passed，非 0/超时/错误=Failed；超时默认 60s（AcceptanceCommandTimeout）
+//  3. AutoRun=true 且 Command 为空 → 退化到 artifacts 查找（手工/基于产物的测试）
+func (t *DefaultAcceptanceTester) RunTests(ctx context.Context, suite *AcceptanceTestSuite, artifacts map[string]string) (*AcceptanceReport, error) {
 	if suite == nil {
 		return nil, fmt.Errorf("acceptance_tester: AcceptanceTestSuite 不能为空")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	report := &AcceptanceReport{
@@ -171,7 +186,6 @@ func (t *DefaultAcceptanceTester) RunTests(_ context.Context, suite *AcceptanceT
 		}
 
 		if !test.AutoRun {
-			// 需人工验证，标记为 skipped
 			result.ActualResult = "需要人工验证，已跳过"
 			result.Duration = time.Since(start)
 			report.SkippedTests++
@@ -179,28 +193,73 @@ func (t *DefaultAcceptanceTester) RunTests(_ context.Context, suite *AcceptanceT
 			continue
 		}
 
-		// 自动测试：检查 artifacts 中是否有对应 key
-		if artifacts != nil {
-			if val, ok := artifacts[test.TestID]; ok {
+		if test.Command != "" {
+			// 真实命令执行
+			runCtx := ctx
+			var cancel context.CancelFunc
+			if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+				runCtx, cancel = context.WithTimeout(ctx, AcceptanceCommandTimeout)
+			}
+			cmd := exec.CommandContext(runCtx, "sh", "-c", test.Command)
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			runErr := cmd.Run()
+			if cancel != nil {
+				cancel()
+			}
+			result.Stdout = stdout.String()
+			result.Stderr = stderr.String()
+			if cmd.ProcessState != nil {
+				result.ExitCode = cmd.ProcessState.ExitCode()
+			}
+			if runErr == nil && result.ExitCode == 0 {
 				result.Passed = true
-				result.ActualResult = val
-			} else if val, ok := artifacts[test.CriteriaID]; ok {
-				result.Passed = true
-				result.ActualResult = val
-			} else if val, ok := artifacts[test.Command]; ok {
-				result.Passed = true
-				result.ActualResult = val
+				result.ActualResult = strings.TrimSpace(result.Stdout)
+				if result.ActualResult == "" {
+					result.ActualResult = "命令成功执行（无 stdout 输出）"
+				}
 			} else {
 				result.Passed = false
-				result.ActualResult = "未找到对应交付物"
-				result.ErrorMsg = fmt.Sprintf("artifacts 中无匹配 key: %s/%s/%s", test.TestID, test.CriteriaID, test.Command)
+				if runErr != nil {
+					result.ErrorMsg = runErr.Error()
+				} else {
+					result.ErrorMsg = fmt.Sprintf("非零退出码: %d", result.ExitCode)
+				}
+				result.ActualResult = strings.TrimSpace(result.Stderr)
+				if result.ActualResult == "" {
+					result.ActualResult = result.ErrorMsg
+				}
 				report.FailedItems = append(report.FailedItems, fmt.Sprintf("%s: %s", test.TestID, test.Name))
 			}
+			diaglog.Info("acceptance_tester", "executed test command",
+				"test_id", test.TestID,
+				"exit_code", result.ExitCode,
+				"passed", result.Passed)
 		} else {
-			result.Passed = false
-			result.ActualResult = "无交付物"
-			result.ErrorMsg = "artifacts 为空"
-			report.FailedItems = append(report.FailedItems, fmt.Sprintf("%s: %s", test.TestID, test.Name))
+			// 无 Command：退化到 artifacts 查找
+			diaglog.Info("acceptance_tester", "no command, falling back to artifacts lookup",
+				"test_id", test.TestID,
+				"criteria_id", test.CriteriaID)
+			if artifacts != nil {
+				if val, ok := artifacts[test.TestID]; ok {
+					result.Passed = true
+					result.ActualResult = val
+				} else if val, ok := artifacts[test.CriteriaID]; ok {
+					result.Passed = true
+					result.ActualResult = val
+				} else {
+					result.Passed = false
+					result.ActualResult = "未找到对应交付物"
+					result.ErrorMsg = fmt.Sprintf("artifacts 中无匹配 key: %s/%s", test.TestID, test.CriteriaID)
+					report.FailedItems = append(report.FailedItems, fmt.Sprintf("%s: %s", test.TestID, test.Name))
+				}
+			} else {
+				result.Passed = false
+				result.ActualResult = "无交付物"
+				result.ErrorMsg = "artifacts 为空且 Command 为空"
+				report.FailedItems = append(report.FailedItems, fmt.Sprintf("%s: %s", test.TestID, test.Name))
+			}
 		}
 
 		result.Duration = time.Since(start)

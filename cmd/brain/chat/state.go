@@ -280,6 +280,11 @@ func (s *State) ApproveSandboxEscapeForSession(dir string) {
 	s.SessionApprovedSandbox[dir] = true
 }
 
+// Close 释放 State 持有的会话级资源，应在 chat REPL 退出时 defer 调用。
+func (s *State) Close() {
+	RemovePlanRegistry(s)
+}
+
 func (s *State) SwitchMode(m env.PermissionMode) {
 	s.Mode = m
 	s.Registry = tool.NewMemRegistry()

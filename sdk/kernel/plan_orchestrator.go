@@ -15,23 +15,27 @@ type PlanOrchestrator struct {
 	Orchestrator *Orchestrator
 
 	// MACCS v2 组件
-	Memory        ProjectMemory
-	Estimator     *ComplexityEstimator
-	BudgetPool    *DynamicBudgetPool
-	ReviewLoop    *ReviewLoopController
-	MetaCognitive *MetaCognitiveEngine
-	ModelRouter   *ModelRouter
-	ProgressStore ProgressStore
+	Memory          ProjectMemory
+	Estimator       *ComplexityEstimator
+	BudgetPool      *DynamicBudgetPool
+	ReviewLoop      *ReviewLoopController
+	MetaCognitive   *MetaCognitiveEngine
+	ModelRouter     *ModelRouter
+	ProgressStore   ProgressStore
+	TransferLearner TransferLearner
+	ExperienceStore ExperienceStore
 }
 
 // PlanOrchestratorConfig 配置。
 type PlanOrchestratorConfig struct {
-	Memory        ProjectMemory
-	Learner       *LearningEngine
-	TotalBudget   int // 总 turn 预算，默认 200
-	ReviewConfig  ReviewLoopConfig
-	ModelRouter   *ModelRouter
-	ProgressStore ProgressStore
+	Memory          ProjectMemory
+	Learner         *LearningEngine
+	TotalBudget     int // 总 turn 预算，默认 200
+	ReviewConfig    ReviewLoopConfig
+	ModelRouter     *ModelRouter
+	ProgressStore   ProgressStore
+	TransferLearner TransferLearner // 可选：未提供时自动构建 DefaultTransferLearner
+	ExperienceStore ExperienceStore // 可选：用于跨会话持久化项目经验
 }
 
 // NewPlanOrchestrator 创建智能化编排器。
@@ -41,14 +45,33 @@ func NewPlanOrchestrator(orch *Orchestrator, cfg PlanOrchestratorConfig) *PlanOr
 		totalBudget = 200
 	}
 
+	// 默认构建一个内存版迁移学习器，保证冷启动路径始终可用
+	transfer := cfg.TransferLearner
+	if transfer == nil {
+		transfer = NewTransferLearner()
+	}
+
 	po := &PlanOrchestrator{
-		Orchestrator:  orch,
-		Memory:        cfg.Memory,
-		Estimator:     NewComplexityEstimator(cfg.Learner),
-		BudgetPool:    NewDynamicBudgetPool(totalBudget),
-		MetaCognitive: NewMetaCognitiveEngine(cfg.Learner),
-		ModelRouter:   cfg.ModelRouter,
-		ProgressStore: cfg.ProgressStore,
+		Orchestrator:    orch,
+		Memory:          cfg.Memory,
+		Estimator:       NewComplexityEstimatorWithTransfer(cfg.Learner, transfer),
+		BudgetPool:      NewDynamicBudgetPool(totalBudget),
+		MetaCognitive:   NewMetaCognitiveEngine(cfg.Learner),
+		ModelRouter:     cfg.ModelRouter,
+		ProgressStore:   cfg.ProgressStore,
+		TransferLearner: transfer,
+		ExperienceStore: cfg.ExperienceStore,
+	}
+
+	// 如果配置了持久化存储，尝试加载历史经验到迁移学习器
+	if po.ExperienceStore != nil {
+		if exps, err := po.ExperienceStore.List(context.Background()); err == nil {
+			for _, exp := range exps {
+				if exp != nil {
+					po.TransferLearner.RecordExperience(*exp)
+				}
+			}
+		}
 	}
 
 	if orch != nil {

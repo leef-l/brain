@@ -60,6 +60,10 @@ type PlanSubTask struct {
 	Name                 string          `json:"name"`
 	Kind                 agent.Kind      `json:"kind"`
 	Instruction          string          `json:"instruction"`
+	// Language 与 Domain 用于构造冷启动迁移学习的项目指纹
+	// (language, domain, kind) 三元组。可为空（保持向后兼容）。
+	Language             string          `json:"language,omitempty"`
+	Domain               string          `json:"domain,omitempty"`
 	EstimatedTurns       int             `json:"estimated_turns"`
 	EstimatedTokens      int             `json:"estimated_tokens"`
 	VerificationCriteria []string        `json:"verification_criteria"`

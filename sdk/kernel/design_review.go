@@ -1,3 +1,19 @@
+// design_review.go — **设计级**审核闭环控制器（针对 DesignProposal）
+//
+// 与 review_loop.go 的区分：
+//   - 本文件（design_review.go）：MACCS Wave 3 Batch 2 设计级审核闭环
+//     输入是 DesignProposal（方案规格 / 子任务图 / 风险评估），
+//     由 DefaultDesignReviewer 或 Reviewer brain 启发式校验方案完备性，
+//     发现 Issue 后调用 AutoFix 修订 Proposal 本身，再重新审核。
+//     关注维度：architecture / risk / coverage / budget / dependency。
+//   - review_loop.go：MACCS Wave 1 任务级审核闭环
+//     输入是 PlanSubTask 的执行产物（DelegateResult / 代码 / 文件），
+//     发现 Issue 后生成"修复任务"再次执行。
+//
+// 两者目标不同（方案规格 vs 任务输出）。字段也不同：
+// DesignReviewIssue 有 Round / ProposalID，没有 File / Line / AutoFixable。
+// 刻意保持独立类型，不复用 ReviewReport / ReviewIssue。
+
 package kernel
 
 import (
@@ -8,7 +24,7 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DesignReview — MACCS Wave 3 Batch 2 方案审核循环
+// DesignReview — MACCS Wave 3 Batch 2 设计方案审核循环
 //
 // 方案设计完成后的审核闭环：审核 → 发现问题 → AutoFix → 再审核，
 // 直到通过或达到最大轮次。

@@ -245,11 +245,13 @@ func RunChat(args []string) int {
 
 	restore, rawErr := term.EnableRawInput()
 	if rawErr != nil {
+		defer state.Close()
 		exitCode := runChatLineMode(state, providerSession.Provider, brainID, maxTurns, sigCh)
 		_ = SaveConversation(SnapshotStateToConversation(state, e.Workdir))
 		return exitCode
 	}
 	defer restore()
+	defer state.Close()
 	defer func() {
 		_ = SaveConversation(SnapshotStateToConversation(state, e.Workdir))
 	}()

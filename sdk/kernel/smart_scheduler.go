@@ -1,7 +1,16 @@
-// smart_scheduler.go — MACCS Wave 4 Batch 2: 智能重排调度
+// smart_scheduler.go — MACCS Wave 4 Batch 2: 智能重排调度（DefaultTaskScheduler 的可选增强工具）
 //
-// 在检测到冲突后，自动调整并行层的任务分配，避免冲突任务同时执行。
-// 核心思路：遍历每层，用 ConflictDetector 检测冲突，将冲突任务延迟到下一层。
+// 定位：这是 DefaultTaskScheduler（scheduler.go）的**可选辅助/增强组件**，
+// 不是独立的第三套调度器。主线调度路径仍是 DefaultTaskScheduler.Plan()
+// （拓扑排序 + L1 brain 选择 + 优先级批次）。
+//
+// SmartScheduler 在拓扑分层之后，提供两类增强能力：
+//  1. 贪心冲突分离：Reschedule(layers, decls) — 把同层有资源冲突的任务挤到下一层
+//  2. 并行度建议：SuggestParallelism(decls) — 根据冲突比例建议合理的最大并行度
+//
+// 二者都依赖 ConflictDetector / DeadlockDetector 提供的资源声明检测。
+// 当上层（如 BatchPlanner / Orchestrator）需要在拓扑层之上做"冲突感知重排"时，
+// 才会使用本组件。它**不替代**也**不绕开** DefaultTaskScheduler。
 
 package kernel
 

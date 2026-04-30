@@ -18,14 +18,22 @@ type ComplexityEstimate struct {
 }
 
 // ComplexityEstimator 任务复杂度预估器。
-// 优先使用 LearningEngine 的历史数据，fallback 到启发式。
+// 优先使用 LearningEngine 的历史数据；样本不足时尝试 TransferLearner
+// 跨项目迁移先验；最终 fallback 到启发式。
 type ComplexityEstimator struct {
-	learner *LearningEngine
+	learner  *LearningEngine
+	transfer TransferLearner
 }
 
 // NewComplexityEstimator 创建复杂度预估器。learner 可为 nil（退化为纯启发式）。
 func NewComplexityEstimator(learner *LearningEngine) *ComplexityEstimator {
 	return &ComplexityEstimator{learner: learner}
+}
+
+// NewComplexityEstimatorWithTransfer 创建带迁移学习能力的复杂度预估器。
+// transfer 可为 nil（退化为只用 learner + 启发式）。
+func NewComplexityEstimatorWithTransfer(learner *LearningEngine, transfer TransferLearner) *ComplexityEstimator {
+	return &ComplexityEstimator{learner: learner, transfer: transfer}
 }
 
 // Estimate 预估单个子任务的复杂度。
@@ -36,7 +44,13 @@ func (e *ComplexityEstimator) Estimate(task PlanSubTask) ComplexityEstimate {
 			return est
 		}
 	}
-	// 2. Fallback 到启发式
+	// 2. 历史样本不足 — 尝试跨项目迁移学习先验
+	if e.transfer != nil {
+		if est, ok := e.estimateFromTransfer(task); ok {
+			return est
+		}
+	}
+	// 3. Fallback 到启发式
 	return e.estimateHeuristic(task)
 }
 
@@ -90,6 +104,87 @@ func (e *ComplexityEstimator) estimateFromLearning(task PlanSubTask) (Complexity
 		EstimatedTime:   estTime,
 		Confidence:      conf,
 		Source:          "learning",
+	}, true
+}
+
+// taskFingerprint 从 PlanSubTask 派生 (category, tags) 二元组用于跨项目迁移检索。
+// category 来自 Domain（如 web_app/api_service），为空时退回到 Kind。
+// tags 包含 Language、Kind 字符串以及（若有）Domain。
+func taskFingerprint(task PlanSubTask) (category string, tags []string) {
+	category = strings.TrimSpace(task.Domain)
+	if category == "" {
+		category = strings.TrimSpace(string(task.Kind))
+	}
+	if lang := strings.TrimSpace(task.Language); lang != "" {
+		tags = append(tags, "lang:"+lang)
+	}
+	if kind := strings.TrimSpace(string(task.Kind)); kind != "" {
+		tags = append(tags, "kind:"+kind)
+	}
+	if dom := strings.TrimSpace(task.Domain); dom != "" {
+		tags = append(tags, "domain:"+dom)
+	}
+	return category, tags
+}
+
+// estimateFromTransfer 基于跨项目迁移学习的先验生成估算。
+// 仅当本地 LearningEngine 样本不足以决断时调用。
+// 用相似度加权平均 AvgTurns 派生 turns，相似度作为置信度上限。
+func (e *ComplexityEstimator) estimateFromTransfer(task PlanSubTask) (ComplexityEstimate, bool) {
+	category, tags := taskFingerprint(task)
+	// 检索 top3 相似项目经验
+	candidates := e.transfer.FindSimilar(category, tags, 3)
+	if len(candidates) == 0 {
+		return ComplexityEstimate{}, false
+	}
+
+	// 用相似度作为权重加权平均 AvgTurns 与 SuccessRate
+	var weightedTurns, weightedSuccess, weightSum float64
+	for _, c := range candidates {
+		if c.Experience == nil || c.Similarity <= 0 || c.Experience.AvgTurns <= 0 {
+			continue
+		}
+		w := c.Similarity
+		weightedTurns += w * c.Experience.AvgTurns
+		weightedSuccess += w * c.Experience.SuccessRate
+		weightSum += w
+	}
+	if weightSum == 0 {
+		return ComplexityEstimate{}, false
+	}
+
+	turns := int(math.Round(weightedTurns / weightSum))
+	if turns < 1 {
+		turns = 1
+	}
+
+	// 与子任务自带预估融合（迁移先验权重 0.6 / 自带 0.4）
+	if task.EstimatedTurns > 0 {
+		turns = int(math.Round(0.6*float64(turns) + 0.4*float64(task.EstimatedTurns)))
+	}
+
+	// 成功率低 → 适度上调预算（失败需要更多 turns 重试）
+	successRate := weightedSuccess / weightSum
+	if successRate > 0 && successRate < 1 {
+		turns = int(math.Round(float64(turns) * (2.0 - successRate)))
+	}
+	if turns < 1 {
+		turns = 1
+	}
+
+	tokens := turns * 4500
+	estTime := time.Duration(turns) * 30 * time.Second
+
+	// 置信度：取最高相似度，但封顶 0.5（毕竟是跨项目先验，不如本地样本可靠）
+	maxSim := candidates[0].Similarity
+	conf := clampFloat(maxSim, 0, 0.5)
+
+	return ComplexityEstimate{
+		EstimatedTurns:  turns,
+		EstimatedTokens: tokens,
+		EstimatedTime:   estTime,
+		Confidence:      conf,
+		Source:          "transferred",
 	}, true
 }
 
@@ -189,11 +284,12 @@ func (e *ComplexityEstimator) EstimatePlan(plan *TaskPlan) ComplexityEstimate {
 	}
 
 	var (
-		totalTurns  int
-		totalTokens int
-		totalTime   time.Duration
-		minConf     = 1.0
-		hasLearning bool
+		totalTurns     int
+		totalTokens    int
+		totalTime      time.Duration
+		minConf        = 1.0
+		hasLearning    bool
+		hasTransferred bool
 	)
 
 	for _, sub := range plan.SubTasks {
@@ -204,14 +300,20 @@ func (e *ComplexityEstimator) EstimatePlan(plan *TaskPlan) ComplexityEstimate {
 		if est.Confidence < minConf {
 			minConf = est.Confidence
 		}
-		if est.Source == "learning" {
+		switch est.Source {
+		case "learning":
 			hasLearning = true
+		case "transferred":
+			hasTransferred = true
 		}
 	}
 
 	source := "heuristic"
-	if hasLearning {
+	switch {
+	case hasLearning:
 		source = "learning"
+	case hasTransferred:
+		source = "transferred"
 	}
 
 	return ComplexityEstimate{

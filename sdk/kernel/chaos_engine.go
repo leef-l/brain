@@ -5,6 +5,7 @@ package kernel
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -27,7 +28,7 @@ type ChaosExperiment struct {
 	ExperimentID string        `json:"experiment_id"`
 	Name         string        `json:"name"`
 	FaultType    FaultType     `json:"fault_type"`
-	Target       string        `json:"target"`   // 目标组件或 brain
+	Target       string        `json:"target"`    // 目标组件或 brain
 	Duration     time.Duration `json:"duration"`  // 持续时间
 	Intensity    float64       `json:"intensity"` // 故障强度 0-1
 	Schedule     string        `json:"schedule"`  // once/periodic
@@ -70,12 +71,22 @@ type ChaosSummary struct {
 	AvgRecoveryTime  time.Duration `json:"avg_recovery_time"`
 }
 
+// InjectionEvent 记录单次故障注入/移除事件，用于历史审计。
+type InjectionEvent struct {
+	Time         time.Time `json:"time"`
+	ExperimentID string    `json:"experiment_id"`
+	FaultType    FaultType `json:"fault_type"`
+	Action       string    `json:"action"` // "inject" | "remove"
+	Detail       string    `json:"detail"`
+}
+
 // ChaosEngine 管理混沌实验的生命周期：创建、执行、停止、汇总。
 type ChaosEngine struct {
 	mu          sync.RWMutex
 	experiments map[string]*ChaosExperiment
 	results     []ChaosResult
 	injectors   map[FaultType]FaultInjector
+	history     []InjectionEvent
 	enabled     bool
 }
 
@@ -157,6 +168,13 @@ func (ce *ChaosEngine) RunExperiment(ctx context.Context, experimentID string) (
 	}
 	result.FaultInjected = true
 	result.Observations = append(result.Observations, fmt.Sprintf("fault %s injected on %s", exp.FaultType, exp.Target))
+	ce.recordEvent(InjectionEvent{
+		Time:         time.Now(),
+		ExperimentID: experimentID,
+		FaultType:    exp.FaultType,
+		Action:       "inject",
+		Detail:       fmt.Sprintf("target=%s intensity=%.2f", exp.Target, exp.Intensity),
+	})
 	// 等待持续时间或 context 取消
 	timer := time.NewTimer(exp.Duration)
 	defer timer.Stop()
@@ -170,6 +188,13 @@ func (ce *ChaosEngine) RunExperiment(ctx context.Context, experimentID string) (
 	if err := injector.Remove(ctx, experimentID); err != nil {
 		result.Observations = append(result.Observations, "fault removal failed: "+err.Error())
 	}
+	ce.recordEvent(InjectionEvent{
+		Time:         time.Now(),
+		ExperimentID: experimentID,
+		FaultType:    exp.FaultType,
+		Action:       "remove",
+		Detail:       fmt.Sprintf("recovery_elapsed=%s", time.Since(removeStart)),
+	})
 	if recovered := !injector.IsActive(experimentID); recovered {
 		result.SystemRecovered = true
 		result.RecoveryTime = time.Since(removeStart)
@@ -201,6 +226,13 @@ func (ce *ChaosEngine) StopExperiment(experimentID string) error {
 	if err := injector.Remove(context.Background(), experimentID); err != nil {
 		return fmt.Errorf("stop experiment: %w", err)
 	}
+	ce.recordEvent(InjectionEvent{
+		Time:         time.Now(),
+		ExperimentID: experimentID,
+		FaultType:    exp.FaultType,
+		Action:       "remove",
+		Detail:       "stopped by StopExperiment",
+	})
 	ce.mu.Lock()
 	exp.Active = false
 	ce.mu.Unlock()
@@ -257,11 +289,30 @@ func (ce *ChaosEngine) Summary() ChaosSummary {
 	return s
 }
 
+// InjectionHistory 返回所有注入/移除事件的历史记录（只读快照）。
+func (ce *ChaosEngine) InjectionHistory() []InjectionEvent {
+	ce.mu.RLock()
+	defer ce.mu.RUnlock()
+	out := make([]InjectionEvent, len(ce.history))
+	copy(out, ce.history)
+	return out
+}
+
 func (ce *ChaosEngine) appendResult(r ChaosResult) {
 	ce.mu.Lock()
 	defer ce.mu.Unlock()
 	ce.results = append(ce.results, r)
 }
+
+func (ce *ChaosEngine) recordEvent(ev InjectionEvent) {
+	ce.mu.Lock()
+	defer ce.mu.Unlock()
+	ce.history = append(ce.history, ev)
+}
+
+// ---------------------------------------------------------------------------
+// MemFaultInjector — 内存 bookkeeping（仅跟踪活跃状态，不产生运行时副作用）
+// ---------------------------------------------------------------------------
 
 // MemFaultInjector 在内存中模拟故障注入，不实际 kill 进程，适用于测试和演练场景。
 type MemFaultInjector struct {
@@ -292,5 +343,220 @@ func (m *MemFaultInjector) IsActive(experimentID string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	_, ok := m.active[experimentID]
+	return ok
+}
+
+// ---------------------------------------------------------------------------
+// DelayInjector — 延迟注入器
+// ---------------------------------------------------------------------------
+
+// DelayInjector 注入网络/操作延迟。
+// Inject 会阻塞调用者 intensity×MaxDelay 毫秒，模拟慢速响应。
+// 注入期间 IsActive 返回 true；Remove 后停止阻塞新请求。
+type DelayInjector struct {
+	mu       sync.RWMutex
+	active   map[string]*ChaosExperiment
+	MaxDelay time.Duration // 最大延迟（intensity=1.0 时使用）；默认 5s
+}
+
+// NewDelayInjector 创建延迟注入器，maxDelay=0 时使用默认 5s。
+func NewDelayInjector(maxDelay time.Duration) *DelayInjector {
+	if maxDelay <= 0 {
+		maxDelay = 5 * time.Second
+	}
+	return &DelayInjector{
+		active:   make(map[string]*ChaosExperiment),
+		MaxDelay: maxDelay,
+	}
+}
+
+// Inject 记录实验为活跃，并立即阻塞 intensity×MaxDelay，模拟注入时刻的延迟峰值。
+func (d *DelayInjector) Inject(ctx context.Context, experiment *ChaosExperiment) error {
+	d.mu.Lock()
+	d.active[experiment.ExperimentID] = experiment
+	delay := time.Duration(float64(d.MaxDelay) * experiment.Intensity)
+	d.mu.Unlock()
+
+	if delay <= 0 {
+		return nil
+	}
+	select {
+	case <-time.After(delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Remove 移除活跃标记，后续请求不再受延迟影响。
+func (d *DelayInjector) Remove(_ context.Context, experimentID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.active, experimentID)
+	return nil
+}
+
+// IsActive 返回该实验是否仍处于注入状态。
+func (d *DelayInjector) IsActive(experimentID string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	_, ok := d.active[experimentID]
+	return ok
+}
+
+// ApplyDelay 供业务代码在关键路径上调用：若该实验活跃则阻塞对应延迟。
+// 用法：在 HTTP handler / RPC 入口插入 delayInjector.ApplyDelay(ctx, experimentID)。
+func (d *DelayInjector) ApplyDelay(ctx context.Context, experimentID string) error {
+	d.mu.RLock()
+	exp, ok := d.active[experimentID]
+	d.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	delay := time.Duration(float64(d.MaxDelay) * exp.Intensity)
+	if delay <= 0 {
+		return nil
+	}
+	select {
+	case <-time.After(delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ErrorInjector — 错误注入器
+// ---------------------------------------------------------------------------
+
+// ErrorInjector 以可配置概率返回预设错误，模拟 LLM API 错误、磁盘满等。
+// 概率由 experiment.Intensity 控制（1.0 = 100% 注入）。
+type ErrorInjector struct {
+	mu     sync.RWMutex
+	active map[string]*ChaosExperiment
+	rng    *rand.Rand
+	// InjectedCount 统计真正触发注入（返回 error）的次数，用于验收。
+	InjectedCount int64
+}
+
+// NewErrorInjector 创建错误注入器。
+func NewErrorInjector() *ErrorInjector {
+	return &ErrorInjector{
+		active: make(map[string]*ChaosExperiment),
+		rng:    rand.New(rand.NewSource(time.Now().UnixNano())), //nolint:gosec
+	}
+}
+
+// Inject 记录实验活跃，并根据 intensity 概率决定本次调用是否注入错误。
+// 若决定注入，则立即返回包含 fault 类型和目标的 error（真正改变调用链行为）。
+func (e *ErrorInjector) Inject(_ context.Context, experiment *ChaosExperiment) error {
+	e.mu.Lock()
+	e.active[experiment.ExperimentID] = experiment
+	shouldFire := e.rng.Float64() < experiment.Intensity
+	if shouldFire {
+		e.InjectedCount++
+	}
+	e.mu.Unlock()
+
+	if shouldFire {
+		return fmt.Errorf("chaos fault injected: type=%s target=%s experimentID=%s",
+			experiment.FaultType, experiment.Target, experiment.ExperimentID)
+	}
+	return nil
+}
+
+// Remove 移除活跃标记，后续操作不再受错误注入影响。
+func (e *ErrorInjector) Remove(_ context.Context, experimentID string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.active, experimentID)
+	return nil
+}
+
+// IsActive 返回该实验是否仍处于注入状态。
+func (e *ErrorInjector) IsActive(experimentID string) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	_, ok := e.active[experimentID]
+	return ok
+}
+
+// MaybeFail 供业务代码在关键路径上调用：若实验活跃且命中概率则返回 error。
+// 用法：if err := errInjector.MaybeFail(experimentID); err != nil { return err }
+func (e *ErrorInjector) MaybeFail(experimentID string) error {
+	e.mu.Lock()
+	exp, ok := e.active[experimentID]
+	if !ok {
+		e.mu.Unlock()
+		return nil
+	}
+	fire := e.rng.Float64() < exp.Intensity
+	if fire {
+		e.InjectedCount++
+	}
+	e.mu.Unlock()
+
+	if fire {
+		return fmt.Errorf("chaos fault injected: type=%s target=%s experimentID=%s",
+			exp.FaultType, exp.Target, experimentID)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// PanicInjector — panic 注入器（仅供 dev/test 模式使用）
+// ---------------------------------------------------------------------------
+
+// PanicInjector 在注入时触发 panic，模拟进程崩溃场景。
+// 警告：只在 dev/test 模式下启用；生产环境使用时调用方必须 recover。
+type PanicInjector struct {
+	mu      sync.RWMutex
+	active  map[string]*ChaosExperiment
+	devMode bool
+	rng     *rand.Rand
+	// PanicCount 统计触发 panic 的次数（在 recover 后可读取）。
+	PanicCount int64
+}
+
+// NewPanicInjector 创建 panic 注入器。devMode=false 时 Inject 退化为 NoOp（安全降级）。
+func NewPanicInjector(devMode bool) *PanicInjector {
+	return &PanicInjector{
+		active:  make(map[string]*ChaosExperiment),
+		devMode: devMode,
+		rng:     rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
+}
+
+// Inject 在 devMode 下以 intensity 概率触发 panic。
+// 调用方需使用 recover() 捕获，否则进程终止（这正是模拟崩溃的目的）。
+func (p *PanicInjector) Inject(_ context.Context, experiment *ChaosExperiment) error {
+	p.mu.Lock()
+	p.active[experiment.ExperimentID] = experiment
+	shouldPanic := p.devMode && p.rng.Float64() < experiment.Intensity
+	if shouldPanic {
+		p.PanicCount++
+	}
+	p.mu.Unlock()
+
+	if shouldPanic {
+		panic(fmt.Sprintf("chaos panic injected: type=%s target=%s experimentID=%s",
+			experiment.FaultType, experiment.Target, experiment.ExperimentID))
+	}
+	return nil
+}
+
+// Remove 移除活跃标记。
+func (p *PanicInjector) Remove(_ context.Context, experimentID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.active, experimentID)
+	return nil
+}
+
+// IsActive 返回该实验是否仍处于注入状态。
+func (p *PanicInjector) IsActive(experimentID string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	_, ok := p.active[experimentID]
 	return ok
 }

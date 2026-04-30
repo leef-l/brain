@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/leef-l/brain/sdk/loop"
 )
 
 // ---------------------------------------------------------------------------
@@ -135,4 +137,46 @@ func (m *MemInterruptChecker) Clear(_ context.Context, runID string) error {
 
 	delete(m.signals, runID)
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// KernelInterruptCheckerAdapter — 把 kernel.InterruptChecker 适配为 loop.RunInterruptChecker
+// ---------------------------------------------------------------------------
+
+// KernelInterruptCheckerAdapter 让 Runner（loop 包）可以使用 kernel 层的 InterruptChecker，
+// 同时避免 loop → kernel 的循环依赖（kernel → loop 是允许的单向依赖）。
+//
+// 字段映射契约：
+//   - SignalID → SignalID（直接复制）
+//   - InterruptType（kernel）→ string Type（loop）
+//   - InterruptAction（kernel）→ string Action（loop）
+//   - Reason → Reason
+//   - IssuedAt 不暴露给 loop 端，避免泄漏内部字段
+type KernelInterruptCheckerAdapter struct {
+	checker InterruptChecker
+}
+
+// NewKernelInterruptCheckerAdapter 构造一个适配器。
+// 当 checker 为 nil 时，CheckInterrupt 始终返回 nil（视作无中断），
+// 这与 Runner.InterruptChecker 字段为 nil 时的语义一致。
+func NewKernelInterruptCheckerAdapter(checker InterruptChecker) loop.RunInterruptChecker {
+	return &KernelInterruptCheckerAdapter{checker: checker}
+}
+
+// CheckInterrupt 实现 loop.RunInterruptChecker 接口。
+// 调用底层 InterruptChecker.Check，把 *kernel.InterruptSignal 转成 *loop.RunInterruptSignal。
+func (a *KernelInterruptCheckerAdapter) CheckInterrupt(ctx context.Context, runID string) *loop.RunInterruptSignal {
+	if a == nil || a.checker == nil {
+		return nil
+	}
+	sig := a.checker.Check(ctx, runID)
+	if sig == nil {
+		return nil
+	}
+	return &loop.RunInterruptSignal{
+		SignalID: sig.SignalID,
+		Type:     string(sig.Type),
+		Action:   string(sig.Action),
+		Reason:   sig.Reason,
+	}
 }

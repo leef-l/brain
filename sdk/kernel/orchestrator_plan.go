@@ -91,6 +91,58 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 				"running", fmt.Sprintf("layer %d with %d tasks", layerIdx, len(layer)))
 		}
 
+		// L2 序列学习：对同层（无依赖）任务按历史推荐顺序重排。
+		// nil learner 或样本不足时直接保持原顺序，不影响正确性。
+		if o.learner != nil && len(layer) > 1 {
+			// 将 layer 内 taskID 转为 []TaskStep
+			steps := make([]TaskStep, 0, len(layer))
+			for _, taskID := range layer {
+				if sub, ok := taskIndex[taskID]; ok {
+					steps = append(steps, TaskStep{
+						BrainKind:   sub.Kind,
+						TaskType:    string(sub.Kind), // PlanSubTask 无独立 TaskType，用 Kind 代替
+						ContextSize: len(sub.Instruction),
+					})
+				}
+			}
+			recommended := o.learner.RecommendOrder(steps)
+			if len(recommended) == len(layer) {
+				// 按推荐顺序重建 layer（taskID 列表）
+				reordered := make([]string, 0, len(layer))
+				used := make(map[int]bool, len(layer))
+				for _, s := range recommended {
+					for i, taskID := range layer {
+						if used[i] {
+							continue
+						}
+						sub, ok := taskIndex[taskID]
+						if !ok {
+							continue
+						}
+						if sub.Kind == s.BrainKind && string(sub.Kind) == s.TaskType {
+							reordered = append(reordered, taskID)
+							used[i] = true
+							break
+						}
+					}
+				}
+				// 若有未命中的（多个同类型 Kind）追加到末尾
+				for i, taskID := range layer {
+					if !used[i] {
+						reordered = append(reordered, taskID)
+					}
+				}
+				if len(reordered) == len(layer) {
+					layer = reordered
+					diaglog.Info("plan", "applied sequence learning recommendation",
+						"plan_id", plan.PlanID,
+						"layer", layerIdx,
+						"tasks", len(layer),
+					)
+				}
+			}
+		}
+
 		// 构建本层的 DelegateBatchRequest
 		batchReq := &DelegateBatchRequest{
 			Requests: make([]*DelegateRequest, 0, len(layer)),

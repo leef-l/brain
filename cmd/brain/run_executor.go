@@ -32,6 +32,7 @@ type managedRunExecution struct {
 	BatchPlanner      loop.ToolBatchPlanner                                                                // 可选，非 nil 时启用并行工具分组
 	MessageCompressor func(ctx context.Context, messages []llm.Message, budget int) ([]llm.Message, error) // 可选，消息压缩
 	TokenBudget       int                                                                                  // 消息 token 预算
+	InterruptChecker  loop.RunInterruptChecker                                                             // 可选，非 nil 时 Runner 每 turn 检查中断信号
 }
 
 type managedRunOutcome struct {
@@ -95,6 +96,7 @@ func executeManagedRun(ctx context.Context, req managedRunExecution) (outcome *m
 		BatchPlanner:      req.BatchPlanner,
 		MessageCompressor: req.MessageCompressor,
 		TokenBudget:       req.TokenBudget,
+		InterruptChecker:  req.InterruptChecker,
 	}
 
 	opts := loop.RunOptions{
