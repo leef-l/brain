@@ -694,20 +694,20 @@ func (r *sseReader) Close() error {
 }
 
 // newDefaultHTTPClient returns an http.Client with fine-grained timeouts.
-// The total timeout is 90s; connection, TLS handshake, and response-header
+// The total timeout is 180s; connection, TLS handshake, and response-header
 // timeouts are much shorter so that hung API calls fail fast instead of
 // blocking for minutes.
 func newDefaultHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: 90 * time.Second,
+		Timeout: 180 * time.Second,
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout:   10 * time.Second,
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 30 * time.Second,
-			IdleConnTimeout:       90 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+			IdleConnTimeout:       180 * time.Second,
 		},
 	}
 }

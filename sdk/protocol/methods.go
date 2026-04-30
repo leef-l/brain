@@ -151,3 +151,18 @@ const (
 	// audit record for security-relevant actions (see 23-安全模型.md).
 	MethodAuditEmit = "audit.emit"
 )
+
+// Progress & interrupt methods — sidecar↔host direction.
+const (
+	// MethodProgressReport is the sidecar→host notification that reports
+	// task execution progress to the central brain's ProjectProgress tracker.
+	MethodProgressReport = "progress/report"
+
+	// MethodProgressQuery is the host→sidecar or host-internal request
+	// that queries the current project progress state.
+	MethodProgressQuery = "progress/query"
+
+	// MethodInterruptSend is the host-internal or central→host request
+	// that sends an interrupt signal to one or more running tasks.
+	MethodInterruptSend = "interrupt/send"
+)

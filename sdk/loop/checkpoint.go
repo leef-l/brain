@@ -37,6 +37,15 @@ type Checkpoint struct {
 	// CurrentTurn 是当前 turn 序号（用于快速恢复）。
 	CurrentTurn int `json:"current_turn"`
 
+	// PlanID 关联的 TaskPlan 标识（MACCS v2 中断恢复用）。
+	PlanID string `json:"plan_id,omitempty"`
+
+	// CurrentTaskID 当前正在执行的 TaskPlan 子任务 ID。
+	CurrentTaskID string `json:"current_task_id,omitempty"`
+
+	// ProjectID 关联的项目 ID，用于恢复项目级上下文。
+	ProjectID string `json:"project_id,omitempty"`
+
 	// SavedAt 是 checkpoint 保存时间。
 	SavedAt time.Time `json:"saved_at"`
 }

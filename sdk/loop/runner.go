@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,6 +89,10 @@ type Runner struct {
 	// Turn 完成后自动保存 checkpoint，并在 Run 进入 StatePaused/StateCrashed
 	// 后恢复时从 checkpoint 重建状态。See checkpoint.go.
 	CheckpointStore CheckpointStore
+
+	// InterruptChecker 检查 run 是否收到中断信号。
+	// 当非 nil 时，每 turn 开始前检查，收到中断则暂停/停止/重启。
+	InterruptChecker RunInterruptChecker
 }
 
 // PreTurnState 描述某一轮的动态工具视图。
@@ -210,6 +215,32 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 				Error:     be,
 			})
 			break
+		}
+
+		// Interrupt check — before creating a new Turn.
+		if r.InterruptChecker != nil {
+			if sig := r.InterruptChecker.CheckInterrupt(ctx, run.ID); sig != nil {
+				switch sig.Action {
+				case "stop":
+					run.Fail(r.now())
+					turns = append(turns, &TurnResult{
+						Turn:      &Turn{RunID: run.ID, Index: run.CurrentTurn + 1},
+						NextState: StateFailed,
+						Error:     toBrainError(fmt.Errorf("interrupted: %s (%s)", sig.Reason, sig.Type)),
+					})
+					goto done
+				case "pause":
+					run.State = StatePaused
+					turns = append(turns, &TurnResult{
+						Turn:      &Turn{RunID: run.ID, Index: run.CurrentTurn + 1},
+						NextState: StatePaused,
+					})
+					CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
+					goto done
+				default:
+					// "restart" 或其他 — 记录后继续执行当前 turn
+				}
+			}
 		}
 
 		// Context cancellation check.
@@ -360,6 +391,21 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 
 		// Append tool results as a user message.
 		messages = append(messages, toolResultMessage(toolResultBlocks))
+
+		// Check if any dispatched tool was task_complete → terminate run.
+		for _, tb := range toolUseBlocks {
+			if strings.HasSuffix(tb.ToolName, ".task_complete") || tb.ToolName == "task_complete" {
+				turn.End(r.now())
+				turns = append(turns, &TurnResult{
+					Turn:      turn,
+					Response:  resp,
+					NextState: StateCompleted,
+				})
+				CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
+				run.Complete(r.now())
+				goto done
+			}
+		}
 
 		// Restore running state.
 		run.State = StateRunning

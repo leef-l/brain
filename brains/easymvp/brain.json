@@ -11,7 +11,11 @@
     "easymvp.repair_design",
     "easymvp.acceptance_mapping",
     "easymvp.completion_adjudication",
-    "easymvp.workspace_explanation"
+    "easymvp.workspace_explanation",
+    "easymvp.requirement_analysis",
+    "easymvp.solution_design",
+    "easymvp.design_review",
+    "easymvp.design_fix"
   ],
   "task_patterns": [
     "easymvp",

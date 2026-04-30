@@ -1210,7 +1210,7 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		req.Brain = "central"
 	}
 	if req.MaxTurns <= 0 {
-		req.MaxTurns = 20
+		req.MaxTurns = 50
 	}
 	effectiveWorkdir, err := resolveServeRunWorkdir(defaultWorkdir, req.Workdir, workdirPolicy)
 	if err != nil {

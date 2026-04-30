@@ -81,6 +81,14 @@ func (h *Handler) handleExecute(ctx context.Context, params json.RawMessage) (in
 		return h.handleCompletionAdjudication(ctx, req.Context)
 	case "workspace_explanation":
 		return h.handleWorkspaceExplanation(ctx, req.Context)
+	case "requirement_analysis":
+		return h.handleRequirementAnalysis(ctx, req.Context, req.ExecutionID)
+	case "solution_design":
+		return h.handleSolutionDesign(ctx, req.Context, req.ExecutionID)
+	case "design_review":
+		return h.handleDesignReview(ctx, req.Context)
+	case "design_fix":
+		return h.handleDesignFix(ctx, req.Context)
 	default:
 		return nil, fmt.Errorf("unsupported contract kind: %s", contractKind)
 	}

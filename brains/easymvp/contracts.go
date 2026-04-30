@@ -884,3 +884,117 @@ func fallbackWorkspaceExplanationEnvelope(input struct {
 		result,
 	)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// requirement_analysis
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (h *Handler) handleRequirementAnalysis(ctx context.Context, contextJSON json.RawMessage, executionID string) (interface{}, error) {
+	fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis called execution_id=%s\n", executionID)
+	var input struct {
+		ProjectID   string `json:"project_id"`
+		GoalSummary string `json:"goal_summary"`
+		RawInput    string `json:"raw_input"`
+		Instruction string `json:"instruction"`
+	}
+	if err := json.Unmarshal(contextJSON, &input); err != nil {
+		fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis unmarshal error: %v\n", err)
+		return nil, fmt.Errorf("parse requirement_analysis context: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis input parsed, project_id=%q goal=%q raw_input_len=%d instruction=%q\n",
+		input.ProjectID, input.GoalSummary, len(input.RawInput), input.Instruction)
+
+	system := `You are the EasyMVP Requirement Analysis Brain. Analyze the user's raw input and project goal, then produce a structured requirement document.
+Return ONLY a valid JSON object with these exact fields:
+- requirement_doc (object with: title, overview, functional_requirements, non_functional_requirements, user_stories, acceptance_criteria, constraints, assumptions)
+  - title (string): requirement document title
+  - overview (string): high-level overview of the requirements
+  - functional_requirements (array of objects with id, description, priority)
+  - non_functional_requirements (array of objects with id, description, priority)
+  - user_stories (array of objects with id, as_a, i_want, so_that, priority)
+  - acceptance_criteria (array of objects with id, given, when, then, description)
+  - constraints (array of strings)
+  - assumptions (array of strings)
+- summary (string): one sentence summarizing the requirement analysis
+- suggested_next_action (string): usually "confirm_requirement"
+Do not wrap in markdown code blocks.`
+
+	user := fmt.Sprintf("Project ID: %s\nProject Goal: %s\n\nRaw Input:\n%s\n\nInstruction: %s",
+		input.ProjectID, input.GoalSummary, input.RawInput, input.Instruction)
+
+	fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis calling LLM...\n")
+	content, err := h.callLLMWithRetry(ctx, system, user, executionID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis LLM failed: %v, using fallback\n", err)
+		return fallbackRequirementAnalysisEnvelope(input), nil
+	}
+	extracted := extractJSONFromText(content)
+	if !isValidRequirementAnalysisJSON(extracted) {
+		fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis invalid JSON object, using fallback. raw=%q extracted=%q\n", content, extracted)
+		return fallbackRequirementAnalysisEnvelope(input), nil
+	}
+	fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis LLM ok, building envelope...\n")
+	result := buildEnvelope("requirement_analysis",
+		[]map[string]interface{}{{"kind": "project", "id": input.ProjectID, "version": 1}},
+		"Requirement analysis completed",
+		"success",
+		json.RawMessage(extracted),
+	)
+	fmt.Fprintf(os.Stderr, "easymvp: handleRequirementAnalysis done\n")
+	return result, nil
+}
+
+// isValidRequirementAnalysisJSON checks that the extracted JSON is an object
+// containing a non-empty requirement_doc with a non-empty title.
+func isValidRequirementAnalysisJSON(s string) bool {
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(s), &obj); err != nil {
+		return false
+	}
+	doc, ok := obj["requirement_doc"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	title, ok := doc["title"].(string)
+	return ok && strings.TrimSpace(title) != ""
+}
+
+func fallbackRequirementAnalysisEnvelope(input struct {
+	ProjectID   string `json:"project_id"`
+	GoalSummary string `json:"goal_summary"`
+	RawInput    string `json:"raw_input"`
+	Instruction string `json:"instruction"`
+}) interface{} {
+	goalSummary := input.GoalSummary
+	if goalSummary == "" {
+		goalSummary = "项目需求"
+	}
+	result := map[string]interface{}{
+		"requirement_doc": map[string]interface{}{
+			"title":    fmt.Sprintf("%s - 需求文档", goalSummary),
+			"overview": fmt.Sprintf("基于项目目标「%s」生成的需求文档（fallback）。", goalSummary),
+			"functional_requirements": []map[string]interface{}{
+				{"id": "FR-001", "description": goalSummary, "priority": "high"},
+			},
+			"non_functional_requirements": []map[string]interface{}{
+				{"id": "NFR-001", "description": "系统应具备良好的可维护性和可扩展性", "priority": "medium"},
+			},
+			"user_stories": []map[string]interface{}{
+				{"id": "US-001", "as_a": "用户", "i_want": goalSummary, "so_that": "满足核心业务需求", "priority": "high"},
+			},
+			"acceptance_criteria": []map[string]interface{}{
+				{"id": "AC-001", "given": "系统已部署", "when": "用户使用核心功能", "then": "功能正常运行", "description": "核心功能验收"},
+			},
+			"constraints":  []string{"需在合理时间内完成交付"},
+			"assumptions": []string{"开发环境和依赖可正常使用"},
+		},
+		"summary":               fmt.Sprintf("基于「%s」生成的基础需求分析（fallback）。", goalSummary),
+		"suggested_next_action": "confirm_requirement",
+	}
+	return buildEnvelope("requirement_analysis",
+		[]map[string]interface{}{{"kind": "project", "id": input.ProjectID, "version": 1}},
+		"Fallback requirement analysis: basic requirements generated due to LLM unavailability",
+		"success",
+		result,
+	)
+}

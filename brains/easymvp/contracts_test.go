@@ -193,3 +193,102 @@ func TestBuildEnvelopeWithInvalidRawMessage(t *testing.T) {
 		t.Fatal("expected result_json even for invalid raw")
 	}
 }
+
+func TestIsValidRequirementAnalysisJSON(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{`{"requirement_doc":{"title":"Test"},"summary":"ok","suggested_next_action":"confirm_requirement"}`, true},
+		{`{"requirement_doc":{"title":"  "},"summary":"ok"}`, false},
+		{`{"requirement_doc":{"title":""},"summary":"ok"}`, false},
+		{`{"requirement_doc":{},"summary":"ok"}`, false},
+		{`{"summary":"ok"}`, false},
+		{`invalid`, false},
+		{`[]`, false},
+	}
+	for _, c := range cases {
+		got := isValidRequirementAnalysisJSON(c.input)
+		if got != c.want {
+			t.Fatalf("isValidRequirementAnalysisJSON(%q)=%v, want %v", c.input, got, c.want)
+		}
+	}
+}
+
+func TestIsValidSolutionDesignJSON(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{`{"architecture":"monolith","summary":"basic design"}`, true},
+		{`{"architecture":"","summary":"basic design"}`, false},
+		{`{"architecture":"monolith","summary":""}`, false},
+		{`{"architecture":"monolith"}`, false},
+		{`{"summary":"ok"}`, false},
+		{`invalid`, false},
+	}
+	for _, c := range cases {
+		got := isValidSolutionDesignJSON(c.input)
+		if got != c.want {
+			t.Fatalf("isValidSolutionDesignJSON(%q)=%v, want %v", c.input, got, c.want)
+		}
+	}
+}
+
+func TestIsValidDesignReviewJSON(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{`{"review_result_id":"rev_1","passed":true,"score":85,"dimensions":[],"issues":[],"suggestions":[]}`, true},
+		{`{"review_result_id":"rev_1","passed":false,"score":0}`, true},
+		{`{"review_result_id":"","score":80}`, false},
+		{`{"review_result_id":"rev_1"}`, false},
+		{`{"score":80}`, false},
+		{`invalid`, false},
+	}
+	for _, c := range cases {
+		got := isValidDesignReviewJSON(c.input)
+		if got != c.want {
+			t.Fatalf("isValidDesignReviewJSON(%q)=%v, want %v", c.input, got, c.want)
+		}
+	}
+}
+
+func TestIsValidDesignFixJSON(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{`{"fix_result_id":"fix_1","architecture":"updated","changes_summary":"fixed","fixed_issues":["ISS-1"]}`, true},
+		{`{"fix_result_id":"fix_1"}`, true},
+		{`{"fix_result_id":""}`, false},
+		{`{"fix_result_id":"   "}`, false},
+		{`{}`, false},
+		{`invalid`, false},
+	}
+	for _, c := range cases {
+		got := isValidDesignFixJSON(c.input)
+		if got != c.want {
+			t.Fatalf("isValidDesignFixJSON(%q)=%v, want %v", c.input, got, c.want)
+		}
+	}
+}
+
+func TestExtractContractKindNewContracts(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"[contract:requirement_analysis] analyze requirements", "requirement_analysis"},
+		{"[contract:solution_design] design solution", "solution_design"},
+		{"[contract:design_review] review design", "design_review"},
+		{"[contract:design_fix] fix design", "design_fix"},
+	}
+	for _, c := range cases {
+		got := extractContractKind(c.input)
+		if got != c.want {
+			t.Fatalf("extractContractKind(%q)=%q, want %q", c.input, got, c.want)
+		}
+	}
+}
