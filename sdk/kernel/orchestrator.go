@@ -168,6 +168,12 @@ type Orchestrator struct {
 	// 按 brain.kind / status 打标签，分发到所有注册的 provider。
 	observ *ObservabilityHub
 
+	// reviewLoop 是可选的任务级审核器（MACCS 1.10）。当非 nil 时，
+	// ExecuteTaskPlan 在每个子任务成功完成后调 SubmitReview 拿审核报告，
+	// 写入 subTask.Result.Review，供下一轮 reflection / plan 利用。
+	// 不进入"fix-and-redo"闭环（那是 PlanOrchestrator 重新生成 plan 的事）。
+	reviewLoop *ReviewLoopController
+
 	mu sync.Mutex
 }
 
@@ -338,6 +344,15 @@ func WithPerfCollector(p *PerfCollector) OrchestratorOption {
 func WithObservability(h *ObservabilityHub) OrchestratorOption {
 	return func(o *Orchestrator) {
 		o.observ = h
+	}
+}
+
+// WithReviewLoop 设置可选的任务级审核器（MACCS 1.10）。设置后
+// ExecuteTaskPlan 在每个子任务成功完成后调 SubmitReview，把审核报告
+// 写入 subTask.Result.Review。失败 / 异常不阻塞主流程。
+func WithReviewLoop(r *ReviewLoopController) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.reviewLoop = r
 	}
 }
 
@@ -1589,9 +1604,11 @@ func (o *Orchestrator) resolveTargetKind(req *DelegateRequest) agent.Kind {
 	}
 
 	// 用 learner 排名 + 因果推理加权：
-	//   combined = capScore*0.5 + learnScore*0.3 + causalScore*0.2
+	//   combined = capScore*0.4 + learnScore*0.25 + causalScore*0.35
 	// 其中 causalScore 来自 CausalLearner.QueryEffect("brain", kind) 的 success 关系强度，
 	// 用于剔除"高成功率是因为该 brain 历史接的任务都简单"这类混杂相关。
+	// 2026-05-01：causalScore 权重 0.2→0.35（同时把 capScore 0.5→0.4、learnScore 0.3→0.25），
+	// 让因果信号能在 CombinedScore 接近时主导路由，避免被表观相关性淹没。
 	taskType := req.TaskType
 	if taskType == "" {
 		taskType = "delegation"
@@ -1623,7 +1640,7 @@ func (o *Orchestrator) resolveTargetKind(req *DelegateRequest) agent.Kind {
 	for _, c := range candidates {
 		learnScore := rankMap[c.BrainKind]
 		causalScore := brainCausalScore(causal, c.BrainKind)
-		combined := c.CombinedScore*0.5 + learnScore*0.3 + causalScore*0.2
+		combined := c.CombinedScore*0.4 + learnScore*0.25 + causalScore*0.35
 		if combined > bestScore {
 			bestScore = combined
 			bestKind = c.BrainKind

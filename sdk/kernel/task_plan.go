@@ -86,6 +86,9 @@ type PlanTaskResult struct {
 	Artifacts  []string    `json:"artifacts"`
 	Confidence float64     `json:"confidence"`
 	Issues     []PlanIssue `json:"issues"`
+	// Review 是任务完成后由 ReviewLoopController.SubmitReview 写入的审核报告，
+	// 反馈给下一轮 reflection / plan 生成。nil 表示未启用审核或审核失败。
+	Review *ReviewReport `json:"review,omitempty"`
 }
 
 // PlanIssue 描述子任务执行中发现的问题。

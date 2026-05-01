@@ -2,7 +2,9 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/leef-l/brain/sdk/diaglog"
@@ -123,6 +125,9 @@ func NewPlanOrchestrator(orch *Orchestrator, cfg PlanOrchestratorConfig) *PlanOr
 
 	if orch != nil {
 		po.ReviewLoop = NewReviewLoopController(orch, cfg.ReviewConfig)
+		// MACCS 1.10：把 ReviewLoop 注入回 Orchestrator，让 ExecuteTaskPlan
+		// 在每个子任务成功后调 SubmitReview 拿审核报告写入 subTask.Result.Review。
+		orch.reviewLoop = po.ReviewLoop
 
 		// 接入 ContextEngine：替换底层 Orchestrator 的 contextEngine，使 Delegate
 		// 阶段下游 brain prompt 自动带上项目记忆摘要（ContextEngineWithMemory.Assemble
@@ -137,9 +142,64 @@ func NewPlanOrchestrator(orch *Orchestrator, cfg PlanOrchestratorConfig) *PlanOr
 		if cfg.ModelRouter != nil {
 			cfg.ModelRouter.SyncToLLMProxy(orch.LLMProxy())
 		}
+
+		// MACCS 5.3：订阅 ActiveLearner 发布的 brain.feedback.requested 事件，
+		// 把高不确定 brain 的反馈请求作为 lesson 存入 ProjectMemory，让下一轮
+		// plan 通过 MemoryRetriever 检索到，主动避开易出问题的 brain。
+		if orch.EventBus != nil && po.Memory != nil {
+			go po.consumeFeedbackRequests(patternBg)
+		}
 	}
 
 	return po
+}
+
+// consumeFeedbackRequests 长期订阅 brain.feedback.requested 事件，把每条
+// active-learning 反馈请求作为 lesson 写入 ProjectMemory。退出条件：ctx.Done()。
+func (po *PlanOrchestrator) consumeFeedbackRequests(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			diaglog.Error("plan_orchestrator", "feedback subscriber panic", "recover", fmt.Sprint(r))
+		}
+	}()
+	if po.Orchestrator == nil || po.Orchestrator.EventBus == nil {
+		return
+	}
+	ch, unsub := po.Orchestrator.EventBus.Subscribe(ctx, "")
+	defer unsub()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if ev.Type != "brain.feedback.requested" {
+				continue
+			}
+			var payload struct {
+				BrainKind string  `json:"brain_kind"`
+				Reason    string  `json:"reason"`
+				Question  string  `json:"question"`
+				Uncertain float64 `json:"uncertainty"`
+			}
+			if err := json.Unmarshal(ev.Data, &payload); err != nil || payload.BrainKind == "" {
+				continue
+			}
+			summary := fmt.Sprintf("brain=%s 不确定性=%.2f: %s", payload.BrainKind, payload.Uncertain, payload.Reason)
+			_ = po.Memory.Store(ctx, MemoryEntry{
+				ProjectID:  ev.ExecutionID,
+				Type:       MemoryLesson,
+				Content:    summary,
+				Summary:    summary,
+				Tags:       []string{"active_learning", payload.BrainKind},
+				Importance: 0.5,
+			})
+			diaglog.Info("plan_orchestrator", "feedback request stored as lesson",
+				"brain", payload.BrainKind, "reason", payload.Reason)
+		}
+	}
 }
 
 // ExecuteProject 执行完整的项目流程：
@@ -206,10 +266,13 @@ func (po *PlanOrchestrator) ExecuteProject(ctx context.Context, plan *TaskPlan) 
 		reflection = po.MetaCognitive.Reflect(plan, progress)
 		po.MetaCognitive.FeedbackToLearner(reflection)
 
-		// 将经验教训存入项目记忆
+		// 将经验教训 + 推荐建议存入项目记忆，下一轮 plan 通过 MemoryRetriever
+		// 检索到这些条目并写入 reflection.Recommendations，形成跨 plan 的反馈闭环。
+		// 2026-05-01：阈值 0.5→0.3 降低进入门槛（避免低重要度 Lessons 丢失），
+		// 同时把 Recommendations 也作为 lesson 存（importance 0.4 默认）。
 		if po.Memory != nil && reflection != nil {
 			for _, lesson := range reflection.Lessons {
-				if lesson.Importance >= 0.5 {
+				if lesson.Importance >= 0.3 {
 					_ = po.Memory.Store(ctx, MemoryEntry{
 						ProjectID:  plan.ProjectID,
 						Type:       MemoryLesson,
@@ -219,6 +282,24 @@ func (po *PlanOrchestrator) ExecuteProject(ctx context.Context, plan *TaskPlan) 
 						Importance: lesson.Importance,
 					})
 				}
+			}
+			for _, rec := range reflection.Recommendations {
+				if rec == "" {
+					continue
+				}
+				// 跳过 MemoryRetriever 上一轮回填的 "[相似经验/...]" 前缀，
+				// 避免无限放大同一条记忆。
+				if strings.HasPrefix(rec, "[相似经验/") {
+					continue
+				}
+				_ = po.Memory.Store(ctx, MemoryEntry{
+					ProjectID:  plan.ProjectID,
+					Type:       MemoryLesson,
+					Content:    rec,
+					Summary:    "recommendation: " + rec,
+					Tags:       []string{"recommendation", "reflection"},
+					Importance: 0.4,
+				})
 			}
 		}
 
@@ -289,13 +370,22 @@ func (po *PlanOrchestrator) runPatternExtraction(exp *ProjectExperience) {
 		ctx = context.Background()
 	}
 
-	// 持久化当前经验，让下次抽取能用到本次结果
+	// 持久化当前经验，让下次抽取能用到本次结果。失败仅记录，不阻塞。
 	if exp != nil {
-		_ = po.ExperienceStore.Save(ctx, exp)
+		if err := po.ExperienceStore.Save(ctx, exp); err != nil {
+			diaglog.Warn("plan_orchestrator", "pattern extraction: save experience failed",
+				"project_id", exp.ProjectID, "err", err)
+		}
 	}
 
 	exps, err := po.ExperienceStore.List(ctx)
-	if err != nil || len(exps) == 0 {
+	if err != nil {
+		diaglog.Warn("plan_orchestrator", "pattern extraction: list experiences failed",
+			"err", err)
+		return
+	}
+	if len(exps) == 0 {
+		diaglog.Info("plan_orchestrator", "pattern extraction: no experiences to extract from")
 		return
 	}
 
@@ -309,22 +399,31 @@ func (po *PlanOrchestrator) runPatternExtraction(exp *ProjectExperience) {
 
 	patterns := po.PatternExtractor.Extract(values)
 	if len(patterns) == 0 {
+		diaglog.Info("plan_orchestrator", "pattern extraction: no patterns extracted",
+			"experiences", len(values))
 		return
 	}
 
 	// 把新模式加入 library + 把摘要写入项目记忆，供下次 reflection 检索
+	memStoreFailed := 0
 	for _, p := range patterns {
 		po.PatternExtractor.AddPattern(p)
 		if po.Memory != nil && exp != nil {
-			_ = po.Memory.Store(ctx, MemoryEntry{
+			if err := po.Memory.Store(ctx, MemoryEntry{
 				ProjectID:  exp.ProjectID,
 				Type:       MemoryLesson,
 				Content:    fmt.Sprintf("[pattern/%s] %s — confidence=%.2f", p.Category, p.Description, p.Confidence),
 				Summary:    p.Name,
 				Tags:       []string{"pattern", p.Category},
 				Importance: p.Confidence,
-			})
+			}); err != nil {
+				memStoreFailed++
+			}
 		}
+	}
+	if memStoreFailed > 0 {
+		diaglog.Warn("plan_orchestrator", "pattern extraction: some memory stores failed",
+			"failed", memStoreFailed, "total_patterns", len(patterns))
 	}
 
 	diaglog.Info("plan_orchestrator", "pattern extraction done",

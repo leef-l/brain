@@ -270,6 +270,13 @@ func (c *ReviewLoopController) ExecuteWithReview(ctx context.Context, task PlanS
 	return result, nil
 }
 
+// SubmitReview 是 submitReview 的对外暴露版本，供 ExecuteTaskPlan 在完成
+// 单个任务后做一次"非重做型"审核（不进入 fix-and-redo 闭环，仅拿审核报告
+// 写回 subTask.Result.Review，让下一轮 plan / reflection 利用）。
+func (c *ReviewLoopController) SubmitReview(ctx context.Context, task PlanSubTask, output json.RawMessage) (*ReviewReport, error) {
+	return c.submitReview(ctx, task, output)
+}
+
 // submitReview 提交审核请求给 Verifier。
 func (c *ReviewLoopController) submitReview(ctx context.Context, task PlanSubTask, output json.RawMessage) (*ReviewReport, error) {
 	// 构造审核指令

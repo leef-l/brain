@@ -244,6 +244,28 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 					Output: string(result.Output),
 				}
 
+				// MACCS 1.10：任务级审核闭环。reviewLoop 非 nil 时拿审核报告写入
+				// subTask.Result.Review，供 reflection / 下一轮 plan 利用。
+				// 失败 / 异常不阻塞主流程。
+				if o.reviewLoop != nil {
+					if review, rerr := o.reviewLoop.SubmitReview(ctx, *subTask, result.Output); rerr == nil && review != nil {
+						subTask.Result.Review = review
+						if !review.Passed {
+							for _, iss := range review.Issues {
+								subTask.Result.Issues = append(subTask.Result.Issues, PlanIssue{
+									Severity:    iss.Severity,
+									Category:    iss.Category,
+									Description: iss.Description,
+									SuggestedFix: iss.SuggestedFix,
+								})
+							}
+						}
+					} else if rerr != nil {
+						diaglog.Warn("execute_task_plan", "review submit failed",
+							"task_id", taskID, "err", rerr)
+					}
+				}
+
 				if reporter != nil {
 					reporter("plan.task.completed", taskID, "completed", string(result.Output))
 				}
