@@ -186,6 +186,7 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 				TaskID:      taskID,
 				TargetKind:  subTask.Kind,
 				Instruction: subTask.Instruction,
+				Workdir:     plan.Workdir, // workdir 端到端贯穿
 			}
 			if subTask.EstimatedTurns > 0 {
 				delegateReq.Budget = &SubtaskBudget{
@@ -271,7 +272,9 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 				}
 
 				if subTask.RetryPolicy.MaxRetries > subTask.RetryCount {
-					// 需要重试
+					// 需要重试。失败原因多半是 turns_exhausted —— 同 budget 重试必然再败。
+					// 这里没有直接的 Estimator 引用（Orchestrator 不持有，在 PlanOrchestrator 上）。
+					// 由 PlanOrchestrator 上层的 retry 包装做 budget 调整；本函数只标记重试。
 					retryTasks = append(retryTasks, i)
 					subTask.RetryCount++
 					if reporter != nil {
@@ -413,6 +416,7 @@ func (o *Orchestrator) retryFailedTasks(
 			TaskID:      taskID,
 			TargetKind:  subTask.Kind,
 			Instruction: subTask.Instruction,
+			Workdir:     plan.Workdir, // workdir 端到端贯穿
 		}
 		if subTask.EstimatedTurns > 0 {
 			delegateReq.Budget = &SubtaskBudget{

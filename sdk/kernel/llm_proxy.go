@@ -51,6 +51,34 @@ type LLMProxy struct {
 	// ExecutionID 关联当前 contract/execution 的 ID，用于事件路由。
 	// handleStream 发布事件时将此 ID 写入 Event.ExecutionID。
 	ExecutionID string
+
+	// PromptManager 是可选的自适应 Prompt 管理器（MACCS 5.5）。
+	// 非 nil 时，Complete/handleComplete/handleStream 会按 brain.kind 选 A/B 变体，
+	// 把 RenderPrompt 出的文本作为 L1 system block 前置（cache=true），
+	// 不破坏调用方传入的原 System 列表（视为 L2 跟在后面）。
+	// 类型为 AdaptivePromptManager 接口（adaptive_prompt.go 中定义）。
+	PromptManager AdaptivePromptManager
+}
+
+// adaptiveSystemPrefix 在 PromptManager 非空时，把所选变体作为 L1 system block
+// 前置到原有 System 列表前面；nil 或选不到变体时原样返回。
+// L1 标记 Cache=true 让 provider adapter 启用 prompt cache。
+func (p *LLMProxy) adaptiveSystemPrefix(brainKind string, original []llm.SystemBlock) []llm.SystemBlock {
+	if p == nil || p.PromptManager == nil || brainKind == "" {
+		return original
+	}
+	variant := p.PromptManager.SelectVariant(brainKind)
+	if variant == nil {
+		return original
+	}
+	rendered := RenderPrompt(variant)
+	if rendered == "" {
+		return original
+	}
+	out := make([]llm.SystemBlock, 0, len(original)+1)
+	out = append(out, llm.SystemBlock{Text: rendered, Cache: true})
+	out = append(out, original...)
+	return out
 }
 
 // llmCompleteRequest is the payload sent by a sidecar in an llm.complete
@@ -234,7 +262,7 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 
 	chatReq := &llm.ChatRequest{
 		BrainID:    string(kind),
-		System:     req.System,
+		System:     p.adaptiveSystemPrefix(string(kind), req.System),
 		Messages:   req.Messages,
 		Tools:      req.Tools,
 		Model:      model,
@@ -332,7 +360,7 @@ func (p *LLMProxy) handleStream(ctx context.Context, kind agent.Kind, params jso
 
 	chatReq := &llm.ChatRequest{
 		BrainID:    string(kind),
-		System:     req.System,
+		System:     p.adaptiveSystemPrefix(string(kind), req.System),
 		Messages:   req.Messages,
 		Tools:      req.Tools,
 		Model:      model,
@@ -509,7 +537,7 @@ func (p *LLMProxy) Complete(ctx context.Context, req *llm.ChatRequest) (*llm.Cha
 		BrainID:         req.BrainID,
 		RunID:           req.RunID,
 		TurnIndex:       req.TurnIndex,
-		System:          req.System,
+		System:          p.adaptiveSystemPrefix(string(kind), req.System),
 		Messages:        req.Messages,
 		Tools:           req.Tools,
 		Model:           model,

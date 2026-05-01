@@ -46,6 +46,89 @@ type Config struct {
 
 	ToolProfiles map[string]*ToolProfileConfig `json:"tool_profiles,omitempty"`
 	ActiveTools  map[string]string             `json:"active_tools,omitempty"`
+
+	// MACCS 多大脑协同系统配置（v2.2 新增）
+	// 所有字段都有合理默认值，整个 maccs 块可以省略；
+	// 仅当需要调优 / 关闭某项时显式配置。
+	MACCS *MACCSConfig `json:"maccs,omitempty"`
+}
+
+// MACCSConfig 是 MACCS 协同系统的运行参数。
+// nil 等价于全部使用默认值（与 examples 注释保持一致）。
+type MACCSConfig struct {
+	// 6.1 HealthManager —— 组件健康监控（GET /v1/health）
+	// 默认 enabled=true，注册 BrainPool + LeaseManager 两个 checker。
+	Health *MACCSHealthConfig `json:"health,omitempty"`
+
+	// 6.3 PerfCollector —— 性能采样（GET /v1/metrics/perf）
+	// 默认 enabled=true。开销极小（map 写入），生产推荐保持开启。
+	Perf *MACCSPerfConfig `json:"perf,omitempty"`
+
+	// 6.4 ObservabilityHub —— 调用链 Span（GET /v1/observability）
+	// 默认 enabled=true，挂载内存 provider；外部 OTLP/Prometheus 通过代码扩展。
+	Observability *MACCSObservConfig `json:"observability,omitempty"`
+
+	// 6.5 SecurityAuditor —— POST /v1/projects 入参注入风险审计
+	// 默认 enabled=true，命中 critical/high 拒绝；medium/low 仅日志放行。
+	Security *MACCSSecurityConfig `json:"security,omitempty"`
+
+	// 6.6 MultiProjectManager —— 项目级并发槽位 + 配额
+	// 默认 max_concurrent=3, queue_size=16；超额返回 429。
+	MultiProject *MACCSMultiProjectConfig `json:"multi_project,omitempty"`
+
+	// 5.5 AdaptivePromptManager —— A/B 变体注入 LLMProxy.PromptManager
+	// 默认 enabled=true，但需用户通过 RegisterVariant 注入变体后才有实际效果。
+	AdaptivePrompt *MACCSAdaptivePromptConfig `json:"adaptive_prompt,omitempty"`
+
+	// 4.2/4.5 ConflictDetector + SmartScheduler —— 冲突感知重排
+	// 默认 enabled=true, dry_run=true（仅日志，不实际改变 layer）。
+	// 生产观察一周确认无误报后切换 dry_run=false 启用强制重排。
+	Conflict *MACCSConflictConfig `json:"conflict,omitempty"`
+
+	// 5.4 PatternExtractor —— ExecuteProject 后异步提取共性模式
+	// 默认 enabled=true。需要 ExperienceStore 配合（自动启用 MemExperienceStore）。
+	PatternExtractor *MACCSPatternConfig `json:"pattern_extractor,omitempty"`
+}
+
+type MACCSHealthConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type MACCSPerfConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type MACCSObservConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type MACCSSecurityConfig struct {
+	Enabled bool `json:"enabled"`
+	// RejectSeverity 决定多严重的发现才拒绝请求；
+	// 默认 "high" → critical/high 拒绝, medium/low 仅日志。
+	// 可选: "critical" / "high" / "medium" / "low"
+	RejectSeverity string `json:"reject_severity,omitempty"`
+}
+
+type MACCSMultiProjectConfig struct {
+	Enabled       bool `json:"enabled"`
+	MaxConcurrent int  `json:"max_concurrent,omitempty"` // 默认 3
+	QueueSize     int  `json:"queue_size,omitempty"`     // 默认 16
+}
+
+type MACCSAdaptivePromptConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type MACCSConflictConfig struct {
+	Enabled bool `json:"enabled"`
+	// DryRun=true 时仅日志记录冲突重排建议，不实际改变 layer 顺序；
+	// 生产环境观察一周后切换为 false 启用强制重排（路线图风险对策）。
+	DryRun bool `json:"dry_run"`
+}
+
+type MACCSPatternConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type DiagnosticsConfig struct {
@@ -706,4 +789,105 @@ func SortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// ─── MACCS 配置默认值访问器（nil-safe）────────────────────────────────
+//
+// 调用方应该用这些方法读 MACCS 配置，而不是直接 cfg.MACCS.X.Y —— 它们处理
+// nil 指针并填充默认值，调用方零判空成本。
+
+// MACCSHealthEnabled 返回 HealthManager 是否启用，默认 true。
+func (c *Config) MACCSHealthEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Health == nil {
+		return true
+	}
+	return c.MACCS.Health.Enabled
+}
+
+// MACCSPerfEnabled 返回 PerfCollector 是否启用，默认 true。
+func (c *Config) MACCSPerfEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Perf == nil {
+		return true
+	}
+	return c.MACCS.Perf.Enabled
+}
+
+// MACCSObservabilityEnabled 返回 ObservabilityHub 是否启用，默认 true。
+func (c *Config) MACCSObservabilityEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Observability == nil {
+		return true
+	}
+	return c.MACCS.Observability.Enabled
+}
+
+// MACCSSecurityEnabled 返回 SecurityAuditor 是否启用，默认 true。
+func (c *Config) MACCSSecurityEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Security == nil {
+		return true
+	}
+	return c.MACCS.Security.Enabled
+}
+
+// MACCSSecurityRejectSeverity 返回拒绝阈值，默认 "high"。
+func (c *Config) MACCSSecurityRejectSeverity() string {
+	if c == nil || c.MACCS == nil || c.MACCS.Security == nil || c.MACCS.Security.RejectSeverity == "" {
+		return "high"
+	}
+	return c.MACCS.Security.RejectSeverity
+}
+
+// MACCSMultiProjectEnabled 返回 MultiProjectManager 是否启用，默认 true。
+func (c *Config) MACCSMultiProjectEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.MultiProject == nil {
+		return true
+	}
+	return c.MACCS.MultiProject.Enabled
+}
+
+// MACCSMultiProjectMaxConcurrent 默认 3。
+func (c *Config) MACCSMultiProjectMaxConcurrent() int {
+	if c == nil || c.MACCS == nil || c.MACCS.MultiProject == nil || c.MACCS.MultiProject.MaxConcurrent <= 0 {
+		return 3
+	}
+	return c.MACCS.MultiProject.MaxConcurrent
+}
+
+// MACCSMultiProjectQueueSize 默认 16。
+func (c *Config) MACCSMultiProjectQueueSize() int {
+	if c == nil || c.MACCS == nil || c.MACCS.MultiProject == nil || c.MACCS.MultiProject.QueueSize <= 0 {
+		return 16
+	}
+	return c.MACCS.MultiProject.QueueSize
+}
+
+// MACCSAdaptivePromptEnabled 默认 true。
+func (c *Config) MACCSAdaptivePromptEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.AdaptivePrompt == nil {
+		return true
+	}
+	return c.MACCS.AdaptivePrompt.Enabled
+}
+
+// MACCSConflictEnabled 默认 true。
+func (c *Config) MACCSConflictEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Conflict == nil {
+		return true
+	}
+	return c.MACCS.Conflict.Enabled
+}
+
+// MACCSConflictDryRun 默认 true（生产首周观察期）。
+func (c *Config) MACCSConflictDryRun() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Conflict == nil {
+		return true
+	}
+	return c.MACCS.Conflict.DryRun
+}
+
+// MACCSPatternExtractorEnabled 默认 true。
+func (c *Config) MACCSPatternExtractorEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.PatternExtractor == nil {
+		return true
+	}
+	return c.MACCS.PatternExtractor.Enabled
 }

@@ -94,21 +94,49 @@ func (t *WorkflowTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		input.Workflow.ID = fmt.Sprintf("wf-tool-%d", time.Now().UnixNano())
 	}
 
+	// 节点状态默认静默：通过 WorkflowProgressHook 喂给 chat UI 的 todo 框。
+	// /verbose 模式下额外通过 VerbosePrint 输出文本三连，便于排障。
 	reporter := t.Reporter
 	if reporter == nil {
 		reporter = func(eventType, nodeID, status, output, errMsg string) {
-			switch eventType {
-			case "workflow.node.started":
-				fmt.Printf("\033[2m    → workflow node %s started\033[0m\n", nodeID)
-			case "workflow.node.completed":
-				fmt.Printf("\033[2m    → workflow node %s completed\033[0m\n", nodeID)
-			case "workflow.node.failed":
-				fmt.Printf("\033[2m    → workflow node %s failed: %s\033[0m\n", nodeID, errMsg)
+			// 1. UI 钩子：todo 框更新
+			if WorkflowProgressHook != nil {
+				switch eventType {
+				case "workflow.node.started":
+					WorkflowProgressHook("running", nodeID, "", "", "")
+				case "workflow.node.completed":
+					WorkflowProgressHook("completed", nodeID, "", "", "")
+				case "workflow.node.failed":
+					WorkflowProgressHook("failed", nodeID, "", "", errMsg)
+				}
+			}
+			// 2. verbose 文本三连
+			if VerbosePrint != nil {
+				switch eventType {
+				case "workflow.node.started":
+					VerbosePrint(fmt.Sprintf("\033[2m    → workflow node %s started\033[0m\n", nodeID))
+				case "workflow.node.completed":
+					VerbosePrint(fmt.Sprintf("\033[2m    → workflow node %s completed\033[0m\n", nodeID))
+				case "workflow.node.failed":
+					VerbosePrint(fmt.Sprintf("\033[2m    → workflow node %s failed: %s\033[0m\n", nodeID, errMsg))
+				}
 			}
 		}
 	}
 
-	fmt.Printf("\033[2m    → submitting workflow %s (%d nodes)...\033[0m\n", input.Workflow.ID, len(input.Workflow.Nodes))
+	// workflow 提交时通知 todo 框初始化所有节点（pending）
+	if WorkflowProgressHook != nil {
+		for _, n := range input.Workflow.Nodes {
+			name := n.Prompt
+			if len(name) > 60 {
+				name = name[:60] + "…"
+			}
+			WorkflowProgressHook("init", n.ID, name, n.BrainID, "")
+		}
+	}
+	if VerbosePrint != nil {
+		VerbosePrint(fmt.Sprintf("\033[2m    → submitting workflow %s (%d nodes)...\033[0m\n", input.Workflow.ID, len(input.Workflow.Nodes)))
+	}
 
 	result, err := t.Orchestrator.ExecuteWorkflow(ctx, &input.Workflow, reporter)
 	if err != nil {

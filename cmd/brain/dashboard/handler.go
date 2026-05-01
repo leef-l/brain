@@ -109,10 +109,11 @@ func handleBrains(w http.ResponseWriter, _ *http.Request, pool *kernel.ProcessBr
 
 	statuses := pool.Status()
 	type brainItem struct {
-		Kind       string `json:"kind"`
-		Running    bool   `json:"running"`
-		Binary     string `json:"binary,omitempty"`
-		AutoStart  bool   `json:"auto_start,omitempty"`
+		Kind      string `json:"kind"`
+		Running   bool   `json:"running"`
+		Instances int    `json:"instances"`
+		Binary    string `json:"binary,omitempty"`
+		AutoStart bool   `json:"auto_start,omitempty"`
 	}
 
 	items := make([]brainItem, 0, len(statuses))
@@ -120,6 +121,7 @@ func handleBrains(w http.ResponseWriter, _ *http.Request, pool *kernel.ProcessBr
 		items = append(items, brainItem{
 			Kind:      string(kind),
 			Running:   bs.Running,
+			Instances: bs.Instances,
 			Binary:    bs.Binary,
 			AutoStart: bs.AutoStart,
 		})

@@ -49,6 +49,17 @@ type DelegateRequest struct {
 	ProjectID string `json:"project_id,omitempty"`
 	// ParentSpanID 标识父 brain 的 span，用于构建完整的调用树。
 	ParentSpanID string `json:"parent_span_id,omitempty"`
+
+	// Workdir 是中央大脑（host）通知专精大脑（sidecar）的工作目录绝对路径。
+	// 设计动机：sidecar 进程启动时只继承父进程的 cwd，不知道用户在哪个目录工作；
+	// 而 chat / run / serve 三种模式 host 端都有明确的 workdir（启动 flag 或 req.Workdir），
+	// 必须把这个值显式传给 sidecar，让它用相同的 workdir 解析所有相对路径。
+	//
+	// sidecar SDK 收到后会把它注入工具调用的 sandbox primary 目录，
+	// 写文件 `snake.html` → 解析为 `<workdir>/snake.html` 而不是 sidecar 进程的 cwd。
+	//
+	// 空字符串时 sidecar 退化为继承的 cwd（向后兼容）。
+	Workdir string `json:"workdir,omitempty"`
 }
 
 // DelegateBatchRequest 将多个无依赖的子任务并行派发给不同的 specialist brain。

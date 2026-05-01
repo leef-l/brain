@@ -107,6 +107,15 @@ func RunChat(args []string) int {
 			defer func() {
 				_ = learner.Save(context.Background())
 			}()
+
+			// MACCS 学习闭环（关键）：把这个持久化的 learner 注入到 bridge.delegate 的
+			// ComplexityEstimator，让单步派发的 turn 估算可以查历史数据。否则
+			// estimator 用 nil learner，永远走 heuristic，等于学习数据被丢弃。
+			//
+			// 通过 RegisterEstimatorInjector 让外层（chat_aliases.go）拿到 learner 后
+			// 调 bridge.SetDelegateEstimator —— chat 包不直接 import bridge。
+			InjectEstimatorWithLearner(learner)
+
 			// 上下文引擎：注入 LLM Summarizer
 			ctxEngine := kernel.NewDefaultContextEngine()
 			if session, err := deps.OpenConfiguredProvider(cfg, "central", modelInput, *providerFlag, *apiKey, *baseURL, *modelFlag); err == nil {
@@ -135,14 +144,19 @@ func RunChat(args []string) int {
 				if err := json.Unmarshal(params, &ev); err != nil {
 					return
 				}
-				switch ev.Kind {
-				case "tool_start":
-					fmt.Printf("\033[2m      [%s] %s.Run: %s\033[0m\n", callerKind, callerKind, trimForDisplay(ev.ToolName+" "+ev.Args, 140))
-				case "tool_end":
-					if ev.OK {
-						fmt.Printf("\033[2m      [%s] %s.Done: %s %s\033[0m\n", callerKind, callerKind, ev.ToolName, trimForDisplay(ev.Detail, 140))
-					} else {
-						fmt.Printf("\033[31m      [%s] %s.Fail: %s — %s\033[0m\n", callerKind, callerKind, ev.ToolName, trimForDisplay(ev.Detail, 140))
+				// 默认静默：sub-tool 的 Run/Done/Fail 只通过 spinner 行 + todo 框反映；
+				// /verbose on 时打回原本的三连，便于排障。
+				// 失败信息一律落到 ~/.brain/logs/tool-failures.log（由 sdk/tool 装饰器写）。
+				if VerboseEnabled() {
+					switch ev.Kind {
+					case "tool_start":
+						fmt.Printf("\r\033[2K\033[2m      [%s] %s.Run: %s\033[0m\n", callerKind, callerKind, trimForDisplay(ev.ToolName+" "+ev.Args, 140))
+					case "tool_end":
+						if ev.OK {
+							fmt.Printf("\r\033[2K\033[2m      [%s] %s.Done: %s %s\033[0m\n", callerKind, callerKind, ev.ToolName, trimForDisplay(ev.Detail, 140))
+						} else {
+							fmt.Printf("\r\033[2K\033[31m      [%s] %s.Fail: %s — %s\033[0m\n", callerKind, callerKind, ev.ToolName, trimForDisplay(ev.Detail, 140))
+						}
 					}
 				}
 			})
@@ -261,8 +275,16 @@ func RunChat(args []string) int {
 	progressTicker := time.NewTicker(250 * time.Millisecond)
 	defer progressTicker.Stop()
 
+	// LLM 流式 token 最近一次到达时间。spinner 重绘会清当前行，会把流式 token
+	// 抹掉，所以最近 800ms 有 token 就暂停 spinner 重绘。
+	var lastContentAt time.Time
+	// frameDetached 跟踪 prompt frame 是否处于 detached（被清掉、未重画）状态。
+	// 流式 ProgressContent 期间一次 detach 后保持 detached，避免每个 token 都
+	// 重画一整套 spinner+queue+input frame（之前的行为：每 token 都把整段历史
+	// 重打一遍，导致终端出现"<token><完整 frame>"反复堆积）。
+	frameDetached := false
+
 	activities := make(map[string]*Activity)
-	lastProgressSecond := make(map[string]int64)
 	session := term.NewLineReadSession(kb, 0)
 	session.History = LoadHistory()
 	session.HistoryIndex = len(session.History)
@@ -285,7 +307,8 @@ func RunChat(args []string) int {
 		act := &Activity{RunID: id, Input: input}
 		act.Start()
 		activities[id] = act
-		lastProgressSecond[id] = -1
+		// 注册当前 run 到全局 chat channel，让 workflow / delegate 工具能 emit 事件回来
+		SetActiveChatChan(eventCh, id)
 		DetachPromptFrame(session)
 		PrintUserMessage(input)
 		ResetStreamClock()
@@ -299,8 +322,9 @@ func RunChat(args []string) int {
 		if ok {
 			act.Stop()
 			delete(activities, id)
-			delete(lastProgressSecond, id)
 		}
+		// 清掉全局 active chan（防止下一个 run 之前 stale tool reporter 还往里写）
+		ClearActiveChatChan()
 		state.RemoveRun(id)
 
 		DetachPromptFrame(session)
@@ -355,7 +379,30 @@ func RunChat(args []string) int {
 			PrintAssistantMessage(replyText)
 		}
 
-		if rr.Result != nil {
+		// 完成总结：仅当用过 todo 框（说明跑过工作流）时打印一行汇总，
+		// 让用户清楚多少任务成功 / 失败 / 总耗时。
+		if act != nil && len(act.Todos) > 0 {
+			done, fail, total := 0, 0, len(act.Todos)
+			for _, td := range act.Todos {
+				switch td.State {
+				case TodoDone:
+					done++
+				case TodoFailed:
+					fail++
+				}
+			}
+			elapsed := time.Since(act.StartedAt)
+			if fail == 0 && done == total {
+				fmt.Printf("\033[32m✓ 完成\033[0m  %d/%d 任务  \033[2m耗时 %s\033[0m\n\n", done, total, formatElapsed(elapsed))
+			} else if fail > 0 {
+				fmt.Printf("\033[31m✗ 部分失败\033[0m  完成 %d  失败 %d  总计 %d  \033[2m耗时 %s\033[0m\n\n", done, fail, total, formatElapsed(elapsed))
+			} else {
+				fmt.Printf("\033[33m⚠ 未完成\033[0m  完成 %d/%d  \033[2m耗时 %s\033[0m\n\n", done, total, formatElapsed(elapsed))
+			}
+		}
+
+		// 默认隐藏元数据行；/verbose on 时打回。
+		if VerboseEnabled() && rr.Result != nil {
 			elapsed := rr.Result.Run.Budget.ElapsedTime.Milliseconds()
 			unit := "ms"
 			val := elapsed
@@ -421,12 +468,38 @@ func RunChat(args []string) int {
 			switch ev.Type {
 			case "progress":
 				if ev.Progress != nil {
+					isContent := ev.Progress.Kind == ProgressContent
+					if isContent {
+						lastContentAt = time.Now()
+					}
+					willPrint := willPrintToStdout(ev.Progress)
+					// Content 流式 token：第一次到达时 detach 一次后保持 detached；
+					// 不在每个 token 间重画 frame。下一个非 content 事件（或
+					// progressTicker 在 content 静默后）会负责 render 回来。
+					// 非 content 但要打印的事件：常规 detach → print → render。
+					if willPrint {
+						if !frameDetached {
+							DetachPromptFrame(session)
+							frameDetached = true
+						}
+					} else if frameDetached && !isContent {
+						// 非打印事件，但 frame 被 content 流 detach 了：先 render 回来
+						// 让 spinner/queue 跟得上活动状态。
+						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
+						frameDetached = false
+					}
 					StreamProgressEvent(*ev.Progress)
 					if len(ev.Progress.PreviewLines) > 0 {
 						PrintDiffPreviewBlock(ev.Progress.PreviewLines)
 					}
 					if act, ok := activities[ev.RunID]; ok {
 						act.Apply(*ev.Progress)
+					}
+					// 非 content 的打印事件：打完立即 render 回来。
+					// content 事件保持 detached，等 ticker / 下一个非 content 事件 render。
+					if willPrint && !isContent {
+						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
+						frameDetached = false
 					}
 				}
 			case "result":
@@ -440,16 +513,34 @@ func RunChat(args []string) int {
 			continue
 
 		case <-progressTicker.C:
-			for id, act := range activities {
+			// 只在交互终端刷新；非 tty 静默。
+			if !isInteractiveStdout() {
+				continue
+			}
+			// LLM 流式 token 期间彻底禁用 ticker 触发的 frame 重绘：
+			// 因为 stream content 是 fmt.Print 直接 append 到屏幕底部，
+			// 任何 frame 重绘（即使在 content 静默间隙）都会和 LLM 持续追加
+			// 的 token 抢同一行，造成"<token><spinner+queue>...<token><spinner+queue>"
+			// 的重复堆积。等 frame 不是 detached（说明 content 流早已结束 +
+			// 已 render 回来）时才允许 ticker 重绘 spinner 转场。
+			if frameDetached {
+				continue
+			}
+			// 兜底：lastContentAt 800ms 内不刷（仅在 frame 未 detached 但仍有
+			// 残余 content 的边界场景生效）。
+			if !lastContentAt.IsZero() && time.Since(lastContentAt) < 800*time.Millisecond {
+				continue
+			}
+			// 有 running activity 时，重绘 prompt frame（spinner 在 queue 区）。
+			anyRunning := false
+			for _, act := range activities {
 				if act.Running() {
-					sec := int64(time.Since(act.StartedAt) / time.Second)
-					if sec != lastProgressSecond[id] {
-						lastProgressSecond[id] = sec
-						if sec > 0 && sec%5 == 0 {
-							fmt.Printf("\033[2m  [%s] %s\033[0m\n", id, act.StatusLine())
-						}
-					}
+					anyRunning = true
+					break
 				}
+			}
+			if anyRunning {
+				RerenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 			}
 			continue
 
@@ -577,6 +668,15 @@ func RunChat(args []string) int {
 						RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 						continue
 					}
+				}
+
+				// ! 前缀 = 直接 shell 命令模式：不发给 LLM，直接在 chat workdir 跑 shell。
+				// claude-code 风格的"快速命令"，用于不需要 AI 思考的事情（看文件 / 跑命令）。
+				if strings.HasPrefix(input, "!") {
+					DetachPromptFrame(session)
+					ExecuteShellCommand(strings.TrimPrefix(input, "!"), e.Workdir)
+					RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
+					continue
 				}
 
 				// 任何消息都直接启动新 run（并行模式）
@@ -734,6 +834,12 @@ func runChatLineMode(state *State, provider llm.Provider, brainID *string, maxTu
 			continue
 		}
 
+		// ! 前缀 = 直接 shell 命令（不发给 LLM）
+		if strings.HasPrefix(input, "!") {
+			ExecuteShellCommand(strings.TrimPrefix(input, "!"), "")
+			continue
+		}
+
 		if strings.HasPrefix(input, "/") {
 			handled, shouldQuit := HandleSlashCommand(input, state)
 			if shouldQuit {
@@ -782,17 +888,55 @@ func runChatLineMode(state *State, provider llm.Provider, brainID *string, maxTu
 			PrintAssistantMessage(replyText)
 		}
 
-		elapsed := result.Run.Budget.ElapsedTime.Milliseconds()
-		unit := "ms"
-		val := elapsed
-		if elapsed >= 1000 {
-			unit = "s"
-			val = elapsed / 1000
+		// 默认隐藏元数据行；/verbose 才显示。
+		if VerboseEnabled() {
+			elapsed := result.Run.Budget.ElapsedTime.Milliseconds()
+			unit := "ms"
+			val := elapsed
+			if elapsed >= 1000 {
+				unit = "s"
+				val = elapsed / 1000
+			}
+			fmt.Printf("\033[2m[turns:%d llm:%d tools:%d %d%s]\033[0m\n\n",
+				result.Run.Budget.UsedTurns,
+				result.Run.Budget.UsedLLMCalls,
+				result.Run.Budget.UsedToolCalls,
+				val, unit)
 		}
-		fmt.Printf("\033[2m[turns:%d llm:%d tools:%d %d%s]\033[0m\n\n",
-			result.Run.Budget.UsedTurns,
-			result.Run.Budget.UsedLLMCalls,
-			result.Run.Budget.UsedToolCalls,
-			val, unit)
 	}
+}
+
+// isInteractiveStdout 判断 stdout 是否连到一个真实终端。
+// pipe / 重定向到文件 / CI 环境时返回 false，spinner 等动态刷新一律静默，
+// 避免日志里写满 \r\033[2K 这种 ANSI 控制序列。
+func isInteractiveStdout() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// willPrintToStdout 判断一个 progress event 是否会真的 print 到 stdout（需要 detach
+// 输入框避开撞行）。规则：
+//   - ProgressContent  → 始终会 print（LLM 流式文本）
+//   - ProgressTool*    → 仅 verbose 时打；ToolEnd 失败一行红色摘要也会打
+//   - 其他             → 不 print
+func willPrintToStdout(p *ProgressEvent) bool {
+	if p == nil {
+		return false
+	}
+	switch p.Kind {
+	case ProgressContent:
+		return p.Text != ""
+	case ProgressToolPlan, ProgressToolStart:
+		return VerboseEnabled()
+	case ProgressToolEnd:
+		// 失败默认会打一行红色摘要；成功仅 verbose 才打
+		if !p.OK {
+			return true
+		}
+		return VerboseEnabled()
+	}
+	return false
 }

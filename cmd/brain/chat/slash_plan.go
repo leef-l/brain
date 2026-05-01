@@ -93,6 +93,10 @@ func (r *chatPlanRegistry) ensurePlanOrch(state *State) bool {
 		router.SetLearner(learner)
 	}
 
+	// MACCS 5.4：异步模式抽取（chat 路径，无 serveCtx → 用 background）
+	expStore := kernel.NewMemExperienceStore()
+	patternExt := kernel.NewPatternExtractor()
+
 	r.planOrch = kernel.NewPlanOrchestrator(state.Orchestrator, kernel.PlanOrchestratorConfig{
 		Memory:              r.memory,
 		Learner:             learner,
@@ -102,6 +106,8 @@ func (r *chatPlanRegistry) ensurePlanOrch(state *State) bool {
 		ContextEngine:       ctxWithMem,
 		MemoryRetriever:     retriever,
 		MemoryRetrieveLimit: 5,
+		ExperienceStore:     expStore,
+		PatternExtractor:    patternExt,
 	})
 	return true
 }

@@ -14,9 +14,11 @@ func NewManagedShellTool(brainKind string, e *env.Environment) tool.Tool {
 	if e.CmdSandbox != nil {
 		st.SetCommandSandbox(e.CmdSandbox)
 	}
-	// Chat / run CLI: stream shell output in real time so the user can see
-	// what a long-running command (e.g. npm install, vite dev) is doing.
-	st.StreamTo = os.Stderr
+	// 默认不把 shell stdout/stderr 直接打到终端：那会污染 chat UI（spinner / todo 框 / LLM 文本被打断）。
+	// /verbose 模式下设回 os.Stderr，让用户看 long-running 命令的实时输出（npm install 等）。
+	if VerboseShellStream() {
+		st.StreamTo = os.Stderr
+	}
 	managed := e.WrapPathChecks(st)
 	managed = toolguard.WrapCommandPolicy(managed, e.CmdSandbox, e.SandboxCfg, e.FilePolicy)
 	return e.WrapApproval(managed, env.ToolClassCommand, env.WrapConfirm)
@@ -28,7 +30,9 @@ func NewManagedRunTestsTool(e *env.Environment) tool.Tool {
 	if e.CmdSandbox != nil {
 		rt.SetCommandSandbox(e.CmdSandbox)
 	}
-	rt.StreamTo = os.Stderr
+	if VerboseShellStream() {
+		rt.StreamTo = os.Stderr
+	}
 	managed := e.WrapPathChecks(rt)
 	managed = toolguard.WrapCommandPolicy(managed, e.CmdSandbox, e.SandboxCfg, e.FilePolicy)
 	return e.WrapApproval(managed, env.ToolClassCommand, env.WrapConfirm)
@@ -44,14 +48,20 @@ func ManageTool(e *env.Environment, t tool.Tool, class env.ToolClass) tool.Tool 
 }
 
 func RegisterManagedRealTools(reg tool.Registry, e *env.Environment, brainKind string) {
+	// 中央大脑智能分级（Tier）：
+	//   - Tier 1（read/list/search/note）：所有 brain 都直接执行
+	//   - Tier 2（write_file 小内容）：central 直接执行，大内容自动建议 delegate
+	//   - Tier 3（edit/delete）：central 自动建议 delegate；其他 brain 直接执行
+	//   - shell_exec：central 只放行只读命令（cat/ls/grep 等），其他建议 delegate
+	// CentralAwareXxx 在 brainKind != "central" 时返回原工具不变。
 	reg.Register(ManageTool(e, tool.NewReadFileTool("code"), env.ToolClassRead))
-	reg.Register(ManageTool(e, tool.NewWriteFileTool("code"), env.ToolClassEdit))
-	reg.Register(ManageTool(e, tool.NewEditFileTool("code"), env.ToolClassEdit))
-	reg.Register(ManageTool(e, tool.NewDeleteFileTool("code"), env.ToolClassDelete))
+	reg.Register(ManageTool(e, CentralAwareWrite(tool.NewWriteFileTool("code"), brainKind), env.ToolClassEdit))
+	reg.Register(ManageTool(e, CentralAwareWrite(tool.NewEditFileTool("code"), brainKind), env.ToolClassEdit))
+	reg.Register(ManageTool(e, CentralAwareWrite(tool.NewDeleteFileTool("code"), brainKind), env.ToolClassDelete))
 	reg.Register(ManageTool(e, tool.NewListFilesTool("code"), env.ToolClassRead))
 	reg.Register(ManageTool(e, tool.NewSearchTool("code"), env.ToolClassRead))
 	reg.Register(tool.NewNoteTool("code"))
-	reg.Register(NewManagedShellTool("code", e))
+	reg.Register(CentralAwareShell(NewManagedShellTool("code", e), brainKind))
 
 	reg.Register(ManageTool(e, tool.NewVerifierReadFileTool(), env.ToolClassRead))
 	reg.Register(NewManagedRunTestsTool(e))
@@ -65,11 +75,28 @@ func RegisterManagedRealTools(reg tool.Registry, e *env.Environment, brainKind s
 }
 
 // BuildManagedRegistry creates a filtered tool registry for non-interactive runs.
+//
+// 最外层会用 tool.WrapWithFailureLog 装饰每个工具：返回 IsError 时把 args + detail
+// 结构化追加到 ~/.brain/logs/tool-failures.log，便于事后分析 LLM 误调用。
 func BuildManagedRegistry(cfg *toolpolicy.Config, e *env.Environment, brainKind string, registerExtra func(tool.Registry)) tool.Registry {
 	reg := tool.NewMemRegistry()
 	RegisterManagedRealTools(reg, e, brainKind)
 	if registerExtra != nil {
 		registerExtra(reg)
 	}
-	return toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForRun(brainKind)...)
+	filtered := toolpolicy.FilterRegistry(reg, cfg, toolpolicy.ToolScopesForRun(brainKind)...)
+	return wrapAllWithFailureLog(filtered)
+}
+
+// wrapAllWithFailureLog 给 registry 中所有工具包一层失败日志装饰器。
+// 返回新的 registry（原 registry 不变）。
+func wrapAllWithFailureLog(reg tool.Registry) tool.Registry {
+	if reg == nil {
+		return reg
+	}
+	out := tool.NewMemRegistry()
+	for _, t := range reg.List() {
+		_ = out.Register(tool.WrapWithFailureLog(t))
+	}
+	return out
 }

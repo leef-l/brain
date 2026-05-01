@@ -44,6 +44,8 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /plan <prompt>     创建并执行智能项目计划")
 		fmt.Println("  /plan list         列出已创建的计划")
 		fmt.Println("  /plan status <id>  查看计划执行进度")
+		fmt.Println("  /verbose           切换 verbose 显示（工具 plumbing 默认隐藏）")
+		fmt.Println("  /verbose on|off    显式开关 verbose")
 		fmt.Println("  /keys              Show keybindings config path")
 		fmt.Println("  /exit              Exit chat")
 		fmt.Println()
@@ -158,6 +160,19 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		state.TurnCount = 0
 		fmt.Println("  Conversation cleared.")
 		fmt.Println()
+		return true, false
+
+	case cmd == "/verbose":
+		on := ToggleVerbose()
+		printVerboseStatus(on)
+		return true, false
+	case cmd == "/verbose on":
+		SetVerbose(true)
+		printVerboseStatus(true)
+		return true, false
+	case cmd == "/verbose off":
+		SetVerbose(false)
+		printVerboseStatus(false)
 		return true, false
 
 	case cmd == "/history":

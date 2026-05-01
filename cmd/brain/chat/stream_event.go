@@ -44,46 +44,50 @@ var contentBuf strings.Builder
 func StreamProgressEvent(ev ProgressEvent) {
 	switch ev.Kind {
 	case ProgressContent:
+		// LLM 自由文本：始终显示（这是用户最想看的），原样流式打出。
 		if ev.Text != "" {
-			// 直接累积并刷到 stdout(不 Println,由文本自己控制换行)。
 			fmt.Print(ev.Text)
 			contentBuf.WriteString(ev.Text)
-			// 换行后 reset buffer,让每段连续文本看起来独立。
 			if strings.HasSuffix(ev.Text, "\n") {
 				contentBuf.Reset()
 			}
 		}
 	case ProgressToolPlan:
+		// 默认静默：spinner 行 / todo 框已经反映；/verbose 才打
 		if contentBuf.Len() > 0 {
 			fmt.Println()
 			contentBuf.Reset()
 		}
-		fmt.Printf("\033[2m  [%s] Plan: %s %s\033[0m\n", elapsedTag(), ev.ToolName, truncate(ev.Args, 120))
+		if VerboseEnabled() {
+			fmt.Printf("\033[2m  [%s] Plan: %s %s\033[0m\n", elapsedTag(), ev.ToolName, truncate(ev.Args, 120))
+		}
 	case ProgressToolStart:
 		if contentBuf.Len() > 0 {
 			fmt.Println()
 			contentBuf.Reset()
 		}
-		fmt.Printf("\033[2m  [%s] Run:  %s %s\033[0m\n", elapsedTag(), ev.ToolName, truncate(ev.Args, 120))
+		if VerboseEnabled() {
+			fmt.Printf("\033[2m  [%s] Run:  %s %s\033[0m\n", elapsedTag(), ev.ToolName, truncate(ev.Args, 120))
+		}
 	case ProgressToolEnd:
 		if contentBuf.Len() > 0 {
 			fmt.Println()
 			contentBuf.Reset()
 		}
-		if ev.OK {
+		// 失败默认显示一行红色摘要（用户必须看到），成功默认静默
+		if !ev.OK {
+			fmt.Printf("\033[31m  ✗ %s — %s\033[0m\n", shortToolName(ev.ToolName), truncate(ev.Detail, 200))
+		} else if VerboseEnabled() {
 			detail := truncate(ev.Detail, 120)
 			if detail != "" {
 				fmt.Printf("\033[2m  [%s] Done: %s — %s\033[0m\n", elapsedTag(), ev.ToolName, detail)
 			} else {
 				fmt.Printf("\033[2m  [%s] Done: %s\033[0m\n", elapsedTag(), ev.ToolName)
 			}
-		} else {
-			fmt.Printf("\033[31m  [%s] Fail: %s — %s\033[0m\n", elapsedTag(), ev.ToolName, truncate(ev.Detail, 200))
 		}
 	case ProgressThinking:
-		// 不打印:thinking token 对用户是噪声,仅记内存态。
+		// 始终不打印
 	case ProgressFinished:
-		// finished 让 HandleChatRunResult 接管渲染,本函数不介入。
 		if contentBuf.Len() > 0 {
 			fmt.Println()
 			contentBuf.Reset()

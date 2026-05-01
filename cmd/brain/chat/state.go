@@ -297,8 +297,11 @@ func (s *State) SwitchMode(m env.PermissionMode) {
 	}
 
 	if s.Orchestrator != nil {
-		s.Registry.Register(NewBrainManageTool(s.Orchestrator))
-		s.Registry.Register(NewStartHumanDemoTool(s.Orchestrator, s.Env, s.HumanCoord))
+		s.Registry.Register(tool.WrapWithFailureLog(NewBrainManageTool(s.Orchestrator)))
+		s.Registry.Register(tool.WrapWithFailureLog(NewStartHumanDemoTool(s.Orchestrator, s.Env, s.HumanCoord)))
+		// MACCS 智能编排：暴露元认知查询给中央大脑（complexity / memory / pattern /
+		// brain_status / budget），让 LLM 自己决定如何拆分任务，而不是硬编码 prompt 规则。
+		s.Registry.Register(tool.WrapWithFailureLog(NewMetacognitionTool(s.Orchestrator)))
 	}
 
 	// brain.memory_recall 让 LLM 查询 ~/.brain/brain.db 里的 ui_patterns /
@@ -307,9 +310,9 @@ func (s *State) SwitchMode(m env.PermissionMode) {
 	// memory/*.md 文件。store 可能是 nil(mock provider / 无持久化场景),
 	// lib 也可能 nil,工具内部对 nil 安全,返回空列表不报错。
 	if rt, _ := deps.NewDefaultCLIRuntime(s.BrainID); rt != nil && rt.Stores != nil {
-		s.Registry.Register(tool.NewMemoryRecallTool(rt.Stores.LearningStore, tool.SharedPatternLibrary()))
+		s.Registry.Register(tool.WrapWithFailureLog(tool.NewMemoryRecallTool(rt.Stores.LearningStore, tool.SharedPatternLibrary())))
 	} else {
-		s.Registry.Register(tool.NewMemoryRecallTool(nil, tool.SharedPatternLibrary()))
+		s.Registry.Register(tool.WrapWithFailureLog(tool.NewMemoryRecallTool(nil, tool.SharedPatternLibrary())))
 	}
 
 	s.Registry = filterRegistryWithConfig(s.Registry, s.Cfg, toolpolicy.ToolScopesForChat(s.BrainID, string(m))...)

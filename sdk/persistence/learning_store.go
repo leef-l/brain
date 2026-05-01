@@ -28,6 +28,10 @@ type LearningTaskScore struct {
 	StabilityAlpha  float64 `json:"stability_alpha"`
 	LatencyMsValue  float64 `json:"latency_ms_value"`
 	LatencyMsAlpha  float64 `json:"latency_ms_alpha"`
+	// TurnsValue/Alpha：MACCS 学习闭环用真实 turn 数 EWMA。
+	// RecordDelegateTurns 写入，ComplexityEstimator.estimateFromLearning 读取。
+	TurnsValue float64 `json:"turns_value"`
+	TurnsAlpha float64 `json:"turns_alpha"`
 }
 
 // LearningSequence is the serializable form of a task sequence record (L2).

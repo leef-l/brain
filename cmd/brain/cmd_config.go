@@ -144,6 +144,9 @@ func initConfig() error {
 			MaxTurns:   20,
 			MaxCostUSD: 5.0,
 		},
+		// file_policy 是全局基线策略：定义项目里允许动哪些文件，工作流派发的子任务
+		// 都受此约束。chat / run / serve 直接交互模式下豁免 restricted command 隔离
+		// （由 toolguard 内部根据 interactive 标志区分），仍保留写入 audit。
 		FilePolicy: &filePolicyInput{
 			AllowRead:   []string{"**"},
 			AllowCreate: []string{"**"},

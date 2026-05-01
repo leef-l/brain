@@ -71,10 +71,19 @@ func (e *ComplexityEstimator) estimateFromLearning(task PlanSubTask) (Complexity
 		return ComplexityEstimate{}, false
 	}
 
-	// Speed.Value ∈ [0,1]，值越高表示越快（turns 越少）
-	// 将 speed 映射到 turns：speed=1 → 5 turns, speed=0 → 30 turns
-	speedVal := clampFloat(score.Speed.Value, 0, 1)
-	turns := int(math.Round(5 + 25*(1-speedVal)))
+	// 优先用真实 turn 数据（MACCS 闭环 RecordDelegateTurns 写入）。
+	// 比 Speed 反推（speed=1→5turn）准很多 —— Speed 是合成指标，
+	// 而 Turns 就是上次实际跑了多少 turn 的 EWMA。
+	var turns int
+	if score.Turns.Value > 0 {
+		// 历史 EWMA 上加 30% 安全 margin（防止再次 turns_exhausted）
+		turns = int(math.Round(score.Turns.Value * 1.3))
+	} else {
+		// 没 turn 历史 → 退化用 Speed 反推
+		// Speed.Value ∈ [0,1]，值越高表示越快（turns 越少）
+		speedVal := clampFloat(score.Speed.Value, 0, 1)
+		turns = int(math.Round(5 + 25*(1-speedVal)))
+	}
 
 	// 如果子任务自带 EstimatedTurns 且非零，取加权平均（学习数据权重更高）
 	if task.EstimatedTurns > 0 {

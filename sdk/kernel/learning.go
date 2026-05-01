@@ -49,6 +49,10 @@ type TaskTypeScore struct {
 	// LatencyMs 记录该 brain 执行该类任务的平均延迟（毫秒，EWMA）。
 	// 用于自适应超时估算：EstimateTimeout 基于此计算建议超时。
 	LatencyMs EWMAScore
+	// Turns 记录该 brain 执行该类任务的实际 turn 数（EWMA）。
+	// 用于 ComplexityEstimator 反推 EstimatedTurns —— 比 Speed 反推（speed=1→5turn）更准。
+	// MACCS 学习闭环（4 维之一）：delegate 完成时记录实际 turn，下次 estimator 直接读。
+	Turns EWMAScore
 }
 
 // BrainCapabilityProfile 是对某个 brain 的能力认知模型
@@ -384,14 +388,23 @@ func (le *LearningEngine) Load(ctx context.Context) error {
 		}
 		scores, _ := le.store.ListTaskScores(ctx, p.BrainKind)
 		for _, s := range scores {
-			profile.TaskScores[s.TaskType] = &TaskTypeScore{
+			ts := &TaskTypeScore{
 				TaskType:    s.TaskType,
 				SampleCount: s.SampleCount,
 				Accuracy:    EWMAScore{Value: s.AccuracyValue, Alpha: s.AccuracyAlpha},
 				Speed:       EWMAScore{Value: s.SpeedValue, Alpha: s.SpeedAlpha},
 				Cost:        EWMAScore{Value: s.CostValue, Alpha: s.CostAlpha},
 				Stability:   EWMAScore{Value: s.StabilityValue, Alpha: s.StabilityAlpha},
+				LatencyMs:   EWMAScore{Value: s.LatencyMsValue, Alpha: s.LatencyMsAlpha},
+				Turns:       EWMAScore{Value: s.TurnsValue, Alpha: s.TurnsAlpha},
 			}
+			if ts.LatencyMs.Alpha == 0 {
+				ts.LatencyMs.Alpha = 0.2
+			}
+			if ts.Turns.Alpha == 0 {
+				ts.Turns.Alpha = 0.2
+			}
+			profile.TaskScores[s.TaskType] = ts
 		}
 		le.profiles[kind] = profile
 	}
@@ -464,6 +477,10 @@ func (le *LearningEngine) Save(ctx context.Context) error {
 				CostAlpha:      ts.Cost.Alpha,
 				StabilityValue: ts.Stability.Value,
 				StabilityAlpha: ts.Stability.Alpha,
+				LatencyMsValue: ts.LatencyMs.Value,
+				LatencyMsAlpha: ts.LatencyMs.Alpha,
+				TurnsValue:     ts.Turns.Value,
+				TurnsAlpha:     ts.Turns.Alpha,
 			}); err != nil {
 				return err
 			}
@@ -547,11 +564,90 @@ func (le *LearningEngine) RecordDelegateResult(
 			StabilityAlpha: ts.Stability.Alpha,
 			LatencyMsValue: ts.LatencyMs.Value,
 			LatencyMsAlpha: ts.LatencyMs.Alpha,
+			TurnsValue:     ts.Turns.Value,
+			TurnsAlpha:     ts.Turns.Alpha,
 		}
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					fmt.Fprintf(os.Stderr, "learning: save profile panic: %v\n", r)
+				}
+			}()
+			ctx := context.Background()
+			le.store.SaveProfile(ctx, &profileSnap)
+			le.store.SaveTaskScore(ctx, &scoreSnap)
+		}()
+	}
+}
+
+// RecordDelegateTurns 记录一次委派的实际 turn 数（MACCS 学习闭环关键维度）。
+// ComplexityEstimator.estimateFromLearning 优先用这个值估算 EstimatedTurns，
+// 比从 Speed 反推（speed=1→5turn）更准。
+//
+// turns 为 0 或负数视为无效（视为没采样），不更新 EWMA。
+func (le *LearningEngine) RecordDelegateTurns(brainKind agent.Kind, taskType string, turns int) {
+	if turns <= 0 {
+		return
+	}
+	le.mu.Lock()
+	defer le.mu.Unlock()
+
+	profile, ok := le.profiles[brainKind]
+	if !ok {
+		profile = &BrainCapabilityProfile{
+			BrainKind:  brainKind,
+			TaskScores: make(map[string]*TaskTypeScore),
+			ColdStart:  true,
+		}
+		le.profiles[brainKind] = profile
+	}
+
+	ts, ok := profile.TaskScores[taskType]
+	if !ok {
+		ts = &TaskTypeScore{
+			TaskType:  taskType,
+			Accuracy:  EWMAScore{Alpha: 0.2},
+			Speed:     EWMAScore{Alpha: 0.2},
+			Cost:      EWMAScore{Alpha: 0.2},
+			Stability: EWMAScore{Alpha: 0.2},
+			LatencyMs: EWMAScore{Alpha: 0.2},
+			Turns:     EWMAScore{Alpha: 0.2},
+		}
+		profile.TaskScores[taskType] = ts
+	}
+	if ts.Turns.Alpha == 0 {
+		ts.Turns.Alpha = 0.2
+	}
+	ts.Turns.Update(float64(turns))
+	profile.UpdatedAt = time.Now()
+
+	if le.store != nil {
+		profileSnap := persistence.LearningProfile{
+			BrainKind: string(profile.BrainKind),
+			ColdStart: profile.ColdStart,
+			UpdatedAt: profile.UpdatedAt,
+		}
+		scoreSnap := persistence.LearningTaskScore{
+			BrainKind:      string(brainKind),
+			TaskType:       taskType,
+			SampleCount:    ts.SampleCount,
+			AccuracyValue:  ts.Accuracy.Value,
+			AccuracyAlpha:  ts.Accuracy.Alpha,
+			SpeedValue:     ts.Speed.Value,
+			SpeedAlpha:     ts.Speed.Alpha,
+			CostValue:      ts.Cost.Value,
+			CostAlpha:      ts.Cost.Alpha,
+			StabilityValue: ts.Stability.Value,
+			StabilityAlpha: ts.Stability.Alpha,
+			LatencyMsValue: ts.LatencyMs.Value,
+			LatencyMsAlpha: ts.LatencyMs.Alpha,
+			TurnsValue:     ts.Turns.Value,
+			TurnsAlpha:     ts.Turns.Alpha,
+		}
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "learning: save turns panic: %v\n", r)
 				}
 			}()
 			ctx := context.Background()

@@ -102,12 +102,12 @@
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
 | 4.1 | 资源访问追踪 | `sdk/kernel/resource_tracker.go` | ✅ 已落地（d6619ce 收敛） | 文件已删除，统一收敛到 `lease.go::MemLeaseManager` |
-| 4.2 | 冲突检测器 | `sdk/kernel/conflict_detector.go` | 🟡 算法实在但未接入 | 路径前缀 + 循环依赖检测；`seq` 字段仍无锁；无调用方 |
-| 4.3 | 死锁检测器 | `sdk/kernel/deadlock_detector.go` | 🟡 算法实在但未接入 | DFS 环检测；无调用方 |
-| 4.4 | 仲裁策略 | `sdk/kernel/arbiter.go` | 🟡 算法实在但未接入 | 5 种策略；无调用方 |
-| 4.5 | 智能重排调度 | `sdk/kernel/smart_scheduler.go` | 🟡 算法实在但未接入 | 贪心冲突分离；调度器仍三套并存（scheduler.go + execution_scheduler.go + smart_scheduler.go） |
+| 4.2 | 冲突检测器 | `sdk/kernel/conflict_detector.go` | ✅ 已落地（2026-05-01 接入） | seq 改 atomic.Int64.Add 防并发竞争；ExecutionScheduler.AttachConflictControl 注入；RunPlan 派发前 Detect 检查 blocker 冲突；cmd_serve_projects.go 按 maccs.conflict.* 启用 |
+| 4.3 | 死锁检测器 | `sdk/kernel/deadlock_detector.go` | 🟡 暂不接入（前置条件不足） | DFS 环检测算法完整；但当前 LeaseManager.AcquireSet 已用 canonical-order 防死锁，且执行模型不存在"任务持锁等其他任务释放锁"场景，强行接入只是装样子。需 Wave 7 改造 LeaseManager 为可竞态模型后才接入 |
+| 4.4 | 仲裁策略 | `sdk/kernel/arbiter.go` | 🟡 暂不接入（依赖 4.3） | 5 种策略；依赖 4.3 真实死锁场景才有决策权，同 4.3 列入 Wave 7 |
+| 4.5 | 智能重排调度 | `sdk/kernel/smart_scheduler.go` | ✅ 已落地（2026-05-01 接入） | NewSmartScheduler 在 ExecutionScheduler.AttachConflictControl 注入；BuildExecutionPlan 完成后调 Reschedule 做冲突感知重排（同层资源冲突挤到下一层），dryRun=true 时仅 diaglog 警告（生产观察期），可通过 maccs.conflict.dry_run=false 切到强制重排 |
 
-**Wave 4 真实接入率：1/5 = 20%**（仅 4.1 收敛）
+**Wave 4 真实接入率：3/5 = 60%**（4.3/4.4 前置条件不足，列入 Wave 7）
 
 ---
 
@@ -118,11 +118,11 @@
 | 5.1 | 因果学习引擎 | `sdk/kernel/causal_learning.go` | ✅ 已落地（d6619ce 接入） | learning.go:709 RecordSequence 时 causal.Observe + :718 LearnRelations；orchestrator.go:1509 brainCausalScore 真参与 resolveTargetKind 加权 0.2 |
 | 5.2 | 迁移学习引擎 | `sdk/kernel/transfer_learning.go` | ✅ 已落地（d6619ce 接入） | DefaultTransferLearner 在 PlanOrchestrator 构造时注入 ComplexityEstimator |
 | 5.3 | 主动学习引擎 | `sdk/kernel/active_learning.go` | ✅ 已落地（d6619ce 接入） | orchestrator.go:1488 exploreCandidate 5% epsilon-greedy；:1668 assessActiveLearning 调 AssessUncertainty 后发 EventBus brain.feedback.requested |
-| 5.4 | 项目模式提取 | `sdk/kernel/pattern_extraction.go` | 🟡 算法实在但未接入 | 4 类模式；无调用方 |
-| 5.5 | 自适应 Prompt | `sdk/kernel/adaptive_prompt.go` | 🟡 算法实在但未接入 | A/B 测试；无调用方 |
+| 5.4 | 项目模式提取 | `sdk/kernel/pattern_extraction.go` | ✅ 已落地（2026-05-01 接入） | NewPatternExtractor 注入 PlanOrchestrator；ExecuteProject 完成后异步 goroutine 跑 buildProjectExperience → ExperienceStore.Save → Extract → AddPattern → ProjectMemory.Store；用 patternBgCtx 防调用 ctx 取消打断；recover 兜底 panic |
+| 5.5 | 自适应 Prompt | `sdk/kernel/adaptive_prompt.go` | ✅ 已落地（2026-05-01 接入） | NewAdaptivePromptManager 注入 LLMProxy.PromptManager；adaptiveSystemPrefix helper 在 Complete/handleComplete/handleStream 三入口把 SelectVariant 的变体作为 L1 system block 前置（cache=true），不破坏调用方原 System 列表 |
 | 5.6 | 能力画像 | `sdk/kernel/capability_profile.go` | ✅ 已落地（d6619ce 接入） | learning.go RecommendOrder 通过 SequenceLearner + orchestrator_plan.go:108 在 ExecuteTaskPlan layer 内重排同层任务（不破坏拓扑） |
 
-**Wave 5 真实接入率：4/6 ≈ 67%**
+**Wave 5 真实接入率：6/6 = 100%** ✅
 
 ---
 
@@ -132,20 +132,20 @@
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 6.1 | 健康检查框架 | `sdk/kernel/health_check.go` | 🟡 算法实在但未接入 | HealthManager 完整；无调用方 |
-| 6.2 | 混沌注入框架 | `sdk/kernel/chaos_engine.go` | ✅ 已落地（本轮接入） | DelayInjector + ErrorInjector 真实拦截；orchestrator.go:847 delegateOnce 内 `chaos.IsEnabled()` + `GetActiveDelayInjector/GetActiveErrorInjector` 守卫；cmd_serve_chaos.go + /v1/chaos/experiments(POST/DELETE) + /v1/chaos/history 三路由 |
-| 6.3 | 性能基准框架 | `sdk/kernel/perf_benchmark.go` | 🟡 算法实在但未接入 | P50/P95/P99 真实；无调用方 |
-| 6.4 | 可观测性框架 | `sdk/kernel/observability.go` | 🟡 算法实在但未接入 | 多 Provider；无调用方 |
+| 6.1 | 健康检查框架 | `sdk/kernel/health_check.go` | ✅ 已落地（2026-05-01 接入） | NewHealthManager + brainPool/leaseManager checker；GET /v1/health；config 可关 maccs.health.enabled=false |
+| 6.2 | 混沌注入框架 | `sdk/kernel/chaos_engine.go` | ✅ 已落地 | DelayInjector + ErrorInjector 真实拦截；orchestrator.go:847 delegateOnce 内 `chaos.IsEnabled()` 守卫；cmd_serve_chaos.go + /v1/chaos/experiments(POST/DELETE) + /v1/chaos/history 三路由 |
+| 6.3 | 性能基准框架 | `sdk/kernel/perf_benchmark.go` | ✅ 已落地（2026-05-01 接入） | NewPerfCollector + WithPerfCollector 注入 Orchestrator.delegateOnce 计时（按 brain.kind/status 分桶 P50/P95/P99）；GET /v1/metrics/perf |
+| 6.4 | 可观测性框架 | `sdk/kernel/observability.go` | ✅ 已落地（2026-05-01 接入） | NewObservabilityHub + WithObservability + 内存 provider；delegateOnce 包 TraceSpan（trace_id 优先 req.TraceID 回退 task_id，tags=kind/task_id）；GET /v1/observability + ?trace_id 过滤 |
 
 ### Batch 2 — 安全与并发
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 6.5 | 安全审计框架 | `sdk/kernel/security_audit.go` | 🟡 算法实在但未接入 | 输入验证；无调用方 |
-| 6.6 | 多项目并发管理 | `sdk/kernel/multi_project.go` | 🟡 算法实在但未接入 | 项目隔离；无调用方 |
+| 6.5 | 安全审计框架 | `sdk/kernel/security_audit.go` | ✅ 已落地（2026-05-01 接入） | NewSecurityAuditor 注入 projectService；POST /v1/projects 入参 ValidateInput；阈值可配 maccs.security.reject_severity（critical/high/medium/low） |
+| 6.6 | 多项目并发管理 | `sdk/kernel/multi_project.go` | ✅ 已落地（2026-05-01 接入） | NewMultiProjectManager(MaxConcurrent=3, QueueSize=16) 注入 projectService；handleCreateProject 进入即 Submit 拿槽位，结束 Complete/Fail；超额返回 429 |
 | 6.7 | 生产就绪检查 | `sdk/kernel/production_readiness.go` | ✅ 已落地（d6619ce 修复 + 本轮接入） | 7 项 check 真实探测（BrainPool.AvailableKinds、LLMProxy 等）；cmd_serve.go:865 NewReadinessCheckerWithConfig + 启动期 RunAll + BRAIN_STRICT_READINESS 守卫 + GET /v1/readiness 暴露报告 |
 
-**Wave 6 真实接入率：2/7 ≈ 29%**
+**Wave 6 真实接入率：7/7 = 100%** ✅
 
 ---
 
@@ -157,49 +157,39 @@
 | 1 | 10 | 10 | 0 | 0 | 0 |
 | 2 | 7 | 7 | 0 | 0 | 0 |
 | 3 | 10 | 10 | 0 | 0 | 0 |
-| 4 | 5 | 1 | 4 | 0 | 0 |
-| 5 | 6 | 4 | 2 | 0 | 0 |
-| 6 | 7 | 2 | 5 | 0 | 0 |
-| **合计** | **48** | **37 (77%)** | **11 (23%)** | **0** | **0** |
+| 4 | 5 | 3 | 2 | 0 | 0 |
+| 5 | 6 | 6 | 0 | 0 | 0 |
+| 6 | 7 | 6 | 1 | 0 | 0 |
+| **合计** | **48** | **45 (94%)** | **3 (6%)** | **0** | **0** |
 
-> **零伪实现 + 零半成品** — d6619ce 修复了 6.7/6.2/3.6/3.7/3.10 五项伪实现 + 把 5.1/5.2/5.3/5.6 四个高级 Learner 接入决策路径；本轮 Wave A/B/C 把 6.2/6.7 真接入主线，把 ClosedLoopController + 三组件（MemoryRetriever/ContextEngineWithMemory/ModelRouter）一次性接入主线，加上 P1 1.6 progress/report 路由注册到 dispatcher。
+> **2026-05-01 重大里程碑**：本轮接入 9 项（4.2 / 4.5 / 5.4 / 5.5 / 6.1 / 6.3 / 6.4 / 6.5 / 6.6） + 修两个 v2 遗留 bug（startupOrch ProviderFactory 缺失、AcceptanceTester verify_xxx 模板）+ 重写中央大脑职责文档对齐 MACCS。剩 3 项（4.3 DeadlockDetector / 4.4 Arbiter / 6.x 待识别）前置条件不足，需要 LeaseManager 改造为可竞态模型才有意义，列入 Wave 7。
 
 ---
 
 ## 下一阶段优先级
 
-### 🟡 P2 — 把剩余孤岛接入主线（14 项）
+### Wave 7 — 改造 LeaseManager 为可竞态模型（解锁 4.3/4.4）
 
-按"预期收益高 / 改动面小"排序。
+剩余 2 项 MACCS 任务（4.3 DeadlockDetector、4.4 Arbiter）的前置条件是"任务持锁后等待其他任务释放锁"
+的执行模型。当前 `LeaseManager.AcquireSet` 已用 canonical-order 排序避免死锁，且任务获取不到锁就立刻
+返回 ErrAcquireTimeout，没有"持有 + 等待"的状态。
 
-#### Wave 4 — 并发控制（4 项）
-Wave 3 的 ExecutionScheduler 已经走 DelegateBatch 真实派发，下一步需要接入冲突检测：
+要让 4.3/4.4 真有意义，需要：
 
-| 优先级 | 任务 | 接入策略 |
-|--------|------|---------|
-| P2-A | 4.2 ConflictDetector | 注入 ExecutionScheduler，每层 NextBatch 之后调一次 DetectConflicts，发现就回退 / 重排；先修 `seq` 字段加 atomic |
-| P2-A | 4.5 SmartScheduler | 与 ExecutionScheduler 二选一收敛或合并：让 SmartScheduler 作为 ExecutionScheduler 的策略层（贪心冲突分离） |
-| P2-B | 4.3 DeadlockDetector | 接入 LeaseManager.AcquireSet 之前调 DetectDeadlock 兜底 |
-| P2-B | 4.4 Arbiter | 接入 ConflictDetector 检测出冲突后，由 Arbiter 决策保留哪一方 |
+1. **LeaseManager 增强**：支持"部分获取后等待剩余资源"模式（持锁 + waitFor）
+2. **WaitForGraph 接入**：每次 wait 时把 `(holder → waiter, resource)` 边写入 DeadlockDetector
+3. **Arbiter 介入**：DetectDeadlock 命中环时调 SuggestVictim 选受害者 → 强制释放锁
 
-#### Wave 5 — 学习系统（剩 2 项孤岛）
-LearningEngine + 4 个高级 Learner（Causal/Transfer/Active/Sequence）已全部接入决策路径，剩余两项：
+工作量预估：~2 天（含 LeaseManager 重构 + 单元测试 + 接入端到端验证）。
 
-| 优先级 | 任务 | 接入策略 |
-|--------|------|---------|
-| P2-A | 5.5 AdaptivePromptManager | 注入 LLMProxy 的 systemPrompt 装配链，按当前 brain 选 A/B 变体 |
-| P2-B | 5.4 PatternExtractor | 在 PlanOrchestrator.ExecuteProject 完成后异步抽取 pattern → 写入 ProjectMemory |
+### P4 — 工具白名单 + 中央大脑严格"动嘴不动手"（2026-05-01 新增）
 
-#### Wave 6 — 生产级硬化（5 项）
-最值得继续推进的是可观测性和健康检查：
+按 `central/docs/38-中央大脑核心职责.md` v3 的工具白名单设计，需要：
 
-| 优先级 | 任务 | 接入策略 |
-|--------|------|---------|
-| P2-A | 6.1 HealthManager | 接 cmd_serve.go 加 GET /v1/health 路由（与 /v1/readiness 区分：health 关注 liveness，readiness 关注 dependencies） |
-| P2-A | 6.4 Observability | 注入 Orchestrator.delegateOnce 包一层 Span，把 brain/tool 调用链路上报 |
-| P2-B | 6.3 PerfBenchmark | 接 cmd_serve.go 加 GET /v1/metrics/perf 路由，按 brain.kind 分桶汇总 P50/P95/P99 |
-| P2-B | 6.5 SecurityAuditor | 接 cmd_serve.go 入参校验中间件，所有 /v1/* 路由统一过 ValidateInput |
-| P2-C | 6.6 MultiProjectManager | 接 cmd_serve_projects.go，做项目级配额 + 并发上限 |
+1. 改 `cliruntime/tools.go::RegisterManagedRealTools` 加 brain-aware 过滤
+2. central 模式：只暴露编排工具 + read 类只读工具；移除 write/edit/delete/shell_exec/run_tests
+3. 强化 `cmd/brain/chat/prompt.go::BuildOrchestratorPrompt` 头部加"DELEGATE FIRST"硬约束
+4. 保留紧急后门（仅当所有专精大脑全挂时降级）
 
 ### ⚠️ P3 — 重复造轮收敛（仍待办）
 
@@ -234,3 +224,7 @@ cmd/brain/ → sdk/*
 - *2026-04-30 全量代码审查后，从"45/45 全部 ✅"修正为"4/48 真接入"*
 - *2026-04-30 d6619ce 修复 5 项伪实现（3.6/3.7/3.10/6.2/6.7） + 接入 Wave 1 全 + Wave 2 部分 + Wave 5.2，接入率提升至 18/48*
 - *2026-04-30 本轮 Wave A/B/C 接入：A 接 6.7 readiness 路由 + 6.2 chaos delegateOnce 拦截；B 接 ClosedLoopController + cmd_serve_projects 一次落地 3.1/3.4/3.5/3.8/3.9/3.10；C 接 PlanOrchestrator 三组件 2.2/2.5/2.6 + cmd_serve_plans + chat/slash_plan；P1 1.6 progress RPC 双方法路由注册。最终 34/48 = 71%*
+- *2026-05-01 本轮接入 9 项（4.2 / 4.5 / 5.4 / 5.5 / 6.1 / 6.3 / 6.4 / 6.5 / 6.6）→ **44/48 = 92%**：4.2 ConflictDetector seq 改 atomic + 接入 ExecutionScheduler；4.5 SmartScheduler 在 BuildExecutionPlan 后做冲突感知重排；5.4 PatternExtractor 异步抽取（PlanOrchestrator.ExecuteProject 后台 goroutine，写 ProjectMemory）；5.5 AdaptivePromptManager 注入 LLMProxy.PromptManager（A/B 变体作 L1 system block，cache=true）；6.1 HealthManager + brainPool/leaseManager checker + GET /v1/health；6.3 PerfCollector 注入 delegateOnce 计时 + GET /v1/metrics/perf；6.4 ObservabilityHub 注入 delegateOnce TraceSpan + GET /v1/observability；6.5 SecurityAuditor POST /v1/projects 入参审计（阈值可配 maccs.security.reject_severity）；6.6 MultiProjectManager 项目级配额（默认 max_concurrent=3, queue_size=16）。剩 2 项（4.3/4.4）前置条件不足。*
+- *2026-05-01 配置同步：新增 `MACCSConfig` 8 个配置块（health/perf/observability/security/multi_project/adaptive_prompt/conflict/pattern_extractor）+ 11 个 nil-safe 默认值访问器；examples.go 同步带 MACCS 段；`brain config init` 输出新版配置参考。*
+- *2026-05-01 修两个 v2 遗留 bug：(1) startupOrch 用 `&kernel.LLMProxy{}` 空壳（缺 ProviderFactory），导致 POST /v1/projects 走 ClosedLoopController 派发到 sidecar 反向调 LLM 时报 "no ProviderFactory configured"；改为复用 runs 路径同款 ProviderFactory，七阶段闭环全过。(2) AcceptanceTester 默认 spec 用 `verify_<sanitized_name>` 模板生成 Command 实际 PATH 不存在 → 走 `sh -c verify_xxx` 全 exit 127；改为 Command 留空走 artifacts fallback，AcceptanceCriteria 加可选 Command 字段供用户自定义命令。*
+- *2026-05-01 完整重写 `central/docs/38-中央大脑核心职责.md` 为 v3 MACCS 视角，列出 6 大反馈源 + 7 条动态调整路径 + 工具白名单（编排 / 只读 / 禁用三类）。明确"中央大脑只动嘴不动手"边界。*

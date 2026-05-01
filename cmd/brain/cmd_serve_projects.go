@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/sdk/kernel"
 )
 
@@ -42,6 +43,13 @@ type projectService struct {
 	controller   *kernel.ClosedLoopController
 	sessionStore kernel.ProjectSessionStore
 	serveCtx     context.Context
+
+	// MACCS 6.5：对 POST /v1/projects 的 goal/project_name 做注入风险审计
+	auditor kernel.SecurityAuditor
+	// securityRejectSev 决定多严重的发现才拒绝请求（默认 "high"）
+	securityRejectSev string
+	// MACCS 6.6：项目级并发槽位 + 配额控制（默认 MaxConcurrent=3）
+	multiProj *kernel.MultiProjectManager
 
 	mu       sync.RWMutex
 	sessions map[string]*kernel.ProjectSession
@@ -70,7 +78,7 @@ func (a *retroAdapter) RunRetrospective(ctx context.Context, session *kernel.Pro
 // 即 startupOrch，控制器在 Phase 4 会通过 baseOrch.ExecuteTaskPlan 真实
 // 派发子任务到 brain pool；learner 当前未直接注入控制器（控制器 7 阶段
 // 不直接消费 LearningEngine），但保留参数以便未来在复盘阶段写回 L2/L3。
-func newProjectService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, serveCtx context.Context) *projectService {
+func newProjectService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, serveCtx context.Context, cfg *config.Config) *projectService {
 	if baseOrch == nil {
 		return nil
 	}
@@ -82,11 +90,21 @@ func newProjectService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEn
 	deliveryGen := kernel.NewDefaultDeliveryGenerator()
 	retroEngine := kernel.NewRetrospectiveEngine()
 
+	// MACCS 4.2/4.5：把 ConflictDetector + SmartScheduler 接入 ExecutionScheduler。
+	// 默认 dryRun=true（生产观察期），可通过 maccs.conflict.dry_run=false 切到强制重排。
+	scheduler := kernel.NewExecutionSchedulerWithOrchestrator(kernel.ExecutionSchedulerConfig{}, baseOrch)
+	if cfg.MACCSConflictEnabled() {
+		conflictDetector := kernel.NewConflictDetector()
+		deadlockDet := kernel.NewDeadlockDetector()
+		smart := kernel.NewSmartScheduler(conflictDetector, deadlockDet, 0)
+		scheduler.AttachConflictControl(conflictDetector, smart, cfg.MACCSConflictDryRun(), nil)
+	}
+
 	deps := kernel.ClosedLoopDeps{
 		Parser:       kernel.NewDefaultRequirementParser(),
 		Designer:     kernel.NewDefaultDesignGenerator(),
 		Reviewer:     reviewLoop,
-		Scheduler:    kernel.NewExecutionScheduler(kernel.ExecutionSchedulerConfig{}),
+		Scheduler:    scheduler,
 		Tester:       kernel.NewDefaultAcceptanceTester(),
 		DeliveryGen:  deliveryGen,
 		Retrospect:   &retroAdapter{engine: retroEngine},
@@ -95,11 +113,27 @@ func newProjectService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEn
 	}
 	controller := kernel.NewClosedLoopController(kernel.NewDefaultClosedLoopConfig(), deps)
 
+	// MACCS 6.5 / 6.6：按 config 选择性创建（关闭时为 nil，handleCreateProject 守卫）
+	var auditor kernel.SecurityAuditor
+	if cfg.MACCSSecurityEnabled() {
+		auditor = kernel.NewSecurityAuditor()
+	}
+	var multiProj *kernel.MultiProjectManager
+	if cfg.MACCSMultiProjectEnabled() {
+		multiProj = kernel.NewMultiProjectManager(kernel.MultiProjectConfig{
+			MaxConcurrent: cfg.MACCSMultiProjectMaxConcurrent(),
+			QueueSize:     cfg.MACCSMultiProjectQueueSize(),
+		})
+	}
+
 	return &projectService{
-		controller:   controller,
-		sessionStore: sessionStore,
-		serveCtx:     serveCtx,
-		sessions:     make(map[string]*kernel.ProjectSession),
+		controller:        controller,
+		sessionStore:      sessionStore,
+		serveCtx:          serveCtx,
+		auditor:           auditor,
+		multiProj:         multiProj,
+		securityRejectSev: cfg.MACCSSecurityRejectSeverity(),
+		sessions:          make(map[string]*kernel.ProjectSession),
 	}
 }
 
@@ -163,6 +197,32 @@ func (s *projectService) handleCreateProject(w http.ResponseWriter, r *http.Requ
 		req.ProjectName = fmt.Sprintf("project-%d", time.Now().UnixNano())
 	}
 
+	// MACCS 6.5：对外部输入做注入风险审计。
+	// 阈值由 maccs.security.reject_severity 控制（默认 "high"）：
+	// "critical" → 仅 critical 拒绝；"high" → critical/high 拒绝；
+	// "medium" → critical/high/medium 拒绝；"low" → 任何发现都拒绝。
+	if s.auditor != nil {
+		findings := append(s.auditor.ValidateInput(req.Goal),
+			s.auditor.ValidateInput(req.ProjectName)...)
+		for _, f := range findings {
+			if shouldRejectSeverity(f.Severity, s.securityRejectSev) {
+				http.Error(w, fmt.Sprintf(`{"error":"input rejected by security audit","reason":%q,"remediation":%q}`,
+					f.Description, f.Remediation), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	// MACCS 6.6：申请项目槽位（默认 MaxConcurrent=3）。超出活跃数会进队列；
+	// 队列满则 Submit 返回错误，立即返回 429。
+	projectID := fmt.Sprintf("proj-%d", time.Now().UnixNano())
+	if s.multiProj != nil {
+		if _, err := s.multiProj.Submit(projectID, req.ProjectName, 0); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"project quota exceeded: %v"}`, err), http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	// 用 serveCtx 派生执行 ctx：server 关停时立刻取消，同时设置 30 分钟上限超时
 	// （七阶段最坏情况是 7 * PhaseTimeout(15min) = 105min，所以 30 分钟仍可能不够；
 	// 这里参考 /v1/plans 路径取一个保守上限，超过即 context.DeadlineExceeded 失败返回）
@@ -170,6 +230,21 @@ func (s *projectService) handleCreateProject(w http.ResponseWriter, r *http.Requ
 	defer cancel()
 
 	result, runErr := s.controller.Execute(execCtx, req.ProjectName, req.Goal)
+
+	// MACCS 6.6：项目结束后归还槽位。Complete/Fail 都释放，Cancel 留给客户端。
+	if s.multiProj != nil {
+		if runErr != nil || (result != nil && !result.Success) {
+			reason := ""
+			if runErr != nil {
+				reason = runErr.Error()
+			} else if result != nil {
+				reason = result.Error
+			}
+			_ = s.multiProj.Fail(projectID, reason)
+		} else {
+			_ = s.multiProj.Complete(projectID)
+		}
+	}
 
 	resp := createProjectResponse{}
 	if result != nil {
@@ -192,12 +267,39 @@ func (s *projectService) handleCreateProject(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if resp.Error != "" {
-		w.WriteHeader(http.StatusInternalServerError)
-	} else {
+	switch {
+	case resp.Error == "":
 		w.WriteHeader(http.StatusOK)
+	case isResourceBusy(&resp):
+		// 租约/资源冲突 → 503，告诉客户端稍后重试（而非永久错误）
+		w.WriteHeader(http.StatusServiceUnavailable)
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// isResourceBusy 判断响应里的失败是否属于"资源临时不可用"（值得重试）。
+// 触发条件：execution 阶段任意 task error 含 LeaseManager 关键词。
+func isResourceBusy(resp *createProjectResponse) bool {
+	if resp == nil {
+		return false
+	}
+	if strings.Contains(resp.Error, "leased by another task") ||
+		strings.Contains(resp.Error, "acquire timeout") {
+		return true
+	}
+	exec, _ := resp.PhaseResults["execution"].(map[string]interface{})
+	results, _ := exec["results"].(map[string]interface{})
+	for _, v := range results {
+		r, _ := v.(map[string]interface{})
+		errStr, _ := r["error"].(string)
+		if strings.Contains(errStr, "leased by another task") ||
+			strings.Contains(errStr, "acquire timeout") {
+			return true
+		}
+	}
+	return false
 }
 
 // handleGetProject GET /v1/projects/{session_id} 处理器。
@@ -295,4 +397,20 @@ func briefPhaseRecords(session *kernel.ProjectSession) []phaseRecordBrief {
 		out = append(out, brief)
 	}
 	return out
+}
+
+// shouldRejectSeverity 根据配置阈值决定是否拒绝某条 severity 的安全发现。
+// 阈值映射（threshold 严重度 → 拒绝集合）：
+//
+//	"critical" → 只拒绝 critical
+//	"high"     → 拒绝 critical/high
+//	"medium"   → 拒绝 critical/high/medium
+//	"low"      → 拒绝任何发现
+func shouldRejectSeverity(found, threshold string) bool {
+	rank := map[string]int{"critical": 4, "high": 3, "medium": 2, "low": 1}
+	thr := rank[threshold]
+	if thr == 0 {
+		thr = 3 // 默认 high
+	}
+	return rank[found] >= thr
 }

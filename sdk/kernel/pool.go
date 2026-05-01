@@ -24,6 +24,13 @@ type BrainPool interface {
 	// 内部使用默认负载均衡策略选择最优实例。
 	GetBrain(ctx context.Context, kind agent.Kind) (agent.Agent, error)
 
+	// AcquireBrain 是多实例并发感知的获取入口（MACCS）：
+	//   - 优先选 load=0 的空闲实例
+	//   - 全忙 + 资源预算允许 → 自动扩容启动新实例
+	//   - 全忙 + 预算到顶 → 共享负载最低的现有实例
+	// 不实现该方法的 Pool 实现可以用 GetBrain 兜底。
+	AcquireBrain(ctx context.Context, kind agent.Kind) (agent.Agent, error)
+
 	// Status 返回所有已知 brain 的状态快照。
 	Status() map[agent.Kind]BrainStatus
 
@@ -72,6 +79,11 @@ type ProcessBrainPool struct {
 
 	// entrySeq 为每个 kind 生成唯一的实例序号。
 	entrySeq map[agent.Kind]int
+
+	// pendingSpawn 记录每个 kind 正在启动但尚未加入 active 的实例数。
+	// 用于 AcquireBrain 在锁外启动 sidecar 期间，让其他 goroutine 看到"已 reserve"，
+	// 避免并发同时通过 CanSpawnSidecar 检查后全部启动突破上限。
+	pendingSpawn map[agent.Kind]int
 
 	// defaultStrategy 是 GetBrain 使用的默认负载均衡策略。
 	defaultStrategy LoadBalanceStrategy
@@ -150,6 +162,94 @@ func (p *ProcessBrainPool) probeBinResolver(kind agent.Kind, binResolver func(ag
 	}
 }
 
+// AcquireBrain 是多实例并发感知的 Agent 获取入口（MACCS 设计）：
+//
+//   1. 如果该 kind 已有空闲实例（CurrentLoad == 0）→ 直接选最优空闲返回。
+//   2. 全部实例都忙 → 检查资源预算（CanSpawnSidecar）：
+//      - 还能启 → 启动新实例返回。
+//      - 不能启（已到 50% 资源上限或 hardMax）→ 选最低负载的现有实例返回（让 task 共享）。
+//   3. 没有任何实例（冷启动）→ 启动第一个返回。
+//
+// 调用方拿到 agent 后调 ReleaseAgent 归还（递减 load 计数）。
+//
+// 与原 GetBrain 区别：GetBrain 只看是否有"存活实例"，不区分忙闲；
+// AcquireBrain 优先空闲实例 + 自动扩容到资源上限，是真正的多并发入口。
+func (p *ProcessBrainPool) AcquireBrain(ctx context.Context, kind agent.Kind) (agent.Agent, error) {
+	p.mu.Lock()
+	alive := p.filterAliveLocked(p.active[kind])
+
+	// 1. 优先选空闲实例（load == 0）
+	for _, e := range alive {
+		if e.CurrentLoad() == 0 {
+			p.mu.Unlock()
+			e.Acquire()
+			return e.agent, nil
+		}
+	}
+
+	// 2. 全忙 → 看资源预算 + hardMax 决定要不要扩容
+	// Bug fix（critical）：并发场景下要在锁内"预留槽位"，防止 N 个 goroutine
+	// 同时通过 CanSpawnSidecar 检查后全部启动突破上限。
+	// 用 pendingSpawn 计数 + 在锁内分配 instanceID 一并解决（原本 entrySeq 在
+	// newEntryLocked 才 ++ 也有重复 ID 风险）。
+	currentSameKind := len(alive) + p.pendingSpawn[kind]
+	currentTotal := p.totalPendingLocked()
+	for _, entries := range p.active {
+		currentTotal += len(p.filterAliveLocked(entries))
+	}
+	hardMax := 0
+	if reg, ok := p.registrations[kind]; ok && reg != nil {
+		hardMax = reg.MaxInstances
+	}
+	canSpawn := CanSpawnSidecar(currentTotal, currentSameKind, hardMax)
+
+	if canSpawn {
+		// 在锁内 reserve 槽位 + 分配 instanceID
+		instanceID := p.entrySeq[kind]
+		p.entrySeq[kind] = instanceID + 1
+		if p.pendingSpawn == nil {
+			p.pendingSpawn = make(map[agent.Kind]int)
+		}
+		p.pendingSpawn[kind]++
+		p.mu.Unlock()
+
+		// 锁外启动 sidecar（耗时操作，不能持锁）
+		desc := agent.Descriptor{Kind: kind, LLMAccess: agent.LLMAccessProxied}
+		ag, err := p.startWithRegistrationWithID(ctx, kind, desc, instanceID)
+
+		p.mu.Lock()
+		p.pendingSpawn[kind]--
+		if err == nil {
+			entry := newPoolEntry(ag, fmt.Sprintf("%s-%d", kind, instanceID))
+			entry.Acquire()
+			p.active[kind] = append(p.active[kind], entry)
+			p.mu.Unlock()
+			p.notify(BrainEvent{Kind: kind, Action: "start", Agent: ag, Time: time.Now()})
+			return entry.agent, nil
+		}
+		// 启动失败 → 释放 reserve、回滚 entrySeq、走兜底
+		p.mu.Unlock()
+		// 启动失败，退化共享现有（不再尝试启新实例）
+	} else {
+		p.mu.Unlock()
+	}
+
+	// 3. 不能扩容（或扩容失败）→ 共享负载最低的现有实例
+	p.mu.Lock()
+	alive = p.filterAliveLocked(p.active[kind])
+	p.mu.Unlock()
+	if len(alive) > 0 {
+		selected := NewLeastLoadedStrategy().Select(alive)
+		if selected != nil {
+			selected.Acquire()
+			return selected.agent, nil
+		}
+	}
+
+	// 4. 一个实例都没有（冷启动且预算允许）→ 标准启动路径
+	return p.GetBrain(ctx, kind)
+}
+
 // GetBrain 返回已运行的 sidecar 实例，或启动一个新的。
 // 如果该 kind 已有存活实例，使用默认负载均衡策略选择最优的一个。
 // 使用 nil-placeholder 防止并发启动重复的 sidecar。
@@ -205,7 +305,7 @@ func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent
 		LLMAccess: agent.LLMAccessProxied,
 	}
 
-	ag, err := p.startWithRegistration(ctx, kind, desc)
+	ag, instanceID, err := p.startWithRegistration(ctx, kind, desc)
 	if err != nil {
 		// 启动失败——移除 starting 标记。
 		p.mu.Lock()
@@ -214,8 +314,8 @@ func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent
 		return nil, err
 	}
 
-	// 5. 包装为 poolEntry 并加入活跃池。
-	entry := p.newEntryLocked(kind, ag)
+	// 5. 包装为 poolEntry 并加入活跃池（用 startWithRegistration 已分配的 instanceID）。
+	entry := newPoolEntry(ag, fmt.Sprintf("%s-%d", kind, instanceID))
 	entry.Acquire()
 
 	p.mu.Lock()
@@ -229,12 +329,25 @@ func (p *ProcessBrainPool) GetBrain(ctx context.Context, kind agent.Kind) (agent
 }
 
 // newEntryLocked 创建一个新的 poolEntry（必须在锁外调用，但使用锁保护的序号）。
+//
+// Deprecated: 留给可能未迁移的调用路径。新代码应该走 startWithRegistration 拿到
+// (agent, instanceID, err) 然后直接 newPoolEntry，避免 entrySeq 重复 ++。
 func (p *ProcessBrainPool) newEntryLocked(kind agent.Kind, ag agent.Agent) *poolEntry {
 	p.mu.Lock()
 	seq := p.entrySeq[kind]
 	p.entrySeq[kind] = seq + 1
 	p.mu.Unlock()
 	return newPoolEntry(ag, fmt.Sprintf("%s-%d", kind, seq))
+}
+
+// totalPendingLocked 返回所有 kind 的 pendingSpawn 总和（必须在持锁状态调用）。
+// AcquireBrain 用此值检查资源预算，避免并发场景下多 goroutine 同时启动突破上限。
+func (p *ProcessBrainPool) totalPendingLocked() int {
+	total := 0
+	for _, n := range p.pendingSpawn {
+		total += n
+	}
+	return total
 }
 
 // SelectBrain 使用指定策略选择一个 brain 实例。
@@ -282,11 +395,11 @@ func (p *ProcessBrainPool) ScaleBrain(ctx context.Context, kind agent.Kind, targ
 	}
 
 	for i := current; i < targetCount; i++ {
-		ag, err := p.startWithRegistration(ctx, kind, desc)
+		ag, instanceID, err := p.startWithRegistration(ctx, kind, desc)
 		if err != nil {
 			return fmt.Errorf("scale %s instance %d: %w", kind, i, err)
 		}
-		entry := p.newEntryLocked(kind, ag)
+		entry := newPoolEntry(ag, fmt.Sprintf("%s-%d", kind, instanceID))
 		p.mu.Lock()
 		p.active[kind] = append(p.active[kind], entry)
 		p.mu.Unlock()
@@ -302,10 +415,47 @@ func (p *ProcessBrainPool) InstanceCount(kind agent.Kind) int {
 	return len(p.filterAliveLocked(p.active[kind]))
 }
 
-func (p *ProcessBrainPool) startWithRegistration(ctx context.Context, kind agent.Kind, desc agent.Descriptor) (agent.Agent, error) {
+// startWithRegistration 走旧路径（GetBrain 调）：在锁内分配 instanceID 后启动。
+// 同时返回 instanceID 给调用方，避免 newEntryLocked 重复 ++。
+func (p *ProcessBrainPool) startWithRegistration(ctx context.Context, kind agent.Kind, desc agent.Descriptor) (agent.Agent, int, error) {
+	// Bug fix（critical）：原本 entrySeq 读和 ++ 不在同一锁内（++ 在 newEntryLocked），
+	// 导致两个并发 goroutine 拿到同 instanceID。这里在锁内一次性 read+incr，
+	// 把 instanceID 返回给调用方使用，newEntryLocked 不再 ++。
+	p.mu.Lock()
+	instanceID := p.entrySeq[kind]
+	p.entrySeq[kind] = instanceID + 1
+	p.mu.Unlock()
+	ag, err := p.startWithRegistrationWithID(ctx, kind, desc, instanceID)
+	return ag, instanceID, err
+}
+
+// startWithRegistrationWithID 是 startWithRegistration 的内部版本，由 AcquireBrain
+// 在锁内预分配 instanceID 后调用。两条路径都进这里实际启动，避免代码重复。
+func (p *ProcessBrainPool) startWithRegistrationWithID(ctx context.Context, kind agent.Kind, desc agent.Descriptor, instanceID int) (agent.Agent, error) {
 	reg := p.registrations[kind]
+	instanceEnv := []string{
+		fmt.Sprintf("BRAIN_INSTANCE_ID=%d", instanceID),
+		fmt.Sprintf("BRAIN_INSTANCE_KIND=%s", kind),
+	}
+
 	if reg == nil {
-		return p.runner.Start(ctx, kind, desc)
+		// 即使没 registration，也要给 default runner 注入实例 env
+		switch runner := p.runner.(type) {
+		case *ProcessRunner:
+			cfgRunner := &ProcessRunner{
+				BinPath:         runner.BinPath,
+				BinResolver:     runner.BinResolver,
+				Env:             mergeProcessEnv(runner.Env, instanceEnv),
+				Args:            append([]string(nil), runner.Args...),
+				InitTimeout:     runner.InitTimeout,
+				ShutdownTimeout: runner.ShutdownTimeout,
+				ProtocolVersion: runner.ProtocolVersion,
+				KernelVersion:   runner.KernelVersion,
+			}
+			return cfgRunner.Start(ctx, kind, desc)
+		default:
+			return p.runner.Start(ctx, kind, desc)
+		}
 	}
 
 	switch runner := p.runner.(type) {
@@ -331,7 +481,8 @@ func (p *ProcessBrainPool) startWithRegistration(ctx context.Context, kind agent
 		if len(reg.Args) > 0 {
 			cfgRunner.Args = append([]string(nil), reg.Args...)
 		}
-		cfgRunner.Env = mergeProcessEnv(runner.Env, reg.Env)
+		// 三层合并：runner 默认 env + reg.Env + instanceEnv（实例编号永远后注入，覆盖前面）
+		cfgRunner.Env = mergeProcessEnv(mergeProcessEnv(runner.Env, reg.Env), instanceEnv)
 		return cfgRunner.Start(ctx, kind, desc)
 	default:
 		return p.runner.Start(ctx, kind, desc)

@@ -107,9 +107,26 @@ func (t *commandGuardTool) Execute(ctx context.Context, args json.RawMessage) (*
 	}
 	if t.cmdSandbox != nil && t.cmdSandbox.Available() {
 		if t.policy != nil && t.policy.Enabled() {
+			toolName := t.inner.Name()
+			isShell := strings.HasSuffix(toolName, ".shell_exec")
+			isRunTests := strings.HasSuffix(toolName, ".run_tests")
+
+			// 优化：只读 shell 命令（cat / ls / grep 等）不需要 restricted 临时目录隔离，
+			// 直接在真实 workdir 跑 + validateCommandMutations 监控写入越界即可。
+			// 这避免了 LLM 多轮交互时看到 cwd 在 /tmp/brain-restricted-XXX 之间跳转的混乱。
+			//
+			// run_tests 永远走 restricted（运行测试可能产生临时文件，隔离更安全）。
+			// shell_exec 写入命令也走 restricted（防止越界写入污染项目）。
+			if isShell && isReadOnlyShellCmd(args) {
+				root := t.policy.Root()
+				return validateCommandMutations(ctx, root, t.policy, func(runCtx context.Context) (*tool.Result, error) {
+					return t.inner.Execute(runCtx, args)
+				})
+			}
+
 			switch {
-			case strings.HasSuffix(t.inner.Name(), ".shell_exec"), strings.HasSuffix(t.inner.Name(), ".run_tests"):
-				return executeRestrictedCommand(ctx, t.inner.Name(), args, t.policy, t.cfg)
+			case isShell, isRunTests:
+				return executeRestrictedCommand(ctx, toolName, args, t.policy, t.cfg)
 			default:
 				root := t.policy.Root()
 				return validateCommandMutations(ctx, root, t.policy, func(runCtx context.Context) (*tool.Result, error) {
@@ -316,3 +333,60 @@ var (
 	_ tool.Tool = (*deletePolicyTool)(nil)
 	_ tool.Tool = (*readPolicyTool)(nil)
 )
+
+// readOnlyShellCommandsToolguard 是 toolguard 内部判断 "shell_exec 是否只读" 的白名单。
+// 与 cmd/brain/cliruntime/central_dispatcher.go 的列表保持一致；任何只读命令都
+// 跳过 restricted 隔离（避免 cwd 错乱），但仍由 validateCommandMutations 监控写入越界。
+//
+// 不在白名单的命令默认进 restricted（保守安全 + 项目保护）。
+var readOnlyShellCommandsToolguard = map[string]bool{
+	"ls": true, "ll": true, "la": true,
+	"pwd":     true,
+	"cat":     true, "head": true, "tail": true, "less": true, "more": true,
+	"grep":    true, "egrep": true, "fgrep": true, "rg": true, "ack": true,
+	"find":    true, "locate": true, "which": true, "whereis": true,
+	"stat":    true, "file": true, "wc": true,
+	"echo":    true, "printf": true,
+	"date":    true, "uname": true, "whoami": true, "id": true, "hostname": true,
+	"env":     true, "printenv": true,
+	"diff":    true, "cmp": true,
+	"tree":    true,
+}
+
+// isReadOnlyShellCmd 解析 shell_exec 参数，判断 command 首词是否在只读白名单。
+// 处理常见前缀（VAR=val cmd / sudo cmd）。
+// 解析失败或命令为空时返回 false（保守走 restricted）。
+func isReadOnlyShellCmd(args json.RawMessage) bool {
+	var params struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(args, &params); err != nil {
+		return false
+	}
+	cmd := strings.TrimSpace(params.Command)
+	if cmd == "" {
+		return false
+	}
+	for {
+		first := strings.SplitN(cmd, " ", 2)[0]
+		// 跳过 env-style 前缀（VAR=val cmd）
+		if strings.Contains(first, "=") && !strings.HasPrefix(first, "=") {
+			parts := strings.SplitN(cmd, " ", 2)
+			if len(parts) < 2 {
+				return false
+			}
+			cmd = strings.TrimSpace(parts[1])
+			continue
+		}
+		// 跳过 sudo
+		if first == "sudo" {
+			parts := strings.SplitN(cmd, " ", 2)
+			if len(parts) < 2 {
+				return false
+			}
+			cmd = strings.TrimSpace(parts[1])
+			continue
+		}
+		return readOnlyShellCommandsToolguard[first]
+	}
+}

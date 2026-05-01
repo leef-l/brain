@@ -8,6 +8,7 @@ package kernel
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,7 +18,7 @@ import (
 type ConflictType string
 
 const (
-	ConflictFileWrite     ConflictType = "file_write"      // 多个任务写同一文件
+	ConflictFileWrite     ConflictType = "file_write"       // 多个任务写同一文件
 	ConflictFileReadWrite ConflictType = "file_read_write"  // 一个读一个写
 	ConflictPortBind      ConflictType = "port_bind"        // 多个任务绑同一端口
 	ConflictDependency    ConflictType = "dependency"       // 依赖冲突（循环依赖）
@@ -101,8 +102,17 @@ type ConflictDetector interface {
 // ─── 默认实现 ─────────────────────────────────────────────────────
 
 // DefaultConflictDetector 提供基于资源声明的冲突检测。
+//
+// 接入点：ExecutionScheduler 在每层 NextBatch 之后会调用 Detect，发现
+// blocker 冲突时通过 SmartScheduler.Reschedule 把冲突任务挤到下一层。
+// 因 ExecutionScheduler 可能并发派发多层，seq 用 atomic 保证 ConflictID 唯一。
 type DefaultConflictDetector struct {
-	seq int // 冲突 ID 自增序列
+	seq atomic.Int64 // 冲突 ID 自增序列
+}
+
+// nextID 原子地分配下一个 ConflictID。
+func (d *DefaultConflictDetector) nextID() string {
+	return fmt.Sprintf("cfl-%d", d.seq.Add(1))
 }
 
 // NewConflictDetector 创建默认冲突检测器。
@@ -154,9 +164,8 @@ func (d *DefaultConflictDetector) DetectPair(a, b TaskResourceDecl) []Conflict {
 	for _, wp1 := range a.WritePaths {
 		for _, wp2 := range b.WritePaths {
 			if pathOverlaps(wp1, wp2) {
-				d.seq++
 				out = append(out, Conflict{
-					ConflictID:   fmt.Sprintf("cfl-%d", d.seq),
+					ConflictID:   d.nextID(),
 					Type:         ConflictFileWrite,
 					Severity:     SeverityBlocker,
 					ResourcePath: wp1,
@@ -172,9 +181,8 @@ func (d *DefaultConflictDetector) DetectPair(a, b TaskResourceDecl) []Conflict {
 	for _, rp := range a.ReadPaths {
 		for _, wp := range b.WritePaths {
 			if pathOverlaps(rp, wp) {
-				d.seq++
 				out = append(out, Conflict{
-					ConflictID:   fmt.Sprintf("cfl-%d", d.seq),
+					ConflictID:   d.nextID(),
 					Type:         ConflictFileReadWrite,
 					Severity:     SeverityCritical,
 					ResourcePath: rp,
@@ -190,9 +198,8 @@ func (d *DefaultConflictDetector) DetectPair(a, b TaskResourceDecl) []Conflict {
 	for _, rp := range b.ReadPaths {
 		for _, wp := range a.WritePaths {
 			if pathOverlaps(rp, wp) {
-				d.seq++
 				out = append(out, Conflict{
-					ConflictID:   fmt.Sprintf("cfl-%d", d.seq),
+					ConflictID:   d.nextID(),
 					Type:         ConflictFileReadWrite,
 					Severity:     SeverityCritical,
 					ResourcePath: rp,
@@ -211,9 +218,8 @@ func (d *DefaultConflictDetector) DetectPair(a, b TaskResourceDecl) []Conflict {
 	}
 	for _, p := range b.Ports {
 		if portSet[p] {
-			d.seq++
 			out = append(out, Conflict{
-				ConflictID:   fmt.Sprintf("cfl-%d", d.seq),
+				ConflictID:   d.nextID(),
 				Type:         ConflictPortBind,
 				Severity:     SeverityBlocker,
 				ResourcePath: fmt.Sprintf("port:%d", p),
@@ -302,7 +308,6 @@ func (d *DefaultConflictDetector) hasCyclicDeps(declarations []TaskResourceDecl)
 		if color[decl.TaskID] == 0 {
 			cycleMembers = nil
 			if dfs(decl.TaskID) {
-				d.seq++
 				// 去重收集参与循环的任务 ID
 				seen := make(map[string]bool)
 				var ids []string
@@ -313,7 +318,7 @@ func (d *DefaultConflictDetector) hasCyclicDeps(declarations []TaskResourceDecl)
 					}
 				}
 				out = append(out, Conflict{
-					ConflictID:   fmt.Sprintf("cfl-%d", d.seq),
+					ConflictID:   d.nextID(),
 					Type:         ConflictDependency,
 					Severity:     SeverityBlocker,
 					ResourcePath: "dependency-graph",

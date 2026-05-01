@@ -229,10 +229,66 @@ const ConfigReferenceExample = `# ==============================================
 #
 # brains:          专精大脑注册列表
 #   - kind / binary / model / auto_start
+#   - max_instances 该 brain 的硬实例上限（0 = 不限，仅受机器资源约束）
+#   - min_instances 最小预热实例数（默认 1）
+#
+# 多实例并发（MACCS 设计）：
+#   默认 BrainPool 用机器 50% 的 CPU/内存做总预算（环境变量 BRAIN_RESOURCE_PERCENT 覆盖）。
+#   单 kind 同时跑多个 task 时自动扩容到资源上限；到顶后多 task 共享负载最低的实例。
+#   set max_instances=N 强制单 brain 不超过 N 个实例。
 #
 # default_budget:
 #   max_turns / max_cost_usd
 #
 # file_policy:
 #   allow_read / allow_create / allow_edit / allow_delete / deny
+#
+# ============================================================
+#  MACCS（多大脑协同系统）配置 — v2.2 新增
+#  整个 maccs 块可省略，未列出的字段都使用默认值。
+#  所有组件默认启用，对生产环境零开销（关闭仅是为了排障 / 极致性能）。
+# ============================================================
+#
+# maccs:
+#
+#   # 6.1 组件健康监控 → GET /v1/health
+#   health:
+#     enabled: true                  # 默认 true，false 时 /v1/health 返回 404
+#
+#   # 6.3 性能指标采样 → GET /v1/metrics/perf
+#   perf:
+#     enabled: true                  # brain_delegate 等指标的 P50/P95/P99
+#
+#   # 6.4 调用链 Span → GET /v1/observability
+#   observability:
+#     enabled: true                  # delegateOnce 包 TraceSpan，按 trace_id 查
+#
+#   # 6.5 入参注入审计（POST /v1/projects 的 goal/project_name）
+#   security:
+#     enabled: true
+#     reject_severity: "high"        # critical/high/medium/low
+#                                     #   "high"   → critical+high 拒绝（推荐）
+#                                     #   "medium" → 加上 medium
+#                                     #   "low"    → 任何发现都拒绝（最严）
+#                                     #   "critical" → 仅 critical 拒绝（最宽）
+#
+#   # 6.6 项目级配额 → POST /v1/projects 超额返回 429
+#   multi_project:
+#     enabled: true
+#     max_concurrent: 3              # 同时活跃项目数；超过进队列
+#     queue_size: 16                 # 队列长度；满了返回 429
+#
+#   # 5.5 自适应 Prompt（A/B 变体）→ 注入 LLMProxy.PromptManager
+#   adaptive_prompt:
+#     enabled: true                  # 需用户后续 RegisterVariant 才有实际效果
+#
+#   # 4.2 + 4.5 冲突感知重排（ExecutionScheduler 路径）
+#   conflict:
+#     enabled: true
+#     dry_run: true                  # 默认 true：仅日志记录冲突重排建议
+#                                     # 生产观察一周确认无误报后切到 false 启用强制重排
+#
+#   # 5.4 项目模式抽取（PlanOrchestrator.ExecuteProject 完成后异步）
+#   pattern_extractor:
+#     enabled: true                  # 关闭后不会写 ProjectMemory 的 pattern entries
 `

@@ -156,20 +156,49 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		Context:     input.Context,
 		Subtask:     buildSubtaskContext(ctx, renderMode),
 		Execution:   t.Env.ExecutionSpec(),
+		Workdir:     t.Env.Workdir, // workdir 端到端：host 显式告诉 sidecar 用哪个工作目录
+	}
+	// 自适应 budget：用 ComplexityEstimator 按 instruction 内容估算
+	// 实际所需 turn / LLM call / tool call。委派任务粒度差异很大（"读个
+	// 文件"和"写一个 800 行的 HTML"完全不同），用估计器比硬编码合理。
+	//
+	// estimator 不可用时退化为保守基线（25 turn）—— 比 sidecar 默认 10
+	// 多得多，避免 turns_exhausted。
+	estimated := estimateDelegateTurns(input.TargetKind, input.Instruction)
+	req.Budget = &kernel.SubtaskBudget{
+		MaxTurns: estimated,
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout := time.Until(deadline)
 		if timeout > 0 {
-			req.Budget = &kernel.SubtaskBudget{Timeout: timeout}
+			req.Budget.Timeout = timeout
 		}
 	}
 
-	// 实时进度标记:delegate 到专家大脑的调用通常 20-60 秒,中间没有流式
-	// 输出,用户看到就是"Run: central.delegate ... [长时间无响应] ... Done"。
-	// 先打一行可见的"正在委托给 X 大脑"让用户知道系统在动。
-	fmt.Printf("\033[2m    → delegating to %s brain (may take 20-60s)...\033[0m\n", input.TargetKind)
+	// 默认静默：spinner 行会显示"委派 <kind> 大脑"反映进度。
+	// /verbose 模式由 chat 包通过 VerbosePrint hook 接管。
+	if VerbosePrint != nil {
+		VerbosePrint(fmt.Sprintf("\033[2m    → delegating to %s brain (may take 20-60s)...\033[0m\n", input.TargetKind))
+	}
 
 	result, err := t.Orchestrator.Delegate(ctx, req)
+
+	// MACCS 闭环：失败原因若是 turns_exhausted，重估并重试一次。
+	// retry 用更激进的 turn 预算（重估 + 50% 安全 margin）。
+	// 仅 turns_exhausted 才重试，其他错误（rejected / 网络断 / 业务异常）不应该重试。
+	if err == nil && result != nil && result.Status == "failed" &&
+		strings.Contains(result.Error, "turns_exhausted") {
+		newEstimate := estimateDelegateTurnsForRetry(input.TargetKind, input.Instruction, req.Budget.MaxTurns)
+		if newEstimate > req.Budget.MaxTurns {
+			req.Budget.MaxTurns = newEstimate
+			result2, err2 := t.Orchestrator.Delegate(ctx, req)
+			if err2 == nil && result2 != nil {
+				result = result2
+				err = nil
+			}
+		}
+	}
+
 	if err != nil {
 		return &tool.Result{
 			Output:  json.RawMessage(fmt.Sprintf(`"delegation error: %s"`, err.Error())),
@@ -216,7 +245,7 @@ func RegisterDelegateToolIfAvailable(reg tool.Registry, orch *kernel.Orchestrato
 	if reg == nil || orch == nil || len(orch.AvailableKinds()) == 0 {
 		return
 	}
-	_ = reg.Register(NewDelegateTool(orch, e))
+	_ = reg.Register(tool.WrapWithFailureLog(NewDelegateTool(orch, e)))
 }
 
 func RegisterDelegateToolForEnvironment(reg tool.Registry, orch *kernel.Orchestrator, e *env.Environment) {
@@ -271,4 +300,66 @@ func hostOfURL(raw string) string {
 		return ""
 	}
 	return strings.ToLower(u.Hostname())
+}
+
+// estimateDelegateTurns 用 ComplexityEstimator 估算单次 delegate 的 turn 需求。
+//
+// 调 kernel.ComplexityEstimator 路径：包装一个临时 PlanSubTask，跑 Estimate，
+// 拿 EstimatedTurns。无 estimator（包级单例可由上层注入，目前未注入时返回
+// 25 作为保守基线 —— 比 sidecar 默认 10 多得多，单步派发不容易 turns_exhausted）。
+//
+// estimator 看 instruction 内容里的关键词 + brain kind 做启发式打分，比硬编码
+// 合理，但不要求 LLM 自己估（LLM 不知道自己每个 turn 多大）。
+func estimateDelegateTurns(targetKind, instruction string) int {
+	probe := kernel.PlanSubTask{
+		Name:        instruction,
+		Instruction: instruction,
+		Kind:        agent.Kind(targetKind),
+	}
+	if currentDelegateEstimator != nil {
+		est := currentDelegateEstimator.Estimate(probe)
+		if est.EstimatedTurns > 0 {
+			return est.EstimatedTurns
+		}
+	}
+	return 25 // 保守基线
+}
+
+// currentDelegateEstimator 是包级单例，由上层（chat init / serve init）注入。
+// nil 时退化为保守 baseline。
+var currentDelegateEstimator *kernel.ComplexityEstimator
+
+// SetDelegateEstimator 由上层注入 ComplexityEstimator（chat / serve 启动时调）。
+func SetDelegateEstimator(e *kernel.ComplexityEstimator) {
+	currentDelegateEstimator = e
+}
+
+// estimateDelegateTurnsForRetry 在 turns_exhausted 失败后给出更激进的新估计。
+// 原则：把"刚才用尽的 budget"+"estimator 现给的新估计"取大值，再加 50% safety margin，
+// 上限 100（再多基本是任务设计问题，应该让中央拆得更细而不是无限加 budget）。
+func estimateDelegateTurnsForRetry(targetKind, instruction string, prevBudget int) int {
+	probe := kernel.PlanSubTask{
+		Name:        instruction,
+		Instruction: instruction,
+		Kind:        agent.Kind(targetKind),
+		// 把 prevBudget 作为提示传给 estimator（estimateFromLearning 可看 task.EstimatedTurns）
+		EstimatedTurns: prevBudget,
+	}
+	candidate := prevBudget
+	if currentDelegateEstimator != nil {
+		est := currentDelegateEstimator.Estimate(probe)
+		if est.EstimatedTurns > candidate {
+			candidate = est.EstimatedTurns
+		}
+	}
+	// 50% safety margin
+	candidate = int(float64(candidate) * 1.5)
+	if candidate > 100 {
+		candidate = 100
+	}
+	if candidate <= prevBudget {
+		// 至少加 20，避免 estimator 给出和 prev 一样导致再次失败
+		candidate = prevBudget + 20
+	}
+	return candidate
 }

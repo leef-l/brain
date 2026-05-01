@@ -20,22 +20,26 @@ func RegisterToolsForMode(reg tool.Registry, mode env.PermissionMode, brainKind 
 		e.CmdSandbox = tool.NewCommandSandbox(e.Sandbox, e.SandboxCfg)
 	}
 
-	reg.Register(cliruntime.ManageTool(&e, tool.NewReadFileTool(brainKind), env.ToolClassRead))
-	reg.Register(cliruntime.ManageTool(&e, tool.NewListFilesTool(brainKind), env.ToolClassRead))
-	reg.Register(cliruntime.ManageTool(&e, tool.NewSearchTool(brainKind), env.ToolClassRead))
-	reg.Register(tool.NewNoteTool(brainKind))
-	reg.Register(tool.NewCheckOutputTool())
-	reg.Register(tool.NewTaskCompleteTool(brainKind))
+	// 用 wrap 把每个工具包一层失败日志装饰器（写 ~/.brain/logs/tool-failures.log）。
+	// chat 模式不经过 BuildManagedRegistry，必须在这里手动包装，否则失败日志拿不到。
+	wrap := func(t tool.Tool) tool.Tool { return tool.WrapWithFailureLog(t) }
+
+	reg.Register(wrap(cliruntime.ManageTool(&e, tool.NewReadFileTool(brainKind), env.ToolClassRead)))
+	reg.Register(wrap(cliruntime.ManageTool(&e, tool.NewListFilesTool(brainKind), env.ToolClassRead)))
+	reg.Register(wrap(cliruntime.ManageTool(&e, tool.NewSearchTool(brainKind), env.ToolClassRead)))
+	reg.Register(wrap(tool.NewNoteTool(brainKind)))
+	reg.Register(wrap(tool.NewCheckOutputTool()))
+	reg.Register(wrap(tool.NewTaskCompleteTool(brainKind)))
 
 	if mode == env.ModePlan {
 		return
 	}
 
-	reg.Register(cliruntime.ManageTool(&e, tool.NewWriteFileTool(brainKind), env.ToolClassEdit))
-	reg.Register(cliruntime.ManageTool(&e, tool.NewEditFileTool(brainKind), env.ToolClassEdit))
-	reg.Register(cliruntime.ManageTool(&e, tool.NewDeleteFileTool(brainKind), env.ToolClassDelete))
-	reg.Register(cliruntime.NewManagedShellTool(brainKind, &e))
-	reg.Register(cliruntime.NewManagedRunTestsTool(&e))
+	reg.Register(wrap(cliruntime.ManageTool(&e, tool.NewWriteFileTool(brainKind), env.ToolClassEdit)))
+	reg.Register(wrap(cliruntime.ManageTool(&e, tool.NewEditFileTool(brainKind), env.ToolClassEdit)))
+	reg.Register(wrap(cliruntime.ManageTool(&e, tool.NewDeleteFileTool(brainKind), env.ToolClassDelete)))
+	reg.Register(wrap(cliruntime.NewManagedShellTool(brainKind, &e)))
+	reg.Register(wrap(cliruntime.NewManagedRunTestsTool(&e)))
 }
 
 // ExtractOutsidePath checks if tool args contain a path outside the sandbox.

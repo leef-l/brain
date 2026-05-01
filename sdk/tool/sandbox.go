@@ -30,7 +30,34 @@ func NewSandbox(workDir string) *Sandbox {
 
 // Primary returns the primary working directory.
 func (s *Sandbox) Primary() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.primary
+}
+
+// SetPrimary 切换 sandbox 的主工作目录（线程安全）。
+//
+// 主要用途：sidecar 收到 brain/execute 的 req.Workdir 后，把 sandbox 切到 host 指定的工作目录，
+// 让所有工具的相对路径解析到这个目录而不是 sidecar 进程的 cwd。
+//
+// workDir 必须是绝对路径，函数会做 EvalSymlinks 规范化。
+// 空字符串视为 no-op（保持原 primary 不变）。
+func (s *Sandbox) SetPrimary(workDir string) {
+	if workDir == "" {
+		return
+	}
+	abs, err := filepath.Abs(workDir)
+	if err != nil {
+		return
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	abs = filepath.Clean(abs)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.primary = abs
 }
 
 // Authorize adds an additional directory to the allow list.

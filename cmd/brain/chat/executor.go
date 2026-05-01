@@ -101,6 +101,16 @@ func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Regis
 		TurnIndex:     turnIndex,
 	})
 
+	// MACCS 自动委派判断（仅 central 模式）：扫一遍用户输入的关键词，命中
+	// browser/code/verifier 等明确意图时，给 LLM 加一条 system hint 强制
+	// 走 delegate，不靠它"自觉" Tier 决策。
+	if brainID == "central" {
+		if hint := DispatchHint(input); hint != "" {
+			opts.System = append(append([]llm.SystemBlock(nil), opts.System...),
+				llm.SystemBlock{Text: hint, Cache: false})
+		}
+	}
+
 	messages := append(baseMessages, llm.Message{
 		Role:    "user",
 		Content: []llm.ContentBlock{{Type: "text", Text: input}},

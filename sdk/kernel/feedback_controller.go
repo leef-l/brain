@@ -359,6 +359,12 @@ func (fap *FeedbackAwareBrainPool) Status() map[agent.Kind]BrainStatus {
 	return fap.pool.Status()
 }
 
+// AcquireBrain 透传给底层 pool（feedback controller 主要影响 GetBrain 路径，
+// 多实例并发的 AcquireBrain 直接走底层池的资源策略，不在反馈控制层拦截）。
+func (fap *FeedbackAwareBrainPool) AcquireBrain(ctx context.Context, kind agent.Kind) (agent.Agent, error) {
+	return fap.pool.AcquireBrain(ctx, kind)
+}
+
 // AutoStart 透传。
 func (fap *FeedbackAwareBrainPool) AutoStart(ctx context.Context) {
 	fap.pool.AutoStart(ctx)

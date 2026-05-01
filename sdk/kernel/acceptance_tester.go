@@ -137,7 +137,10 @@ func (t *DefaultAcceptanceTester) GenerateTests(_ context.Context, spec *Require
 			suite.AddTest(test)
 		}
 	} else {
-		// 没有验收标准时，为每个 feature 生成基础功能测试
+		// 没有验收标准时，为每个 feature 生成基础功能测试。
+		// Command 留空：让 RunTests 走 artifacts 查找兜底（feat 对应的产物在
+		// artifacts map 里就 pass）。如果用户想跑真实命令，应该在 spec.Acceptance
+		// 中显式声明 ac.AutoTestable=true 并配套自定义 verify_xxx 脚本到 PATH。
 		for i, feat := range spec.Features {
 			suite.AddTest(AcceptanceTest{
 				TestID:      fmt.Sprintf("at-%d", i+1),
@@ -146,7 +149,7 @@ func (t *DefaultAcceptanceTester) GenerateTests(_ context.Context, spec *Require
 				Description: fmt.Sprintf("验证功能 %s 是否正常工作", feat.Name),
 				TestType:    "functional",
 				AutoRun:     true,
-				Command:     fmt.Sprintf("verify_%s", sanitizeName(feat.Name)),
+				Command:     "", // 留空走 artifacts fallback
 				Expected:    "功能正常运行",
 			})
 		}
@@ -313,14 +316,16 @@ func (t *DefaultAcceptanceTester) buildTestFromCriteria(idx int, ac AcceptanceCr
 		TestType:    ac.TestType,
 	}
 
+	// Command 默认留空让 RunTests 走 artifacts fallback；
+	// 仅当 ac.Command 显式提供时才用真实命令（用户自带 verify/benchmark 脚本）。
 	switch ac.TestType {
 	case "functional":
 		test.AutoRun = true
-		test.Command = fmt.Sprintf("verify_%s", sanitizeName(ac.Description))
+		test.Command = ac.Command
 		test.Expected = "功能验证通过"
 	case "performance":
 		test.AutoRun = true
-		test.Command = fmt.Sprintf("benchmark_%s", sanitizeName(ac.Description))
+		test.Command = ac.Command
 		test.Expected = "性能指标达标"
 	case "security", "ux":
 		test.AutoRun = false
@@ -328,7 +333,7 @@ func (t *DefaultAcceptanceTester) buildTestFromCriteria(idx int, ac AcceptanceCr
 	default:
 		test.AutoRun = ac.AutoTestable
 		if ac.AutoTestable {
-			test.Command = fmt.Sprintf("verify_%s", sanitizeName(ac.Description))
+			test.Command = ac.Command
 		}
 		test.Expected = "验证通过"
 	}

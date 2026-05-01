@@ -45,10 +45,14 @@ type ConstraintSpec struct {
 
 // AcceptanceCriteria 验收标准。
 type AcceptanceCriteria struct {
-	CriteriaID  string `json:"criteria_id"`
-	Description string `json:"description"`
-	TestType    string `json:"test_type"`    // functional/performance/security/ux
-	AutoTestable bool  `json:"auto_testable"` // 是否可自动化验证
+	CriteriaID   string `json:"criteria_id"`
+	Description  string `json:"description"`
+	TestType     string `json:"test_type"`     // functional/performance/security/ux
+	AutoTestable bool   `json:"auto_testable"` // 是否可自动化验证
+	// Command 可选：用户自定义的真实验收命令（sh -c 执行）。
+	// 为空时 RunTests 走 artifacts fallback —— 检查产物 map 是否有匹配 key。
+	// 设计上这是"用户带的脚本"扩展点，不应由 parser 自动生成 verify_xxx 模板。
+	Command string `json:"command,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

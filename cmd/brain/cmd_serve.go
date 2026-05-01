@@ -340,6 +340,10 @@ type runManager struct {
 	remotePool   *kernel.RemoteBrainPool   // 远程 brain 连接池（D-3，可为 nil）
 	interrupter  kernel.InterruptChecker   // 中断信号收发（POST /v1/runs/{id}/interrupt）
 	chaos        *kernel.ChaosEngine       // 混沌注入引擎（POST /v1/chaos/experiments，默认 nil）
+	health       *kernel.HealthManager     // 组件健康监控（GET /v1/health，liveness 关注）
+	perf         *kernel.PerfCollector     // 性能指标采样（GET /v1/metrics/perf，按 brain.kind 分桶）
+	promptMgr    *kernel.DefaultAdaptivePromptManager // 自适应 Prompt 管理（5.5，注入 LLMProxy）
+	observ       *kernel.ObservabilityHub  // 可观测性 Hub（6.4，注入 Orchestrator.delegateOnce 包 Span）
 	observer     kernel.StateObserver       // 系统状态观测器（钱学森 Phase A，可选）
 	controller   kernel.FeedbackController  // 反馈控制器（钱学森 Phase B，可选）
 	stabilizer   kernel.SelfStabilizer      // 自稳定器（钱学森 Phase C，可选）
@@ -604,10 +608,24 @@ func runServe(args []string) int {
 	// 全局租约管理器，协调资源互斥与共享访问
 	leaseManager := kernel.NewMemLeaseManager()
 
-	// 为 startup 工具注册构建一个临时 Orchestrator（共享 pool）。
+	// startupOrch 是 serve 进程级共享的 Orchestrator，被三条路径复用：
+	//   1. startup 工具注册（registerDelegateToolForEnvironment / specialistBridge / MCP）
+	//   2. /v1/plans → PlanOrchestrator → ExecuteTaskPlan
+	//   3. /v1/projects → ClosedLoopController → ExecuteTaskPlan
+	// 所以这里必须配齐 LLMProxy.ProviderFactory，否则下游 sidecar 反向 RPC
+	// 调 llm.complete 时会报 "no ProviderFactory configured"。
 	var startupOrch *kernel.Orchestrator
 	if pool != nil {
-		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{},
+		startupLLMProxy := &kernel.LLMProxy{
+			ProviderFactory: func(kind agent.Kind) llm.Provider {
+				session, err := openConfiguredProvider(cfg, string(kind), nil, "", "", "", "")
+				if err != nil {
+					return nil
+				}
+				return session.Provider
+			},
+		}
+		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, startupLLMProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithLeaseManager(leaseManager),
 			kernel.WithMCPBrainPool(mcpPool),
 		)
@@ -797,6 +815,40 @@ func runServe(args []string) int {
 	// 混沌引擎：默认创建但 disabled，只有 POST /v1/chaos/experiments 触发后才 Enable。
 	chaosEngine := kernel.NewChaosEngine()
 
+	// ─── MACCS 组件：按 config 选择性创建（关闭时为 nil，下游零开销 no-op）────
+	// 默认全开。在 ~/.brain/config.json 用 maccs.<component>.enabled=false 关闭。
+
+	// 6.1 HealthManager
+	var healthMgr *kernel.HealthManager
+	if cfg.MACCSHealthEnabled() {
+		healthMgr = kernel.NewHealthManager()
+		if pool != nil {
+			healthMgr.Register(&brainPoolHealthChecker{pool: pool})
+		}
+		if leaseManager != nil {
+			healthMgr.Register(&leaseManagerHealthChecker{lm: leaseManager})
+		}
+	}
+
+	// 6.3 PerfCollector
+	var perfCollector *kernel.PerfCollector
+	if cfg.MACCSPerfEnabled() {
+		perfCollector = kernel.NewPerfCollector()
+	}
+
+	// 5.5 AdaptivePromptManager
+	var promptMgr *kernel.DefaultAdaptivePromptManager
+	if cfg.MACCSAdaptivePromptEnabled() {
+		promptMgr = kernel.NewAdaptivePromptManager()
+	}
+
+	// 6.4 ObservabilityHub
+	var observHub *kernel.ObservabilityHub
+	if cfg.MACCSObservabilityEnabled() {
+		observHub = kernel.NewObservabilityHub()
+		observHub.AddProvider(kernel.NewMemObservabilityProvider())
+	}
+
 	mgr := &runManager{
 		store:        runtime.RunStore,
 		pool:         pool,
@@ -811,6 +863,10 @@ func runServe(args []string) int {
 		remotePool:   remotePool,
 		interrupter:  kernel.NewMemInterruptChecker(),
 		chaos:        chaosEngine,
+		health:       healthMgr,
+		perf:         perfCollector,
+		promptMgr:    promptMgr,
+		observ:       observHub,
 		rootCtx:      serveCtx,
 		startTime:    time.Now(),
 	}
@@ -913,6 +969,83 @@ func runServe(args []string) int {
 			w.WriteHeader(http.StatusOK)
 		}
 		json.NewEncoder(w).Encode(report)
+	})
+
+	// GET /v1/health — 组件健康监控（liveness）。
+	// 与 /v1/readiness 区分：readiness 关注启动依赖一次性就绪；health 持续监控
+	// 运行时健康，可对接自愈触发。overall=down → 503，degraded → 200。
+	// 配置 maccs.health.enabled=false 时返回 404。
+	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		if mgr.health == nil {
+			http.Error(w, `{"error":"health monitoring disabled (maccs.health.enabled=false)"}`, http.StatusNotFound)
+			return
+		}
+		report := mgr.health.CheckAll(r.Context())
+		w.Header().Set("Content-Type", "application/json")
+		if report.Overall == kernel.HealthDown {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		json.NewEncoder(w).Encode(report)
+	})
+
+	// GET /v1/metrics/perf — 性能指标快照。
+	// 返回所有已采样指标的 P50/P95/P99 + 吞吐量；按需 ?metric=<name> 过滤单指标详情。
+	// 配置 maccs.perf.enabled=false 时返回 404。
+	mux.HandleFunc("/v1/metrics/perf", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		if mgr.perf == nil {
+			http.Error(w, `{"error":"perf metrics disabled (maccs.perf.enabled=false)"}`, http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if name := r.URL.Query().Get("metric"); name != "" {
+			latency := mgr.perf.GetLatencyStats(name)
+			throughput := mgr.perf.GetThroughput(name)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"metric":     name,
+				"latency":    latency,
+				"throughput": throughput,
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(mgr.perf.GenerateReport())
+	})
+
+	// GET /v1/observability — 可观测性数据快照（6.4）。
+	// 默认返回 metrics / logs（最近 100 条）/ spans 摘要；?trace_id=<id> 过滤单链路。
+	// 配置 maccs.observability.enabled=false 时返回 404。
+	mux.HandleFunc("/v1/observability", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		if mgr.observ == nil {
+			http.Error(w, `{"error":"observability disabled (maccs.observability.enabled=false)"}`, http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if traceID := r.URL.Query().Get("trace_id"); traceID != "" {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"trace_id": traceID,
+				"spans":    mgr.observ.GetSpans(traceID),
+			})
+			return
+		}
+		// 默认快照：metrics + logs + 最近 spans（GetSpans("") 返回全部）
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"metrics": mgr.observ.GetMetrics(),
+			"logs":    mgr.observ.GetLogs(""),
+			"spans":   mgr.observ.GetSpans(""),
+		})
 	})
 
 	// GET /v1/version
@@ -1152,7 +1285,7 @@ func runServe(args []string) int {
 	// v3 Plan 路由族 — /v1/plans
 	// PlanOrchestrator 接入主线：Requirement → Design → TaskPlan → ExecuteProject
 	// ---------------------------------------------------------------
-	plans := newPlanService(startupOrch, learner, mgr.ctxEngine, serveCtx)
+	plans := newPlanService(startupOrch, learner, mgr.ctxEngine, serveCtx, cfg)
 	if plans != nil {
 		mux.HandleFunc("/v1/plans", plans.handleCreatePlan)
 		mux.HandleFunc("/v1/plans/", plans.handleGetPlan)
@@ -1164,7 +1297,7 @@ func runServe(args []string) int {
 	// 与 /v1/plans 并列存在，互不替代：plans 走 PlanOrchestrator 轻量路径，
 	// projects 走 ClosedLoopController + ProjectSession + ProjectStateMachine 完整闭环。
 	// ---------------------------------------------------------------
-	projects := newProjectService(startupOrch, learner, serveCtx)
+	projects := newProjectService(startupOrch, learner, serveCtx, cfg)
 	if projects != nil {
 		mux.HandleFunc("/v1/projects", projects.handleCreateProject)
 		mux.HandleFunc("/v1/projects/", projects.handleGetProject)
@@ -1506,6 +1639,7 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 				}
 				return session.Provider
 			},
+			PromptManager: mgr.promptMgr,
 		}
 		_ = env
 		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
@@ -1516,6 +1650,8 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			kernel.WithLeaseManager(mgr.leaseManager),
 			kernel.WithMCPBrainPool(mgr.mcpPool),
 			kernel.WithChaosEngine(mgr.chaos),
+			kernel.WithPerfCollector(mgr.perf),
+			kernel.WithObservability(mgr.observ),
 		)
 		installHumanTakeoverBridge(orch)
 	}
@@ -1908,6 +2044,7 @@ func handleCreateWorkflow(w http.ResponseWriter, r *http.Request, mgr *runManage
 				}
 				return session.Provider
 			},
+			PromptManager: mgr.promptMgr,
 		}
 		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
@@ -1917,6 +2054,8 @@ func handleCreateWorkflow(w http.ResponseWriter, r *http.Request, mgr *runManage
 			kernel.WithLeaseManager(mgr.leaseManager),
 			kernel.WithMCPBrainPool(mgr.mcpPool),
 			kernel.WithChaosEngine(mgr.chaos),
+			kernel.WithPerfCollector(mgr.perf),
+			kernel.WithObservability(mgr.observ),
 		)
 	}
 

@@ -159,8 +159,17 @@ CREATE TABLE IF NOT EXISTS learning_task_scores (
 	stability_alpha  REAL    NOT NULL DEFAULT 0.2,
 	latency_ms_value REAL    NOT NULL DEFAULT 0,
 	latency_ms_alpha REAL    NOT NULL DEFAULT 0.2,
+	-- MACCS 学习闭环：实际 turn 数 EWMA。RecordDelegateTurns 写入。
+	-- ComplexityEstimator.estimateFromLearning 优先用此值反推 EstimatedTurns。
+	turns_value      REAL    NOT NULL DEFAULT 0,
+	turns_alpha      REAL    NOT NULL DEFAULT 0.2,
 	PRIMARY KEY (brain_kind, task_type)
 );
+
+-- 老库迁移：如果是已存在表（没 turns_value 列），用 ALTER 加上。
+-- IF NOT EXISTS 会跳过 CREATE，所以新加的列要单独通过 ALTER 兼容。
+-- 用 INSERT OR IGNORE 试一次，把不存在的列加上；存在的话 ALTER 会报 "duplicate column"
+-- 但 ApplySchema 会在每个语句独立执行，duplicate 错误 sqlite 仍会过 — 我们用 _ = 忽略。
 
 CREATE TABLE IF NOT EXISTS learning_sequences (
 	id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -388,6 +397,18 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 	if _, err := db.Exec(sqliteSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sqlite driver: create schema: %w", err)
+	}
+
+	// 老库迁移：CREATE TABLE IF NOT EXISTS 不会给已有表加列。
+	// 这里逐列试 ALTER；列已存在会报 "duplicate column"，忽略即可。
+	migrations := []string{
+		`ALTER TABLE learning_task_scores ADD COLUMN latency_ms_value REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE learning_task_scores ADD COLUMN latency_ms_alpha REAL NOT NULL DEFAULT 0.2`,
+		`ALTER TABLE learning_task_scores ADD COLUMN turns_value REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE learning_task_scores ADD COLUMN turns_alpha REAL NOT NULL DEFAULT 0.2`,
+	}
+	for _, stmt := range migrations {
+		_, _ = db.Exec(stmt) // duplicate column 错误正常忽略
 	}
 
 	core := &sqliteCore{db: db}
@@ -1325,19 +1346,29 @@ func (s *sqliteLearningStore) SaveTaskScore(ctx context.Context, ts *LearningTas
 	defer s.c.mu.Unlock()
 	_, err := s.c.db.ExecContext(ctx,
 		`INSERT INTO learning_task_scores
-		 (brain_kind, task_type, sample_count, accuracy_value, accuracy_alpha, speed_value, speed_alpha, cost_value, cost_alpha, stability_value, stability_alpha)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 (brain_kind, task_type, sample_count,
+		  accuracy_value, accuracy_alpha,
+		  speed_value, speed_alpha,
+		  cost_value, cost_alpha,
+		  stability_value, stability_alpha,
+		  latency_ms_value, latency_ms_alpha,
+		  turns_value, turns_alpha)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(brain_kind, task_type) DO UPDATE SET
 		 sample_count=excluded.sample_count,
 		 accuracy_value=excluded.accuracy_value, accuracy_alpha=excluded.accuracy_alpha,
 		 speed_value=excluded.speed_value, speed_alpha=excluded.speed_alpha,
 		 cost_value=excluded.cost_value, cost_alpha=excluded.cost_alpha,
-		 stability_value=excluded.stability_value, stability_alpha=excluded.stability_alpha`,
+		 stability_value=excluded.stability_value, stability_alpha=excluded.stability_alpha,
+		 latency_ms_value=excluded.latency_ms_value, latency_ms_alpha=excluded.latency_ms_alpha,
+		 turns_value=excluded.turns_value, turns_alpha=excluded.turns_alpha`,
 		ts.BrainKind, ts.TaskType, ts.SampleCount,
 		ts.AccuracyValue, ts.AccuracyAlpha,
 		ts.SpeedValue, ts.SpeedAlpha,
 		ts.CostValue, ts.CostAlpha,
-		ts.StabilityValue, ts.StabilityAlpha)
+		ts.StabilityValue, ts.StabilityAlpha,
+		ts.LatencyMsValue, ts.LatencyMsAlpha,
+		ts.TurnsValue, ts.TurnsAlpha)
 	return err
 }
 
@@ -1368,7 +1399,8 @@ func (s *sqliteLearningStore) ListTaskScores(ctx context.Context, brainKind stri
 		`SELECT brain_kind, task_type, sample_count,
 		        accuracy_value, accuracy_alpha, speed_value, speed_alpha,
 		        cost_value, cost_alpha, stability_value, stability_alpha,
-		        latency_ms_value, latency_ms_alpha
+		        latency_ms_value, latency_ms_alpha,
+		        turns_value, turns_alpha
 		 FROM learning_task_scores WHERE brain_kind = ? ORDER BY task_type`, brainKind)
 	if err != nil {
 		return nil, err
@@ -1382,7 +1414,8 @@ func (s *sqliteLearningStore) ListTaskScores(ctx context.Context, brainKind stri
 			&ts.SpeedValue, &ts.SpeedAlpha,
 			&ts.CostValue, &ts.CostAlpha,
 			&ts.StabilityValue, &ts.StabilityAlpha,
-			&ts.LatencyMsValue, &ts.LatencyMsAlpha); err != nil {
+			&ts.LatencyMsValue, &ts.LatencyMsAlpha,
+			&ts.TurnsValue, &ts.TurnsAlpha); err != nil {
 			continue
 		}
 		out = append(out, ts)

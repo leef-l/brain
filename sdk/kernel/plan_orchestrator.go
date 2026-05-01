@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/leef-l/brain/sdk/diaglog"
@@ -27,6 +28,14 @@ type PlanOrchestrator struct {
 	ContextEngine    ContextEngine    // 可选：带项目记忆的 ContextEngine（接入下游 brain prompt）
 	MemoryRetriever  *MemoryRetriever // 可选：用于 reflection 后检索相似历史经验
 	memoryRetrieveN  int              // MemoryRetriever 取 top-N
+
+	// PatternExtractor 可选（MACCS 5.4）。ExecuteProject 完成后异步从历史经验
+	// 提取共性模式，把新 pattern 写回 PatternLibrary + 关键摘要写入 ProjectMemory。
+	// nil 时跳过；要使用必须同时配置 ExperienceStore 才能拉到历史经验。
+	PatternExtractor PatternExtractor
+	// patternBgCtx 用于驱动异步抽取的顶层 ctx，请求 ctx 在返回时已 cancel。
+	// 通常由 server 注入；nil 时退化为 context.Background。
+	patternBgCtx context.Context
 }
 
 // PlanOrchestratorConfig 配置。
@@ -53,6 +62,12 @@ type PlanOrchestratorConfig struct {
 
 	// MemoryRetrieveLimit MemoryRetriever 取 top-N，默认 5。
 	MemoryRetrieveLimit int
+
+	// PatternExtractor 可选（MACCS 5.4）。ExecuteProject 完成后异步从历史经验
+	// 提取共性模式。需要同时配置 ExperienceStore 才有历史可用。
+	PatternExtractor PatternExtractor
+	// PatternBgCtx 用于异步抽取的顶层 ctx；nil 时使用 context.Background。
+	PatternBgCtx context.Context
 }
 
 // NewPlanOrchestrator 创建智能化编排器。
@@ -73,19 +88,26 @@ func NewPlanOrchestrator(orch *Orchestrator, cfg PlanOrchestratorConfig) *PlanOr
 		retrieveN = 5
 	}
 
+	patternBg := cfg.PatternBgCtx
+	if patternBg == nil {
+		patternBg = context.Background()
+	}
+
 	po := &PlanOrchestrator{
-		Orchestrator:    orch,
-		Memory:          cfg.Memory,
-		Estimator:       NewComplexityEstimatorWithTransfer(cfg.Learner, transfer),
-		BudgetPool:      NewDynamicBudgetPool(totalBudget),
-		MetaCognitive:   NewMetaCognitiveEngine(cfg.Learner),
-		ModelRouter:     cfg.ModelRouter,
-		ProgressStore:   cfg.ProgressStore,
-		TransferLearner: transfer,
-		ExperienceStore: cfg.ExperienceStore,
-		ContextEngine:   cfg.ContextEngine,
-		MemoryRetriever: cfg.MemoryRetriever,
-		memoryRetrieveN: retrieveN,
+		Orchestrator:     orch,
+		Memory:           cfg.Memory,
+		Estimator:        NewComplexityEstimatorWithTransfer(cfg.Learner, transfer),
+		BudgetPool:       NewDynamicBudgetPool(totalBudget),
+		MetaCognitive:    NewMetaCognitiveEngine(cfg.Learner),
+		ModelRouter:      cfg.ModelRouter,
+		ProgressStore:    cfg.ProgressStore,
+		TransferLearner:  transfer,
+		ExperienceStore:  cfg.ExperienceStore,
+		ContextEngine:    cfg.ContextEngine,
+		MemoryRetriever:  cfg.MemoryRetriever,
+		memoryRetrieveN:  retrieveN,
+		PatternExtractor: cfg.PatternExtractor,
+		patternBgCtx:     patternBg,
 	}
 
 	// 如果配置了持久化存储，尝试加载历史经验到迁移学习器
@@ -237,6 +259,13 @@ func (po *PlanOrchestrator) ExecuteProject(ctx context.Context, plan *TaskPlan) 
 		_ = po.ProgressStore.SaveProgress(ctx, progress)
 	}
 
+	// 6. MACCS 5.4：异步抽取项目模式（非阻塞）。要求 PatternExtractor + ExperienceStore
+	// 同时配置；失败仅写日志不影响主流程。用 patternBgCtx 防止调用方 ctx 取消打断异步任务。
+	if po.PatternExtractor != nil && po.ExperienceStore != nil {
+		exp := buildProjectExperience(plan, planResult, reflection, time.Since(start))
+		go po.runPatternExtraction(exp)
+	}
+
 	return &ProjectExecutionResult{
 		PlanResult: planResult,
 		Progress:   progress.Snapshot(),
@@ -244,6 +273,115 @@ func (po *PlanOrchestrator) ExecuteProject(ctx context.Context, plan *TaskPlan) 
 		Duration:   time.Since(start),
 		ExecError:  execErr,
 	}, nil
+}
+
+// runPatternExtraction 在后台 goroutine 中持久化当前经验 + 抽取共性模式。
+// 任何 panic 都被 recover 兜底，避免拖崩主进程。
+func (po *PlanOrchestrator) runPatternExtraction(exp *ProjectExperience) {
+	defer func() {
+		if r := recover(); r != nil {
+			diaglog.Error("plan_orchestrator", "pattern extraction panic", "recover", fmt.Sprint(r))
+		}
+	}()
+
+	ctx := po.patternBgCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// 持久化当前经验，让下次抽取能用到本次结果
+	if exp != nil {
+		_ = po.ExperienceStore.Save(ctx, exp)
+	}
+
+	exps, err := po.ExperienceStore.List(ctx)
+	if err != nil || len(exps) == 0 {
+		return
+	}
+
+	// 转 ptr 切片为值切片以匹配 PatternExtractor.Extract 签名
+	values := make([]ProjectExperience, 0, len(exps))
+	for _, e := range exps {
+		if e != nil {
+			values = append(values, *e)
+		}
+	}
+
+	patterns := po.PatternExtractor.Extract(values)
+	if len(patterns) == 0 {
+		return
+	}
+
+	// 把新模式加入 library + 把摘要写入项目记忆，供下次 reflection 检索
+	for _, p := range patterns {
+		po.PatternExtractor.AddPattern(p)
+		if po.Memory != nil && exp != nil {
+			_ = po.Memory.Store(ctx, MemoryEntry{
+				ProjectID:  exp.ProjectID,
+				Type:       MemoryLesson,
+				Content:    fmt.Sprintf("[pattern/%s] %s — confidence=%.2f", p.Category, p.Description, p.Confidence),
+				Summary:    p.Name,
+				Tags:       []string{"pattern", p.Category},
+				Importance: p.Confidence,
+			})
+		}
+	}
+
+	diaglog.Info("plan_orchestrator", "pattern extraction done",
+		"experiences", len(values),
+		"new_patterns", len(patterns),
+	)
+}
+
+// buildProjectExperience 把单次 ExecuteProject 的结果转为可持久化的 ProjectExperience。
+// 字段语义参考 transfer_learning.go::ProjectExperience。
+func buildProjectExperience(plan *TaskPlan, result *TaskPlanResult, reflection *ReflectionReport, dur time.Duration) *ProjectExperience {
+	if plan == nil {
+		return nil
+	}
+	successRate := 0.0
+	taskCount := len(plan.SubTasks)
+	if result != nil && taskCount > 0 {
+		successRate = float64(result.CompletedTasks) / float64(taskCount)
+	}
+	brainUsage := make(map[string]float64, 4)
+	for _, st := range plan.SubTasks {
+		if st.Kind != "" {
+			brainUsage[string(st.Kind)]++
+		}
+	}
+	if taskCount > 0 {
+		for k := range brainUsage {
+			brainUsage[k] /= float64(taskCount)
+		}
+	}
+	tags := make([]string, 0, 4)
+	// 用 SubTask.Domain（首个非空）作为粗粒度 Category 输入。Pattern 的 architecture
+	// 类抽取需要 Category 非空才能分桶（pattern_extraction.go:118）。
+	category := ""
+	for _, st := range plan.SubTasks {
+		if st.Domain != "" {
+			category = st.Domain
+			break
+		}
+	}
+	if reflection != nil && len(reflection.Lessons) > 0 {
+		tags = append(tags, "has_lessons")
+	}
+	for k := range brainUsage {
+		tags = append(tags, "uses:"+k)
+	}
+	return &ProjectExperience{
+		ExperienceID: fmt.Sprintf("exp-%s-%d", plan.ProjectID, time.Now().UnixMilli()),
+		ProjectID:    plan.ProjectID,
+		Category:     category,
+		Tags:         tags,
+		TaskCount:    taskCount,
+		SuccessRate:  successRate,
+		BrainUsage:   brainUsage,
+		Duration:     dur,
+		CreatedAt:    time.Now(),
+	}
 }
 
 // ProjectExecutionResult 项目执行最终结果。

@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/kernel"
 )
@@ -55,7 +56,7 @@ type planService struct {
 // Summarizer 与 SharedStore），在这里被 ContextEngineWithMemory 包装一层后
 // 通过 PlanOrchestratorConfig.ContextEngine 注入，进而被 Orchestrator 替换为
 // 全局 contextEngine —— 这是把"项目记忆自动注入下游 brain prompt"接入主线的关键。
-func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, baseCtxEngine kernel.ContextEngine, serveCtx context.Context) *planService {
+func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, baseCtxEngine kernel.ContextEngine, serveCtx context.Context, cfg *config.Config) *planService {
 	if baseOrch == nil {
 		return nil
 	}
@@ -78,6 +79,17 @@ func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngin
 		ctxWithMem = kernel.NewContextEngineWithMemory(def, memory)
 	}
 
+	// MACCS 5.4：异步模式抽取，需要 PatternExtractor + ExperienceStore 同时配置。
+	// 用 serveCtx 作为后台 ctx，server shutdown 时一并取消。
+	// maccs.pattern_extractor.enabled=false 时关闭整条路径（PlanOrchestrator 内部
+	// 守卫：两个字段任一为 nil 都跳过抽取）。
+	var expStore kernel.ExperienceStore
+	var patternExt kernel.PatternExtractor
+	if cfg.MACCSPatternExtractorEnabled() {
+		expStore = kernel.NewMemExperienceStore()
+		patternExt = kernel.NewPatternExtractor()
+	}
+
 	po := kernel.NewPlanOrchestrator(baseOrch, kernel.PlanOrchestratorConfig{
 		Memory:              memory,
 		Learner:             learner,
@@ -87,6 +99,9 @@ func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngin
 		ContextEngine:       ctxWithMem,
 		MemoryRetriever:     retriever,
 		MemoryRetrieveLimit: 5,
+		ExperienceStore:     expStore,
+		PatternExtractor:    patternExt,
+		PatternBgCtx:        serveCtx,
 	})
 
 	return &planService{

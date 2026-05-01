@@ -115,6 +115,7 @@ func (t *startHumanDemoTool) Execute(ctx context.Context, args json.RawMessage) 
 	}
 	if t.env != nil {
 		req.Execution = t.env.ExecutionSpec()
+		req.Workdir = t.env.Workdir // workdir 端到端贯穿
 	}
 
 	result, err := t.delegate(ctx, req)

@@ -18,11 +18,11 @@ import (
 
 // ExecutionSchedulerConfig 调度器配置。
 type ExecutionSchedulerConfig struct {
-	MaxParallel      int           `json:"max_parallel"`       // 最大并行任务数，默认 3
-	DefaultTimeout   time.Duration `json:"default_timeout"`    // 单任务默认超时，默认 10min
-	RetryLimit       int           `json:"retry_limit"`        // 失败重试次数，默认 2
-	EnableBudget     bool          `json:"enable_budget"`      // 是否启用动态预算
-	ProgressInterval time.Duration `json:"progress_interval"`  // 进度汇报间隔，默认 30s
+	MaxParallel      int           `json:"max_parallel"`      // 最大并行任务数，默认 3
+	DefaultTimeout   time.Duration `json:"default_timeout"`   // 单任务默认超时，默认 10min
+	RetryLimit       int           `json:"retry_limit"`       // 失败重试次数，默认 2
+	EnableBudget     bool          `json:"enable_budget"`     // 是否启用动态预算
+	ProgressInterval time.Duration `json:"progress_interval"` // 进度汇报间隔，默认 30s
 }
 
 func defaultExecutionSchedulerConfig() ExecutionSchedulerConfig {
@@ -66,6 +66,8 @@ type ExecutionPlan struct {
 	Tasks        map[string]*ScheduledTask `json:"tasks"`
 	TotalTasks   int                       `json:"total_tasks"`
 	CurrentLayer int                       `json:"current_layer"`
+	// Workdir 从 TaskPlan.Workdir 复制过来，传递给每个 DelegateRequest。
+	Workdir string `json:"workdir,omitempty"`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,12 +93,25 @@ type ExecutionProgress struct {
 
 // ExecutionScheduler 将审核通过的 TaskPlan 调度为可执行的分层并行计划，
 // 并提供任务生命周期管理（启动、完成、失败、重试）和进度追踪。
+//
+// 接入：
+//   - conflictDetector + smartScheduler 共同提供"冲突感知重排"能力。
+//     当两者非空时，BuildExecutionPlan 完成后会用 SmartScheduler.Reschedule
+//     在拓扑分层基础上做贪心冲突分离（同层资源冲突挤到下一层）；RunPlan
+//     在派发当前层之前再调用 ValidateSchedule，发现仍存在 blocker 冲突
+//     的任务会被推迟（dryRun 模式下仅 diaglog 警告，不实际推迟）。
+//   - dryRunConflict=true 时只记录日志不重排，用于灰度观察误报率（路线图
+//     §6 风险对策）。
 type ExecutionScheduler struct {
-	mu           sync.RWMutex
-	config       ExecutionSchedulerConfig
-	budget       *DynamicBudgetPool // 可选
-	progress     *ProjectProgress   // 可选
-	orchestrator *Orchestrator      // 可选；非空时 Run/RunPlan 通过 DelegateBatch 真实派发
+	mu               sync.RWMutex
+	config           ExecutionSchedulerConfig
+	budget           *DynamicBudgetPool                   // 可选
+	progress         *ProjectProgress                     // 可选
+	orchestrator     *Orchestrator                        // 可选；非空时 Run/RunPlan 通过 DelegateBatch 真实派发
+	conflictDetector ConflictDetector                     // 可选：每层派发前做冲突检测
+	smartScheduler   *SmartScheduler                      // 可选：基于检测结果做冲突感知重排
+	dryRunConflict   bool                                 // 灰度开关：true 时仅日志，不实际重排/推迟
+	resourceProvider func(taskID string) TaskResourceDecl // 可选：从外部解析资源声明
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,6 +147,44 @@ func (s *ExecutionScheduler) AttachOrchestrator(orch *Orchestrator) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.orchestrator = orch
+}
+
+// AttachConflictControl 注入冲突检测 + 智能重排能力。
+// detector 与 smart 任一为 nil 视为关闭冲突感知；dryRun=true 时仅记录日志，
+// 不实际重排（给生产环境一周观察期，再切换到强制重排，路线图风险对策）。
+// resolver 可选：从外部（如 PlanSubTask 元数据）解析每个任务的 TaskResourceDecl；
+// 为 nil 时仅根据 Kind 生成最小声明。
+func (s *ExecutionScheduler) AttachConflictControl(detector ConflictDetector, smart *SmartScheduler, dryRun bool, resolver func(taskID string) TaskResourceDecl) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.conflictDetector = detector
+	s.smartScheduler = smart
+	s.dryRunConflict = dryRun
+	s.resourceProvider = resolver
+}
+
+// resourceDecls 为 ExecutionPlan 内所有任务生成资源声明。
+// 优先用 resourceProvider 注入的解析器；缺失时返回最小声明（仅 BrainKind）。
+func (s *ExecutionScheduler) resourceDecls(execPlan *ExecutionPlan) map[string]TaskResourceDecl {
+	s.mu.RLock()
+	provider := s.resourceProvider
+	s.mu.RUnlock()
+	out := make(map[string]TaskResourceDecl, len(execPlan.Tasks))
+	for tid, st := range execPlan.Tasks {
+		if provider != nil {
+			d := provider(tid)
+			if d.TaskID == "" {
+				d.TaskID = tid
+			}
+			if d.BrainKind == "" {
+				d.BrainKind = string(st.Task.Kind)
+			}
+			out[tid] = d
+			continue
+		}
+		out[tid] = TaskResourceDecl{TaskID: tid, BrainKind: string(st.Task.Kind)}
+	}
+	return out
 }
 
 func applyExecDefaults(cfg ExecutionSchedulerConfig) ExecutionSchedulerConfig {
@@ -204,6 +257,30 @@ func (s *ExecutionScheduler) BuildExecutionPlan(plan *TaskPlan) (*ExecutionPlan,
 		Tasks:        tasks,
 		TotalTasks:   len(plan.SubTasks),
 		CurrentLayer: 0,
+		Workdir:      plan.Workdir,
+	}
+
+	// 冲突感知重排：如果注入了 SmartScheduler + ConflictDetector，则在拓扑分层
+	// 之上做贪心冲突分离。dryRun 模式下仅 diaglog 警告，不改变 ep.Layers。
+	s.mu.RLock()
+	smart := s.smartScheduler
+	dryRun := s.dryRunConflict
+	s.mu.RUnlock()
+	if smart != nil {
+		decls := s.resourceDecls(ep)
+		result := smart.Reschedule(ep.Layers, decls)
+		if result != nil && result.ConflictsAvoided > 0 {
+			diaglog.Info("execution_scheduler", "smart reschedule applied",
+				"plan_id", ep.PlanID,
+				"conflicts_avoided", result.ConflictsAvoided,
+				"layers_delta", result.LayersDelta,
+				"dry_run", dryRun,
+				"explanation", result.Explanation,
+			)
+			if !dryRun && len(result.OptimizedLayers) > 0 {
+				ep.Layers = result.OptimizedLayers
+			}
+		}
 	}
 
 	return ep, nil
@@ -393,6 +470,33 @@ func (s *ExecutionScheduler) RunPlan(ctx context.Context, execPlan *ExecutionPla
 			continue
 		}
 
+		// 派发前再次校验：拿到当前层的实际任务集（可能包含被推迟的） →
+		// 调 ConflictDetector 过一遍。命中 blocker 就在 dryRun=false 下记录
+		// 警告（重排在 Build 时已经做过；此处是安全网）。
+		s.mu.RLock()
+		detector := s.conflictDetector
+		dryRun := s.dryRunConflict
+		s.mu.RUnlock()
+		if detector != nil {
+			declMap := s.resourceDecls(execPlan)
+			batchDecls := make([]TaskResourceDecl, 0, len(batch))
+			for _, t := range batch {
+				if d, ok := declMap[t.Task.TaskID]; ok {
+					batchDecls = append(batchDecls, d)
+				}
+			}
+			report := detector.Detect(batchDecls)
+			if report != nil && report.HasBlockers {
+				diaglog.Warn("execution_scheduler", "blocker conflicts detected at dispatch",
+					"plan_id", execPlan.PlanID,
+					"layer", execPlan.CurrentLayer,
+					"blocker_count", report.BlockerCount,
+					"summary", report.Summary(),
+					"dry_run", dryRun,
+				)
+			}
+		}
+
 		batchReq := &DelegateBatchRequest{Requests: make([]*DelegateRequest, 0, len(batch))}
 		for _, t := range batch {
 			s.MarkRunning(t, string(t.Task.Kind))
@@ -400,6 +504,7 @@ func (s *ExecutionScheduler) RunPlan(ctx context.Context, execPlan *ExecutionPla
 				TaskID:      t.Task.TaskID,
 				TargetKind:  t.Task.Kind,
 				Instruction: t.Task.Instruction,
+				Workdir:     execPlan.Workdir, // workdir 端到端贯穿
 			}
 			if t.Task.EstimatedTurns > 0 {
 				req.Budget = &SubtaskBudget{MaxTurns: t.Task.EstimatedTurns}

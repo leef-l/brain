@@ -51,6 +51,10 @@ type TaskPlan struct {
 	Checkpoints    []PlanCheckpoint    `json:"checkpoints"`
 	Estimation     ComplexityEstimation `json:"estimation"`
 	Status         PlanStatus          `json:"status"`
+	// Workdir 是项目级别的工作目录（用户提交时确定）。
+	// ExecuteTaskPlan / RunPlan 把这个值贯穿到每个 DelegateRequest.Workdir，
+	// 让所有 sidecar 用同一个 workdir 解析相对路径。
+	Workdir string `json:"workdir,omitempty"`
 	// Interrupt 字段预留：等 interrupt.go (InterruptSignal) 创建后再接入。
 }
 

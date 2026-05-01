@@ -33,6 +33,11 @@ type ExecuteRequest struct {
 	// ExecutionID 用于端到端流式事件关联，host 生成后传给 sidecar，
 	// sidecar 通过 brain/progress Notify 将实时事件回传时携带此 ID。
 	ExecutionID string `json:"execution_id,omitempty"`
+	// Workdir 是 host 通知 sidecar 的工作目录绝对路径。
+	// sidecar 收到后必须用这个路径作为相对路径解析的基准（设进 sandbox primary），
+	// 不能用 sidecar 进程自己的 cwd（那是父进程启动时的 cwd，可能与用户工作目录不一致）。
+	// 空字符串时退化为 sidecar 进程 cwd（向后兼容）。
+	Workdir string `json:"workdir,omitempty"`
 }
 
 // ExecuteBudget constrains the sidecar Agent Loop.

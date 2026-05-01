@@ -60,6 +60,15 @@ type BrainRegistration struct {
 	// MinApprovalLevel 是此 brain 的 manifest 最小审批等级。
 	// 当非空时，SemanticApprover 会将其与工具显式声明的等级取最大值。
 	MinApprovalLevel string `json:"min_approval_level,omitempty"`
+
+	// MaxInstances 是该 brain 的硬实例上限（用户硬限）。
+	// 0 = 不限制（仅受 BrainPool 资源策略约束 —— 默认机器 50% CPU/内存上限）。
+	// 设为正数时是真正的硬上限：不会超过这个数。
+	MaxInstances int `json:"max_instances,omitempty"`
+
+	// MinInstances 是该 brain 的最小预热实例数。
+	// 0/未设 = 1（懒启动后保持至少 1 个）。可设大让常用 brain 一直预热多个实例。
+	MinInstances int `json:"min_instances,omitempty"`
 }
 
 // OrchestratorConfig configures the Orchestrator. When Brains is non-empty,
@@ -148,6 +157,16 @@ type Orchestrator struct {
 	// delegateOnce 在 RPC 调用前注入延迟 / 错误，验证系统弹性。
 	// nil 时所有混沌路径均为零开销 no-op。
 	chaos *ChaosEngine
+
+	// perf 是可选的性能采集器（MACCS 6.3）。当非 nil 时，delegateOnce
+	// 在 RPC 调用前后用 StartTimer/Stop 包一层，按 brain.kind / status 分桶。
+	// nil 时全部路径零开销 no-op。
+	perf *PerfCollector
+
+	// observ 是可选的可观测性 Hub（MACCS 6.4）。当非 nil 时，delegateOnce
+	// 在 RPC 调用前后包一层 TraceSpan（trace_id=req.RunID 或 req.TaskID），
+	// 按 brain.kind / status 打标签，分发到所有注册的 provider。
+	observ *ObservabilityHub
 
 	mu sync.Mutex
 }
@@ -303,6 +322,23 @@ func (o *Orchestrator) SetChaosEngine(c *ChaosEngine) {
 	o.mu.Lock()
 	o.chaos = c
 	o.mu.Unlock()
+}
+
+// WithPerfCollector 设置可选的性能采集器（MACCS 6.3）。
+// 当设置后，delegateOnce 在每次 RPC 前后记录耗时，按 brain.kind / status 分桶。
+func WithPerfCollector(p *PerfCollector) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.perf = p
+	}
+}
+
+// WithObservability 设置可选的可观测性 Hub（MACCS 6.4）。
+// 当设置后，delegateOnce 在每次 RPC 前后包一层 TraceSpan，
+// 按 brain.kind / status 打标签，分发到所有注册的 provider。
+func WithObservability(h *ObservabilityHub) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.observ = h
+	}
 }
 
 // Chaos 返回当前挂载的混沌引擎，若未设置则返回 nil。
@@ -727,9 +763,20 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*Del
 		}, nil
 	}
 
-	// Acquire lease for target brain before delegation.
+	// MACCS 多实例并发：不再用 LeaseManager 锁 kind 级（那会让单实例锁死多任务）。
+	// 改由 BrainPool.AcquireBrain 处理并发：
+	//   - 空闲实例 → 直接给（load=0 的优先）
+	//   - 全忙 + 预算允许 → 自动扩容启动新实例（默认机器 50% CPU/内存）
+	//   - 全忙 + 预算到顶 → 共享负载最低的现有实例（多 task 同实例并发跑）
+	// 这才是真正的"多 task 同 brain 并发"。
+	//
+	// 注：原 lease 路径保留下来作为可选独占机制 —— RenderMode == "exclusive"（显式独占）
+	// 或 RenderMode == "headed"（headed 浏览器需要稳定窗口，不能多实例并发抢同一窗口）
+	// 都触发独占。verifier 跑测试需要稳定环境时也可显式传 "exclusive"。
 	var leases []Lease
-	if o.leaseManager != nil {
+	needExclusive := req.Subtask != nil &&
+		(req.Subtask.RenderMode == "exclusive" || req.Subtask.RenderMode == "headed")
+	if o.leaseManager != nil && needExclusive {
 		leaseReqs := []LeaseRequest{
 			{
 				Capability:  "brain-delegate",
@@ -741,9 +788,9 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*Del
 		}
 		acquired, acquireErr := o.leaseManager.AcquireSet(ctx, leaseReqs)
 		if acquireErr != nil {
-			errMsg := fmt.Sprintf("brain %s is currently leased by another task", req.TargetKind)
+			errMsg := fmt.Sprintf("brain %s exclusive lease unavailable", req.TargetKind)
 			if errors.Is(acquireErr, ErrAcquireTimeout) {
-				errMsg = fmt.Sprintf("brain %s is currently leased by another task (acquire timeout)", req.TargetKind)
+				errMsg = fmt.Sprintf("brain %s exclusive lease unavailable (timeout)", req.TargetKind)
 			}
 			return &DelegateResult{
 				TaskID: req.TaskID,
@@ -840,7 +887,48 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*Del
 }
 
 // delegateOnce performs a single delegation attempt.
-func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, start time.Time) (*DelegateResult, error) {
+func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, start time.Time) (result *DelegateResult, err error) {
+	// MACCS 6.3：性能插桩（perf==nil 时零开销，命名返回值便于 defer 取 status）。
+	if o.perf != nil {
+		perfStart := time.Now()
+		defer func() {
+			status := "ok"
+			if result != nil && result.Status != "" {
+				status = result.Status
+			} else if err != nil {
+				status = "failed"
+			}
+			o.perf.Record("brain_delegate", time.Since(perfStart), map[string]string{
+				"kind":   string(req.TargetKind),
+				"status": status,
+			})
+		}()
+	}
+
+	// MACCS 6.4：可观测性 Span（observ==nil 时零开销）。trace_id 优先用 TraceID，
+	// 否则用 TaskID 兜底。Tags 在 EndSpan 时由 status 决定。
+	if o.observ != nil {
+		traceID := req.TraceID
+		if traceID == "" {
+			traceID = req.TaskID
+		}
+		span := o.observ.StartSpan(traceID, "brain.delegate", "orchestrator")
+		if span != nil {
+			if span.Tags == nil {
+				span.Tags = make(map[string]string)
+			}
+			span.Tags["kind"] = string(req.TargetKind)
+			span.Tags["task_id"] = req.TaskID
+			defer func() {
+				status := "ok"
+				if err != nil || (result != nil && result.Status == "failed") {
+					status = "error"
+				}
+				o.observ.EndSpan(span, status)
+			}()
+		}
+	}
+
 	// ── 混沌注入拦截点 ─────────────────────────────────────────────────────────
 	// O(1) 守卫：chaos==nil 或 !IsEnabled() 时立即跳过，零额外开销。
 	// 只有显式 Enable() 后才真正执行延迟/错误注入。
@@ -977,6 +1065,11 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, s
 	if req.ParentSpanID != "" {
 		payload["parent_span_id"] = req.ParentSpanID
 	}
+	// workdir 端到端贯穿：host 把绝对路径告诉 sidecar，sidecar 用同一个 workdir
+	// 解析所有相对路径，避免相对路径落到 sidecar 进程的 cwd。
+	if req.Workdir != "" {
+		payload["workdir"] = req.Workdir
+	}
 
 	// Send brain/execute and wait for result.
 	var execResult json.RawMessage
@@ -1009,13 +1102,35 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, s
 	)
 
 	status, execErrMsg := normalizeExecuteResult(execResult)
+	// MACCS 闭环：从 sidecar ExecuteResult 提取实际 turn 数填进 Usage，
+	// 让 recordDelegateOutcome 能调 RecordDelegateTurns 学习这个数据点。
+	turnsUsed := extractTurnsFromExecuteResult(execResult)
 	return &DelegateResult{
 		TaskID: req.TaskID,
 		Status: status,
 		Output: execResult,
 		Error:  execErrMsg,
-		Usage:  SubtaskUsage{Duration: time.Since(start)},
+		Usage: SubtaskUsage{
+			Duration: time.Since(start),
+			Turns:    turnsUsed,
+		},
 	}, nil
+}
+
+// extractTurnsFromExecuteResult 从 sidecar 返回的 brain/execute 响应中拿 turns 字段。
+// sidecar.ExecuteResult 已经包含 Turns int，这里只解这一个字段避免重复 unmarshal。
+// 提取失败时返回 0（recordDelegateOutcome 会跳过 RecordDelegateTurns）。
+func extractTurnsFromExecuteResult(execResult json.RawMessage) int {
+	if len(execResult) == 0 {
+		return 0
+	}
+	var partial struct {
+		Turns int `json:"turns"`
+	}
+	if err := json.Unmarshal(execResult, &partial); err != nil {
+		return 0
+	}
+	return partial.Turns
 }
 
 func normalizeExecuteResult(execResult json.RawMessage) (status, errMsg string) {
@@ -1129,7 +1244,8 @@ func (o *Orchestrator) getOrStartSidecar(ctx context.Context, kind agent.Kind) (
 	}
 
 	if o.pool != nil && o.poolClaimsKind(kind) {
-		ag, err := o.pool.GetBrain(ctx, kind)
+		// MACCS 多实例并发：用 AcquireBrain 而非 GetBrain，让 pool 自动选空闲实例 / 扩容。
+		ag, err := o.pool.AcquireBrain(ctx, kind)
 		if err == nil {
 			// Register LLM proxy and reverse RPC handlers on the sidecar's session.
 			if rpcAgent, ok := ag.(agent.RPCAgent); ok {
@@ -1643,6 +1759,12 @@ func (o *Orchestrator) recordDelegateOutcome(req *DelegateRequest, result *Deleg
 
 	// L1-Latency: 记录实际延迟用于自适应超时估算。
 	o.learner.RecordDelegateLatency(req.TargetKind, taskType, result.Usage.Duration)
+
+	// MACCS 闭环关键：记录实际 turn 数。让下次 ComplexityEstimator 直接读
+	// 这个 EWMA 而不是从 Speed 反推。只在 turn > 0 时记录（无效采样跳过）。
+	if result.Usage.Turns > 0 {
+		o.learner.RecordDelegateTurns(req.TargetKind, taskType, result.Usage.Turns)
+	}
 
 	// L2: 记录单步序列（单次委派作为一个 step，由调用方聚合多步序列）
 	// 同时附带 CausalLearner 所需的混杂因子（context size / project / time bucket）。

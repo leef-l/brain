@@ -74,12 +74,26 @@ func RenderPromptFrame(session *term.LineReadSession, mode env.PermissionMode,
 		session.FrameLines++
 	}
 
+	// 输入框上边的横线（claude-code 风格）。shell 模式（! 开头）时用红色边框区分。
+	isShellMode := isShellInput(session)
+	borderColor := promptBorderColor(mode, isShellMode)
+	border := promptBorder(cols, borderColor)
+	fmt.Print(border)
+	fmt.Print("\r\n")
+	session.FrameLines++
+
 	session.Ed.PromptWidth = PrintPrompt(mode)
 	if len(session.Ed.Runes) > 0 {
 		fmt.Print(session.Ed.String())
 	}
 	fmt.Print("\r\n")
 	session.FrameLines++
+
+	// 下边的横线
+	fmt.Print(border)
+	fmt.Print("\r\n")
+	session.FrameLines++
+
 	printPromptFooter(session, mode, providerName, model, workdir, cols, running)
 	session.FrameLines++
 	moveCursorToPromptLine(session)
@@ -88,6 +102,47 @@ func RenderPromptFrame(session *term.LineReadSession, mode env.PermissionMode,
 	// 避免上条输入残留的值干扰下次 RedrawFull 的回退/清屏逻辑。
 	session.Ed.LastEndRow = 0
 	session.Ed.LastCursorRow = 0
+}
+
+// isShellInput 判断当前输入是否是 ! 开头的 shell 命令模式。
+// 用户输入 "!ls" 这种命令时，UI 切换到红色边框警告颜色，提示这会直接执行。
+func isShellInput(session *term.LineReadSession) bool {
+	if session == nil || len(session.Ed.Runes) == 0 {
+		return false
+	}
+	return session.Ed.Runes[0] == '!'
+}
+
+// promptBorderColor 根据 mode + 是否 shell 模式返回边框 ANSI 颜色。
+func promptBorderColor(mode env.PermissionMode, shell bool) string {
+	if shell {
+		return "\033[1;31m" // 红：shell 命令直接执行有风险
+	}
+	switch mode {
+	case env.ModePlan:
+		return "\033[33m" // 黄：plan 只读
+	case env.ModeBypassPermissions:
+		return "\033[31m" // 红：bypass 模式
+	case env.ModeAuto:
+		return "\033[35m" // 紫：auto 自动
+	case env.ModeAcceptEdits:
+		return "\033[32m" // 绿：默认 chat
+	default:
+		return "\033[36m" // 青：default
+	}
+}
+
+// promptBorder 返回一整行横线（带 ANSI 颜色），用 ─ 或 ━ 字符。
+// cols 是终端列数，留 1 列防止自动折行。
+func promptBorder(cols int, color string) string {
+	if cols <= 1 {
+		cols = 80
+	}
+	width := cols - 1
+	if width < 4 {
+		width = 4
+	}
+	return color + strings.Repeat("─", width) + "\033[0m"
 }
 
 func RerenderPromptFrame(session *term.LineReadSession, mode env.PermissionMode,
@@ -102,7 +157,8 @@ func DetachPromptFrame(session *term.LineReadSession) {
 
 func moveCursorToPromptLine(session *term.LineReadSession) {
 	cursor := session.Ed.PromptWidth + session.Ed.DisplayWidthRange(0, session.Ed.Pos)
-	fmt.Print("\033[1A\r")
+	// frame 末尾光标在 footer 行；prompt 行位于 footer 之上 2 行（中间隔了一条 border）
+	fmt.Print("\033[2A\r")
 	if cursor > 0 {
 		fmt.Printf("\033[%dC", cursor)
 	}
@@ -112,16 +168,16 @@ func clearPromptFrame(session *term.LineReadSession) {
 	if session.FrameLines <= 0 {
 		return
 	}
-	// FrameLines 统计的是"逻辑行"数(queue N + prompt 1 + footer 1)。
+	// FrameLines 统计的是"逻辑行"数(queue N + topBorder + prompt + bottomBorder + footer)。
 	// 但如果用户在 prompt 里输入了长到自动折行的内容,prompt 实际在终端
 	// 上占了 1 + LastEndRow 个物理行。清屏时必须把折行带来的额外物理行
 	// 也一起清掉,否则多出来的那几行会残留在屏幕上形成"幻影"。
 	totalRows := session.FrameLines + session.Ed.LastEndRow
 	// 此刻光标在 prompt 行(RenderPromptFrame 结尾 moveCursorToPromptLine
-	// 把光标移到 prompt 首列);上方是 queue 行,下方是 prompt 折行 + footer。
+	// 把光标移到 prompt 首列);上方是 queue 行 + topBorder,下方是 prompt 折行 + bottomBorder + footer。
 	// 需要先回到整帧顶部(queue 的第一行):
-	//   上移 = queueLines(= FrameLines - 2,因为 FrameLines 包含 prompt+footer)
-	if up := session.FrameLines - 2; up > 0 {
+	//   上移 = queueLines + topBorder = FrameLines - 3 (减去 prompt+bottomBorder+footer)
+	if up := session.FrameLines - 3; up > 0 {
 		fmt.Printf("\033[%dA", up)
 	}
 	fmt.Print("\r")
