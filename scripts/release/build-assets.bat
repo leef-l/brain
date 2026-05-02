@@ -172,8 +172,18 @@ echo.
 
 dir /b "!outdir!"
 
-REM keep window open when double-clicked
-if "%~1"=="" pause
+REM 窗口保留策略:
+REM - 双击运行(无参数)总是 pause(老规则保留)
+REM - 带参数运行时,有错误必 pause 让用户看清问题;成功无错误则正常退出
+if "%~1"=="" (
+    pause
+) else (
+    if not !errors! equ 0 (
+        echo.
+        echo *** BUILD FAILED with !errors! error(s),请阅读上方红色 ERROR 行后按任意键退出 ***
+        pause
+    )
+)
 exit /b !errors!
 
 REM ============================================================
