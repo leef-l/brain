@@ -28,6 +28,7 @@ import (
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/kernel"
+	"github.com/leef-l/brain/sdk/persistence"
 )
 
 // planService 把 PlanOrchestrator + ProgressStore + 解析/生成器
@@ -56,11 +57,17 @@ type planService struct {
 // Summarizer 与 SharedStore），在这里被 ContextEngineWithMemory 包装一层后
 // 通过 PlanOrchestratorConfig.ContextEngine 注入，进而被 Orchestrator 替换为
 // 全局 contextEngine —— 这是把"项目记忆自动注入下游 brain prompt"接入主线的关键。
-func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, baseCtxEngine kernel.ContextEngine, serveCtx context.Context, cfg *config.Config) *planService {
+func newPlanService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEngine, baseCtxEngine kernel.ContextEngine, serveCtx context.Context, cfg *config.Config, stores *persistence.ClosableStores) *planService {
 	if baseOrch == nil {
 		return nil
 	}
-	memory := kernel.NewMemProjectMemory()
+	// MACCS Wave 7+ 项目级持久化:优先用 SQLite ProjectMemoryStore,fallback 内存版。
+	var memory kernel.ProjectMemory
+	if stores != nil && stores.ProjectMemoryStore != nil {
+		memory = kernel.NewPersistentProjectMemory(stores.ProjectMemoryStore)
+	} else {
+		memory = kernel.NewMemProjectMemory()
+	}
 	progStore := kernel.NewMemoryProgressStore()
 	retriever := kernel.NewMemoryRetriever()
 

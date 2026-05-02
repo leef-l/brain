@@ -149,14 +149,21 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 	}
 
 	renderMode := resolveBrowserRenderMode(ctx, input.TargetKind, input.Instruction, input.RenderMode)
+	subtask := buildSubtaskContext(ctx, renderMode)
 	req := &kernel.DelegateRequest{
 		TaskID:      fmt.Sprintf("delegate-%s", input.TargetKind),
 		TargetKind:  agent.Kind(input.TargetKind),
 		Instruction: input.Instruction,
 		Context:     input.Context,
-		Subtask:     buildSubtaskContext(ctx, renderMode),
+		Subtask:     subtask,
 		Execution:   t.Env.ExecutionSpec(),
 		Workdir:     t.Env.Workdir, // workdir 端到端：host 显式告诉 sidecar 用哪个工作目录
+	}
+	// MACCS Wave 7+ 项目级持久化:从 SubtaskContext 透传 ProjectID 到 DelegateRequest,
+	// 让 Orchestrator.delegateOnce 的 Assemble 自动加载项目历史 + 项目记忆。
+	// chat 模式 SubtaskContext.ProjectID 由 chat/executor.go::runChatTurn 填充。
+	if subtask != nil && subtask.ProjectID != "" {
+		req.ProjectID = subtask.ProjectID
 	}
 	// 自适应 budget：用 ComplexityEstimator 按 instruction 内容估算
 	// 实际所需 turn / LLM call / tool call。委派任务粒度差异很大（"读个

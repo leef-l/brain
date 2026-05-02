@@ -1285,7 +1285,12 @@ func runServe(args []string) int {
 	// v3 Plan 路由族 — /v1/plans
 	// PlanOrchestrator 接入主线：Requirement → Design → TaskPlan → ExecuteProject
 	// ---------------------------------------------------------------
-	plans := newPlanService(startupOrch, learner, mgr.ctxEngine, serveCtx, cfg)
+	// MACCS Wave 7+:把 stores 传进去,让 PlanOrchestrator 用持久化 ProjectMemory。
+	var planStores *persistence.ClosableStores
+	if runtime != nil {
+		planStores = runtime.Stores
+	}
+	plans := newPlanService(startupOrch, learner, mgr.ctxEngine, serveCtx, cfg, planStores)
 	if plans != nil {
 		mux.HandleFunc("/v1/plans", plans.handleCreatePlan)
 		mux.HandleFunc("/v1/plans/", plans.handleGetPlan)

@@ -46,6 +46,10 @@ func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns 
 	}
 
 	ctx, cancel := config.WithOptionalTimeout(context.Background(), state.RunTimeout)
+	// 把 ProjectID 写入 ctx,让 runChatTurn / bridge.delegate 透传到 DelegateRequest。
+	if state.CurrentProject != nil && !state.IsNoProject {
+		ctx = withProjectID(ctx, state.CurrentProject.ID)
+	}
 	runID := state.StartRun(input, cancel)
 
 	go func() {
@@ -100,10 +104,17 @@ func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Regis
 	opts loop.RunOptions, brainID string, maxTurns int, turnIndex int,
 	baseMessages []llm.Message, input, workdir string, maxDuration time.Duration,
 	runID string, eventCh chan<- ChatEvent) (*loop.RunResult, error) {
-	ctx = kernel.WithSubtaskContext(ctx, &protocol.SubtaskContext{
+	subtaskCtx := &protocol.SubtaskContext{
 		UserUtterance: input,
 		TurnIndex:     turnIndex,
-	})
+	}
+	// 透传 ProjectID 给 bridge/delegate(MACCS Wave 7+ 持久化记忆闭环关键)
+	// runChatTurn 看不到 state,但 ProjectID 可通过 ctx 透传。
+	// 实际从 ctx 读项目 ID,在 StartChatRun 写入 ctx 之后(见 StartChatRun)。
+	if pid := projectIDFromContext(ctx); pid != "" {
+		subtaskCtx.ProjectID = pid
+	}
+	ctx = kernel.WithSubtaskContext(ctx, subtaskCtx)
 
 	// MACCS 自动委派判断（仅 central 模式）：扫一遍用户输入的关键词，命中
 	// browser/code/verifier 等明确意图时，给 LLM 加一条 system hint 强制
@@ -212,6 +223,32 @@ func extractAssistantReply(messages []llm.Message) string {
 		}
 	}
 	return ""
+}
+
+// projectIDContextKey 是 ProjectID 在 context.Value 中的 key。
+type projectIDContextKey struct{}
+
+// withProjectID 把 ProjectID 写入 ctx,供下游(runChatTurn / bridge.delegate)读取。
+func withProjectID(ctx context.Context, projectID string) context.Context {
+	if projectID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, projectIDContextKey{}, projectID)
+}
+
+// projectIDFromContext 从 ctx 读取 ProjectID。无值返回 ""。
+func projectIDFromContext(ctx context.Context) string {
+	if v := ctx.Value(projectIDContextKey{}); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// ProjectIDFromContext 暴露给 bridge 包的导出版本。
+func ProjectIDFromContext(ctx context.Context) string {
+	return projectIDFromContext(ctx)
 }
 
 // persistChatTurnToProject 把本 turn 的 user + assistant 消息写入 project_conversations
