@@ -13,15 +13,20 @@ go build ./...
 
 ## 编译目标
 - `cmd/brain/` → brain（kernel 主进程）
-- `cmd/brain-quant-sidecar/` → brain-quant-sidecar（quant 专精大脑）
-- `cmd/brain-data-sidecar/` → brain-data-sidecar（data 专精大脑）
+- `central/cmd/` → brain-central
+- `brains/<kind>/cmd/main.go` → brain-`<kind>`-sidecar (browser/code/desktop/fault/verifier)
+- `brains/data/cmd/main.go` → brain-data (独立模式) + `brains/data/cmd/brain-data-sidecar/` → brain-data-sidecar
+- `brains/quant/cmd/main.go` → brain-quant + `brains/quant/cmd/brain-quant-sidecar/` → brain-quant-sidecar
+- `brains/easymvp/cmd/brain-easymvp-sidecar/` → brain-easymvp-sidecar (无独立模式)
+
+> 完整发布编译：`scripts/release/build-assets.sh 0.7.x` (Linux/macOS) 或 `scripts/release/build-assets.bat 0.7.x` (Windows)，自动产出 12 个二进制 + 装到 `$GOPATH/bin`。
 
 ## 架构文档
-- 核心架构：`sdk/docs/32-v3-Brain架构.md`
-- 重构计划：`sdk/docs/35-v3重构路径与开发计划.md`
-- 目录结构：`sdk/docs/36-目录结构层次化重构设计.md`
-- 并行工作流：`docs/并行拆分任务工作流.md`（chat / run / serve 三种模式的 DAG 使用指南）
+- ⭐ **单一权威入口**：`docs/README.md`（30 分钟读完整体理解 brain v3）
+- 核心架构：`sdk/docs/32-v3-Brain架构.md`（v3 总体 18 节）
 - 第三方开发：`sdk/docs/29-第三方专精大脑开发.md`（含双模式、L0、签名）
+- 子系统设计稿：`sdk/docs/README.md`（28 份子系统索引）
+- MACCS 顶级：`docs/MACCS-架构总纲-v2.md` + `docs/MACCS-实施进度追踪.md`(48/48 = 100%)
 - 远程调用：`sdk/docs/37-远程专精大脑调用说明.md`（HTTP/WebSocket/BidirRPC）
 - 设计原则：`sdk/docs/钱学森工程控制论-设计原则.md`（反馈闭环、稳定性折衷、不互相影响、时滞、噪声过滤、适应环境、误差控制）
 
@@ -116,3 +121,48 @@ cmd/brain/command/ → cmd/brain/config/, cliruntime/, provider/
 - F-3: ✅ 权限拦截层 — `RunThinBrainMain` 注入许可证校验 + 可选 PreRun hook
 - F-4: ✅ 零重复验证 — 4 个瘦大脑共享同一套 HandleMethod / brain/execute / brain/metrics / brain/learn 逻辑
 - F-5: ✅ 文档对齐 — README 工具列表从 brain.json 权威源派生，CLI 命令全部有实际实现
+
+## MACCS v2 实施状态（2026-05-02 完成）✅ 48/48 = 100%
+
+### Wave 0-3 主体（38 项）✅ 全部完成
+- Wave 0 (3): task_complete 终止 / LLM 超时 90→180s / serve turn 20→50
+- Wave 1 (10): TaskPlan + ProjectProgress + InterruptSignal + Checkpoint + ProgressRPC + DynamicBudget + ReviewLoop
+- Wave 2 (7): 项目记忆 + MemoryRetriever + ComplexityEstimator + MetaCognitive + ContextEngine + ModelRouter + Prompt 升级
+- Wave 3 (10): ClosedLoopController 7 阶段闭环（需求→方案→审核→执行→验收→交付→复盘）
+
+### Wave 4 并发控制 (5 项) ✅ 全部完成
+- 4.1 资源访问追踪 (并入 ExecutionScheduler)
+- 4.2 ConflictDetector (sdk/kernel/conflict_detector.go)
+- 4.3 DeadlockDetector (Wave 7 接入,绕开 LeaseManager 改造)
+- 4.4 Arbiter ResolveDeadlock (Wave 7 接入)
+- 4.5 SmartScheduler (拓扑层之上的冲突感知重排)
+
+### Wave 5 学习系统进化 (6 项) ✅ 全部完成
+- 5.1 因果学习 + 路由权重 0.35 (orchestrator.go:1591 resolveTargetKind)
+- 5.2 迁移学习 ((language, domain, kind) 三元组指纹)
+- 5.3 主动学习 + EventBus brain.feedback.requested 订阅 goroutine
+- 5.4 项目模式提取 (异步抽取 + ProjectMemory.Store)
+- 5.5 自适应 Prompt (A/B 变体作 L1 system block，cache=true)
+- 5.6 能力画像可视化 (Dashboard 雷达图)
+
+### Wave 6 生产硬化 (7 项) ✅ 全部完成
+- 6.1 HealthManager (GET /v1/health)
+- 6.2 ChaosEngine (POST/DELETE /v1/chaos/experiments)
+- 6.3 PerfBenchmark (GET /v1/metrics/perf)
+- 6.4 ObservabilityHub (GET /v1/observability)
+- 6.5 SecurityAuditor (POST /v1/projects 入参审计)
+- 6.6 MultiProjectManager (项目级配额 + 429)
+- 6.7 ProductionReadiness (GET /v1/readiness)
+
+### 关键路由公式（0139b5e Wave 7 调整）
+```
+combined = capScore*0.4 + learnScore*0.25 + causalScore*0.35
+```
+其中 5% 概率走 active learning 探索高不确定 brain。
+
+### MACCS 配置（~/.brain/config.json）
+9 块 MACCSConfig，全部默认 enabled=true：
+- health / perf / observability / security / multi_project / adaptive_prompt
+- conflict (4.2/4.5) — dry_run=true 首周观察期
+- pattern_extractor (5.4)
+- deadlock (4.3/4.4 Wave 7) — dry_run=true 首周观察期

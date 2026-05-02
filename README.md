@@ -1,8 +1,13 @@
 # Brain
 
-Brain 是一个多大脑协作的 AI Agent 系统。内置中央大脑 + 8 个专精大脑（代码/浏览器/验证/故障/数据/量化/桌面/EasyMVP），通过统一的 BrainKernel 运行时协调，支持 CLI 交互、HTTP API、sidecar 架构和第三方大脑扩展。
+Brain 是一个多大脑协作的 AI Agent 系统。内置中央大脑 + 8 个专精大脑（code/browser/verifier/fault/data/quant/desktop/easymvp），通过统一的 BrainKernel 运行时协调，支持 CLI 交互、HTTP API、sidecar 架构和第三方大脑扩展。
 
-> **🆕 MACCS v2.0**: 当前项目已升级到 Multi-Agent Cognitive Collaboration System 架构。详见 [`docs/MACCS-文档索引.md`](docs/MACCS-文档索引.md)。
+> **🎉 MACCS v2.0 全 48 项接入完成 (100%)**: Multi-Agent Cognitive Collaboration System 架构。
+>
+> - **架构总览**: [`docs/README.md`](docs/README.md) — 30 分钟读完整体理解
+> - **架构总纲**: [`docs/MACCS-架构总纲-v2.md`](docs/MACCS-架构总纲-v2.md)
+> - **实施进度**: [`docs/MACCS-实施进度追踪.md`](docs/MACCS-实施进度追踪.md) (48/48 = 100%)
+> - **SDK 设计稿**: [`sdk/docs/README.md`](sdk/docs/README.md) — 28 份子系统设计
 
 ## 快速开始
 
@@ -344,15 +349,19 @@ brain config set file_policy '{
 └────────┴────────┴───────┴───────┴──────────┴─────────┘
 ```
 
-| 大脑 | 二进制 | 工具数 | 说明 |
-|------|--------|--------|------|
-| Central | `brain`（内置） | - | 协调器，LLM 复审，日终分析 |
-| Code | `brain-code` | 8 | read_file/write_file/edit_file/delete_file/list_files/search/execute_command/note |
-| Browser | `brain-browser` | 16 | navigate/click/type/scroll/screenshot/evaluate/wait/hover/upload/get_text/get_url/drag/new_tab/close_tab/get_cookies/note |
-| Data | `brain-data-sidecar` | 9 | OKX 行情采集、192 维特征向量 |
-| Quant | `brain-quant-sidecar` | 14 | 策略聚合、风控、交易执行 |
-| Verifier | `brain-verifier` | 5 | read_file/run_tests/check_output/browser_action/note |
-| Fault | `brain-fault` | 5 | inject_error/inject_latency/kill_process/corrupt_response/note |
+| 大脑 | 二进制 | 说明 |
+|------|--------|------|
+| Central | `brain-central`（内置） | 协调器，LLM 复审，七阶段闭环编排 |
+| Code | `brain-code-sidecar` | 代码读写、shell 执行、测试 |
+| Browser | `brain-browser-sidecar` | CDP 自动化、UI 模式学习、异常感知 |
+| Data | `brain-data` + `brain-data-sidecar`（双模式） | 行情采集、特征工程、回放 |
+| Quant | `brain-quant` + `brain-quant-sidecar`（双模式） | 策略聚合、风控、交易执行 |
+| Verifier | `brain-verifier-sidecar` | 只读审核、测试、规则验证 |
+| Fault | `brain-fault-sidecar` | 故障诊断与混沌注入 |
+| Desktop | `brain-desktop-sidecar` | 桌面自动化 |
+| EasyMVP | `brain-easymvp-sidecar` | 端到端 MVP 闭环 |
+
+> **工具列表权威源**：每个大脑的 `brains/<kind>/brain.json`。`brain.json.capabilities` 是该大脑声明的全部能力标签，`brain tool list --scope <brain>` 可查看运行时实际暴露的工具集。
 
 所有基础大脑（code/browser/verifier/fault）共享同一套工业级 Agent Loop 引擎（`sdk/loop.Runner`）：
 
@@ -374,7 +383,7 @@ Data Brain ──→ Quant Brain ←──→ Central Brain
   特征计算        风控+交易         日终分析
 ```
 
-详见 [三脑系统使用指南](docs/三脑系统使用指南.md)。
+详见各大脑独立文档：[`brains/data/docs/`](brains/data/docs/) / [`brains/quant/docs/`](brains/quant/docs/) / [`shared/docs/35-量化系统三脑架构总览.md`](shared/docs/35-量化系统三脑架构总览.md)。
 
 ---
 
@@ -391,10 +400,15 @@ Data Brain ──→ Quant Brain ←──→ Central Brain
 | `brain logs` | 查看日志 | `--type`, `--follow`, `--json` |
 | `brain replay` | 审计重放 | `--output-dir`, `--json` |
 | `brain tool` | 工具管理 | 子命令: `list`, `describe`, `test` |
-| `brain config` | 配置管理 | 子命令: `list`, `get`, `set`, `unset`, `path` |
+| `brain config` | 配置管理 | 子命令: `list`, `get`, `set`, `unset`, `path`, `init` |
 | `brain serve` | HTTP API 服务 | `--listen`, `--max-concurrent-runs` |
+| `brain brain` | 已安装大脑管理 | 子命令: `list`, `install`, `activate`, `deactivate`, `upgrade`, `rollback` |
+| `brain pattern` | UI 模式库管理 | 子命令: `list`, `delete`, `import`, `export` |
+| `brain demo` | 人类示范序列管理 | 子命令: `list`, `approve`, `delete`, `purge` |
 | `brain doctor` | 环境诊断 | `--json` |
 | `brain version` | 版本信息 | `--short`, `--json` |
+
+> 共 **16 个顶级子命令**，详见 [`sdk/docs/27-CLI命令契约.md`](sdk/docs/27-CLI命令契约.md)。
 
 ### 退出码
 
@@ -469,47 +483,47 @@ go vet ./...
 
 ```
 brain/
-├── cmd/brain/              CLI 主程序（13 个子命令）
-├── sdk/                    SDK 核心库
-│   ├── kernel/             Kernel + Orchestrator + Transport
-│   ├── loop/               AgentLoop 执行引擎（Run/Turn/Budget）
-│   ├── llm/                LLM Provider 抽象
-│   ├── tool/               工具注册与执行
-│   ├── persistence/        持久化（SQLite WAL / Memory）
+├── cmd/brain/              CLI 主程序（16 个子命令）
+├── sdk/                    SDK 核心库（28 子包）
+│   ├── kernel/             编排核心：Orchestrator + PlanOrchestrator + ClosedLoopController
+│   ├── loop/               AgentLoop 执行引擎（Run/Turn/Budget/Compress）
+│   ├── llm/                LLM Provider 抽象（Anthropic / OpenAI / Mock）
+│   ├── tool/               工具注册与执行（含 Sandbox + UI Pattern）
+│   ├── sidecar/            Sidecar 端 RPC + Streaming
+│   ├── protocol/           JSON-RPC 2.0（stdio / HTTP / WebSocket）
+│   ├── persistence/        持久化（SQLite WAL）
 │   ├── security/           沙箱 + Vault + 审计
-│   ├── protocol/           stdio JSON-RPC 2.0
 │   ├── events/             EventBus + SSE
-│   └── observability/      OpenTelemetry
-├── brains/                 专精大脑实现
-│   ├── code/               代码大脑
-│   ├── browser/            浏览器大脑（CDP）
-│   ├── data/               数据大脑（行情 + 特征）
-│   ├── quant/              量化大脑（策略 + 风控 + 交易）
-│   ├── verifier/           验证大脑（只读）
-│   └── fault/              故障大脑（混沌工程）
-├── central/                中央大脑（协调 + LLM 复审）
+│   ├── observability/      Span / Trace
+│   ├── flow/               Workflow + Edge
+│   ├── license/            Ed25519 签名 + Marketplace 授权
+│   └── runtimeaudit/ executionpolicy/ toolguard/ toolpolicy/ ...
+├── brains/                 8 个专精大脑
+│   ├── browser/  code/  data/  desktop/
+│   └── easymvp/  fault/  quant/  verifier/
+├── central/                中央大脑（协调 + 7 阶段闭环）
+├── docs/                   MACCS 顶级文档（权威入口 docs/README.md）
 ├── scripts/release/        发布打包脚本
-└── sdk/docs/               规格文档（30+ 篇）
+└── sdk/docs/               SDK 规格文档（28 份）
 ```
 
 ---
 
 ## 规格文档
 
-| 编号 | 文档 | 内容 |
-|------|------|------|
-| 02 | [BrainKernel 设计](sdk/docs/02-BrainKernel设计.md) | 内核顶层设计 |
-| 20 | [协议规格](sdk/docs/20-协议规格.md) | stdio JSON-RPC 2.0 |
-| 22 | [Agent Loop 规格](sdk/docs/22-Agent-Loop规格.md) | Run/Turn 执行引擎 |
-| 23 | [安全模型](sdk/docs/23-安全模型.md) | 沙箱 + Vault |
-| 26 | [持久化与恢复](sdk/docs/26-持久化与恢复.md) | SQLite + CAS + Resume |
-| 27 | [CLI 命令契约](sdk/docs/27-CLI命令契约.md) | 命令行为规范 |
-| 29 | [第三方开发指南](sdk/docs/29-第三方专精大脑开发.md) | Sidecar 接入 |
-| 32 | [v3 架构](sdk/docs/32-v3-Brain架构.md) | Manifest / Runtime / Package |
-| 33 | [Manifest 规格](sdk/docs/33-Brain-Manifest规格.md) | 大脑声明 schema |
-| 34 | [Package 规范](sdk/docs/34-Brain-Package与Marketplace规范.md) | 打包 + Marketplace |
+⭐ **从这里开始**：[`docs/README.md`](docs/README.md) — 单一权威入口（9 节，30 分钟读完整体理解 brain v3）。
 
-完整文档索引见 `sdk/docs/` 目录。
+| 主题 | 文档 |
+|------|------|
+| **架构总览** | [`sdk/docs/32-v3-Brain架构.md`](sdk/docs/32-v3-Brain架构.md) |
+| **核心规范** | [`02-BrainKernel`](sdk/docs/02-BrainKernel设计.md) · [`20-协议`](sdk/docs/20-协议规格.md) · [`21-错误模型`](sdk/docs/21-错误模型.md) · [`23-安全`](sdk/docs/23-安全模型.md) · [`26-持久化`](sdk/docs/26-持久化与恢复.md) · [`27-CLI`](sdk/docs/27-CLI命令契约.md) |
+| **第三方接入** | [`29-第三方专精大脑开发`](sdk/docs/29-第三方专精大脑开发.md) · [`33-Manifest`](sdk/docs/33-Brain-Manifest规格.md) · [`34-Package`](sdk/docs/34-Brain-Package与Marketplace规范.md) · [`37-远程调用`](sdk/docs/37-远程专精大脑调用说明.md) |
+| **编排与并发** | [`35-BrainPool`](sdk/docs/35-BrainPool实现设计.md) · [`35-LeaseManager`](sdk/docs/35-LeaseManager实现设计.md) · [`35-Dispatch-Policy`](sdk/docs/35-Dispatch-Policy-冲突图与Batch分组算法.md) |
+| **智能层** | [`35-Context-Engine`](sdk/docs/35-Context-Engine详细设计.md) · [`35-学习算法`](sdk/docs/35-自适应学习L1-L3算法设计.md) · [`35-跨脑通信`](sdk/docs/35-跨脑通信协议设计.md) · [`35-能力匹配`](sdk/docs/35-BrainCapability标签与匹配算法.md) |
+| **MACCS 进度** | [`docs/MACCS-架构总纲-v2.md`](docs/MACCS-架构总纲-v2.md) · [`docs/MACCS-实施进度追踪.md`](docs/MACCS-实施进度追踪.md) (48/48 = 100%) · [`docs/MACCS-实施路线图.md`](docs/MACCS-实施路线图.md) |
+| **理论基础** | [`钱学森工程控制论-设计原则`](sdk/docs/钱学森工程控制论-设计原则.md) · [`docs/工程控制论-简体/`](docs/工程控制论-简体/) |
+
+完整索引：[`sdk/docs/README.md`](sdk/docs/README.md) (28 份子系统设计稿)。
 
 ---
 

@@ -7,6 +7,68 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.x] - 2026-05-02 — MACCS v2 全 48 项 100% 完成 🎉
+
+### MACCS Wave 7 收官
+
+#### 4.3 DeadlockDetector + 4.4 Arbiter 接入(commit `0cdc8cf`)
+
+- **绕开 LeaseManager 改造**:从 ConflictDetector 语义层接入死锁检测,LeaseManager 保持不动
+- `ExecutionScheduler.AttachDeadlockControl(detector, arbiter, dryRun)` 注入入口
+- RunPlan 派发前若 ConflictDetector 报 blocker:
+  - `resolveDeadlocksFromConflicts` 把 blocker.TaskIDs 按字典序翻译为 `(waiter→holder, ResourcePath)` 边
+  - 写入 `DeadlockDetector.AddWaitEdge`,`Detect()` DFS 检环
+  - 命中环 → `DefaultArbiter.ResolveDeadlock(cycle, priorities)` 选 victim
+  - victim 强制 `RetryCount=RetryLimit+1` + `MarkFailed("deadlock-victim")` 不重试
+- `buildBatchPriorities` 基于 `StartedAt!=nil → Critical` 与 `EstimatedTurns` 短任务优先策略
+- 每批结束 `RemoveTask` 清理 wait-for graph
+- 配置:`maccs.deadlock.enabled` / `dry_run` 双开关 (默认 enabled=true, dry_run=true 首周观察期)
+- `MACCSDeadlockConfig` + `MACCSDeadlockEnabled()` / `MACCSDeadlockDryRun()` 访问器
+
+#### 0139b5e — 5 项审计差距修复
+
+1. **1.10 ReviewLoop 任务级接入** — `Orchestrator.reviewLoop` 字段 + `WithReviewLoop` option,每个子任务完成后调 `SubmitReview` 写 `subTask.Result.Review`,不重做 delegate
+2. **5.1 因果权重 0.2 → 0.35** — `combined = capScore*0.4 + learnScore*0.25 + causalScore*0.35`,因果信号在评分接近时主导路由
+3. **2.4 MetaCognitive Lessons 反馈下一轮 plan** — 阈值 0.5→0.3、Recommendations 入 lesson、跳 `[相似经验/` 前缀防无限放大
+4. **5.3 ActiveLearning brain.feedback.requested 订阅** — `consumeFeedbackRequests` goroutine 长期订阅,把高不确定 brain 反馈作 lesson 写入 ProjectMemory,下轮 plan 经 MemoryRetriever 读到形成跨 plan 闭环
+5. **5.4 PatternExtractor 失败可观测** — Save / List / Memory.Store 失败均打 Warn 带 `project_id` / `err`,覆盖原 silent failure
+
+### 文档重写工程(批次 1-4 共 12 commits)
+
+- **删 11 份过期文档 + experiments/ 数据**(commit `c7ea48f`):MACCS-v1.x 历史缺口归档、工程控制论总纲落地、自适应学习方案、DATA_QUANT_GAP_ANALYSIS、35-v3重构路径、35-端到端时序、38-v3后续增强、41-语义理解阶段0、43/44-Browser-Brain、错误修复支持库
+- **重写 9 份子系统设计稿**(批次 2/3/4)对照真实代码全量更新:
+  - `35-BrainPool` `35-LeaseManager` `35-Dispatch-Policy`(批次 2)
+  - `35-Context-Engine` `35-学习算法` `35-跨脑通信协议` `35-能力匹配`(批次 3)
+  - `32-v3-Brain架构` `29-第三方专精大脑开发`(批次 4)
+- **新增 `docs/README.md`** 单一权威入口(490 行,9 节,30 分钟读完)
+- **新增 `docs/_扫码笔记.md`** 后续溯源弹药库(19 章带 file:line 证据)
+- **更新 `sdk/docs/README.md`** v3 → v4 索引同步
+- **删 `docs/MACCS-文档索引.md`** 被 `docs/README.md` 取代
+
+### 仓库清理
+
+- **commit `1d79dbc`**:删调试垃圾(`*.exe~` / `*_output.txt` / `tmpdebug/`)+ React hello-world 脚手架(`index.html` `package.json` `vite.config.ts` `src/` `tsconfig*` `.eslintrc.cjs` `.prettierrc`)+ brain demo 产物(`game-ui/` `snake-game/` `task-manager/` `projects/snake-game-*/` `memory/`)
+- **commit `77d1694`**:`git rm -r --cached node_modules`(6258 文件本地保留)
+- `.gitignore` 三轮扩充覆盖未来运行期产物
+
+### 修复
+
+- **commit `9ee1e9f`** `build-assets.bat` 只编出一个二进制 — 旧版 add_binary 用间接变量累积清单,在 `enabledelayedexpansion + 括号代码块 + for 修饰符` 三者组合下 `!bin_count!` 在 `for /l` 解析时被定型为 0 → 改为子例程内当场调编译命令
+- **commit `96ac35e`** bat/sh 编译前先清缓存 — 避免 `//go:embed` 资源 + ldflags BuildCommit 不参与 cache key 导致打出旧代码
+- **commit `4cb7d7e`** bat 失败时强制 pause — 带参数运行也保留窗口看错误,不再秒关
+- **commit `957792d`** bat REM 注释里的尖括号和中文标点炸脚本 — `<version>` 被 cmd 解析为输入重定向,中文逗号/括号被某些 cmd 版本误吞,导致 `'ary' / 'LAUDE.md' / 'ags' / '?hash'` 怪异错误
+
+### 持久化
+
+- **commit `c4fe85b`** MACCS 学习闭环持久化 + chat 流式渲染修复 + 多实例并发验证
+  - LearningEngine L1/L2/L3 自动 Save/Load
+  - chat 模式实时流式输出修复
+  - ProcessBrainPool.AcquireBrain 多实例并发突破上限 critical bug 修复(pendingSpawn map 在锁内 reserve 槽位)
+
+---
+
+## [0.7.0] - 2026-04-30 — MACCS v2 主体接入
+
 ### Added
 
 #### 基础大脑深度改造（Agent Loop 架构级）
