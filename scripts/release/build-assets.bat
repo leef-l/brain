@@ -64,6 +64,17 @@ set "errors=0"
 REM 切到项目根,让 .\cmd\brain 等相对路径生效
 pushd "%root_dir%"
 
+REM --- 强制清编译缓存,避免打出旧代码 ---
+REM 必要原因:
+REM 1) //go:embed 资源不参与默认 build cache key,改前端 static 后不清缓存
+REM    会拿到旧资源(全局 CLAUDE.md feedback_embed_cache 铁律已记录)。
+REM 2) -ldflags "-X ...BuildCommit=xxx" 的值不参与 cache key,如果同 commit
+REM    之前编过别的版本(切 branch / cherry-pick),这次会命中缓存输出旧二进制。
+REM 3) -trimpath 让不同 worktree 的同源码 hash 共享缓存,跨 worktree 串扰。
+REM 注:仅清 build cache,不清 modcache(后者要重新下依赖,过慢)
+echo Cleaning Go build cache (not modcache)...
+go clean -cache >nul 2>&1
+
 echo.
 echo ========================================
 echo  Building binaries (windows/amd64)
