@@ -19,6 +19,7 @@ import (
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/loop"
 	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/tool"
 )
@@ -107,6 +108,8 @@ func RunRun(args []string, deps RunDeps) int {
 
 	cfg, cfgErr := deps.LoadConfig()
 	config.ApplyDiagnosticEnv(cfg)
+	// 同步 debug 开关(从 config.diagnostics.debug.* 持久化配置)
+	loop.DebugRunner = cfg.DebugRunnerEnabled()
 	modelInput, err := deps.ParseModelConfigJSON(*modelConfigJSON)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain run: %v\n", err)

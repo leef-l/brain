@@ -150,6 +150,34 @@ type DiagnosticsConfig struct {
 	Stderr     bool     `json:"stderr,omitempty"`
 	Level      string   `json:"level,omitempty"`
 	Format     string   `json:"format,omitempty"`
+
+	// Debug 子开关 — 默认全 false,生产保持关闭。出问题时按需启用,
+	// 通过 stderr 打印详细诊断,帮助定位"工具没调用 / 卡住 / 输出截断"
+	// 等典型问题。
+	Debug *DebugConfig `json:"debug,omitempty"`
+}
+
+// DebugConfig 是细粒度调试开关。任一开启 → stderr 打印对应 [debug] 日志。
+// 设计原则:每条日志一行 + 关键字段都打,便于 grep。
+type DebugConfig struct {
+	// Runner=true 时打印每轮 LLM 响应的 stop_reason / tool_use_count / tools /
+	// content_blocks / text_chars。用于定位"嘴上承诺但工具调用没发出"类问题。
+	Runner bool `json:"runner,omitempty"`
+
+	// LLMRequest=true 时打印每次 ChatRequest 的 model / messages 数 / max_tokens /
+	// tools 数。用于排查"请求送出去但响应不对"。
+	LLMRequest bool `json:"llm_request,omitempty"`
+
+	// LLMResponse=true 时打印每次 ChatResponse 的 stop_reason / 各 ContentBlock 类型
+	// 与长度。用于排查 provider 映射 / 截断问题。
+	LLMResponse bool `json:"llm_response,omitempty"`
+
+	// ToolDispatch=true 时打印每个工具调用的 name / args 摘要 / 耗时 / IsError。
+	ToolDispatch bool `json:"tool_dispatch,omitempty"`
+
+	// ContextEngine=true 时打印 Assemble 流程:input msgs / 项目记忆字符 / 历史
+	// 加载条数 / Compress 阶段。
+	ContextEngine bool `json:"context_engine,omitempty"`
 }
 
 type SandboxCfg struct {
@@ -801,6 +829,50 @@ func SortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// ─── Debug 配置访问器(nil-safe) ────────────────────────────────────
+//
+// 默认全部 false。任一开启 → 对应 [debug] 行打到 stderr,生产关闭。
+
+// DebugRunnerEnabled 默认 false。开启后 sdk/loop/runner.go 每轮打 stop_reason 等。
+func (c *Config) DebugRunnerEnabled() bool {
+	if c == nil || c.Diagnostics == nil || c.Diagnostics.Debug == nil {
+		return false
+	}
+	return c.Diagnostics.Debug.Runner
+}
+
+// DebugLLMRequestEnabled 默认 false。开启后 LLM 调用前打 ChatRequest 摘要。
+func (c *Config) DebugLLMRequestEnabled() bool {
+	if c == nil || c.Diagnostics == nil || c.Diagnostics.Debug == nil {
+		return false
+	}
+	return c.Diagnostics.Debug.LLMRequest
+}
+
+// DebugLLMResponseEnabled 默认 false。开启后 LLM 响应到来时打 ChatResponse 摘要。
+func (c *Config) DebugLLMResponseEnabled() bool {
+	if c == nil || c.Diagnostics == nil || c.Diagnostics.Debug == nil {
+		return false
+	}
+	return c.Diagnostics.Debug.LLMResponse
+}
+
+// DebugToolDispatchEnabled 默认 false。开启后每个工具调用打 name/args/耗时。
+func (c *Config) DebugToolDispatchEnabled() bool {
+	if c == nil || c.Diagnostics == nil || c.Diagnostics.Debug == nil {
+		return false
+	}
+	return c.Diagnostics.Debug.ToolDispatch
+}
+
+// DebugContextEngineEnabled 默认 false。开启后 Assemble 流程打项目记忆/历史/Compress。
+func (c *Config) DebugContextEngineEnabled() bool {
+	if c == nil || c.Diagnostics == nil || c.Diagnostics.Debug == nil {
+		return false
+	}
+	return c.Diagnostics.Debug.ContextEngine
 }
 
 // ─── MACCS 配置默认值访问器（nil-safe）────────────────────────────────

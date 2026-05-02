@@ -216,6 +216,13 @@ const ConfigReferenceExample = `# ==============================================
 # diagnostics.stderr       是否同时输出到 stderr
 # diagnostics.level        debug/info/warn/error
 # diagnostics.format       text/json
+# diagnostics.debug        细粒度调试开关(默认全 false,生产关闭,出问题再开)
+#   .runner          每轮 LLM 输出时打 stop_reason / tool_use_count / tools 等
+#                    用于定位"嘴上承诺但工具调用没发出"
+#   .llm_request     每次 ChatRequest 摘要 (model / messages / max_tokens / tools)
+#   .llm_response    每次 ChatResponse 摘要 (stop_reason / blocks / lengths)
+#   .tool_dispatch   每次工具调用 (name / args 摘要 / 耗时 / IsError)
+#   .context_engine  Assemble 流程 (项目记忆 / 历史加载 / Compress)
 # timeout          每轮对话超时："30m"，"0" 禁用超时
 #
 # chat_mode        chat/run 权限模式

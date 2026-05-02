@@ -373,8 +373,12 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		toolUseBlocks := extractToolUseBlocks(resp.Content)
 
 		// 调试日志:让用户能直接看到每轮 LLM 输出的 stop_reason 和 tool_use 数,
-		// 用于定位"嘴上承诺但工具调用没发出"类问题。BRAIN_RUNNER_DEBUG=1 启用。
-		if os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+		// 用于定位"嘴上承诺但工具调用没发出"类问题。
+		// 双开关:
+		//   1) DebugRunner 全局变量(cmd/brain 装配层从 config.diagnostics.debug.runner 读后设)
+		//   2) 环境变量 BRAIN_RUNNER_DEBUG=1(应急/单次排查)
+		// 任一开启即输出。
+		if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
 			toolNames := make([]string, 0, len(toolUseBlocks))
 			for _, b := range toolUseBlocks {
 				toolNames = append(toolNames, b.ToolName)

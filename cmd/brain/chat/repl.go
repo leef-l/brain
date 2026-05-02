@@ -50,6 +50,9 @@ func RunChat(args []string) int {
 
 	cfg, cfgErr := deps.LoadConfig()
 	config.ApplyDiagnosticEnv(cfg)
+	// 把 config.diagnostics.debug.* 同步到 sdk 各包的全局开关。
+	// 用户可通过 ~/.brain/config.json 持久化打开调试日志,而不需要每次设环境变量。
+	loop.DebugRunner = cfg.DebugRunnerEnabled()
 	modelInput, err := deps.ParseModelConfigJSON(*modelConfigJSON)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "brain chat: %v\n", err)
