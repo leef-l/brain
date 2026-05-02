@@ -201,6 +201,11 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		}
 	}
 
+	// nudgedAnnouncement:本 Run 内"announce-without-act"兜底 reminder 是否已注入过。
+	// 只触发 1 次,避免对正常聊天回复(如"我建议..." / "你可以试试..." 等无 action 文本)
+	// 反复打扰 LLM。
+	var nudgedAnnouncement bool
+
 	for {
 		now = r.now()
 
@@ -397,6 +402,26 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		//   - "max_tokens": 提示截断,但有 tool 就 dispatch
 		//   - "end_turn"/"stop": 配合 len==0 时退出
 		if len(toolUseBlocks) == 0 {
+			// 兜底检测:LLM 文本声明"立即调用/提交工作流/now I'll submit"等,
+			// 但 tool_use_count=0 → 是 mimo/deepseek 常见的"announce without act"故障。
+			// 此时 turn 内未消耗实际工作,在 run 没完成 / 预算未耗尽前注入一条
+			// system reminder 让 LLM 再来一轮强制做事或显式说明为什么不做。
+			// nudge 仅触发 1 次,避免对正常聊天回复的误伤。
+			if !nudgedAnnouncement && shouldNudgeAnnouncement(resp.Content) && run.Budget.UsedTurns < run.Budget.MaxTurns {
+				nudgedAnnouncement = true
+				messages = append(messages, announcementNudgeMessage())
+				if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+					fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d nudge: detected announcement-without-action, injected reminder\n", turn.Index)
+				}
+				turn.End(r.now())
+				turns = append(turns, &TurnResult{
+					Turn:      turn,
+					Response:  resp,
+					NextState: StateRunning,
+				})
+				CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
+				continue
+			}
 			turn.End(r.now())
 			turns = append(turns, &TurnResult{
 				Turn:      turn,
@@ -802,4 +827,61 @@ func countTextChars(blocks []llm.ContentBlock) int {
 		}
 	}
 	return total
+}
+
+// announcePhrases 是 LLM "宣布要做事但其实没调工具"的关键短语。
+// 命中任一即认为本 turn 是"announce-without-act"故障,触发 nudge。
+// 词表保守:只命中明确表达"立即行动"意图的短语,避免误伤"我建议你..."这类正常回复。
+var announcePhrases = []string{
+	// 中文
+	"立刻提交", "立即提交", "现在提交", "马上提交",
+	"立刻调用", "立即调用", "现在调用", "马上调用",
+	"立刻派发", "立即派发", "现在派发",
+	"立刻 delegate", "立即 delegate",
+	"提交工作流", "提交 workflow", "提交workflow",
+	"现在开始派活", "立刻派活",
+	// 英文
+	"i'll submit", "i will submit",
+	"i'll call", "i will call",
+	"i'll delegate", "i will delegate",
+	"now submitting", "now calling", "now delegating",
+	"submitting the workflow", "calling the tool",
+	"let me submit", "let me call", "let me delegate",
+}
+
+// shouldNudgeAnnouncement 检测 LLM 文本是否含"宣告要做事"短语。
+func shouldNudgeAnnouncement(blocks []llm.ContentBlock) bool {
+	var sb strings.Builder
+	for _, b := range blocks {
+		if b.Type == "text" {
+			sb.WriteString(strings.ToLower(b.Text))
+			sb.WriteByte(' ')
+		}
+	}
+	text := sb.String()
+	if text == "" {
+		return false
+	}
+	for _, p := range announcePhrases {
+		if strings.Contains(text, strings.ToLower(p)) {
+			return true
+		}
+	}
+	return false
+}
+
+// announcementNudgeMessage 构造 user 角色的 reminder 消息(被 LLM 看作系统侧追问)。
+// 用 user role 而非 system,避免破坏前置 system block 的 cache;且多数 provider 对
+// "user 之后再来一条 user"是合法的(LLM 会把它当连续输入处理)。
+func announcementNudgeMessage() llm.Message {
+	return llm.Message{
+		Role: "user",
+		Content: []llm.ContentBlock{{
+			Type: "text",
+			Text: "[system reminder] You said you would call a tool, but no tool_use block was emitted in your last response. " +
+				"Either call the tool you announced (submit_workflow / delegate / write_file / ...) NOW in this turn, " +
+				"OR explicitly explain to the user why you're not calling it (e.g. need more info, blocked by missing data). " +
+				"Empty announcements leave the user thinking you're stuck. Act or explain — do not silently skip.",
+		}},
+	}
 }
