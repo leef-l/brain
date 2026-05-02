@@ -166,8 +166,11 @@ func (p *AnthropicProvider) buildAPIRequest(req *ChatRequest, stream bool) *anth
 	if req.Model != "" {
 		ar.Model = req.Model
 	}
+	// Anthropic API max_tokens 必传字段,不能省。但 4096 太低,
+	// 写长 plan + 多 tool_use 容易截断。Claude Sonnet/Opus 4.x 都支持 64K
+	// output;给个保守又够用的 32K 默认,调用方需要更高显式传。
 	if ar.MaxTokens <= 0 {
-		ar.MaxTokens = 4096
+		ar.MaxTokens = 32768
 	}
 
 	// System blocks → Anthropic system parameter

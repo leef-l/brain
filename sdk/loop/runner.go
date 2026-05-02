@@ -120,7 +120,10 @@ type RunOptions struct {
 	// Model overrides the default model for this Run.
 	Model string
 
-	// MaxTokens is the max output tokens per LLM call. Defaults to 4096.
+	// MaxTokens 是单次 LLM 调用的最大输出 token 数。
+	// 默认 0(不传给 provider,让其用模型自身上限,大多数主流模型 8K+)。
+	// 之前默认硬编码 4096 经常截断 tool_use JSON 导致工具参数残缺,
+	// 不应该由 brain 一刀切设上限,该上限由调用方/模型自身决定。
 	MaxTokens int
 
 	// Stream enables the streaming path (Provider.Stream) instead of
@@ -181,9 +184,8 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 	if opts.ToolChoice == "" {
 		opts.ToolChoice = "auto"
 	}
-	if opts.MaxTokens <= 0 {
-		opts.MaxTokens = 4096
-	}
+	// 不再给 MaxTokens 设默认值。0 表示不传 provider,让模型用自身上限。
+	// 历史:之前默认 4096 经常截断 tool_use JSON,造成 LLM 工具调用失败。
 
 	messages := make([]llm.Message, len(initialMessages))
 	copy(messages, initialMessages)

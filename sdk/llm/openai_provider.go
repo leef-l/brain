@@ -180,9 +180,9 @@ func (p *OpenAIProvider) buildAPIRequest(req *ChatRequest, stream bool) *openaiR
 	if req.Model != "" {
 		ar.Model = req.Model
 	}
-	if ar.MaxTokens <= 0 {
-		ar.MaxTokens = 4096
-	}
+	// 不再兜底设 4096。MaxTokens=0 时通过 omitempty 不传 provider,
+	// 让模型按自身上限输出(主流 OpenAI 兼容服务通常 8K-128K)。
+	// 历史:默认 4096 经常截断 tool_use JSON 导致工具参数残缺。
 
 	// System blocks → system message
 	if len(req.System) > 0 {
