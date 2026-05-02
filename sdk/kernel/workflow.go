@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,22 @@ type WorkflowNode struct {
 	// PipeID 用于 Workflow streaming edge 的跨进程流式传输。
 	// 非空时，sidecar 会通过 brain/stream/write 将 tool 输出实时写入 host 的 PipeRegistry。
 	PipeID string `json:"pipe_id,omitempty"`
+
+	// MACCS Wave 7+ 多模块项目协作字段:
+	//
+	// InheritContextFrom 列出"想继承哪些上游节点 output 作为自己 system context"的节点 ID。
+	// 与 DependsOn 区别:DependsOn 是执行顺序约束,InheritContextFrom 是数据流。
+	// 通常 InheritContextFrom ⊆ DependsOn。
+	// 用法:contract 节点输出接口规范,modules 节点 InheritContextFrom: ["_contract"]
+	// → 每个 module 节点的 system context 自动 prepend contract output。
+	InheritContextFrom []string `json:"inherit_context_from,omitempty"`
+
+	// OnFailure 是节点失败时的策略。空字符串/未设 = "fail_all"(默认,任一节点失败整个 DAG 失败)。
+	// 可选值:
+	//   "fail_all"           失败 → 整个 DAG 失败(默认,适合关键节点如 _contract / verify)
+	//   "skip"               失败 → 标记 failed 但不阻塞其他并行节点(适合可选 modules)
+	//   "retry_once"         失败 → 重试一次再决定(适合临时性失败)
+	OnFailure string `json:"on_failure,omitempty"`
 }
 
 // WorkflowEdge 定义节点间的数据传递。
@@ -137,6 +154,13 @@ func (e *WorkflowEngine) SetPipeRegistry(r *flow.PipeRegistry) {
 func (e *WorkflowEngine) Execute(ctx context.Context, wf *Workflow) (*WorkflowResult, error) {
 	if len(wf.Nodes) == 0 {
 		return nil, ErrWorkflowEmpty
+	}
+
+	// MACCS Wave 7+ 多模块协作:自动注入 _contract 前置节点。
+	// 触发条件:节点数 >= 2 且没有名为 "_contract" 的节点
+	// 防止 8 个 code 实例并行写文件时各自定义 export/类名导致集成崩。
+	if shouldAutoInjectContract(wf) {
+		injectContractNode(wf)
 	}
 
 	// 1. 构建索引
@@ -320,10 +344,64 @@ func (e *WorkflowEngine) executeNormalNode(
 		return
 	}
 
-	output, execErr := e.executor(ctx, *node, input)
+	// MACCS Wave 7+ InheritContextFrom:把上游节点 output 拼进 prompt 前。
+	// 让 contract / utils 等输出作为 system context 注入下游模块,
+	// 防止 8 个 code 实例独立写代码导致接口不一致。
+	nodeWithCtx := *node
+	mu.Lock()
+	resultsCopy := make(map[string]NodeResult, len(result.Nodes))
+	for k, v := range result.Nodes {
+		resultsCopy[k] = v
+	}
+	mu.Unlock()
+	if inheritedCtx := buildInheritedContext(*node, resultsCopy); inheritedCtx != "" {
+		nodeWithCtx.Prompt = inheritedCtx + "\n---\n\n" + node.Prompt
+	}
+
+	output, execErr := e.executor(ctx, nodeWithCtx, input)
 	nr.EndedAt = time.Now().UTC()
 
 	if execErr != nil {
+		// MACCS Wave 7+ 单节点失败降级:OnFailure 字段决定行为。
+		// "skip"       → 标记 failed 但不向 errCh 报错(整个 DAG 继续)
+		// "retry_once" → 重试一次再决定
+		// "fail_all" / 默认 → 报错让整个 DAG 失败
+		switch node.OnFailure {
+		case "skip":
+			nr.State = StateFailed
+			nr.Error = "skipped: " + execErr.Error()
+			mu.Lock()
+			result.Nodes[nid] = nr
+			mu.Unlock()
+			// 不发 errCh,允许其他并行节点继续
+			return
+		case "retry_once":
+			retryOutput, retryErr := e.executor(ctx, nodeWithCtx, input)
+			if retryErr == nil {
+				output = retryOutput
+				execErr = nil
+				// 继续后续逻辑(走 success 路径)
+			} else {
+				nr.State = StateFailed
+				nr.Error = "retry_failed: " + retryErr.Error()
+				mu.Lock()
+				result.Nodes[nid] = nr
+				mu.Unlock()
+				errCh <- fmt.Errorf("node %s retry failed: %w", nid, retryErr)
+				return
+			}
+		default: // "" 或 "fail_all"
+			nr.State = StateFailed
+			nr.Error = execErr.Error()
+			mu.Lock()
+			result.Nodes[nid] = nr
+			mu.Unlock()
+			errCh <- fmt.Errorf("node %s failed: %w", nid, execErr)
+			return
+		}
+	}
+	if execErr != nil {
+		// 上面 retry_once 成功 路径会走到这里 — 但 execErr 已经清零,这是兜底
 		nr.State = StateFailed
 		nr.Error = execErr.Error()
 		mu.Lock()
@@ -715,4 +793,121 @@ func topoSort(nodes []WorkflowNode, layerSorter func([]string)) ([][]string, err
 	}
 
 	return layers, nil
+}
+
+// ---------------------------------------------------------------------------
+// MACCS Wave 7+: contract 自动注入 + InheritContextFrom 实现
+// ---------------------------------------------------------------------------
+
+// shouldAutoInjectContract 判断是否需要给 wf 自动注入 _contract 前置节点。
+//
+// 触发条件:
+//   - 节点数 >= 2(单节点项目不需要契约)
+//   - 没有名为 "_contract" 或 "contract" 的节点(避免重复)
+//   - 不是已经全部 contract-aware 的(后续可加 metadata 排除)
+func shouldAutoInjectContract(wf *Workflow) bool {
+	if wf == nil || len(wf.Nodes) < 2 {
+		return false
+	}
+	for _, n := range wf.Nodes {
+		if n.ID == "_contract" || n.ID == "contract" {
+			return false
+		}
+	}
+	return true
+}
+
+// injectContractNode 在 wf 最前注入 _contract 节点,并把所有原节点的
+// DependsOn 和 InheritContextFrom 加上 "_contract"。
+//
+// 效果:contract 先执行,产出接口规范文档;后续模块节点 system context
+// 自动 prepend contract output,确保所有模块遵循同一份契约。
+func injectContractNode(wf *Workflow) {
+	contractPrompt := `你是项目接口架构师。审视用户的总体目标,设计这个项目的接口契约:
+
+1. **模块划分**:列出每个 module/file 的职责
+2. **导出契约**:每个 module 导出的类/函数/常量的精确签名
+   - 类名(如 Snake / Renderer / Joystick)
+   - 关键方法签名(参数类型 + 返回值)
+   - 导出风格(export class X / export default X / export const)
+3. **数据契约**:模块间传递的数据结构(字段名 + 类型)
+4. **关键约定**:
+   - 文件加载方式(ES module import / script tag global)
+   - 命名规范(camelCase / PascalCase)
+   - 共用常量位置(EASTER_EGGS 在哪 / EGG_TYPES 字段名)
+
+**只输出契约,不要写实现**。后续 module 节点会基于此契约并行写代码。
+输出格式:Markdown,保存到 .brain/contracts/<workflow_id>.md。`
+
+	contractNode := WorkflowNode{
+		ID:        "_contract",
+		BrainID:   "code", // contract 也由 code 大脑写,但只输出文档不写代码
+		Prompt:    contractPrompt,
+		TaskType:  "contract_design",
+		OnFailure: "fail_all", // 契约失败,后续无法工作,整个 DAG 失败
+	}
+
+	// 把所有原节点的 DependsOn / InheritContextFrom 加上 "_contract"
+	for i := range wf.Nodes {
+		// 已经有 _contract 依赖的跳过
+		hasContractDep := false
+		for _, d := range wf.Nodes[i].DependsOn {
+			if d == "_contract" {
+				hasContractDep = true
+				break
+			}
+		}
+		if !hasContractDep {
+			wf.Nodes[i].DependsOn = append(wf.Nodes[i].DependsOn, "_contract")
+		}
+		// InheritContextFrom 同步加(让 module 节点收到 contract 文档)
+		hasContractCtx := false
+		for _, d := range wf.Nodes[i].InheritContextFrom {
+			if d == "_contract" {
+				hasContractCtx = true
+				break
+			}
+		}
+		if !hasContractCtx {
+			wf.Nodes[i].InheritContextFrom = append(wf.Nodes[i].InheritContextFrom, "_contract")
+		}
+	}
+
+	// 把 _contract 放在最前
+	wf.Nodes = append([]WorkflowNode{contractNode}, wf.Nodes...)
+}
+
+// buildInheritedContext 为节点 n 收集所有 InheritContextFrom 节点的 output,
+// 拼成一段 system context 字符串。供 executor 在执行 n 之前 prepend 到 prompt。
+//
+// 格式:
+//
+//   ## 上游契约 / 上下文(必须遵守)
+//
+//   ### 来自 _contract:
+//   <contract output>
+//
+//   ### 来自 utils:
+//   <utils output>
+//
+// 调用方应把返回值塞到 node.Prompt 之前作为 system 段。
+func buildInheritedContext(n WorkflowNode, results map[string]NodeResult) string {
+	if len(n.InheritContextFrom) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## 上游契约 / 上下文(必须严格遵守)\n\n")
+	for _, depID := range n.InheritContextFrom {
+		r, ok := results[depID]
+		if !ok || r.Output == "" {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("### 来自 %s:\n", depID))
+		sb.WriteString(r.Output)
+		sb.WriteString("\n\n")
+	}
+	if sb.Len() <= 30 { // 只有 header 没内容
+		return ""
+	}
+	return sb.String()
 }

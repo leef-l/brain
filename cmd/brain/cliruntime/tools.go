@@ -48,21 +48,31 @@ func ManageTool(e *env.Environment, t tool.Tool, class env.ToolClass) tool.Tool 
 }
 
 func RegisterManagedRealTools(reg tool.Registry, e *env.Environment, brainKind string) {
-	// 中央大脑智能分级（Tier）：
-	//   - Tier 1（read/list/search/note）：所有 brain 都直接执行
-	//   - Tier 2（write_file 小内容）：central 直接执行，大内容自动建议 delegate
-	//   - Tier 3（edit/delete）：central 自动建议 delegate；其他 brain 直接执行
-	//   - shell_exec：central 只放行只读命令（cat/ls/grep 等），其他建议 delegate
-	// CentralAwareXxx 在 brainKind != "central" 时返回原工具不变。
+	// MACCS Wave 7+ 工具白名单(中央大脑铁律 — 只动嘴不动手):
+	//   - 中央大脑(brainKind=="central"):只注册 read/list/search/note + 编排工具
+	//     物理上无 write/edit/delete/shell_exec → LLM 必须 delegate code brain
+	//   - 其他 brain(code/verifier/browser/...):正常注册全套工具
+	//
+	// 历史:之前 CentralAwareWrite/Shell 是"软警告",返回 executed:false JSON 让 LLM 看,
+	// 但 LLM 误以为成功,反复绕过提示 → 项目集成崩。本次改为"硬剥夺",
+	// 工具从 registry 中直接不出现,LLM 看不到就不会调,被迫 delegate。
+	isCentral := brainKind == "central"
+
+	// 只读工具(所有 brain 都注册)
 	reg.Register(ManageTool(e, tool.NewReadFileTool("code"), env.ToolClassRead))
-	reg.Register(ManageTool(e, CentralAwareWrite(tool.NewWriteFileTool("code"), brainKind), env.ToolClassEdit))
-	reg.Register(ManageTool(e, CentralAwareWrite(tool.NewEditFileTool("code"), brainKind), env.ToolClassEdit))
-	reg.Register(ManageTool(e, CentralAwareWrite(tool.NewDeleteFileTool("code"), brainKind), env.ToolClassDelete))
 	reg.Register(ManageTool(e, tool.NewListFilesTool("code"), env.ToolClassRead))
 	reg.Register(ManageTool(e, tool.NewSearchTool("code"), env.ToolClassRead))
 	reg.Register(tool.NewNoteTool("code"))
-	reg.Register(CentralAwareShell(NewManagedShellTool("code", e), brainKind))
 
+	// 写入类工具(中央大脑跳过,只有非中央才注册)
+	if !isCentral {
+		reg.Register(ManageTool(e, tool.NewWriteFileTool("code"), env.ToolClassEdit))
+		reg.Register(ManageTool(e, tool.NewEditFileTool("code"), env.ToolClassEdit))
+		reg.Register(ManageTool(e, tool.NewDeleteFileTool("code"), env.ToolClassDelete))
+		reg.Register(NewManagedShellTool("code", e))
+	}
+
+	// verifier 类只读工具(所有 brain 都注册,verifier 主用)
 	reg.Register(ManageTool(e, tool.NewVerifierReadFileTool(), env.ToolClassRead))
 	reg.Register(NewManagedRunTestsTool(e))
 	reg.Register(tool.NewCheckOutputTool())

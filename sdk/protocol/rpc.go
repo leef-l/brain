@@ -642,13 +642,24 @@ func (r *bidirRPC) sendResultResponse(ctx context.Context, id string, result int
 	if result != nil {
 		raw, err := json.Marshal(result)
 		if err != nil {
-			r.sendErrorResponse(ctx, id, &RPCError{
-				Code:    RPCCodeInternalError,
-				Message: "result marshal failed: " + err.Error(),
-			})
-			return
+			// MACCS Wave 7+ 防御:result 含坏 RawMessage 时第一次 Marshal 失败,
+			// 用 SanitizeForMarshal 递归扫一遍把 RawMessage 转 string 兜底,
+			// 避免整个 RPC 调用因为一个工具的脏 JSON 全垮。失败的字段会变成
+			// {"_invalid_json": "..."} 占位,LLM 能感知但不阻塞。
+			sanitized, sanErr := json.Marshal(SanitizeForMarshal(result))
+			if sanErr == nil {
+				msg.Result = sanitized
+			} else {
+				// 真的没救了 → 报错
+				r.sendErrorResponse(ctx, id, &RPCError{
+					Code:    RPCCodeInternalError,
+					Message: "result marshal failed (sanitize also failed): " + err.Error(),
+				})
+				return
+			}
+		} else {
+			msg.Result = raw
 		}
-		msg.Result = raw
 	} else {
 		msg.Result = json.RawMessage("null")
 	}
