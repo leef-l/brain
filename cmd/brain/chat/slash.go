@@ -19,6 +19,12 @@ import (
 func HandleSlashCommand(input string, state *State) (bool, bool) {
 	cmd := strings.ToLower(strings.TrimSpace(input))
 
+	// MACCS Wave 7+ 多项目命令优先派发(/project list/new/switch/...)。
+	// 注意:用原始 input(不 lowercase),因为项目名可能含大小写。
+	if strings.HasPrefix(strings.TrimSpace(input), "/project") {
+		return HandleProjectCommand(input, state)
+	}
+
 	switch {
 	case cmd == "/help":
 		fmt.Println("  Key bindings:")
@@ -44,6 +50,9 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /plan <prompt>     创建并执行智能项目计划")
 		fmt.Println("  /plan list         列出已创建的计划")
 		fmt.Println("  /plan status <id>  查看计划执行进度")
+		fmt.Println("  /project           列出当前工作目录的项目(MACCS Wave 7+)")
+		fmt.Println("  /project new <name> /project switch <name> /project delete <name>")
+		fmt.Println("  /project current /project info /project rename <new> /project save <name>")
 		fmt.Println("  /verbose           切换 verbose 显示（工具 plumbing 默认隐藏）")
 		fmt.Println("  /verbose on|off    显式开关 verbose")
 		fmt.Println("  /keys              Show keybindings config path")

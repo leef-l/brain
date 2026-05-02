@@ -19,6 +19,7 @@ import (
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/tool"
 )
 
@@ -93,6 +94,9 @@ func RunRun(args []string, deps RunDeps) int {
 	filePolicyJSON := fs.String("file-policy-json", "", "fine-grained file mutation policy JSON")
 	timeoutFlag := fs.String("timeout", "", "overall run timeout (e.g. 5m, 30m, 0 to disable)")
 	workflowFlag := fs.String("workflow", "", "path to workflow JSON file (DAG execution mode)")
+	// MACCS Wave 7+ 项目级持久化(run 模式)
+	projectFlag := fs.String("project", "", "project name (find or create in current workdir)")
+	noProjectFlag := fs.Bool("no-project", false, "do not persist this run to any project")
 	if err := fs.Parse(args); err != nil {
 		return cli.ExitUsage
 	}
@@ -304,6 +308,17 @@ func RunRun(args []string, deps RunDeps) int {
 		return failRun(err, "execute run")
 	}
 
+	// MACCS Wave 7+ 项目级持久化(run 模式):
+	// 仅在 --no-project=false (默认) 且 stores 配置就绪时执行。
+	// 默认行为:
+	//   --project NAME 显式指定 -> 在当前 workdir 找/建该项目
+	//   --no-project   显式禁用 -> 跳过持久化(单 run 兼容旧行为)
+	//   都不传        -> 跳过持久化(避免污染未声明意图的目录)
+	if !*noProjectFlag && *projectFlag != "" && runtime != nil && runtime.Stores != nil &&
+		runtime.Stores.ProjectsStore != nil && runtime.Stores.ProjectStore != nil {
+		persistRunToProject(ctx, runtime.Stores, *projectFlag, e.Workdir, *prompt, outcome)
+	}
+
 	if *jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -315,6 +330,40 @@ func RunRun(args []string, deps RunDeps) int {
 		fmt.Printf("run %s %s reply=%q\n", runRec.ID, outcome.FinalStatus, outcome.ReplyText)
 	}
 	return cli.ExitOK
+}
+
+// persistRunToProject 把单次 run 的对话写入项目持久化层。
+// 项目不存在时按 (workdir, name) 自动创建。任意失败 silent。
+func persistRunToProject(ctx context.Context, stores *persistence.ClosableStores,
+	projectName, workdir, prompt string, outcome *ManagedRunOutcome) {
+	if stores == nil || projectName == "" || workdir == "" {
+		return
+	}
+	// 找/建项目
+	p, _ := stores.ProjectsStore.FindByName(ctx, workdir, projectName)
+	if p == nil {
+		p = &persistence.ProjectMeta{Workdir: workdir, Name: projectName}
+		if err := stores.ProjectsStore.Create(ctx, p); err != nil {
+			fmt.Fprintf(os.Stderr, "brain run: create project: %v\n", err)
+			return
+		}
+	}
+
+	// 写 user + assistant 终态
+	msgs := []llm.Message{
+		{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: prompt}}},
+	}
+	if outcome != nil && outcome.ReplyText != "" {
+		msgs = append(msgs, llm.Message{
+			Role:    "assistant",
+			Content: []llm.ContentBlock{{Type: "text", Text: outcome.ReplyText}},
+		})
+	}
+	if err := stores.ProjectStore.SaveMessages(ctx, p.ID, msgs); err != nil {
+		fmt.Fprintf(os.Stderr, "brain run: persist project messages: %v\n", err)
+		return
+	}
+	_ = stores.ProjectsStore.UpdateLastActive(ctx, p.ID, time.Now())
 }
 
 func failRun(err error, context string) int {
