@@ -818,41 +818,217 @@ func (r *openaiSSEReader) Close() error {
 //
 // 真实 bug:DeepSeek / OpenAI 兼容服务返回的 arguments 偶尔包含:
 //   - 控制字符(\x00-\x1F 除 \t/\n/\r)
-//   - 未转义的反斜杠 / 引号(LLM 写代码时常见)
+//   - 未转义的反斜杠 / 引号(LLM 写代码时常见,如 prompt 字段嵌真换行)
 //   - 不完整 UTF-8(被 max_tokens 截断)
+//   - 尾部不完整(stream 提前结束 → 缺少右括号 / 引号)
 //
 // 之前的代码 `json.RawMessage(args)` 直接强转,后续 sidecar / host 任何
 // json.Marshal(result) 都会触发 RawMessage.MarshalJSON 校验失败,
 // 报 "result marshal failed: json: error calling MarshalJSON for type
 // json.RawMessage"。整个 run 失败,但用户看不出根因。
 //
-// 修复策略:
-//   1. 校验是否合法 JSON(json.Compact 不报错)→ 直接用
-//   2. 不合法 → 尝试用 json.Unmarshal 到 map 再 Marshal(自动 escape 修复)
-//   3. 还失败 → fallback 为 {} 兜底,日志警告(避免 run 整体失败)
+// 之前的修复:fallback 到 {}。问题:14K nodes 数组完全丢失 →
+// submit_workflow 收到空 nodes,workflow has no nodes 报错。
+//
+// 修复策略(优先级):
+//   1. 校验是否合法 JSON → 直接用
+//   2. 解析到 map 再回写(自动 escape) → 直接用
+//   3. **新增**:含控制字符 → 转义后重试
+//   4. **新增**:看起来被截断(unbalanced braces/quotes) → 尝试补齐尾部
+//   5. 还失败 → fallback {} 兜底
 func sanitizeToolArguments(args string) json.RawMessage {
 	if args == "" {
 		return json.RawMessage("{}")
 	}
 
 	// 1. 合法 JSON 直通
-	var probe json.RawMessage
-	if err := json.Unmarshal([]byte(args), &probe); err == nil {
-		// 重新 Marshal 一次,保证 RawMessage 内容自身合法(防止隐藏控制字符)
-		if cleaned, err2 := json.Marshal(probe); err2 == nil {
+	if cleaned, ok := tryParseAndRemarshal(args); ok {
+		return cleaned
+	}
+
+	// 2. 控制字符修复:把字面控制字符(真换行/真制表符)转义为 \n / \t / \uXXXX
+	if escaped := escapeControlCharsInJSON(args); escaped != args {
+		if cleaned, ok := tryParseAndRemarshal(escaped); ok {
+			fmt.Fprintf(os.Stderr, "openai_provider: tool arguments recovered after control-char escape, len=%d\n", len(args))
 			return cleaned
 		}
 	}
 
-	// 2. 不合法 → 尝试解析成 map 再回写(json.Marshal 会自动 escape 字符串内的特殊字符)
+	// 3. 截断修复:补齐缺失的右括号/引号
+	if completed, ok := tryCompleteJSON(args); ok {
+		if cleaned, ok2 := tryParseAndRemarshal(completed); ok2 {
+			fmt.Fprintf(os.Stderr, "openai_provider: tool arguments recovered after truncation repair, len=%d\n", len(args))
+			return cleaned
+		}
+	}
+
+	// 4. 控制字符 + 截断双修复
+	if escaped := escapeControlCharsInJSON(args); escaped != args {
+		if completed, ok := tryCompleteJSON(escaped); ok {
+			if cleaned, ok2 := tryParseAndRemarshal(completed); ok2 {
+				fmt.Fprintf(os.Stderr, "openai_provider: tool arguments recovered after escape+truncation repair, len=%d\n", len(args))
+				return cleaned
+			}
+		}
+	}
+
+	// 5. 兜底:返回 {},打详细日志(含原文片段帮助排查)
+	preview := args
+	if len(preview) > 200 {
+		preview = preview[:100] + "...[" + fmt.Sprintf("%d truncated", len(args)-200) + "]..." + preview[len(preview)-100:]
+	}
+	fmt.Fprintf(os.Stderr, "openai_provider: tool arguments invalid JSON unrecoverable, fallback to {}. len=%d preview=%q\n", len(args), preview)
+	return json.RawMessage("{}")
+}
+
+// tryParseAndRemarshal 校验 + 重 Marshal。成功返回干净 RawMessage,失败返回 nil/false。
+func tryParseAndRemarshal(args string) (json.RawMessage, bool) {
+	var probe json.RawMessage
+	if err := json.Unmarshal([]byte(args), &probe); err == nil {
+		if cleaned, err2 := json.Marshal(probe); err2 == nil {
+			return cleaned, true
+		}
+	}
 	var asMap map[string]interface{}
 	if err := json.Unmarshal([]byte(args), &asMap); err == nil {
 		if cleaned, err2 := json.Marshal(asMap); err2 == nil {
-			return cleaned
+			return cleaned, true
 		}
 	}
+	return nil, false
+}
 
-	// 3. 兜底:返回 {},打日志
-	fmt.Fprintf(os.Stderr, "openai_provider: tool arguments invalid JSON, fallback to empty object. raw len=%d\n", len(args))
-	return json.RawMessage("{}")
+// escapeControlCharsInJSON 在 JSON 字符串值内部把字面控制字符转义。
+// 状态机识别 string token (用 " 包裹,处理 \" 转义),仅在 string 内做替换。
+// 字符串外的控制字符(JSON 结构本身的 \n / \t)直接保留。
+//
+// 处理:
+//   - 0x09 真制表符 → \t
+//   - 0x0A 真换行 → \n
+//   - 0x0D 真回车 → \r
+//   - 其他 0x00-0x1F → \uXXXX
+func escapeControlCharsInJSON(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	inString := false
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !inString {
+			if c == '"' {
+				inString = true
+			}
+			b.WriteByte(c)
+			continue
+		}
+		// inString
+		if escaped {
+			b.WriteByte(c)
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			b.WriteByte(c)
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = false
+			b.WriteByte(c)
+			continue
+		}
+		// 真实控制字符 → 转义
+		if c < 0x20 {
+			switch c {
+			case '\t':
+				b.WriteString(`\t`)
+			case '\n':
+				b.WriteString(`\n`)
+			case '\r':
+				b.WriteString(`\r`)
+			case '\b':
+				b.WriteString(`\b`)
+			case '\f':
+				b.WriteString(`\f`)
+			default:
+				fmt.Fprintf(&b, `\u%04x`, c)
+			}
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// tryCompleteJSON 检测尾部不平衡(缺右括号/方括号/引号),尝试补齐。
+// 仅在结构层面补,不动字符串内容。复杂转义场景可能补不准,补完仍解析失败由上层兜底。
+//
+// 算法:
+//   - 扫描整串,跟踪字符串 in/out 状态、{ }、[ ] 计数
+//   - 末尾若 inString 真,补一个 "
+//   - 若有未平衡的 { 或 [,按反向 LIFO 补 } 或 ]
+func tryCompleteJSON(s string) (string, bool) {
+	type frame struct{ open byte }
+	var stack []frame
+	inString := false
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			stack = append(stack, frame{open: '{'})
+		case '[':
+			stack = append(stack, frame{open: '['})
+		case '}':
+			if len(stack) == 0 || stack[len(stack)-1].open != '{' {
+				return "", false // 结构错乱无法修
+			}
+			stack = stack[:len(stack)-1]
+		case ']':
+			if len(stack) == 0 || stack[len(stack)-1].open != '[' {
+				return "", false
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	if !inString && len(stack) == 0 {
+		return s, false // 没什么可补
+	}
+	var b strings.Builder
+	b.WriteString(s)
+	// 移除末尾可能的 trailing comma:`{...,` 补 `}` 会非法。简单去掉末尾空白后逗号。
+	trimmed := strings.TrimRightFunc(b.String(), func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' })
+	if strings.HasSuffix(trimmed, ",") {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	b.Reset()
+	b.WriteString(trimmed)
+	if inString {
+		b.WriteByte('"')
+	}
+	// 反向补 } / ]
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i].open == '{' {
+			b.WriteByte('}')
+		} else {
+			b.WriteByte(']')
+		}
+	}
+	return b.String(), true
 }
