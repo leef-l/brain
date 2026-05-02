@@ -121,11 +121,45 @@ func (w *centralWriteWrapper) Execute(ctx context.Context, args json.RawMessage)
 					"call central.delegate with brain_id=\"code\" and prompt describing what to write",
 				), nil
 			}
-			// 文档类 → 放行,无大小限制
+			// 文档类 → 放行,无大小限制。
+			// 但 > largeDocCharThreshold 时在 result 里附加 hint,提示下次可以拆分,
+			// 避免把整本 PRD / 多模块架构稿压成单文件。LLM 看到 hint 自行决定。
+			if len(params.Content) > largeDocCharThreshold {
+				return executeWithLargeDocHint(ctx, w.inner, args, params.Path, len(params.Content))
+			}
 		}
 	}
 
 	return w.inner.Execute(ctx, args)
+}
+
+// largeDocCharThreshold 触发拆分建议的字符阈值。50K 是经验值:
+// - Claude/GPT 单次响应 max_tokens 上限附近(~32K tokens ≈ 100K chars)的一半,留余量
+// - 超过这个长度的设计文档通常多模块,outline + 子文档结构更清晰、便于增量更新
+const largeDocCharThreshold = 50000
+
+// executeWithLargeDocHint 写文件成功后,把"建议拆分"hint 合并进结果 JSON。
+// 不阻断写入,只在 LLM 看到的 result 里追加结构化提示,让它下次自行优化。
+func executeWithLargeDocHint(ctx context.Context, inner tool.Tool, args json.RawMessage, path string, size int) (*tool.Result, error) {
+	res, err := inner.Execute(ctx, args)
+	if err != nil || res == nil || res.IsError {
+		return res, err
+	}
+
+	// 把原 output 解析成 map,补充 hint 字段。失败时退回原结果(不影响主流程)。
+	var orig map[string]interface{}
+	if jerr := json.Unmarshal(res.Output, &orig); jerr != nil {
+		return res, nil
+	}
+	orig["large_doc_hint"] = fmt.Sprintf(
+		"wrote %d chars to %q. For docs this large, consider an outline file + per-section files (e.g. README.md + designs/01-x.md, 02-y.md) — easier to update incrementally and to delegate per-section drafting to code brain if needed.",
+		size, path,
+	)
+	merged, mErr := json.Marshal(orig)
+	if mErr != nil {
+		return res, nil
+	}
+	return &tool.Result{Output: merged, IsError: res.IsError}, nil
 }
 
 // extOf 提取文件路径的扩展名(含 .)。无扩展名返回 ""。
