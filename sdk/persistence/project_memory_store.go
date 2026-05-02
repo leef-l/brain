@@ -221,10 +221,13 @@ func (s *sqliteProjectMemoryStore) SummarizeEntries(ctx context.Context, project
 	}
 	maxChars := maxTokens * 4
 
+	// Token-saving:常驻注入只取高重要度记忆 (>= 0.7) top 3,
+	// 与 sdk/kernel/project_memory.go MemProjectMemory.Summarize 对齐。
+	// 深度查询走 central.metacognition memory 工具按需召回。
 	entries, err := s.QueryEntries(ctx, MemoryQueryRecord{
 		ProjectID:     projectID,
-		MinImportance: 0.3,
-		Limit:         50,
+		MinImportance: 0.7,
+		Limit:         3,
 	})
 	if err != nil {
 		return "", err
@@ -421,10 +424,11 @@ func (s *memProjectMemoryStore) SummarizeEntries(ctx context.Context, projectID 
 	}
 	maxChars := maxTokens * 4
 
+	// Token-saving:与 sqlite 实现对齐 — 高重要度 (>= 0.7) top 3 + 按需召回。
 	entries, _ := s.QueryEntries(ctx, MemoryQueryRecord{
 		ProjectID:     projectID,
-		MinImportance: 0.3,
-		Limit:         50,
+		MinImportance: 0.7,
+		Limit:         3,
 	})
 	var sb strings.Builder
 	for _, e := range entries {

@@ -69,12 +69,11 @@ func (t *NoteTool) Risk() Risk   { return RiskSafe }
 func (t *NoteTool) Schema() Schema {
 	return Schema{
 		Name: t.Name(),
-		Description: "Agent scratchpad / TODO list for multi-step tasks. " +
-			"Use this at the start of a complex task to plan steps, then mark them done as you go. " +
-			"Prevents getting lost mid-task and repeating work. " +
-			"Actions: add, update, done, list, clear. " +
-			"NOTE: state is in-memory only — it persists across turns within the same sidecar process " +
-			"but is lost if the sidecar restarts. Not intended as durable storage.",
+		Description: "Private scratchpad for tracking your own TODOs across turns. " +
+			"DOES NOT create files, run commands, or do any real work. User cannot see note contents. " +
+			"If user asks you to 'do/build/make X', calling note alone leaves nothing done — " +
+			"you must also call delegate or submit_workflow. " +
+			"Actions: add, update, done, list, clear. In-memory, lost on sidecar restart.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {

@@ -22,9 +22,14 @@ func (t *WorkflowTool) Name() string { return "central.submit_workflow" }
 
 func (t *WorkflowTool) Schema() tool.Schema {
 	return tool.Schema{
-		Name:        "central.submit_workflow",
-		Description: "Submit a DAG workflow to parallelize multiple independent brain tasks. Each node runs on a specific brain (e.g. code, browser, data). Nodes at the same layer execute in parallel. Use this when the user's request naturally splits into several subtasks that can run simultaneously or in a specific order.",
-		Brain:       "central",
+		Name: "central.submit_workflow",
+		Description: "Submit a complete DAG of subtasks in ONE call — the primary tool for any multi-step / multi-file project. " +
+			"Use depends_on to express order; same-layer nodes (no inter-deps) run in parallel, including multiple instances of the same brain. " +
+			"Submit the FULL DAG up front (10-20 nodes is fine), do NOT split into sequential 'batches'. " +
+			"Engine auto-injects a _contract node so all module nodes share interface definitions. " +
+			"On failure, read the reason and fix the cause (different prompt, different brain, missing dep) before resubmitting — do not silently re-run the same DAG. " +
+			"For one-shot tasks use central.delegate instead.",
+		Brain: "central",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {

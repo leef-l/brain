@@ -17,9 +17,9 @@ import (
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/cmd/brain/env"
 	"github.com/leef-l/brain/cmd/brain/term"
-	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/cli"
+	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
@@ -358,6 +358,8 @@ func RunChat(args []string) int {
 
 	// launchRun 启动一个 run 并创建对应的 Activity。
 	launchRun := func(input string) string {
+		// 注意:input 始终是原文。预处理在 runChatTurn 内部对"临时发给 LLM 的 messages"做,
+		// 不污染 state.Messages / 持久化 / Activity / subtaskCtx。
 		id := StartChatRun(state, providerSession.Provider, *brainID, *maxTurns, input, eventCh)
 		act := &Activity{RunID: id, Input: input}
 		act.Start()
@@ -912,6 +914,7 @@ func runChatLineMode(state *State, provider llm.Provider, brainID *string, maxTu
 		baseMessages := make([]llm.Message, len(state.Messages))
 		copy(baseMessages, state.Messages)
 
+		// 注意:input 是原文。预处理在 runChatTurn 内部做,只对"临时发给 LLM 的 messages"生效。
 		ctx, cancel := config.WithOptionalTimeout(context.Background(), state.RunTimeout)
 		result, err := runChatTurn(ctx, provider, state.Registry, state.Opts, *brainID, *maxTurns, state.TurnCount, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, "", nil)
 		canceled := ctx.Err() == context.Canceled

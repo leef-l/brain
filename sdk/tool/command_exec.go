@@ -137,22 +137,30 @@ func ExecuteCommandRequestWithStreams(ctx context.Context, req CommandRequest, s
 		stderrStr = stderrStr + "\n" + note
 	}
 	return CommandOutcome{
-		Stdout:         stdoutStr,
-		Stderr:         stderrStr,
-		ExitCode:       exitCode,
-		TimedOut:       execCtx.Err() == context.DeadlineExceeded,
-		Sandboxed:      sandboxed,
-		StdoutDropped:  stdoutW.dropped,
-		StderrDropped:  stderrW.dropped,
+		Stdout:        stdoutStr,
+		Stderr:        stderrStr,
+		ExitCode:      exitCode,
+		TimedOut:      execCtx.Err() == context.DeadlineExceeded,
+		Sandboxed:     sandboxed,
+		StdoutDropped: stdoutW.dropped,
+		StderrDropped: stderrW.dropped,
 	}, nil
 }
 
 func ResultForCommandTool(toolName string, outcome CommandOutcome) *Result {
+	stdoutTrimmed, stdoutLines := trimLargeOutput(outcome.Stdout)
+	stderrTrimmed, stderrLines := trimLargeOutput(outcome.Stderr)
 	payload := map[string]interface{}{
-		"stdout":    outcome.Stdout,
-		"stderr":    outcome.Stderr,
+		"stdout":    stdoutTrimmed,
+		"stderr":    stderrTrimmed,
 		"exit_code": outcome.ExitCode,
 		"timed_out": outcome.TimedOut,
+	}
+	if stdoutLines > 0 {
+		payload["stdout_total_lines"] = stdoutLines
+	}
+	if stderrLines > 0 {
+		payload["stderr_total_lines"] = stderrLines
 	}
 	if outcome.StdoutDropped > 0 {
 		payload["stdout_dropped_bytes"] = outcome.StdoutDropped
@@ -216,4 +224,51 @@ func (w *limitWriter) TruncatedNote() string {
 		return ""
 	}
 	return fmt.Sprintf("[... truncated: %d bytes dropped; raise your command's verbosity or pipe to less if you need more]", w.dropped)
+}
+
+// trimLargeOutput 裁剪 LLM 看到的命令输出,行数 > 200 时保留首 60 + 尾 60 + 错误行。
+// 返回 (裁剪后字符串, 总行数 if trimmed else 0)。
+const (
+	commandOutputLineThreshold = 200
+	commandOutputHeadLines     = 60
+	commandOutputTailLines     = 60
+	commandOutputErrorMaxLines = 30
+)
+
+func trimLargeOutput(s string) (string, int) {
+	if s == "" {
+		return s, 0
+	}
+	lines := strings.Split(s, "\n")
+	total := len(lines)
+	if total <= commandOutputLineThreshold {
+		return s, 0
+	}
+
+	head := lines[:commandOutputHeadLines]
+	tail := lines[total-commandOutputTailLines:]
+
+	// 保留中间含错误关键词的行
+	var errLines []string
+	mid := lines[commandOutputHeadLines : total-commandOutputTailLines]
+	for _, ln := range mid {
+		low := strings.ToLower(ln)
+		if strings.Contains(low, "error") || strings.Contains(low, "fail") || strings.Contains(low, "panic") || strings.Contains(low, "fatal") || strings.Contains(low, "exception") {
+			errLines = append(errLines, ln)
+			if len(errLines) >= commandOutputErrorMaxLines {
+				break
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(strings.Join(head, "\n"))
+	b.WriteString(fmt.Sprintf("\n[... omitted %d middle lines ...]\n", total-commandOutputHeadLines-commandOutputTailLines))
+	if len(errLines) > 0 {
+		b.WriteString("[error/fail lines from omitted region:]\n")
+		b.WriteString(strings.Join(errLines, "\n"))
+		b.WriteString("\n")
+	}
+	b.WriteString(strings.Join(tail, "\n"))
+	return b.String(), total
 }

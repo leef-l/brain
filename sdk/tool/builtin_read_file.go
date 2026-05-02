@@ -26,7 +26,7 @@ func (t *ReadFileTool) Name() string { return t.brainKind + ".read_file" }
 func (t *ReadFileTool) Schema() Schema {
 	return Schema{
 		Name:        t.Name(),
-		Description: "Read the content of a file. Returns the text content with line count. Supports offset and limit for large files.",
+		Description: "Read the content of a file. Returns the text content with line count. For large files use offset+limit to page through.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -40,7 +40,7 @@ func (t *ReadFileTool) Schema() Schema {
     },
     "limit": {
       "type": "integer",
-      "description": "Maximum number of lines to read. Default: 2000"
+      "description": "Maximum number of lines to read. Default: 500. Hard cap: 1000 (request more by paging with offset)."
     }
   },
   "required": ["path"]
@@ -81,8 +81,13 @@ func (t *ReadFileTool) Execute(ctx context.Context, args json.RawMessage) (*Resu
 	if input.Path == "" {
 		return &Result{Output: jsonStr("path is required"), IsError: true}, nil
 	}
+	// Token-saving: 默认 500 行,硬上限 1000 行。
+	// LLM 想读更多需要显式分批 (offset/limit),这样它会按需读,不会一次拉爆上下文。
 	if input.Limit <= 0 {
-		input.Limit = 2000
+		input.Limit = 500
+	}
+	if input.Limit > 1000 {
+		input.Limit = 1000
 	}
 
 	return ReadFileCore(ctx, input.Path, input.Offset, input.Limit)

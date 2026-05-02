@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/llm"
@@ -24,10 +25,12 @@ type ContextEngineWithMemory struct {
 }
 
 // memoryTokenCap 是记忆摘要的 token 上限。
-const memoryTokenCap = 2000
+// 设计:常驻注入只保留极简一行(项目元信息);深度记忆改通过 metacognition memory 工具按需召回,
+// 多数轮次根本不需要历史记忆。改前 2000 tokens 全量注入 → 改后 ~200 tokens(摘要被压缩到 ~50 tokens 实际)。
+const memoryTokenCap = 200
 
-// memoryTokenRatio 是记忆摘要占 TokenBudget 的比例。
-const memoryTokenRatio = 0.15
+// memoryTokenRatio 是记忆摘要占 TokenBudget 的比例。降到 1% 与 cap 配合。
+const memoryTokenRatio = 0.01
 
 // NewContextEngineWithMemory 创建带项目记忆注入的 ContextEngine。
 // engine 不能为 nil；memory 为 nil 时退化为普通 engine 行为。
@@ -63,14 +66,14 @@ func (c *ContextEngineWithMemory) Assemble(ctx context.Context, req AssembleRequ
 			// 记忆获取失败不阻断主流程，仅在 stderr 报告
 			fmt.Fprintf(os.Stderr, "contextEngine: project memory summarize error: %v\n", err)
 		} else if summary != "" {
+			// 紧凑标签 + 提示按需召回更多。summary 末尾可能已含换行,统一在拼接处保证空行。
 			memoryMsg := llm.Message{
 				Role: "system",
 				Content: []llm.ContentBlock{{
 					Type: "text",
-					Text: "[项目记忆] " + summary,
+					Text: "Memory:\n" + strings.TrimRight(summary, "\n") + "\n(more via central.metacognition memory)",
 				}},
 			}
-			// 前置到消息列表
 			req.Messages = append([]llm.Message{memoryMsg}, req.Messages...)
 		}
 	}

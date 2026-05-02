@@ -126,9 +126,17 @@ func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Regis
 		}
 	}
 
+	// Token-saving P2-C:对发给 LLM 的临时 messages 应用预处理。
+	// 注意:result.FinalMessages 会被累积进 state.Messages 和持久化,
+	// 所以 LLM 看到的 user 消息(llmInput)也会进历史。当前预处理只去
+	// 无歧义纯填充音(嗯嗯嗯/啊啊/um um 等),与原文语义等价,污染可忽略。
+	// 长粘贴摘要默认关闭(DefaultPreprocessConfig.LongPasteThresholdChars=0),
+	// 启用前必须先实现 PasteStore + read_paste 工具,否则原文丢失会破坏
+	// 后续 turn 的引用(用户说"刚才那段第 10 行")和项目记忆。
+	llmInput, _ := PreprocessUserInput(input, DefaultPreprocessConfig)
 	messages := append(baseMessages, llm.Message{
 		Role:    "user",
-		Content: []llm.ContentBlock{{Type: "text", Text: input}},
+		Content: []llm.ContentBlock{{Type: "text", Text: llmInput}},
 	})
 
 	run := loop.NewRun(

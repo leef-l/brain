@@ -190,10 +190,11 @@ func (m *MemProjectMemory) Summarize(_ context.Context, projectID string, maxTok
 		return "", nil
 	}
 
-	// 筛选 importance >= 0.5
+	// 只取高重要度记忆 (>= 0.7),低于此阈值改通过 metacognition memory 工具按需召回。
+	// 设计:常驻注入只是"提醒类"记忆,深度查询走召回工具。
 	var important []MemoryEntry
 	for _, e := range entries {
-		if e.Importance >= 0.5 {
+		if e.Importance >= 0.7 {
 			important = append(important, e)
 		}
 	}
@@ -206,9 +207,14 @@ func (m *MemProjectMemory) Summarize(_ context.Context, projectID string, maxTok
 		return important[i].Importance > important[j].Importance
 	})
 
+	// 最多 top 3 + 总字符不超 maxChars,避免长 summary 一条就吃完预算。
+	const maxEntries = 3
 	maxChars := maxTokens * 4
 	var sb strings.Builder
-	for _, e := range important {
+	for i, e := range important {
+		if i >= maxEntries {
+			break
+		}
 		line := fmt.Sprintf("[%s] %s\n", e.Type, e.Summary)
 		if sb.Len()+len(line) > maxChars {
 			break

@@ -37,12 +37,13 @@ func NewDelegateTool(orch *kernel.Orchestrator, e *env.Environment) *DelegateToo
 func (t *DelegateTool) Name() string { return "central.delegate" }
 
 func (t *DelegateTool) Schema() tool.Schema {
-	desc := "Delegate a subtask to a specialist brain. " +
-		"Use this when a task requires specialized capabilities. "
+	desc := "Delegate ONE subtask to a specialist brain — this is how you ACTUALLY do work. " +
+		"You (central) cannot write/edit/delete files or run shell — you must delegate those. " +
+		"Pass user-supplied values (credentials, URLs, queries) verbatim, never as $placeholders. "
 	if len(t.Available) > 0 {
-		desc += fmt.Sprintf("Available specialists: %v. ", t.Available)
+		desc += fmt.Sprintf("Specialists: %v. ", t.Available)
 	}
-	desc += "The specialist will execute the task independently and return results."
+	desc += "For multi-step / multi-brain work, prefer central.submit_workflow."
 
 	return tool.Schema{
 		Name:        "central.delegate",

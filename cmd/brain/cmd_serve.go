@@ -1718,7 +1718,10 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 				}
 				return mgr.ctxEngine.Compress(compCtx, msgs, budget)
 			},
-			TokenBudget: 100000,
+			// Token-saving P2-B: chat 上下文 budget 32K 主动触发滑窗压缩
+			// 主流模型 context window 多为 32K-200K,32K 是历史层 + system 的合理配额
+			// 超出后 Compress 会保留 system 消息 + 最近若干条 + LLM 摘要旧消息
+			TokenBudget: 32000,
 		})
 	}
 
