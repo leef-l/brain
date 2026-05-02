@@ -56,18 +56,36 @@ func centralDispatchResult(reason, suggestion string) *tool.Result {
 }
 
 // CentralAwareWrite 包装一个文件写入类工具（write_file / edit_file / delete_file）。
-// 中央大脑调用时根据参数大小 / 类型决定直接执行还是建议 delegate。
+// 中央大脑调用时根据**文件类型**(后缀)决定直接执行还是建议 delegate。
 //
-// 当前规则（保守估计，可调）：
-//   - write_file content > 5000 字符 → 建议 delegate（多半是真代码）
-//   - edit_file / delete_file → 永远建议 delegate（修改/删除现有文件属于"真工作"）
+// 设计原则:central 是"动嘴"的角色,但写设计文档 / 笔记 / 进度报告等纯说明性文件
+// 是中央协调的合理输出 — 这类文件不该绕远路 delegate code。
+// "代码" vs "文档"的边界用文件后缀判断,比字符长度更准:
+//   - 设计稿 30K 字符是合理的(放行)
+//   - hello.go 100 字符也是真代码(拦截)
 //
-// brainKind=="" 视为非中央大脑场景（如直接给 code sidecar 用），不拦截。
+// 规则:
+//   - write_file 写文档类(.md/.txt/.rst/.adoc/.markdown) → 放行,不限大小
+//   - write_file 写其他后缀 → 拦截改建议 delegate code
+//   - edit_file / delete_file → 永远建议 delegate(修改现有文件属于真工作)
+//
+// brainKind=="" 视为非中央大脑场景(如直接给 code sidecar 用),不拦截。
 func CentralAwareWrite(inner tool.Tool, brainKind string) tool.Tool {
 	if brainKind != "central" {
 		return inner
 	}
 	return &centralWriteWrapper{inner: inner}
+}
+
+// docFileExts 是 central 可以直接写的文档类后缀(纯说明性,无可执行语义)。
+// 任何代码 / 配置 / 标记 / 数据文件 (.go/.js/.html/.json/.yaml/.toml/.sh/.py 等) 都不在此列。
+var docFileExts = map[string]bool{
+	".md":       true,
+	".markdown": true,
+	".txt":      true,
+	".rst":      true,
+	".adoc":     true,
+	".org":      true,
 }
 
 type centralWriteWrapper struct {
@@ -89,24 +107,38 @@ func (w *centralWriteWrapper) Execute(ctx context.Context, args json.RawMessage)
 		), nil
 	}
 
-	// write_file 看 content 大小
+	// write_file 看文件后缀:文档类放行,代码/配置类拦截改 delegate。
 	if strings.HasSuffix(name, ".write_file") {
 		var params struct {
 			Path    string `json:"path"`
 			Content string `json:"content"`
 		}
-		if err := json.Unmarshal(args, &params); err == nil {
-			if len(params.Content) > 5000 {
+		if err := json.Unmarshal(args, &params); err == nil && params.Path != "" {
+			ext := strings.ToLower(extOf(params.Path))
+			if !docFileExts[ext] {
 				return centralDispatchResult(
-					fmt.Sprintf("write_file content is %d chars (>5000); this is real code, central should delegate", len(params.Content)),
+					fmt.Sprintf("write_file path=%q ext=%q is not a doc file (.md/.txt/.rst/.adoc/.org); central should not write code/config/data directly", params.Path, ext),
 					"call central.delegate with brain_id=\"code\" and prompt describing what to write",
 				), nil
 			}
+			// 文档类 → 放行,无大小限制
 		}
-		// 小文件直接放行
 	}
 
 	return w.inner.Execute(ctx, args)
+}
+
+// extOf 提取文件路径的扩展名(含 .)。无扩展名返回 ""。
+func extOf(path string) string {
+	idx := strings.LastIndex(path, ".")
+	if idx < 0 {
+		return ""
+	}
+	// 防止把目录里的 . 当扩展(如 ".brain/config")
+	if strings.ContainsAny(path[idx:], "/\\") {
+		return ""
+	}
+	return path[idx:]
 }
 
 // CentralAwareShell 包装 shell_exec 工具。
