@@ -93,8 +93,11 @@ func (e *TurnExecutor) Execute(ctx context.Context, run *Run, req *llm.ChatReque
 	// Determine next state from response.
 	toolUseBlocks := extractToolUseBlocks(resp.Content)
 
+	// 有 tool_use 就继续 dispatch,不依赖 stop_reason 字面值。
+	// 历史 bug:之前要求 stop_reason=="tool_use" 才走 dispatch,导致
+	// mimo / qwen 输出截断时(stop_reason=length)有 tool_use 也直接退出。
 	var nextState State
-	if len(toolUseBlocks) > 0 && resp.StopReason == "tool_use" {
+	if len(toolUseBlocks) > 0 {
 		nextState = StateRunning // Runner will loop back after tool dispatch
 	} else {
 		nextState = StateCompleted

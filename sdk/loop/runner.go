@@ -372,8 +372,16 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		// Extract tool_use blocks.
 		toolUseBlocks := extractToolUseBlocks(resp.Content)
 
-		// If no tool calls or terminal stop reason → complete.
-		if len(toolUseBlocks) == 0 || resp.StopReason != "tool_use" {
+		// 退出条件:LLM 没有 tool_use blocks → run 完成。
+		//
+		// 历史 bug:之前条件是 `len==0 || StopReason != "tool_use"`,
+		// 把 "有 tool_use 但 stop_reason=length(被截断)" 也当成完成,
+		// 导致 mimo / qwen 等模型输出超 max_tokens 截断时,LLM 实际
+		// 调了工具但 runner 直接退出不 dispatch。修复:只看 tool_use
+		// 是否存在,不看 stop_reason。stop_reason 只用于:
+		//   - "max_tokens": 提示截断,但有 tool 就 dispatch
+		//   - "end_turn"/"stop": 配合 len==0 时退出
+		if len(toolUseBlocks) == 0 {
 			turn.End(r.now())
 			turns = append(turns, &TurnResult{
 				Turn:      turn,
@@ -383,6 +391,11 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
 			run.Complete(r.now())
 			break
+		}
+		// 有 tool_use 但 stop_reason=length(输出被截断):打日志提示,
+		// 但仍然 dispatch tool,让 LLM 下一轮基于 tool 结果继续。
+		if resp.StopReason == "max_tokens" {
+			fmt.Fprintf(os.Stderr, "runner: stop_reason=max_tokens with %d tool_use blocks (output may be truncated, dispatching anyway)\n", len(toolUseBlocks))
 		}
 
 		// Tool dispatch phase.
