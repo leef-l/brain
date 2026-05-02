@@ -92,12 +92,18 @@ func newProjectService(baseOrch *kernel.Orchestrator, learner *kernel.LearningEn
 
 	// MACCS 4.2/4.5：把 ConflictDetector + SmartScheduler 接入 ExecutionScheduler。
 	// 默认 dryRun=true（生产观察期），可通过 maccs.conflict.dry_run=false 切到强制重排。
+	// MACCS 4.3/4.4（Wave 7）：当 deadlock.enabled=true 时把 DeadlockDetector + Arbiter
+	// 注入 scheduler.AttachDeadlockControl，blocker 冲突会被翻译为 wait-for 边检环，
+	// 仲裁选 victim。两组可独立开关：conflict 不开启时 deadlock 也无数据来源。
 	scheduler := kernel.NewExecutionSchedulerWithOrchestrator(kernel.ExecutionSchedulerConfig{}, baseOrch)
 	if cfg.MACCSConflictEnabled() {
 		conflictDetector := kernel.NewConflictDetector()
 		deadlockDet := kernel.NewDeadlockDetector()
 		smart := kernel.NewSmartScheduler(conflictDetector, deadlockDet, 0)
 		scheduler.AttachConflictControl(conflictDetector, smart, cfg.MACCSConflictDryRun(), nil)
+		if cfg.MACCSDeadlockEnabled() {
+			scheduler.AttachDeadlockControl(deadlockDet, kernel.NewDefaultArbiter(), cfg.MACCSDeadlockDryRun())
+		}
 	}
 
 	deps := kernel.ClosedLoopDeps{

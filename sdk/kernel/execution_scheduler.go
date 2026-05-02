@@ -100,6 +100,11 @@ type ExecutionProgress struct {
 //     在拓扑分层基础上做贪心冲突分离（同层资源冲突挤到下一层）；RunPlan
 //     在派发当前层之前再调用 ValidateSchedule，发现仍存在 blocker 冲突
 //     的任务会被推迟（dryRun 模式下仅 diaglog 警告，不实际推迟）。
+//   - deadlockDetector + arbiter 共同提供"死锁检测 + 仲裁"能力（MACCS Wave 7）。
+//     当两者非空时，RunPlan 派发前若 ConflictDetector 报告 blocker，会把冲突
+//     转换为 wait-for 边写入 DeadlockDetector，命中环时由 Arbiter.ResolveDeadlock
+//     选 victim，victim 直接 MarkFailed("deadlock-victim") 不重试以打破环。
+//     dryRunDeadlock=true 时仅 diaglog 警告，不实际中止 victim（生产观察期）。
 //   - dryRunConflict=true 时只记录日志不重排，用于灰度观察误报率（路线图
 //     §6 风险对策）。
 type ExecutionScheduler struct {
@@ -112,6 +117,9 @@ type ExecutionScheduler struct {
 	smartScheduler   *SmartScheduler                      // 可选：基于检测结果做冲突感知重排
 	dryRunConflict   bool                                 // 灰度开关：true 时仅日志，不实际重排/推迟
 	resourceProvider func(taskID string) TaskResourceDecl // 可选：从外部解析资源声明
+	deadlockDetector *DeadlockDetector                    // 可选（Wave 7）：wait-for graph
+	arbiter          Arbiter                              // 可选（Wave 7）：死锁/冲突仲裁
+	dryRunDeadlock   bool                                 // Wave 7 灰度开关：true 时仅日志，不实际中止 victim
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,6 +169,23 @@ func (s *ExecutionScheduler) AttachConflictControl(detector ConflictDetector, sm
 	s.smartScheduler = smart
 	s.dryRunConflict = dryRun
 	s.resourceProvider = resolver
+}
+
+// AttachDeadlockControl 注入 wait-for graph 死锁检测 + 仲裁能力（MACCS Wave 7）。
+// detector 与 arbiter 任一为 nil 视为关闭。dryRun=true 时仅 diaglog 警告，
+// 不实际中止 victim 任务（生产观察期开关）。
+//
+// 接入点：RunPlan 派发当前层之前，如果 ConflictDetector 报告 blocker 冲突，
+// 会把每个 blocker 的 TaskIDs 转换为 wait-for 边（按 PlanSubTask.TaskID
+// 字典序，排在前者为 holder，后者为 waiter——稳定可重现）。然后调
+// DeadlockDetector.Detect 检环，命中环交给 Arbiter.ResolveDeadlock 选
+// victim，将其 MarkFailed("deadlock-victim") 强制不可重试以打破环。
+func (s *ExecutionScheduler) AttachDeadlockControl(detector *DeadlockDetector, arbiter Arbiter, dryRun bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deadlockDetector = detector
+	s.arbiter = arbiter
+	s.dryRunDeadlock = dryRun
 }
 
 // resourceDecls 为 ExecutionPlan 内所有任务生成资源声明。
@@ -476,7 +501,11 @@ func (s *ExecutionScheduler) RunPlan(ctx context.Context, execPlan *ExecutionPla
 		s.mu.RLock()
 		detector := s.conflictDetector
 		dryRun := s.dryRunConflict
+		ddet := s.deadlockDetector
+		arb := s.arbiter
+		ddDryRun := s.dryRunDeadlock
 		s.mu.RUnlock()
+		victims := map[string]bool{} // Wave 7 死锁仲裁选出的 victim 集合
 		if detector != nil {
 			declMap := s.resourceDecls(execPlan)
 			batchDecls := make([]TaskResourceDecl, 0, len(batch))
@@ -494,7 +523,31 @@ func (s *ExecutionScheduler) RunPlan(ctx context.Context, execPlan *ExecutionPla
 					"summary", report.Summary(),
 					"dry_run", dryRun,
 				)
+
+				// MACCS Wave 7（4.3 + 4.4）：把 blocker 冲突转为 wait-for 边喂给
+				// DeadlockDetector，命中环时由 Arbiter.ResolveDeadlock 选 victim。
+				if ddet != nil && arb != nil {
+					victims = s.resolveDeadlocksFromConflicts(execPlan, batch, report, ddet, arb, ddDryRun)
+				}
 			}
+		}
+
+		// 过滤掉 victim：MarkFailed 但 RetryCount 强制不重试以打破环。
+		liveBatch := make([]*ScheduledTask, 0, len(batch))
+		for _, t := range batch {
+			if victims[t.Task.TaskID] {
+				// dryRun 模式下不真正中止，仅日志（resolveDeadlocksFromConflicts 已记录）
+				continue
+			}
+			liveBatch = append(liveBatch, t)
+		}
+		batch = liveBatch
+		if len(batch) == 0 {
+			// 整批都是 victim，推进到下一层避免空转
+			if !s.AdvanceLayer(execPlan) {
+				break
+			}
+			continue
 		}
 
 		batchReq := &DelegateBatchRequest{Requests: make([]*DelegateRequest, 0, len(batch))}
@@ -635,4 +688,149 @@ func (s *ExecutionScheduler) Progress(execPlan *ExecutionPlan) ExecutionProgress
 		Percentage:     pct,
 		TotalTurnsUsed: turnsUsed,
 	}
+}
+
+// resolveDeadlocksFromConflicts 把 ConflictDetector 报告的 blocker 冲突翻译为
+// DeadlockDetector 的 wait-for 边，检环后由 Arbiter 选 victim。返回 victim
+// taskID 集合：调用方据此把这些任务从派发列表中剔除（dryRun 时返回空集，仅日志）。
+//
+// 翻译规则：每个 blocker 冲突涉及若干 TaskID，按字典序排序后，下一个等待前一个
+// （形成 task[i+1] → task[i] 的边）。这样若多个冲突循环引用同一资源链，环会
+// 被检测出来；同时排序保证可重现，避免本调度器自身引入不确定性。
+//
+// 注意：单条 blocker 冲突 TaskIDs=[a, b] 只产生一条边 b→a，不构成环。
+// 真正触发死锁仲裁需要多条 blocker 冲突跨资源相互引用（如 a→b、b→c、c→a），
+// 这正是设计意图——绝大多数真冲突由 SmartScheduler 重排即可解决，仅在多任务
+// 多资源相互锁死时由本路径介入仲裁。
+//
+// 副作用：把本批次写入的 wait-for 边在调用结束时全部清除（按 task 维度），
+// 让下一批不携带本批次的死锁状态。
+func (s *ExecutionScheduler) resolveDeadlocksFromConflicts(
+	execPlan *ExecutionPlan,
+	batch []*ScheduledTask,
+	report *ConflictReport,
+	ddet *DeadlockDetector,
+	arb Arbiter,
+	dryRun bool,
+) map[string]bool {
+	victims := map[string]bool{}
+	if report == nil || len(report.Conflicts) == 0 {
+		return victims
+	}
+
+	// 收集本批次所有写入的 task ID，便于结束后清理 wait-for graph。
+	touched := map[string]bool{}
+	for _, c := range report.Conflicts {
+		if c.Severity != SeverityBlocker {
+			continue
+		}
+		ids := append([]string(nil), c.TaskIDs...)
+		// 字典序稳定，避免随机性
+		for i := 0; i < len(ids); i++ {
+			for j := i + 1; j < len(ids); j++ {
+				if ids[j] < ids[i] {
+					ids[i], ids[j] = ids[j], ids[i]
+				}
+			}
+		}
+		// task[k+1] 等待 task[k] 释放资源
+		for k := 0; k+1 < len(ids); k++ {
+			holder, waiter := ids[k], ids[k+1]
+			ddet.AddWaitEdge(waiter, holder, c.ResourcePath)
+			touched[holder] = true
+			touched[waiter] = true
+		}
+	}
+
+	defer func() {
+		for tid := range touched {
+			ddet.RemoveTask(tid)
+		}
+	}()
+
+	deadReport := ddet.Detect()
+	if deadReport == nil || !deadReport.HasDeadlock {
+		return victims
+	}
+
+	priorities := buildBatchPriorities(execPlan, batch)
+
+	// 把 RetryLimit 在循环外取一次（带锁），避免每个 victim 都裸读 s.config。
+	s.mu.RLock()
+	retryCap := s.config.RetryLimit
+	s.mu.RUnlock()
+
+	for _, cycle := range deadReport.Cycles {
+		decision := arb.ResolveDeadlock(cycle, priorities)
+		if decision == nil {
+			continue
+		}
+		diaglog.Warn("execution_scheduler", "deadlock cycle resolved by arbiter",
+			"plan_id", execPlan.PlanID,
+			"layer", execPlan.CurrentLayer,
+			"cycle_id", cycle.CycleID,
+			"cycle_tasks", cycle.TaskIDs,
+			"strategy", string(decision.Strategy),
+			"victims", decision.LoserTasks,
+			"reason", decision.Reason,
+			"dry_run", dryRun,
+		)
+		if dryRun {
+			continue
+		}
+		for _, vtid := range decision.LoserTasks {
+			victims[vtid] = true
+			st, ok := execPlan.Tasks[vtid]
+			if !ok {
+				continue
+			}
+			// 强制不可重试：把 RetryCount 推到上限再标失败。
+			// 注意：MarkFailed 内部会取 task.mu.Lock，所以这里在释放后再调。
+			st.mu.Lock()
+			st.RetryCount = retryCap + 1
+			st.mu.Unlock()
+			_ = s.MarkFailed(st, fmt.Sprintf("deadlock-victim: cycle=%s", cycle.CycleID))
+		}
+	}
+	return victims
+}
+
+// buildBatchPriorities 为本批次的任务推导 TaskPriorityInfo，
+// 供 Arbiter 选择 victim 时参考。
+//
+// 派生规则（无显式 Priority 字段时的默认）：
+//   - 已开始的任务（StartedAt != nil）置 Critical=true，避免被中止丢失进度
+//   - Priority = EstimatedTurns（turns 越短数值越小→优先级越高，让短任务先跑完释放锁）
+//   - 在批次外的任务（如旧层未清理的 holder）也注册一份信息，避免 arbiter 误选
+func buildBatchPriorities(execPlan *ExecutionPlan, batch []*ScheduledTask) map[string]TaskPriorityInfo {
+	out := make(map[string]TaskPriorityInfo, len(execPlan.Tasks))
+	for tid, st := range execPlan.Tasks {
+		st.mu.RLock()
+		startedAt := st.StartedAt
+		prio := st.Task.EstimatedTurns
+		kind := string(st.Task.Kind)
+		st.mu.RUnlock()
+		critical := startedAt != nil
+		if prio <= 0 {
+			prio = 100
+		}
+		out[tid] = TaskPriorityInfo{
+			TaskID:    tid,
+			Priority:  prio,
+			BrainKind: kind,
+			StartedAt: startedAt,
+			Critical:  critical,
+		}
+	}
+	// batch 中的任务即使未启动也应在 priority 表，确保 arbiter 能找到
+	for _, t := range batch {
+		if _, ok := out[t.Task.TaskID]; !ok {
+			out[t.Task.TaskID] = TaskPriorityInfo{
+				TaskID:    t.Task.TaskID,
+				Priority:  100,
+				BrainKind: string(t.Task.Kind),
+			}
+		}
+	}
+	return out
 }

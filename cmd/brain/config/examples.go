@@ -288,6 +288,12 @@ const ConfigReferenceExample = `# ==============================================
 #     dry_run: true                  # 默认 true：仅日志记录冲突重排建议
 #                                     # 生产观察一周确认无误报后切到 false 启用强制重排
 #
+#   # 4.3 + 4.4 死锁检测 + 仲裁（Wave 7，依赖 conflict.enabled=true 才有数据）
+#   deadlock:
+#     enabled: true
+#     dry_run: true                  # 默认 true：仅日志记录死锁仲裁结果，不真中止 victim
+#                                     # 生产观察一周后切到 false 启用强制中止
+#
 #   # 5.4 项目模式抽取（PlanOrchestrator.ExecuteProject 完成后异步）
 #   pattern_extractor:
 #     enabled: true                  # 关闭后不会写 ProjectMemory 的 pattern entries

@@ -88,6 +88,11 @@ type MACCSConfig struct {
 	// 5.4 PatternExtractor —— ExecuteProject 后异步提取共性模式
 	// 默认 enabled=true。需要 ExperienceStore 配合（自动启用 MemExperienceStore）。
 	PatternExtractor *MACCSPatternConfig `json:"pattern_extractor,omitempty"`
+
+	// 4.3/4.4 DeadlockDetector + Arbiter —— wait-for graph 死锁检测与仲裁（Wave 7）
+	// 默认 enabled=true, dry_run=true（仅 diaglog 警告，不实际中止 victim）。
+	// 生产观察一周确认 ConflictDetector 不误报后切换 dry_run=false 启用强制中止。
+	Deadlock *MACCSDeadlockConfig `json:"deadlock,omitempty"`
 }
 
 type MACCSHealthConfig struct {
@@ -129,6 +134,13 @@ type MACCSConflictConfig struct {
 
 type MACCSPatternConfig struct {
 	Enabled bool `json:"enabled"`
+}
+
+type MACCSDeadlockConfig struct {
+	Enabled bool `json:"enabled"`
+	// DryRun=true 时仅日志记录死锁仲裁结果，不真正中止 victim 任务；
+	// 生产环境观察一周后切换为 false 启用强制中止（路线图 Wave 7 风险对策）。
+	DryRun bool `json:"dry_run"`
 }
 
 type DiagnosticsConfig struct {
@@ -890,4 +902,20 @@ func (c *Config) MACCSPatternExtractorEnabled() bool {
 		return true
 	}
 	return c.MACCS.PatternExtractor.Enabled
+}
+
+// MACCSDeadlockEnabled 默认 true（Wave 7 启用 wait-for graph 死锁检测）。
+func (c *Config) MACCSDeadlockEnabled() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Deadlock == nil {
+		return true
+	}
+	return c.MACCS.Deadlock.Enabled
+}
+
+// MACCSDeadlockDryRun 默认 true（首周观察期：仅日志，不真中止 victim）。
+func (c *Config) MACCSDeadlockDryRun() bool {
+	if c == nil || c.MACCS == nil || c.MACCS.Deadlock == nil {
+		return true
+	}
+	return c.MACCS.Deadlock.DryRun
 }

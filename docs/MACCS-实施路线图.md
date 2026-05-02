@@ -1,9 +1,8 @@
 # MACCS — 实施路线图
 
-> **版本**: v2.3.0
-> **最近更新**: 2026-04-30（按 dfd57ac 实际接入率重写）
-> **当前接入率**: 37/48 = 77%
-> **里程碑**: 5 月底前消化剩余 11 项（P2-A/B/C 三周计划）
+> **版本**: v2.5.0（全量完成）
+> **最近更新**: 2026-05-02（Wave 7 4.3/4.4 接入合并后）
+> **最终接入率**: **48/48 = 100%**
 > **铁律**: `go build ./...` 验证；禁止 `go test` / `go vet`
 
 ---
@@ -100,15 +99,15 @@ EasyMVP 的七阶段闭环已由 brain 内部 ClosedLoopController 落地（见 
 
 ---
 
-### Wave 4: 并发控制 — 1/5 ⚠️（剩 4 项进 P2）
+### Wave 4: 并发控制 — 5/5 = 100% ✅
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
 | 4.1 | 资源访问追踪 | （并入 ExecutionScheduler） | ✅ | 独立 resource_tracker.go 已删除（300 行）改为内嵌 |
-| 4.2 | 冲突检测 | `sdk/kernel/conflict_detector.go` | 🟡 | 算法实在，未注入 ExecutionScheduler — **进 P2-A** |
-| 4.3 | 死锁检测 | `sdk/kernel/deadlock_detector.go` | 🟡 | 未接 LeaseManager.AcquireSet — **进 P2-B** |
-| 4.4 | 仲裁策略 | `sdk/kernel/arbiter.go` | 🟡 | 5 种策略未接 ConflictDetector — **进 P2-B** |
-| 4.5 | 智能重排 | `sdk/kernel/smart_scheduler.go` | 🟡 | 与 ExecutionScheduler 二选一收敛 — **进 P2-A** |
+| 4.2 | 冲突检测 | `sdk/kernel/conflict_detector.go` | ✅ | seq atomic + ExecutionScheduler.AttachConflictControl 注入；RunPlan 派发前 Detect 检查 blocker；按 maccs.conflict.* 启用 |
+| 4.5 | 智能重排 | `sdk/kernel/smart_scheduler.go` | ✅ | NewSmartScheduler 在 ExecutionScheduler.AttachConflictControl 注入；BuildExecutionPlan 完成后 Reschedule 做冲突感知重排（dryRun 默认观察期，可关 maccs.conflict.dry_run=false 强制重排） |
+| 4.3 | 死锁检测 | `sdk/kernel/deadlock_detector.go` | ✅（Wave 7 接入） | ExecutionScheduler.AttachDeadlockControl 注入；RunPlan 把 ConflictDetector 报告的 blocker 翻译为 (waiter→holder, ResourcePath) 边写入 DeadlockDetector.AddWaitEdge，Detect() 检环；每批结束 RemoveTask 清理。绕开 LeaseManager 持锁等待前置问题，从 ConflictDetector 语义层接入 |
+| 4.4 | 仲裁策略 | `sdk/kernel/arbiter.go` | ✅（Wave 7 接入） | DefaultArbiter 5 种策略；ResolveDeadlock(cycle, priorities) 选 victim；priorities 由 buildBatchPriorities 派生（StartedAt!=nil → Critical, EstimatedTurns 短优先级高）；victim 强制 RetryCount=RetryLimit+1 + MarkFailed("deadlock-victim") 不重试以打破环。配置 `maccs.deadlock.enabled` / `dry_run` 双开关 |
 
 ---
 
@@ -116,82 +115,60 @@ EasyMVP 的七阶段闭环已由 brain 内部 ClosedLoopController 落地（见 
 
 | # | 任务 | 文件 | 状态 | 接入说明 |
 |---|------|------|------|---------|
-| 5.1 | 因果学习 | `sdk/kernel/causal_learning.go` | ✅ | TaskStep 加 ContextSize/Complexity/TimeBucket/ProjectKind 4 混杂因子；resolveTargetKind 加权 Cap*0.5 + Learn*0.3 + Causal*0.2 |
+| 5.1 | 因果学习 | `sdk/kernel/causal_learning.go` | ✅ | TaskStep 加 ContextSize/Complexity/TimeBucket/ProjectKind 4 混杂因子；resolveTargetKind 加权 **Cap×0.4 + Learn×0.25 + Causal×0.35**（0139b5e 把因果权重从 0.2 升到 0.35，让因果信号在评分接近时主导路由） |
 | 5.2 | 迁移学习 | `sdk/kernel/transfer_learning.go` | ✅ | PlanSubTask 加 Language/Domain；ComplexityEstimator 三段决策 learning→transfer→heuristic |
-| 5.3 | 主动学习 | `sdk/kernel/active_learning.go` | ✅ | recordDelegateOutcome 末尾 AssessUncertainty + EventBus 发 brain.feedback.requested；resolveTargetKind 5% epsilon-greedy |
-| 5.4 | 项目模式提取 | `sdk/kernel/pattern_extraction.go` | 🟡 | PlanOrchestrator 完成后未异步抽取 — **进 P2-B** |
-| 5.5 | 自适应 Prompt | `sdk/kernel/adaptive_prompt.go` | 🟡 | 未注入 LLMProxy 的 systemPrompt 装配链 — **进 P2-A** |
+| 5.3 | 主动学习 | `sdk/kernel/active_learning.go` | ✅ | recordDelegateOutcome 末尾 AssessUncertainty + EventBus 发 `brain.feedback.requested`；resolveTargetKind 5% epsilon-greedy；**0139b5e 加订阅方**：plan_orchestrator.consumeFeedbackRequests goroutine 把每条反馈作 lesson 写 ProjectMemory，下轮 plan 经 MemoryRetriever 读到形成跨 plan 闭环 |
+| 5.4 | 项目模式提取 | `sdk/kernel/pattern_extraction.go` | ✅ | PlanOrchestrator.ExecuteProject 后台 goroutine 异步抽取 → ExperienceStore.Save → Extract → AddPattern → ProjectMemory.Store；patternBgCtx 防 ctx 取消打断；**0139b5e 加可观测**：Save/List/Memory.Store 失败均打 Warn 带 project_id / err |
+| 5.5 | 自适应 Prompt | `sdk/kernel/adaptive_prompt.go` | ✅ | NewAdaptivePromptManager 注入 LLMProxy.PromptManager；adaptiveSystemPrefix helper 在 Complete/handleComplete/handleStream 三入口把 SelectVariant 变体作 L1 system block 前置（cache=true） |
 | 5.6 | 能力画像可视化 | `cmd/brain/dashboard/` | ✅ | Dashboard 展示学习成果 |
 
 > 此外 SequenceLearner 已接 ExecuteTaskPlan layer 内 RecommendOrder 重排同层任务（不破坏拓扑约束）。
 
 ---
 
-### Wave 6: 生产级硬化 — 2/7 ⚠️（剩 5 项进 P2）
+### Wave 6: 生产级硬化 — 7/7 = 100% ✅
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 6.1 | HealthManager | `sdk/kernel/health.go` | 🟡 | 未接 GET /v1/health 路由 — **进 P2-A** |
+| 6.1 | HealthManager | `sdk/kernel/health_check.go` | ✅ | NewHealthManager + brainPool/leaseManager checker；GET /v1/health；可关 maccs.health.enabled=false |
 | 6.2 | ChaosEngine | `sdk/kernel/chaos_engine.go` | ✅ | orchestrator.delegateOnce 拦截点 + POST/DELETE /v1/chaos/experiments + GET /v1/chaos/history |
-| 6.3 | PerfBenchmark | `sdk/kernel/perf_benchmark.go` | 🟡 | 未接 GET /v1/metrics/perf — **进 P2-B** |
-| 6.4 | Observability | `sdk/kernel/observability.go` | 🟡 | 未注入 Orchestrator.delegateOnce Span — **进 P2-A** |
-| 6.5 | SecurityAuditor | `sdk/kernel/security_auditor.go` | 🟡 | 未接 /v1/* 入参校验中间件 — **进 P2-B** |
-| 6.6 | MultiProjectManager | `sdk/kernel/multi_project_manager.go` | 🟡 | 未接 cmd_serve_projects 配额 — **进 P2-C** |
+| 6.3 | PerfBenchmark | `sdk/kernel/perf_benchmark.go` | ✅ | NewPerfCollector + WithPerfCollector 注入 delegateOnce 计时（按 brain.kind/status 分桶 P50/P95/P99）；GET /v1/metrics/perf |
+| 6.4 | Observability | `sdk/kernel/observability.go` | ✅ | NewObservabilityHub + WithObservability + 内存 provider；delegateOnce 包 TraceSpan；GET /v1/observability + ?trace_id 过滤 |
+| 6.5 | SecurityAuditor | `sdk/kernel/security_audit.go` | ✅ | NewSecurityAuditor 注入 projectService；POST /v1/projects 入参 ValidateInput；阈值可配 maccs.security.reject_severity |
+| 6.6 | MultiProjectManager | `sdk/kernel/multi_project.go` | ✅ | NewMultiProjectManager(MaxConcurrent=3, QueueSize=16) 注入 projectService；handleCreateProject 进入即 Submit 拿槽位，结束 Complete/Fail；超额返回 429 |
 | 6.7 | ProductionReadiness | `sdk/kernel/production_readiness.go` | ✅ | cmd_serve.go 启动期 RunAll + BRAIN_STRICT_READINESS env 守卫 + GET /v1/readiness 路由 |
 
 ---
 
-## 3. 当前接入率总览（2026-04-30）
+## 3. 最终接入率总览（2026-05-02 全量完成）
 
 | Wave | 接入 / 总数 | 比例 |
 |------|------------|------|
 | Wave 0 | 3/3 | 100% |
-| Wave 1 | 8/8 | 100% |
-| Wave 2 | 8/8 | 100% |
+| Wave 1 | 10/10 | 100% |
+| Wave 2 | 7/7 | 100% |
 | Wave 3 | 10/10 | 100% |
-| Wave 4 | 1/5 | 20% |
-| Wave 5 | 4/6 | 67% |
-| Wave 6 | 2/7 | 29% |
-| **总计** | **37/48** | **77%** |
+| Wave 4 | 5/5 | 100% |
+| Wave 5 | 6/6 | 100% |
+| Wave 6 | 7/7 | 100% |
+| **总计** | **48/48** | **100%** |
 
-剩余 11 项全部分类到 P2-A / P2-B / P2-C 三周推进（见 §4），未到 P3 重构层面。
+> **MACCS v2 全 48 项任务接入完成** ✅
 
 ---
 
-## 4. 剩余 11 项推进计划（5 月）
+## 4. 后续工作（建议性，非必须）
 
-> 按"预期收益高 / 改动面小"排序，每周一个批次。详细接入策略见 `MACCS-实施进度追踪.md` §P2。
+### P3 — 重复造轮收敛
 
-### P2-A（第 1 周，2026-05-04 → 2026-05-10）— 5 项
+- 调度器三套并存：`DefaultTaskScheduler` + `ExecutionScheduler` + `SmartScheduler` → 可合并为「ExecutionScheduler 框架 + SmartScheduler 策略 + DefaultTaskScheduler 兼容入口」
+- 审核循环：`review_loop.go` + `design_review.go` 语义重叠 → design_review 可收编为 review_loop 的一种 strategy
 
-| 任务 | 接入主线 |
-|------|---------|
-| 4.2 ConflictDetector | 注入 ExecutionScheduler，每层 NextBatch 之后 DetectConflicts |
-| 4.5 SmartScheduler | 收敛为 ExecutionScheduler 的策略层（贪心冲突分离） |
-| 5.5 AdaptivePromptManager | 注入 LLMProxy 的 systemPrompt 装配链 |
-| 6.1 HealthManager | 加 GET /v1/health 路由（与 /v1/readiness 区分） |
-| 6.4 Observability | 包 Orchestrator.delegateOnce Span，brain/tool 链路上报 |
+> 不影响功能完整性，留给后续优化窗口。
 
-### P2-B（第 2 周，2026-05-11 → 2026-05-17）— 5 项
+### LeaseManager 持锁等待模型（已不在关键路径）
 
-| 任务 | 接入主线 |
-|------|---------|
-| 4.3 DeadlockDetector | 接 LeaseManager.AcquireSet 之前 DetectDeadlock 兜底 |
-| 4.4 Arbiter | 接 ConflictDetector 检测出冲突后由 Arbiter 决策 |
-| 5.4 PatternExtractor | PlanOrchestrator.ExecuteProject 完成后异步抽 → ProjectMemory |
-| 6.3 PerfBenchmark | 加 GET /v1/metrics/perf，按 brain.kind 分桶 P50/P95/P99 |
-| 6.5 SecurityAuditor | /v1/* 入参校验中间件统一过 ValidateInput |
-
-### P2-C（第 3 周，2026-05-18 → 2026-05-24）— 1 项
-
-| 任务 | 接入主线 |
-|------|---------|
-| 6.6 MultiProjectManager | 接 cmd_serve_projects.go，做项目级配额 + 并发上限 |
-
-### P3 — 重复造轮收敛（5 月底之后再议）
-
-- 调度器三套并存：`DefaultTaskScheduler` + `ExecutionScheduler` + `SmartScheduler` → 合并为「ExecutionScheduler 框架 + SmartScheduler 策略 + DefaultTaskScheduler 兼容入口」
-- 审核循环：`review_loop.go` + `design_review.go` 语义重叠 → design_review 收编为 review_loop 的一种 strategy
+原本计划用此重构来支撑 4.3/4.4，但 Wave 7 已通过另一条路径接入（在 ExecutionScheduler 层把 ConflictDetector 的 blocker 翻译为 wait-for 边）。LeaseManager 持锁等待模型现仅作为锁层面真实并发竞争的可选增强，不再作为 4.3/4.4 的前置条件。
 
 ---
 
@@ -201,10 +178,9 @@ EasyMVP 的七阶段闭环已由 brain 内部 ClosedLoopController 落地（见 
 |------|--------|--------|------|
 | 2026-04-29 | Wave 0 | snake-game 完整跑通 | ✅ |
 | 2026-04-30 | Wave 1-3 + 部分 4-6 | 接入率 77%（37/48） | ✅ |
-| 2026-05-10 | P2-A 完成 | 接入率 86%（41/48） | ⏳ |
-| 2026-05-17 | P2-B 完成 | 接入率 96%（46/48） | ⏳ |
-| 2026-05-24 | P2-C 完成 | 接入率 98%（47/48） | ⏳ |
-| 2026-05-31 | P3 调度器/审核循环收敛 | 接入率 100%（48/48） | ⏳ |
+| 2026-05-01 | 9 项落地 | 接入率 92%（44/48） | ✅ |
+| 2026-05-02 | 0139b5e 5 项审计差距修复 | 接入率 95.8%（46/48） | ✅ |
+| 2026-05-02 | **Wave 7（4.3/4.4 接入）** | **全量完成 100%（48/48）** | ✅ |
 | 2026-06-30 | 100 项目验收（成功率 ≥ 90%） | 生产级发布 | ⏳ |
 
 ---
@@ -236,3 +212,6 @@ EasyMVP 的七阶段闭环已由 brain 内部 ClosedLoopController 落地（见 
 - *2026-04-30 v2.1.0 d6619ce — Wave 1 全 + Wave 2 部分 + 5.1/5.2/5.3/5.6 接入决策路径，接入率 18/48*
 - *2026-04-30 v2.2.0 dfd57ac — Wave A/B/C：6.7/6.2 + ClosedLoopController 一次性带活 6 项 + Plan 三组件 + P1 1.6 progress RPC 路由，接入率 37/48 (77%)*
 - *2026-04-30 v2.3.0 — 路线图按"实际落地状态"重写，里程碑提前到 5 月底，剩余 11 项分 P2-A/B/C 三周推进*
+- *2026-05-01 v2.3.x — 9 项落地（4.2/4.5/5.4/5.5/6.1/6.3/6.4/6.5/6.6），接入率 44/48 = 92%*
+- *2026-05-02 v2.4.0 — 0139b5e 5 项审计差距修复（1.10 ReviewLoop 任务级 / 5.1 因果权重 0.35 / 2.4 Lessons 反馈下一轮 plan / 5.3 EventBus 反馈订阅 / 5.4 PatternExtractor 可观测），接入率 46/48 = 95.8%。*
+- *2026-05-02 **v2.5.0（全量完成）** — Wave 7 接入 4.3 DeadlockDetector + 4.4 Arbiter ResolveDeadlock，绕开 LeaseManager 持锁等待前置不足问题（在 ExecutionScheduler 层把 ConflictDetector blocker 翻译为 wait-for 边），新增 AttachDeadlockControl API + MACCSDeadlockConfig 配置块（默认 enabled=true, dry_run=true 观察期）。**MACCS v2 全 48 项 100% 完成** 🎉*
