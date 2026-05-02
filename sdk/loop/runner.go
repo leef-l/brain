@@ -372,6 +372,17 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		// Extract tool_use blocks.
 		toolUseBlocks := extractToolUseBlocks(resp.Content)
 
+		// 调试日志:让用户能直接看到每轮 LLM 输出的 stop_reason 和 tool_use 数,
+		// 用于定位"嘴上承诺但工具调用没发出"类问题。BRAIN_RUNNER_DEBUG=1 启用。
+		if os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+			toolNames := make([]string, 0, len(toolUseBlocks))
+			for _, b := range toolUseBlocks {
+				toolNames = append(toolNames, b.ToolName)
+			}
+			fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d stop_reason=%q tool_use_count=%d tools=%v content_blocks=%d text_chars=%d\n",
+				turn.Index, resp.StopReason, len(toolUseBlocks), toolNames, len(resp.Content), countTextChars(resp.Content))
+		}
+
 		// 退出条件:LLM 没有 tool_use blocks → run 完成。
 		//
 		// 历史 bug:之前条件是 `len==0 || StopReason != "tool_use"`,
@@ -775,4 +786,16 @@ func contentHash(toolName string, input json.RawMessage) string {
 	h.Write([]byte("|"))
 	h.Write(input)
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// countTextChars 统计 ContentBlock 列表中所有 text/thinking 块的总字符数,
+// 给 BRAIN_RUNNER_DEBUG 日志用,帮助判断 LLM 输出是否被截断。
+func countTextChars(blocks []llm.ContentBlock) int {
+	total := 0
+	for _, b := range blocks {
+		if b.Type == "text" || b.Type == "thinking" {
+			total += len(b.Text)
+		}
+	}
+	return total
 }
