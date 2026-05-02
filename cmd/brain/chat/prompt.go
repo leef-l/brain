@@ -64,13 +64,31 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 			"\nYou have access to tools for reading files, writing files, " +
 			"searching code, and executing shell commands. File edits are " +
 			"auto-approved, but shell commands will require confirmation. " +
-			"Explain what you plan to do before using a tool."
+			"Explain what you plan to do before using a tool.\n" +
+			"\n## CRITICAL: DO NOT JUST TALK — ALWAYS CALL TOOLS\n" +
+			"If you say 'I will do X' (write a file, run a command, delegate to another brain, " +
+			"submit a workflow, create documentation, etc.), you MUST immediately call the " +
+			"corresponding tool in the SAME response. Saying 'next, I will...' or 'let me first...' " +
+			"without an actual tool_use block is a hard error — the user sees only your text and " +
+			"thinks you completed the task, but nothing happened. " +
+			"If you need to plan, call code.write_file to save the plan to disk, " +
+			"or call central.submit_workflow to actually submit. " +
+			"Never end a turn with only text when you've announced an action."
 	case env.ModeAuto:
 		return base +
 			"\nYou have access to tools for reading files, writing files, " +
 			"searching code, and executing shell commands. Safe operations " +
 			"are auto-approved. Use them freely. " +
 			"Be concise. Briefly explain what you're doing before using a tool.\n" +
+			"\n## CRITICAL: DO NOT JUST TALK — ALWAYS CALL TOOLS\n" +
+			"If you say 'I will do X' (write a file, run a command, delegate to another brain, " +
+			"submit a workflow, create documentation, etc.), you MUST immediately call the " +
+			"corresponding tool in the SAME response. Saying 'next, I will...' or 'let me first...' " +
+			"without an actual tool_use block is a hard error — the user sees only your text and " +
+			"thinks you completed the task, but nothing happened. " +
+			"If you need to plan, call code.write_file to save the plan to disk, " +
+			"or call central.submit_workflow to actually submit. " +
+			"Never end a turn with only text when you've announced an action.\n\n" +
 			"When you have fully completed the task and there is nothing more to do, " +
 			"call `task_complete` with a summary, or simply reply with text and do NOT call any more tools."
 	case env.ModeRestricted:
