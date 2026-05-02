@@ -40,6 +40,10 @@ func RunChat(args []string) int {
 	workDir := fs.String("workdir", "", "working directory sandbox (default: current directory)")
 	filePolicyJSON := fs.String("file-policy-json", "", "fine-grained file mutation policy JSON")
 	timeoutFlag := fs.String("timeout", "", "per-turn timeout (e.g. 5m, 30m, 0 to disable)")
+	// MACCS Wave 7+ 多项目管理 — chat 启动期 picker
+	projectFlag := fs.String("project", "", "project name (find or create in current workdir)")
+	newProjectFlag := fs.String("new-project", "", "force create a new project with this name")
+	noProjectFlag := fs.Bool("no-project", false, "skip project picker, do not persist conversation")
 	if err := fs.Parse(args); err != nil {
 		return cli.ExitUsage
 	}
@@ -228,6 +232,14 @@ func RunChat(args []string) int {
 	}
 	state.SwitchMode(mode)
 
+	// 注入持久化 stores(供 project_picker / executor 持久化对话用)
+	if chatRuntime != nil && chatRuntime.Stores != nil {
+		state.ProjectsStore = chatRuntime.Stores.ProjectsStore
+		state.ProjectStore = chatRuntime.Stores.ProjectStore
+		state.ProjectMemoryStore = chatRuntime.Stores.ProjectMemoryStore
+	}
+	state.CurrentWorkdir = e.Workdir
+
 	// 加载该 workdir 的历史 conversation
 	if conv, err := LoadConversation(e.Workdir); err != nil {
 		fmt.Fprintf(os.Stderr, "brain chat: load conversation: %v\n", err)
@@ -247,6 +259,30 @@ func RunChat(args []string) int {
 		fmt.Printf("  \033[2mDelegates:\033[0m %v\n", orch.AvailableKinds())
 	}
 	fmt.Println()
+
+	// MACCS Wave 7+ 项目选择器:启动时强制让用户选择项目或跳过持久化。
+	// 持久化禁用(无 ProjectsStore)或 mock provider 时跳过。
+	if state.ProjectsStore != nil && !deps.WantsMockProvider(*providerFlag, modelInput) {
+		pick, err := PickProject(context.Background(), ProjectPickerOptions{
+			Store:              state.ProjectsStore,
+			Workdir:            e.Workdir,
+			ExplicitProject:    *projectFlag,
+			ExplicitNewProject: *newProjectFlag,
+			NoProject:          *noProjectFlag,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "brain chat: project picker: %v\n", err)
+			return cli.ExitFailed
+		}
+		state.CurrentProject = pick.Project
+		state.IsNoProject = pick.IsNoProject
+		if pick.Project != nil {
+			fmt.Printf("  \033[2mProject:\033[0m  %s (id=%s)\n\n", pick.Project.Name, pick.Project.ID)
+		}
+	} else {
+		// 没有 store 或 mock 模式 → 直接无项目模式
+		state.IsNoProject = true
+	}
 
 	if !deps.WantsMockProvider(*providerFlag, modelInput) {
 		if diag := RunStartupDiagnostics(providerSession, cfg); diag != "" {

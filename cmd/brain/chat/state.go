@@ -13,6 +13,7 @@ import (
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
+	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/toolpolicy"
 )
@@ -52,6 +53,26 @@ type State struct {
 	// Human takeover coordinator for this chat session(browser/其他 brain
 	// 遇到需要人工的场景时,工具会阻塞在这里等 /resume 或 /abort)。
 	HumanCoord *ChatHumanCoordinator
+
+	// ─── 项目级持久化(MACCS Wave 7+ 多项目管理) ───────────────────────
+	//
+	// chat 启动时由 project_picker 决定:
+	//   - 选了已有项目 → CurrentProject 非 nil,CurrentWorkdir = project.Workdir
+	//   - 新建项目     → 同上,新创建并 last_active_at = now
+	//   - 跳过("无项目"模式) → CurrentProject = nil,IsNoProject = true
+	//
+	// 每次 turn 后(executor.go::persistChatTurn 处)调:
+	//   - ProjectStore.SaveMessages(CurrentProject.ID, [user, assistant])
+	//   - ProjectsStore.UpdateLastActive(CurrentProject.ID, now)
+	//
+	// ContextEngine 的 AssembleRequest.ProjectID = CurrentProject.ID,
+	// 自动加载历史 + 注入项目记忆摘要。
+	ProjectsStore      persistence.ProjectsStore
+	ProjectStore       persistence.ProjectStore  // 对话历史
+	ProjectMemoryStore persistence.ProjectMemoryStore  // 项目记忆 entries
+	CurrentProject     *persistence.ProjectMeta
+	CurrentWorkdir     string  // 通常 = CurrentProject.Workdir,无项目模式时 = os.Getwd()
+	IsNoProject        bool    // true: 无项目模式,本次对话不持久化
 }
 
 // RunHandle 代表一个正在执行的 run。

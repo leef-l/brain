@@ -74,6 +74,10 @@ func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns 
 		if runtime != nil && runRec != nil {
 			persistChatTurn(ctx, runtime, runRec, provider.Name(), input, state.Mode, state.Sandbox.Primary(), opts.System, result, err)
 		}
+		// MACCS Wave 7+ 项目级持久化:把本 turn 的 user + assistant 消息写到
+		// project_conversations 表,并更新 last_active_at。
+		// 仅在选了项目(非无项目模式)时执行。
+		persistChatTurnToProject(ctx, state, input, result, err)
 		rr := RunResult{
 			Result:       result,
 			Err:          err,
@@ -208,4 +212,43 @@ func extractAssistantReply(messages []llm.Message) string {
 		}
 	}
 	return ""
+}
+
+// persistChatTurnToProject 把本 turn 的 user + assistant 消息写入 project_conversations
+// 并更新 projects.last_active_at。MACCS Wave 7+ 多项目持久化的核心写入点。
+// 任意失败 silent(stderr 打印),不阻塞主流程。
+func persistChatTurnToProject(ctx context.Context, state *State, input string, result *loop.RunResult, runErr error) {
+	if state == nil || state.IsNoProject || state.CurrentProject == nil {
+		return
+	}
+	if state.ProjectStore == nil || state.ProjectsStore == nil {
+		return
+	}
+	pid := state.CurrentProject.ID
+
+	// 写 user message
+	userMsg := llm.Message{
+		Role:    "user",
+		Content: []llm.ContentBlock{{Type: "text", Text: input}},
+	}
+	toSave := []llm.Message{userMsg}
+
+	// 写 assistant 回复(若有)
+	if runErr == nil && result != nil && len(result.FinalMessages) > 0 {
+		// 取最后一条 assistant 消息(往后追加 user 之后的所有 assistant 内容也行,
+		// 但 chat 单 turn 通常只产出一条 assistant 终态)
+		for i := len(result.FinalMessages) - 1; i >= 0; i-- {
+			if result.FinalMessages[i].Role == "assistant" {
+				toSave = append(toSave, result.FinalMessages[i])
+				break
+			}
+		}
+	}
+
+	if err := state.ProjectStore.SaveMessages(ctx, pid, toSave); err != nil {
+		fmt.Fprintf(os.Stderr, "brain chat: persist project messages: %v\n", err)
+	}
+	if err := state.ProjectsStore.UpdateLastActive(ctx, pid, time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "brain chat: update project last_active: %v\n", err)
+	}
 }
