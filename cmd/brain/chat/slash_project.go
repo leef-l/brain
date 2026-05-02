@@ -164,8 +164,8 @@ func projectNewCmd(ctx context.Context, state *State, name string) {
 		fmt.Printf("  \033[1;31m! 创建失败: %v\033[0m\n\n", err)
 		return
 	}
-	state.CurrentProject = p
-	state.IsNoProject = false
+	// 统一切换:加载历史(空) + 升级 ContextEngine + 重置 state.Messages
+	ApplyProjectChange(state, p, false)
 	fmt.Printf("  \033[32m✓ 已创建并切换到项目 %q (id=%s)\033[0m\n\n", p.Name, p.ID)
 }
 
@@ -193,9 +193,10 @@ func projectSwitchCmd(ctx context.Context, state *State, target string) {
 		fmt.Printf("  \033[33m! 项目 %q 不属于当前工作目录 (%s)\033[0m\n\n", p.Name, p.Workdir)
 		return
 	}
-	state.CurrentProject = p
-	state.IsNoProject = false
 	_ = state.ProjectsStore.UpdateLastActive(ctx, p.ID, time.Now())
+	// 统一切换:加载新项目历史 + 升级 ContextEngine + 重置 state.Messages
+	// 这是修复"切换后 LLM 看不到新项目历史"的关键
+	ApplyProjectChange(state, p, true)
 	fmt.Printf("  \033[32m✓ 已切换到项目 %q\033[0m\n\n", p.Name)
 }
 
@@ -280,10 +281,9 @@ func projectDeleteCmd(ctx context.Context, state *State, target string) {
 		return
 	}
 
-	// 如果删的是当前项目,降级为无项目模式
+	// 如果删的是当前项目,降级为无项目模式 + 清空 messages + 降级 ContextEngine
 	if state.CurrentProject != nil && state.CurrentProject.ID == p.ID {
-		state.CurrentProject = nil
-		state.IsNoProject = true
+		ApplyProjectChange(state, nil, false)
 		fmt.Printf("  \033[32m✓ 项目 %q 已删除,当前进入无项目模式\033[0m\n\n", p.Name)
 	} else {
 		fmt.Printf("  \033[32m✓ 项目 %q 已删除\033[0m\n\n", p.Name)
@@ -328,7 +328,8 @@ func projectSaveCmd(ctx context.Context, state *State, name string) {
 		}
 	}
 
-	state.CurrentProject = p
-	state.IsNoProject = false
+	// save 特殊:保留当前 state.Messages 不动(已经写到 SQLite 里),
+	// 但需要升级 ContextEngine 为持久化版,使后续对话也能从这个项目记忆受益。
+	ApplyProjectChangeKeepMessages(state, p, false)
 	fmt.Printf("  \033[32m✓ 当前模式切换为项目持久化模式 (id=%s)\033[0m\n\n", p.ID)
 }

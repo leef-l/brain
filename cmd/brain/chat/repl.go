@@ -282,49 +282,16 @@ func RunChat(args []string) int {
 			fmt.Fprintf(os.Stderr, "brain chat: project picker: %v\n", err)
 			return cli.ExitFailed
 		}
-		state.CurrentProject = pick.Project
-		state.IsNoProject = pick.IsNoProject
 		if pick.Project != nil {
 			fmt.Printf("  \033[2mProject:\033[0m  %s (id=%s)\n", pick.Project.Name, pick.Project.ID)
-
-			// 把 Orchestrator 的 ContextEngine 替换为带持久化 ProjectMemory 的版本。
-			// 之后 central.delegate 调下游 brain 时,Assemble 会自动:
-			//   - 注入 [项目记忆] system 消息 (Summarize 取重要度 ≥0.3 的 entries)
-			//   - 加载 ProjectStore.LoadMessages 历史对话
-			// 这是 MACCS Wave 7+ 持久化记忆真正生效的最后一公里。
-			if orch != nil && state.ProjectMemoryStore != nil {
-				if def, ok := orch.ContextEngine().(*kernel.DefaultContextEngine); ok && def != nil {
-					persistentMem := kernel.NewPersistentProjectMemory(state.ProjectMemoryStore)
-					ce := kernel.NewContextEngineWithMemory(def, persistentMem)
-					orch.SetContextEngine(ce)
-				}
-			}
-
-			// 闭环关键:从 ProjectStore 加载该项目的历史对话填到 state.Messages,
-			// 让本次会话的 LLM(loop.Runner)和 REPL 屏幕都能看到上次聊了什么。
-			// 默认加载最近 50 条,避免长项目上下文一启动就爆掉。
-			if state.ProjectStore != nil {
-				historyCtx, historyCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				history, herr := state.ProjectStore.LoadMessages(historyCtx, pick.Project.ID, 50)
-				historyCancel()
-				if herr != nil {
-					fmt.Fprintf(os.Stderr, "  \033[33m! 加载项目历史失败: %v\033[0m\n", herr)
-				} else if len(history) > 0 {
-					state.Messages = append(state.Messages, history...)
-					// 统计 user turn 数(便于 /history 命令)
-					userCount := 0
-					for _, m := range history {
-						if m.Role == "user" {
-							userCount++
-						}
-					}
-					state.TurnCount = userCount
-					fmt.Printf("  \033[2mLoaded %d messages from project (%d user turns)\033[0m\n",
-						len(history), userCount)
-				}
-			}
-			fmt.Println()
 		}
+		// 统一调 ApplyProjectChange,处理 ContextEngine 升级 + 历史加载 + 状态字段。
+		// 这是 MACCS Wave 7+ 持久化闭环的关键 helper,所有 /project 命令切换都用它。
+		ApplyProjectChange(state, pick.Project, true)
+		if pick.IsNoProject {
+			state.IsNoProject = true // ApplyProjectChange 已处理,这里再保险一下
+		}
+		fmt.Println()
 	} else {
 		// 没有 store 或 mock 模式 → 直接无项目模式
 		state.IsNoProject = true
