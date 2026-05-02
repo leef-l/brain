@@ -1,3 +1,0 @@
-- [v3 路线对标分析](project_v3_route_analysis.md) — OpenClaw/Hermes 对比后的 v3 路线调整建议，设计与代码脱节审计（2026-04-16）
-- [brain-v3 分支信息](project_branch_info.md) — brain-v3 从 fix/align-design-architecture 切出，worktree 在 /www/wwwroot/project/brain-v3
-- [LLM 跨端实时流式输出实现](../sdk/sidecar/streaming.go) — 2026-04-27 完成，`llm.stream` 从聚合式伪流式升级为真正的跨端 Notify 实时推送

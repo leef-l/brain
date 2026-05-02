@@ -1,7 +1,28 @@
 *.exe
+*.exe~
 *.dll
 brain项目系统分析与总结.md
 V2_V3_MIGRATION_GAP_REPORT.md
 *.analysis.md
 *.report.md
 dist/
+
+# 调试 / 构建产物输出
+*_output.txt
+*_stderr.log
+*_stdout.log
+serve-*.log
+fix_log.txt
+tmp_*.json
+tmpdebug/
+
+# 前端依赖（误入历史已 git rm --cached，本地仍可保留以便实验）
+node_modules/
+package-lock.json
+
+# brain 运行期 demo / 项目工作区（每次 demo 都会再生成，不入库）
+/game-ui/
+/snake-game/
+/task-manager/
+/projects/
+/memory/
