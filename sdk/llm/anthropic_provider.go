@@ -335,7 +335,9 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*
 			}
 			cb.ToolUseID = rb.ID
 			cb.ToolName = restoreToolName(toolName)
-			cb.Input = rb.Input
+			// 防御:走 sanitize 一遍。Anthropic API 一般保证返回合法 JSON,
+			// 但同款 helper 给所有 provider 用,统一不容易出错。
+			cb.Input = sanitizeToolArguments(string(rb.Input))
 		}
 		resp.Content = append(resp.Content, cb)
 	}

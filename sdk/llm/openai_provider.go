@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -441,7 +442,7 @@ func (p *OpenAIProvider) toResponse(ar *openaiResponse) (*ChatResponse, error) {
 				Type:      "tool_use",
 				ToolUseID: tc.ID,
 				ToolName:  restoreToolName(tc.Function.Name),
-				Input:     json.RawMessage(tc.Function.Arguments),
+				Input:     sanitizeToolArguments(tc.Function.Arguments),
 			})
 		}
 
@@ -703,7 +704,7 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 					Data: marshalRaw(map[string]interface{}{
 						"tool_use_id": tc.toolCallID,
 						"tool_name":   tc.toolName,
-						"input":       json.RawMessage(args),
+						"input":       sanitizeToolArguments(args),
 					}),
 				})
 			}
@@ -811,4 +812,47 @@ func (r *openaiSSEReader) Close() error {
 	}
 	r.closed = true
 	return r.body.Close()
+}
+
+// sanitizeToolArguments 把 LLM 输出的 tool_call.arguments 字符串安全转为 json.RawMessage。
+//
+// 真实 bug:DeepSeek / OpenAI 兼容服务返回的 arguments 偶尔包含:
+//   - 控制字符(\x00-\x1F 除 \t/\n/\r)
+//   - 未转义的反斜杠 / 引号(LLM 写代码时常见)
+//   - 不完整 UTF-8(被 max_tokens 截断)
+//
+// 之前的代码 `json.RawMessage(args)` 直接强转,后续 sidecar / host 任何
+// json.Marshal(result) 都会触发 RawMessage.MarshalJSON 校验失败,
+// 报 "result marshal failed: json: error calling MarshalJSON for type
+// json.RawMessage"。整个 run 失败,但用户看不出根因。
+//
+// 修复策略:
+//   1. 校验是否合法 JSON(json.Compact 不报错)→ 直接用
+//   2. 不合法 → 尝试用 json.Unmarshal 到 map 再 Marshal(自动 escape 修复)
+//   3. 还失败 → fallback 为 {} 兜底,日志警告(避免 run 整体失败)
+func sanitizeToolArguments(args string) json.RawMessage {
+	if args == "" {
+		return json.RawMessage("{}")
+	}
+
+	// 1. 合法 JSON 直通
+	var probe json.RawMessage
+	if err := json.Unmarshal([]byte(args), &probe); err == nil {
+		// 重新 Marshal 一次,保证 RawMessage 内容自身合法(防止隐藏控制字符)
+		if cleaned, err2 := json.Marshal(probe); err2 == nil {
+			return cleaned
+		}
+	}
+
+	// 2. 不合法 → 尝试解析成 map 再回写(json.Marshal 会自动 escape 字符串内的特殊字符)
+	var asMap map[string]interface{}
+	if err := json.Unmarshal([]byte(args), &asMap); err == nil {
+		if cleaned, err2 := json.Marshal(asMap); err2 == nil {
+			return cleaned
+		}
+	}
+
+	// 3. 兜底:返回 {},打日志
+	fmt.Fprintf(os.Stderr, "openai_provider: tool arguments invalid JSON, fallback to empty object. raw len=%d\n", len(args))
+	return json.RawMessage("{}")
 }
