@@ -12,12 +12,16 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/events"
 )
+
+// diskFreeBytes 返回 path 所在分区的可用字节数。
+// 实现按平台分:
+//   - sdk/kernel/disk_free_unix.go    (linux/darwin/freebsd, 用 syscall.Statfs)
+//   - sdk/kernel/disk_free_windows.go (用 GetDiskFreeSpaceExW via golang.org/x/sys/windows)
 
 // ---------------------------------------------------------------------------
 // ReadinessCategory — 检查类别
@@ -363,12 +367,8 @@ func (rc *ReadinessChecker) registerDefaultsWithConfig(cfg *ReadinessCheckerConf
 				}
 				ch := make(chan result, 1)
 				go func() {
-					var st syscall.Statfs_t
-					if err := syscall.Statfs(dir, &st); err != nil {
-						ch <- result{err: err}
-						return
-					}
-					ch <- result{free: st.Bavail * uint64(st.Bsize)}
+					free, err := diskFreeBytes(dir)
+					ch <- result{free: free, err: err}
 				}()
 
 				select {
