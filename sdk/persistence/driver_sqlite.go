@@ -425,6 +425,16 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 		db.Close()
 		return nil, fmt.Errorf("sqlite driver: ensure project schema: %w", err)
 	}
+	projectsStore := newSQLiteProjectsStore(core)
+	if err := projectsStore.ensureSchema(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sqlite driver: ensure projects schema: %w", err)
+	}
+	projectMemoryStore := newSQLiteProjectMemoryStore(core)
+	if err := projectMemoryStore.ensureSchema(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sqlite driver: ensure project_memory schema: %w", err)
+	}
 
 	// ArtifactStore uses filesystem CAS alongside SQLite metadata.
 	artifactDir := filepath.Join(filepath.Dir(dsn), "artifacts")
@@ -447,6 +457,8 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 		LearningStore:      learningStore,
 		SharedMessageStore: sharedMsgStore,
 		ProjectStore:       projectStore,
+		ProjectsStore:      projectsStore,
+		ProjectMemoryStore: projectMemoryStore,
 		RawDB:              db,
 		CloseFunc:          db.Close,
 	}, nil

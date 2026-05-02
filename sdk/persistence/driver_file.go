@@ -45,6 +45,8 @@ func (fileDriver) Open(dsn string) (*Stores, error) {
 		AuditLogger:        NewMemAuditLogger(),
 		LearningStore:      NewMemLearningStore(),
 		SharedMessageStore: NewMemSharedMessageStore(),
+		ProjectsStore:      NewMemProjectsStore(),
+		ProjectMemoryStore: NewMemProjectMemoryStore(),
 	}, nil
 }
 

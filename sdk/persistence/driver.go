@@ -41,7 +41,9 @@ type Stores struct {
 	AuditLogger        AuditLogger
 	LearningStore      LearningStore
 	SharedMessageStore SharedMessageStore
-	ProjectStore       ProjectStore
+	ProjectStore       ProjectStore        // 项目对话历史(已有)
+	ProjectsStore      ProjectsStore       // 项目元数据(MACCS Wave 7+ 多项目管理)
+	ProjectMemoryStore ProjectMemoryStore  // 项目级记忆 entries(decision/lesson/pattern...)
 
 	// RawDB is the underlying *sql.DB connection for SQL-backed drivers.
 	// Domain-specific stores (e.g. quant persistence) can reuse this
