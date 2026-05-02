@@ -332,7 +332,56 @@ GET /v1/brains             # 已注册大脑
 GET /v1/tools              # 工具注册表
 ```
 
-### 5.5 CLI 完整命令(详见 `sdk/docs/27-CLI命令契约.md`)
+### 5.5 多项目管理(MACCS Wave 7+ 项目级持久化)
+
+每个工作目录(workdir)可以对应**多个项目**(project),每个项目有独立 ID + 对话历史 + 项目记忆。
+
+**chat 模式**:启动时强制选择已有项目 / 新建 / 跳过持久化:
+```cmd
+$ cd /home/u/my-product
+$ brain chat
+  当前工作目录下有 3 个项目:
+    [1] todo-app          (上次活动: 2 小时前)
+    [2] auth-redesign     (上次活动: 昨天)
+    [3] perf-optimization (上次活动: 30 分钟前)
+    [n] 新建项目
+    [s] 不使用项目(单次对话,不持久化)
+```
+
+CLI flag 跳过交互:
+```bash
+brain chat --project todo-app          # 直接进 todo-app(不存在则新建)
+brain chat --new-project xxx           # 强制新建
+brain chat --no-project                # 直接进无项目模式
+```
+
+chat 内 `/project` 9 个子命令:
+```
+/project list / current / info
+/project new <name> / switch <name|id> / rename <new>
+/project delete <name|id> / save <name> / help
+```
+
+**run 模式**:默认**不持久化**(向后兼容);需 `--project NAME` 或 `--no-project` 显式声明。
+
+**HTTP API**(`/v1/runs`):
+```json
+POST /v1/runs
+{
+  "prompt": "...",
+  "brain": "central",
+  "project_id": "abc123def456"            // 已有项目 ID
+  // 或
+  "project_name": "my-app",
+  "workdir": "/home/u/my-product"          // 新建/找(workdir 必传)
+}
+```
+
+详见 [`sdk/docs/35-项目级记忆与多项目管理.md`](../sdk/docs/35-项目级记忆与多项目管理.md)。
+
+---
+
+### 5.6 CLI 完整命令(详见 `sdk/docs/27-CLI命令契约.md`)
 
 | 命令 | 用途 |
 |------|------|

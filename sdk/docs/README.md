@@ -56,6 +56,7 @@
 | [`35-语义审批分级设计.md`](35-语义审批分级设计.md) | 4 级审批分级 | ✅ 稳定 |
 | [`35-统一Dashboard设计规格.md`](35-统一Dashboard设计规格.md) | Dashboard | ✅ 稳定(Phase 1-4 已实现) |
 | [`35-MCP-backed-Runtime设计.md`](35-MCP-backed-Runtime设计.md) | MCP 运行时 | ✅ 稳定 |
+| [`35-项目级记忆与多项目管理.md`](35-项目级记忆与多项目管理.md) | MACCS Wave 7+ 多项目持久化(workdir → N 项目) | ✅ v1.0(批次 C) |
 | [`30-付费专精大脑授权方案.md`](30-付费专精大脑授权方案.md) | 商业化授权 | ⚠️ 设计预留 |
 | [`31-browser-brain-免费版与Pro版规划.md`](31-browser-brain-免费版与Pro版规划.md) | Browser Brain 版本规划 | ⚠️ 设计预留 |
 | [`37-远程专精大脑调用说明.md`](37-远程专精大脑调用说明.md) | 远程调用(stdio/HTTP/WS) | ✅ 已实现 |

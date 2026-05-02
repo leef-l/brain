@@ -189,6 +189,21 @@ orch.SetContextEngine(ce)
 
 之后所有 `Orchestrator.delegateOnce` 间接调 `ce.Assemble`,自动注入记忆。
 
+### 5.3 持久化版 ProjectMemory(MACCS Wave 7+)
+
+默认 `ProjectMemory` 是 `MemProjectMemory`(内存,重启丢)。多项目持久化场景下用 `kernel.NewPersistentProjectMemory(store)`,把 `persistence.ProjectMemoryStore` 包装为 `kernel.ProjectMemory`:
+
+```go
+// chat 装配示例(repl.go):
+if state.ProjectMemoryStore != nil {
+    persistentMem := kernel.NewPersistentProjectMemory(state.ProjectMemoryStore)
+    ce := kernel.NewContextEngineWithMemory(defaultCE, persistentMem)
+    orch.SetContextEngine(ce)
+}
+```
+
+这样 lessons / decisions / patterns 等记忆条目跨会话保留,Wave 5.4 PatternExtractor 写入的 pattern 下次启动同项目仍能被 Retriever 检索到。详见 `35-项目级记忆与多项目管理.md`。
+
 ---
 
 ## 6. MemoryRetriever — 4 维加权检索(`memory_retrieval.go`)

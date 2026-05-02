@@ -1434,6 +1434,14 @@ type createRunRequest struct {
 	// 支持: restricted, default, accept-edits, auto, bypass-permissions
 	PermissionMode string `json:"permission_mode,omitempty"`
 
+	// MACCS Wave 7+ 项目级持久化(可选):
+	//   ProjectID 非空 → 用 ID 直查,找到则把对话写入该项目
+	//   ProjectName + Workdir → 按 (workdir, name) 找/建,写入对话
+	//   两者都不传 → 不持久化(向后兼容旧行为)
+	// 服务端没法知道客户端 cwd,所以 Workdir 必须由客户端显式传。
+	ProjectID   string `json:"project_id,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+
 	timeoutDuration       time.Duration `json:"-"`
 	watchIntervalDuration time.Duration `json:"-"`
 }
@@ -1802,8 +1810,70 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 		_ = te.Transition(kernel.StateCompleted)
 		entry.finish(outcome.FinalStatus, outcome.SummaryJSON)
 		mgr.runs.Store(entry.ID, entry)
+		// MACCS Wave 7+ 项目级持久化(仅 oneshot 成功完成时):
+		// 仅在 req.ProjectID 或 req.ProjectName 非空 + stores 就绪时执行,
+		// 任意失败 silent。
+		persistRunToProjectFromAPI(ctx, runtime, &req, outcome)
 		return
 	}
+}
+
+// persistRunToProjectFromAPI 把 HTTP /v1/runs 请求的 run 结果写入项目持久化层。
+// 默认行为:
+//   req.ProjectID  非空 → 用 ID 查项目,找到则写入(忽略 ProjectName / Workdir)
+//   req.ProjectName + req.Workdir → 按 (workdir, name) 找/建,写入
+//   都不传        → 跳过(向后兼容旧行为)
+// 任意失败只在 stderr 打印,不阻塞调用方。
+func persistRunToProjectFromAPI(ctx context.Context, runtime *cliRuntime, req *createRunRequest, outcome *managedRunOutcome) {
+	if runtime == nil || runtime.Stores == nil {
+		return
+	}
+	stores := runtime.Stores
+	if stores.ProjectsStore == nil || stores.ProjectStore == nil {
+		return
+	}
+	if req == nil || (req.ProjectID == "" && req.ProjectName == "") {
+		return
+	}
+
+	var p *persistence.ProjectMeta
+	if req.ProjectID != "" {
+		p, _ = stores.ProjectsStore.Get(ctx, req.ProjectID)
+		if p == nil {
+			fmt.Fprintf(os.Stderr, "serve: project_id %q not found, skip persist\n", req.ProjectID)
+			return
+		}
+	} else {
+		// ProjectName + Workdir 必须配合
+		if req.Workdir == "" {
+			fmt.Fprintf(os.Stderr, "serve: project_name set but workdir empty, skip persist\n")
+			return
+		}
+		p, _ = stores.ProjectsStore.FindByName(ctx, req.Workdir, req.ProjectName)
+		if p == nil {
+			p = &persistence.ProjectMeta{Workdir: req.Workdir, Name: req.ProjectName}
+			if err := stores.ProjectsStore.Create(ctx, p); err != nil {
+				fmt.Fprintf(os.Stderr, "serve: create project: %v\n", err)
+				return
+			}
+		}
+	}
+
+	// 写 user + assistant
+	msgs := []llm.Message{
+		{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: req.Prompt}}},
+	}
+	if outcome != nil && outcome.ReplyText != "" {
+		msgs = append(msgs, llm.Message{
+			Role:    "assistant",
+			Content: []llm.ContentBlock{{Type: "text", Text: outcome.ReplyText}},
+		})
+	}
+	if err := stores.ProjectStore.SaveMessages(ctx, p.ID, msgs); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: persist project messages: %v\n", err)
+		return
+	}
+	_ = stores.ProjectsStore.UpdateLastActive(ctx, p.ID, time.Now())
 }
 
 func handleGetRun(w http.ResponseWriter, _ *http.Request, mgr *runManager, id string) {
