@@ -56,21 +56,29 @@ func RegisterManagedRealTools(reg tool.Registry, e *env.Environment, brainKind s
 	// 历史:之前 CentralAwareWrite/Shell 是"软警告",返回 executed:false JSON 让 LLM 看,
 	// 但 LLM 误以为成功,反复绕过提示 → 项目集成崩。本次改为"硬剥夺",
 	// 工具从 registry 中直接不出现,LLM 看不到就不会调,被迫 delegate。
-	isCentral := brainKind == "central"
-
 	// 只读工具(所有 brain 都注册)
 	reg.Register(ManageTool(e, tool.NewReadFileTool("code"), env.ToolClassRead))
 	reg.Register(ManageTool(e, tool.NewListFilesTool("code"), env.ToolClassRead))
 	reg.Register(ManageTool(e, tool.NewSearchTool("code"), env.ToolClassRead))
 	reg.Register(tool.NewNoteTool("code"))
 
-	// 写入类工具(中央大脑跳过,只有非中央才注册)
-	if !isCentral {
-		reg.Register(ManageTool(e, tool.NewWriteFileTool("code"), env.ToolClassEdit))
-		reg.Register(ManageTool(e, tool.NewEditFileTool("code"), env.ToolClassEdit))
-		reg.Register(ManageTool(e, tool.NewDeleteFileTool("code"), env.ToolClassDelete))
-		reg.Register(NewManagedShellTool("code", e))
+	// 写入类工具:central 套智能分级包装 (CentralAware*),其他 brain 直接注册。
+	// CentralAwareWrite:write_file content > 5000 字符 / edit_file / delete_file 自动拦截改建议 delegate。
+	// CentralAwareShell:非只读命令(rm/git push/build)自动拦截改建议 delegate。
+	// 这样中央仍能写设计文档等小事,但代码 / 改文件 / 跑构建必走 delegate。
+	// 与 cmd/brain/chat/tools.go 的策略保持一致(两条路径都得套包装)。
+	writeFile := CentralAwareWrite(tool.NewWriteFileTool("code"), brainKind)
+	editFile := CentralAwareWrite(tool.NewEditFileTool("code"), brainKind)
+	deleteFile := CentralAwareWrite(tool.NewDeleteFileTool("code"), brainKind)
+	reg.Register(ManageTool(e, writeFile, env.ToolClassEdit))
+	reg.Register(ManageTool(e, editFile, env.ToolClassEdit))
+	reg.Register(ManageTool(e, deleteFile, env.ToolClassDelete))
+
+	shellTool := NewManagedShellTool("code", e)
+	if brainKind == "central" {
+		shellTool = CentralAwareShell(shellTool, brainKind)
 	}
+	reg.Register(shellTool)
 
 	// verifier 类只读工具(所有 brain 都注册,verifier 主用)
 	reg.Register(ManageTool(e, tool.NewVerifierReadFileTool(), env.ToolClassRead))

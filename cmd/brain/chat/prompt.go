@@ -85,6 +85,8 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	b.WriteString("- Read for your own understanding → read_file / list_files / search.\n")
 	b.WriteString("- Done → task_complete with summary, then stop.\n\n")
 
+	b.WriteString("ACT NOW: If you say 'I will submit the workflow' / 'now I'll delegate' / '现在提交' / '立刻调用', call the tool IN THE SAME TURN. Saying it without the tool_use block leaves nothing done — the user sees text and thinks you're stuck. Never end a turn with only an announcement.\n")
+
 	b.WriteString("Hard rules: never substitute shell_exec curl/wget for browser delegation; pass user-supplied values verbatim (no $placeholders); set render_mode=headed when the user wants to see the browser.\n")
 
 	if RegistryHasTool(reg, "central.metacognition") {

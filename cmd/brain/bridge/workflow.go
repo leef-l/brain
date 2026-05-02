@@ -24,6 +24,7 @@ func (t *WorkflowTool) Schema() tool.Schema {
 	return tool.Schema{
 		Name: "central.submit_workflow",
 		Description: "Submit a complete DAG of subtasks in ONE call — the primary tool for any multi-step / multi-file project. " +
+			"WHEN TO CALL: as soon as the user says 'do X / make X / 做 X / 实现 X' for any project with > 1 file. Do NOT just write a design doc and stop — call this tool in the SAME turn. " +
 			"Use depends_on to express order; same-layer nodes (no inter-deps) run in parallel, including multiple instances of the same brain. " +
 			"Submit the FULL DAG up front (10-20 nodes is fine), do NOT split into sequential 'batches'. " +
 			"Engine auto-injects a _contract node so all module nodes share interface definitions. " +
