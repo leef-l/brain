@@ -260,7 +260,8 @@ func RunChat(args []string) int {
 	}
 
 	fmt.Println()
-	fmt.Printf("  \033[1mBrain Chat v%s\033[0m\n", brain.CLIVersion)
+	fmt.Printf("  \033[1mBrain Chat v%s\033[0m  \033[2m(commit %s, built %s)\033[0m\n",
+		brain.CLIVersion, shortCommit(brain.BuildCommit), brain.BuildTime)
 	fmt.Printf("  \033[2mProvider:\033[0m %s / %s\n", providerSession.Name, providerSession.Model)
 	fmt.Printf("  \033[2mBrain:\033[0m    %s\n", *brainID)
 	fmt.Printf("  \033[2mMode:\033[0m     %s\n", mode.StyledLabel())
@@ -269,6 +270,8 @@ func RunChat(args []string) int {
 	if orch != nil {
 		fmt.Printf("  \033[2mDelegates:\033[0m %v\n", orch.AvailableKinds())
 	}
+	// MACCS Wave 7+ /project 命令存在性自检 — 启动就告诉用户这个命令可用,避免误以为没编进去
+	fmt.Printf("  \033[2mProject cmds:\033[0m /project [list|new|switch|current|info|rename|delete|save|help]\n")
 	fmt.Println()
 
 	// MACCS Wave 7+ 项目选择器:启动时强制让用户选择项目或跳过持久化。
@@ -991,4 +994,17 @@ func willPrintToStdout(p *ProgressEvent) bool {
 		return VerboseEnabled()
 	}
 	return false
+}
+
+// shortCommit 返回 commit hash 的前 7 位,unknown 时返回 "unknown"。
+// 给 chat 启动 banner 用,让用户能直接看到当前 brain.exe 是哪个 commit 编的,
+// 一眼判断"是不是新版本",避免"明明 git pull + build 了但行为没变"的歧义。
+func shortCommit(commit string) string {
+	if commit == "" || commit == "unknown" {
+		return "unknown"
+	}
+	if len(commit) >= 7 {
+		return commit[:7]
+	}
+	return commit
 }
