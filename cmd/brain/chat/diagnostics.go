@@ -84,16 +84,23 @@ func checkProviderConnectivity(session provider.Session) string {
 	defer cancel()
 
 	req := minimalChatRequest()
-	if isReasonerModel(session) {
-		req.MaxTokens = 16
-	}
+	// 各类模型的最小可用 token 数差异很大:
+	//   - Anthropic Sonnet/Haiku: 1 即可
+	//   - DeepSeek-reasoner / R1: 至少 16(推理预算)
+	//   - 国内 OpenAI 兼容(mimo / qwen / hunyuan / 文心 等):普遍要求 ≥ 16
+	//     否则 stop_reason=length 且 content 为空,触发"empty response"误报
+	// 折衷:统一上调到 16。预检本身只是 8s 超时的轻量探测,16 token 不影响延迟。
+	req.MaxTokens = 16
 
 	resp, err := session.Provider.Complete(ctx, req)
 	if err != nil {
 		return fmt.Sprintf("Provider connectivity check failed: %v", err)
 	}
 	if resp == nil || len(resp.Content) == 0 {
-		return "Provider returned empty response — check base_url and model"
+		// 预检空响应不阻塞实际使用,只提示常见原因。
+		return "Provider returned empty response on warm-up probe — 实际对话仍可使用。" +
+			"若每次对话都空响应,请检查 base_url / model / api_key 是否正确;" +
+			"国内 OpenAI 兼容服务(mimo/qwen/hunyuan 等)请确认 model 名拼写"
 	}
 	return ""
 }
@@ -113,6 +120,6 @@ func minimalChatRequest() *llm.ChatRequest {
 				},
 			},
 		},
-		MaxTokens: 1,
+		MaxTokens: 16,
 	}
 }
