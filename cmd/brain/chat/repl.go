@@ -20,6 +20,7 @@ import (
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/cli"
 	brainerrors "github.com/leef-l/brain/sdk/errors"
+	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
@@ -160,6 +161,10 @@ func RunChat(args []string) int {
 				kernel.WithContextEngine(ctxEngine),
 				kernel.WithLeaseManager(leaseManager),
 			)
+			// 注入 EventBus,启用 Replan 路径(PlanOrchestrator 通过 Subscribe 监听
+			// EventReplanRequested,chat REPL.dispatchUserInput 通过 Publish 发布)。
+			// chat 模式之前没用 EventBus,Replan 之后必须有,否则分诊路由后事件无消费者。
+			orch.EventBus = events.NewMemEventBus()
 			// 专家 sidecar 的 brain/progress 事件直接打到屏幕,让用户能
 			// 实时看到 subtask 里每个 tool 的 start/end,避免 central.delegate
 			// 长时间静默的尴尬。
@@ -252,6 +257,13 @@ func RunChat(args []string) int {
 	humanCoord := NewChatHumanCoordinator()
 	tool.SetHumanTakeoverCoordinator(humanCoord)
 
+	// RelevanceClassifier 用 chat 当前 Provider 做 LLM 兜底分类。
+	// brain-v3 已支持「不同 brain 不同模型」(LLMProxy.ModelForKind),
+	// 这里直接复用 chat session 的默认 provider 不开独立配置。
+	classifier := kernel.NewDefaultRelevanceClassifier()
+	classifier.Provider = providerSession.Provider
+	classifier.Model = providerSession.Model
+
 	state := &State{
 		Cfg:          cfg,
 		BrainID:      *brainID,
@@ -268,6 +280,8 @@ func RunChat(args []string) int {
 		Sanitizer:    loop.NewMemSanitizer(),
 		LoopDetector: loop.NewMemLoopDetector(),
 		CacheBuilder: loop.NewMemCacheBuilder(),
+		// Replan 路由分类器
+		RelevanceClassifier: classifier,
 	}
 	state.SwitchMode(mode)
 
@@ -516,13 +530,21 @@ func RunChat(args []string) int {
 	}
 
 	for {
-		// 队列中的消息直接启动，不等当前 run 完成（支持并行）
-		for {
-			queued := state.Dequeue()
-			if queued == "" {
+		// 队列消息处理:仅当没有 running run 时才出队启动,实现 D2 串行化。
+		// Replan 路线决策:不并发同 session 的多 turn(避免 state.Messages /
+		// LoopDetector / ContextEngine 并发污染),follow-up 入队列等当前完成。
+		// AnyRunning() 仍 true 时跳过出队,等下一轮 select(run 完成事件触发再轮询)。
+		if !state.AnyRunning() {
+			for {
+				queued := state.Dequeue()
+				if queued == "" {
+					break
+				}
+				launchRun(queued)
+				// 启动一个 run 后跳出内层,让 launchRun 的 goroutine 跑起来,
+				// 下次 AnyRunning() == true,后续 queued 继续等。
 				break
 			}
-			launchRun(queued)
 		}
 
 		select {
@@ -764,8 +786,20 @@ func RunChat(args []string) int {
 					continue
 				}
 
-				// 任何消息都直接启动新 run（并行模式）
-				launchRun(input)
+				// Replan-aware 分诊路由:
+				// - 没有 running run → 直接启动(原行为)
+				// - 项目模式 + running → RelevanceClassifier 分类
+				//   Unrelated 入队列 / StatusQuery 即时回 / Modification 触发 replan
+				//   Cancel 取消 / Refine 发 brain.feedback.requested
+				// - 无项目模式 + running → 入队列(D2 串行化,等当前完成)
+				bus := orchEventBus(orch)
+				res := dispatchUserInput(state, input, bus, launchRun)
+				if res.Hint != "" {
+					DetachPromptFrame(session)
+					fmt.Println(res.Hint)
+					fmt.Println()
+					RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
+				}
 			}
 		}
 	}

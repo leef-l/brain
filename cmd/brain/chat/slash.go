@@ -55,6 +55,8 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 		fmt.Println("  /project current /project info /project rename <new> /project save <name>")
 		fmt.Println("  /verbose           切换 verbose 显示（工具 plumbing 默认隐藏）")
 		fmt.Println("  /verbose on|off    显式开关 verbose")
+		fmt.Println("  /restore           列出可恢复的 partial 文件备份(replan 中断时备份)")
+		fmt.Println("  /restore <task_id> 恢复指定 task 的 partial 文件到工作目录")
 		fmt.Println("  /keys              Show keybindings config path")
 		fmt.Println("  /exit              Exit chat")
 		fmt.Println()
@@ -367,6 +369,50 @@ func HandleSlashCommand(input string, state *State) (bool, bool) {
 				fmt.Printf("  (%s)", nr.Error)
 			}
 			fmt.Println()
+		}
+		fmt.Println()
+		return true, false
+
+	case cmd == "/restore":
+		// 列出当前工作目录所有 partial 备份(replan 中断时产生)
+		workdir := state.CurrentWorkdir
+		if workdir == "" {
+			workdir = "."
+		}
+		ids, err := kernel.ListPartialBackups(workdir)
+		if err != nil {
+			fmt.Printf("  \033[31m列出备份失败: %v\033[0m\n\n", err)
+			return true, false
+		}
+		if len(ids) == 0 {
+			fmt.Println("  当前工作目录没有 partial 文件备份")
+			fmt.Println()
+			return true, false
+		}
+		fmt.Printf("  可恢复的 partial 备份 (%d 个):\n", len(ids))
+		for _, id := range ids {
+			fmt.Printf("    - %s  (恢复: /restore %s)\n", id, id)
+		}
+		fmt.Println()
+		return true, false
+
+	case strings.HasPrefix(cmd, "/restore "):
+		taskID := strings.TrimSpace(strings.TrimPrefix(input, "/restore "))
+		if taskID == "" {
+			fmt.Println("  Usage: /restore <task_id>")
+			fmt.Println()
+			return true, false
+		}
+		workdir := state.CurrentWorkdir
+		if workdir == "" {
+			workdir = "."
+		}
+		restored, errs := kernel.RestorePartialFiles(workdir, taskID)
+		fmt.Printf("  恢复 %d 个文件\n", restored)
+		if len(errs) > 0 {
+			for k, v := range errs {
+				fmt.Printf("    \033[33m! %s: %v\033[0m\n", k, v)
+			}
 		}
 		fmt.Println()
 		return true, false

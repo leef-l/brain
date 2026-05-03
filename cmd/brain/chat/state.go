@@ -54,6 +54,20 @@ type State struct {
 	LoopDetector loop.LoopDetector
 	CacheBuilder loop.CacheBuilder
 
+	// RelevanceClassifier 关联性分类器,chat REPL 用于决定 user 输入打断/排队。
+	// NewState 时构造,Provider 由 chat 入口在 OpenConfiguredProvider 后注入。
+	// nil 时 dispatchUserInput 退化为旧行为(直接 launchRun)。
+	RelevanceClassifier *kernel.RelevanceClassifier
+
+	// ReplanCooldownAt 上次发布 replan.requested 的时间戳。
+	// 在 cooldown 期间到达的 Modification 入 ModificationBuffer 合并,
+	// cooldown 末尾统一发一次 replan.requested。
+	// 防止用户连发"改 X / 还要改 Y / 也加 Z"触发 replan 风暴。
+	ReplanCooldownAt    time.Time
+	ModificationBuffer  []string
+	ReplanCooldownTimer *time.Timer
+	ReplanCooldownMu    sync.Mutex
+
 	// ActiveRuns 管理所有正在执行的 run。
 	// key 是 runID（如 "run-0", "run-1"）。
 	ActiveRuns map[string]*RunHandle

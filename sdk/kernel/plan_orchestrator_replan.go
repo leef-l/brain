@@ -300,6 +300,11 @@ func (po *PlanOrchestrator) subscribeReplanRequests(ctx context.Context, project
 //   - 中断 SubTask 列表(Status=Interrupted,带 PartialFiles + AbortReason)
 //   - 待执行 SubTask 列表(Status=Pending)
 //   - 项目记忆 top-N(MemoryRetriever 按 plan.Goal 检索)
+//
+// 副作用:
+//   - 把所有 InterruptedTasks 的 PartialFiles 备份到 .brain/partial/<runID>/
+//     然后从工作目录删除,确保 newPlan 启动时 sub agent 看到干净环境
+//     (用户可用 chat /restore <runID> 恢复)
 func (po *PlanOrchestrator) snapshotState(
 	ctx context.Context,
 	plan *TaskPlan,
@@ -347,6 +352,19 @@ func (po *PlanOrchestrator) snapshotState(
 		}
 		fillTurnsUsed(snap.CompletedTasks, taskUsage)
 		fillTurnsUsed(snap.InterruptedTasks, taskUsage)
+	}
+
+	// 备份所有中断 SubTask 的 PartialFiles 到 .brain/partial/<task_id>/
+	// 失败 silent(不阻塞 replan,partial 文件仍在原位次优而非阻塞)
+	if plan.Workdir != "" {
+		for i := range snap.InterruptedTasks {
+			if len(snap.InterruptedTasks[i].PartialFiles) == 0 {
+				continue
+			}
+			_, _ = BackupPartialFiles(plan.Workdir,
+				snap.InterruptedTasks[i].TaskID,
+				snap.InterruptedTasks[i].PartialFiles)
+		}
 	}
 
 	// 从 ProjectMemory 检索相关历史(MemoryRetriever 在 PlanOrchestrator 上)
