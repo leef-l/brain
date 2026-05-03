@@ -250,7 +250,10 @@ func buildBrainPool(cfg *brainConfig) *kernel.ProcessBrainPool {
 
 func buildBrainPoolWithRuntimeDir(cfg *brainConfig, runtimeDataDir string) *kernel.ProcessBrainPool {
 	binResolver := defaultBinResolver()
-	runner := &kernel.ProcessRunner{BinResolver: binResolver}
+	// sidecar cwd 兜底用 os.Getwd:用户在哪启动 brain,sidecar 写相对路径就落到那。
+	// 调用者(chat/run/serve)如有更精确的 workdir 应在 ProcessRunner 上覆盖。
+	cwd, _ := os.Getwd()
+	runner := &kernel.ProcessRunner{BinResolver: binResolver, Workdir: cwd}
 	if strings.TrimSpace(runtimeDataDir) != "" {
 		gate := tool.CurrentBrowserFeatureGateConfig()
 		projection := kernel.BrowserRuntimeProjectionForDataDir(runtimeDataDir, gate.Enabled, gate.Features)
@@ -321,7 +324,9 @@ func buildOrchestrator(oc orchestratorConfig) *kernel.Orchestrator {
 		},
 	}
 
-	runner := &kernel.ProcessRunner{BinResolver: binResolver}
+	// sidecar cwd 兜底用 os.Getwd,与 buildBrainPoolWithRuntimeDir 一致。
+	cwd, _ := os.Getwd()
+	runner := &kernel.ProcessRunner{BinResolver: binResolver, Workdir: cwd}
 
 	// 优先使用 manifest 发现的脑，cfg.Brains 作为 fallback。
 	var orchCfg kernel.OrchestratorConfig

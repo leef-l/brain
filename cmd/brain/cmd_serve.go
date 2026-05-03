@@ -625,7 +625,7 @@ func runServe(args []string) int {
 				return session.Provider
 			},
 		}
-		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, startupLLMProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
+		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver(), Workdir: env.Workdir}, startupLLMProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithLeaseManager(leaseManager),
 			kernel.WithMCPBrainPool(mcpPool),
 		)
@@ -1654,8 +1654,7 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			},
 			PromptManager: mgr.promptMgr,
 		}
-		_ = env
-		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
+		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver(), Workdir: env.Workdir}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 			kernel.WithCapabilityMatcher(mgr.capMatcher),
 			kernel.WithLearningEngine(mgr.learner),
@@ -2124,7 +2123,7 @@ func handleCreateWorkflow(w http.ResponseWriter, r *http.Request, mgr *runManage
 			},
 			PromptManager: mgr.promptMgr,
 		}
-		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
+		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver(), Workdir: workdir}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 			kernel.WithCapabilityMatcher(mgr.capMatcher),
 			kernel.WithLearningEngine(mgr.learner),

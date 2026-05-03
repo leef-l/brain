@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/dashboard"
@@ -115,7 +116,10 @@ func (a *learningProviderAdapter) LearningOverview() dashboard.LearningOverview 
 func registerDashboardRoutes(mux *http.ServeMux, mgr *runManager, pool *kernel.ProcessBrainPool, mcpPool *mcpadapter.MCPBrainPool, bus *events.MemEventBus, cfg *brainConfig, startTime time.Time, leaseManager *kernel.MemLeaseManager, learnP dashboard.LearningProvider) *dashboard.WSHub {
 	var orch *kernel.Orchestrator
 	if pool != nil {
-		orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver()}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{})
+		// dashboard orch 主要用于状态查询,不太涉及 write_file。
+		// 用 os.Getwd 兜底,与 brain 主进程一致,避免 sidecar cwd 落到根目录。
+		dashWorkdir, _ := os.Getwd()
+		orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver(), Workdir: dashWorkdir}, &kernel.LLMProxy{}, defaultBinResolver(), kernel.OrchestratorConfig{})
 	}
 
 	quantCaller := dashboard.QuantToolCaller(func(ctx context.Context, toolName string, args map[string]interface{}) (json.RawMessage, error) {
