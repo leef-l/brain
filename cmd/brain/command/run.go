@@ -156,6 +156,9 @@ func RunRun(args []string, deps RunDeps) int {
 	if *brainID == "central" && !deps.WantsMockProvider(*providerFlag, modelInput) {
 		pool = deps.BuildBrainPool(cfg)
 		if pool != nil {
+			// 修复:helpers.buildBrainPool 用 os.Getwd 兜底,
+			// run 拿到 pool 后必须用 e.Workdir 覆盖,确保 sidecar cwd = sandbox 解析后的 workdir。
+			pool.SetRunnerWorkdir(e.Workdir)
 			defer func() { _ = pool.Shutdown(context.Background()) }()
 			llmProxy := &kernel.LLMProxy{
 				ProviderFactory: func(kind agent.Kind) llm.Provider {

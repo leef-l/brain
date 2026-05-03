@@ -573,6 +573,11 @@ func runServe(args []string) int {
 
 	// 全局 BrainPool：所有并发 run 共享，不再 per-run fork sidecar。
 	pool := buildBrainPoolWithRuntimeDir(cfg, filepath.Dir(configPath()))
+	if pool != nil {
+		// 修复:serve 模式 sidecar 全局共享,cwd 在第一次启动后固定。
+		// 用 env.Workdir(brain serve -workdir flag 解析后)统一设定。
+		pool.SetRunnerWorkdir(env.Workdir)
+	}
 	defer func() {
 		if pool != nil {
 			_ = pool.Shutdown(context.Background())

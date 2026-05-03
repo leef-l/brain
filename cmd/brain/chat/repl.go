@@ -88,10 +88,22 @@ func RunChat(args []string) int {
 
 	chatRuntime, _ := deps.NewDefaultCLIRuntime(*brainID)
 
+	// 先解析 sidecarWorkdir,后建 pool 时统一 SetRunnerWorkdir。
+	// helpers.go BuildBrainPool 用 os.Getwd 兜底,但对 chat 来说更精确的是 -workdir flag。
+	sidecarWorkdir := *workDir
+	if sidecarWorkdir == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			sidecarWorkdir = cwd
+		}
+	}
+
 	var pool *kernel.ProcessBrainPool
 	var orch *kernel.Orchestrator
 	if *brainID == "central" && !deps.WantsMockProvider(*providerFlag, modelInput) {
 		pool = deps.BuildBrainPool(cfg)
+		if pool != nil {
+			pool.SetRunnerWorkdir(sidecarWorkdir)
+		}
 		if pool != nil {
 			llmProxy := &kernel.LLMProxy{
 				ProviderFactory: func(kind agent.Kind) llm.Provider {
@@ -139,15 +151,9 @@ func RunChat(args []string) int {
 			}
 
 			leaseManager := kernel.NewMemLeaseManager()
-			// Workdir 关键:让 sidecar 进程 cwd = 用户的工作目录,
-			// LLM 写相对路径(a.js)能落到用户目录而不是父进程 cwd。
-			// 优先用 -workdir flag,空时 fallback 当前进程 cwd。
-			sidecarWorkdir := *workDir
-			if sidecarWorkdir == "" {
-				if cwd, err := os.Getwd(); err == nil {
-					sidecarWorkdir = cwd
-				}
-			}
+			// Workdir 关键:sidecarWorkdir 已在 chat 入口处解析(-workdir flag,空则 os.Getwd)
+			// 并通过 pool.SetRunnerWorkdir 注入到 pool 内部 runner。
+			// 这里同样传给 NewOrchestratorWithPool 的 ProcessRunner,保证两条路径一致。
 			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver(), Workdir: sidecarWorkdir}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 				kernel.WithLearningEngine(learner),

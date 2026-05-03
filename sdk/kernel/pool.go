@@ -95,6 +95,19 @@ type ProcessBrainPool struct {
 	warmKinds []agent.Kind
 }
 
+// SetRunnerWorkdir 修改 pool 内部 runner 的 Workdir 字段(仅对 *ProcessRunner 生效)。
+// 用于:helper 函数 buildBrainPool 提前建 pool 时拿不到用户 workdir,
+// 等 chat/run/serve 后续解析到 -workdir flag 后通过此接口注入。
+//
+// 注意:只对未启动的 sidecar 生效,已启动的实例 cwd 已固定。
+func (p *ProcessBrainPool) SetRunnerWorkdir(workdir string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if r, ok := p.runner.(*ProcessRunner); ok && r != nil {
+		r.Workdir = workdir
+	}
+}
+
 // NewProcessBrainPool 创建一个基于进程的 BrainPool。
 // 它会探测文件系统上的可用 sidecar 二进制文件，记录哪些 kind 可以被启动。
 func NewProcessBrainPool(runner BrainRunner, binResolver func(agent.Kind) (string, error), cfg OrchestratorConfig) *ProcessBrainPool {
@@ -447,6 +460,7 @@ func (p *ProcessBrainPool) startWithRegistrationWithID(ctx context.Context, kind
 				BinResolver:     runner.BinResolver,
 				Env:             mergeProcessEnv(runner.Env, instanceEnv),
 				Args:            append([]string(nil), runner.Args...),
+				Workdir:         runner.Workdir, // 透传 sidecar cwd (修复:之前漏拷贝)
 				InitTimeout:     runner.InitTimeout,
 				ShutdownTimeout: runner.ShutdownTimeout,
 				ProtocolVersion: runner.ProtocolVersion,
@@ -465,6 +479,7 @@ func (p *ProcessBrainPool) startWithRegistrationWithID(ctx context.Context, kind
 			BinResolver:     runner.BinResolver,
 			Env:             append([]string(nil), runner.Env...),
 			Args:            append([]string(nil), runner.Args...),
+			Workdir:         runner.Workdir, // 透传 sidecar cwd (修复:之前漏拷贝)
 			InitTimeout:     runner.InitTimeout,
 			ShutdownTimeout: runner.ShutdownTimeout,
 			ProtocolVersion: runner.ProtocolVersion,
