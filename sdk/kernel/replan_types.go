@@ -146,14 +146,14 @@ type ReplanSnapshot struct {
 
 // SubTaskSnapshot 是单个子任务在 replan 触发时的轮廓信息。
 type SubTaskSnapshot struct {
-	TaskID         string         `json:"task_id"`
-	Name           string         `json:"name"`
-	Kind           string         `json:"kind"`
-	Instruction    string         `json:"instruction"`
-	Status         PlanTaskStatus `json:"status"`
-	OutputSummary  string         `json:"output_summary,omitempty"` // 已完成时:Result.Output 摘要
-	PartialFiles   []string       `json:"partial_files,omitempty"`  // 中断时:已写入但未完成的文件
-	AbortReason    string         `json:"abort_reason,omitempty"`   // 中断原因
-	TurnsUsed      int            `json:"turns_used,omitempty"`     // 已消耗 turn(从 progress 拿)
-	Confidence     float64        `json:"confidence,omitempty"`     // 已完成时的产出置信度
+	TaskID        string         `json:"task_id"`
+	Name          string         `json:"name"`
+	Kind          string         `json:"kind"`
+	Instruction   string         `json:"instruction"`
+	Status        PlanTaskStatus `json:"status"`
+	OutputSummary string         `json:"output_summary,omitempty"` // 已完成时:Result.Output 摘要
+	PartialFiles  []string       `json:"partial_files,omitempty"`  // 中断时:已写入但未完成的文件
+	AbortReason   string         `json:"abort_reason,omitempty"`   // 中断原因
+	TurnsUsed     int            `json:"turns_used,omitempty"`     // 已消耗 turn(从 progress 拿)
+	Confidence    float64        `json:"confidence,omitempty"`     // 已完成时的产出置信度
 }

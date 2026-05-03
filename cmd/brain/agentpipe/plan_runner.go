@@ -207,7 +207,10 @@ func (p *PlanRunner) ExecuteWithInput(ctx context.Context, in PlanInput) (*kerne
 		}
 	}
 
-	return p.planOrch.ExecuteProject(ctx, plan)
+	// 用 Replan-aware 执行入口:跑 ExecuteTaskPlan 的同时旁路 goroutine 监听
+	// EventReplanRequested,收到则 cancel + snapshot + replan + 用 newPlan 继续。
+	// designer 不实现 ReplanCapableDesigner 时降级为单次执行(不响应 replan 事件)。
+	return p.planOrch.ExecuteProjectWithReplan(ctx, plan)
 }
 
 // ensurePlanOrch 懒构造 PlanOrchestrator(可重复调,只构造一次)。
@@ -237,6 +240,11 @@ func (p *PlanRunner) ensurePlanOrch() error {
 			PatternExtractor:    p.PatternExtract,
 			PatternBgCtx:        p.bgCtx,
 		})
+		// 注入 Replan 组件:Designer 可能实现 ReplanCapableDesigner,
+		// PlanOrchestrator.ExecuteProjectWithReplan 通过 type assertion 探测能力。
+		// 不强制要求 Designer 实现 — DefaultDesignGenerator 已经实现,
+		// 第三方实现没实现时会降级到旧 ExecuteProject 单次执行路径。
+		p.planOrch.SetReplanComponents(p.Designer, p.Parser)
 	})
 	return nil
 }

@@ -38,6 +38,13 @@ type PlanOrchestrator struct {
 	// patternBgCtx 用于驱动异步抽取的顶层 ctx，请求 ctx 在返回时已 cancel。
 	// 通常由 server 注入；nil 时退化为 context.Background。
 	patternBgCtx context.Context
+
+	// cachedDesigner / cachedParser 是 Replan 路径(ExecuteProjectWithReplan)需要的
+	// 组件,通过 SetReplanComponents 注入。
+	// 不进 PlanOrchestratorConfig 是为了不破坏现有 NewPlanOrchestrator 签名,
+	// 不需要 replan 的 caller 可以不调 SetReplanComponents,Replan 路径会降级。
+	cachedDesigner DesignGenerator
+	cachedParser   RequirementParser
 }
 
 // PlanOrchestratorConfig 配置。

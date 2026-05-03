@@ -207,9 +207,9 @@ func (g *DefaultDesignGenerator) generateWithLLM(ctx context.Context, in ReplanI
 	// LLM 输出格式:简化版 DesignProposal,字段名小写,只含必要项
 	// 解析后填充内部 ID / 时间戳 / Score 等字段
 	var llmOut struct {
-		Title       string `json:"title"`
-		Rationale   string `json:"rationale"`
-		Tasks       []struct {
+		Title     string `json:"title"`
+		Rationale string `json:"rationale"`
+		Tasks     []struct {
 			TaskID      string   `json:"task_id"`
 			Name        string   `json:"name"`
 			Instruction string   `json:"instruction"`

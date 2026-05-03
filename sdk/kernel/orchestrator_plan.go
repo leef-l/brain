@@ -77,6 +77,10 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 	// 4. 按拓扑分层逐层执行
 	for layerIdx, layer := range plan.ParallelLayers {
 		if ctx.Err() != nil {
+			// Replan 路径:层间 ctx cancel 时,把仍处于 running 的 SubTask 标记
+			// PlanTaskInterrupted + 写 AbortReason,供 ReplanSnapshot 使用。
+			// 已被 DelegateBatch 完成的 SubTask(Completed/Failed)状态不动。
+			markRunningTasksInterrupted(plan, ctxAbortReason(ctx))
 			break
 		}
 
@@ -397,6 +401,40 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 		Results:        allResults,
 		Duration:       duration,
 	}, nil
+}
+
+// markRunningTasksInterrupted 把所有 Status=Running 的 SubTask 标记为 Interrupted,
+// 供 Replan 路径感知"哪些任务被中途打断"。
+//
+// 不修改 Completed / Failed 任务(它们已经定型)。
+// AbortReason 来自 ctx.Cause(Go 1.20+ 的 context.WithCancelCause 派生)。
+func markRunningTasksInterrupted(plan *TaskPlan, reason string) {
+	if plan == nil {
+		return
+	}
+	now := time.Now()
+	for i := range plan.SubTasks {
+		if plan.SubTasks[i].Status == PlanTaskRunning {
+			plan.SubTasks[i].Status = PlanTaskInterrupted
+			plan.SubTasks[i].AbortReason = reason
+			plan.SubTasks[i].CompletedAt = &now
+		}
+	}
+}
+
+// ctxAbortReason 从 ctx.Cause 提取 cancel 原因字符串。
+// Go 1.20+ 支持 context.WithCancelCause / context.Cause。
+// 对于普通 ctx.Cancel(),返回 "context canceled"。
+// PlanOrchestrator.replan 路径用 context.WithCancelCause(parent, ReplanCause{...}) 派生。
+func ctxAbortReason(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	cause := context.Cause(ctx)
+	if cause == nil {
+		return "ctx_canceled"
+	}
+	return cause.Error()
 }
 
 // retryFailedTasks 重试本层中失败的任务。
