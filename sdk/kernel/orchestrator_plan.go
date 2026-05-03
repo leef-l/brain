@@ -78,9 +78,10 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 	for layerIdx, layer := range plan.ParallelLayers {
 		if ctx.Err() != nil {
 			// Replan 路径:层间 ctx cancel 时,把仍处于 running 的 SubTask 标记
-			// PlanTaskInterrupted + 写 AbortReason,供 ReplanSnapshot 使用。
-			// 已被 DelegateBatch 完成的 SubTask(Completed/Failed)状态不动。
-			markRunningTasksInterrupted(plan, ctxAbortReason(ctx))
+			// PlanTaskInterrupted + 写 AbortReason + 从 PartialFilesTracker 提取
+			// 已写入但未完成的文件路径。已被 DelegateBatch 完成的 SubTask
+			//(Completed/Failed)状态不动。
+			o.markRunningTasksInterrupted(plan, ctxAbortReason(ctx))
 			break
 		}
 
@@ -243,6 +244,12 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 				plan.UpdateTaskStatus(taskID, PlanTaskCompleted)
 				totalCompleted++
 
+				// 任务正常完成,清掉 PartialFilesTracker 累积(节省内存)。
+				// task 失败也清(用户没必要 /restore 失败 task 的部分输出)。
+				if o.partialFiles != nil {
+					o.partialFiles.Clear(taskID)
+				}
+
 				// 设置子任务结果
 				subTask.Result = &PlanTaskResult{
 					Output: string(result.Output),
@@ -313,6 +320,12 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 					// 不再重试，标记失败
 					plan.UpdateTaskStatus(taskID, PlanTaskFailed)
 					totalFailed++
+
+					// 失败 task 也清 PartialFilesTracker(用户不应 /restore 失败 task 的部分输出,
+					// 那只会让 LLM 再次困惑)
+					if o.partialFiles != nil {
+						o.partialFiles.Clear(taskID)
+					}
 
 					subTask.Result = &PlanTaskResult{
 						Output: errMsg,
@@ -408,7 +421,11 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 //
 // 不修改 Completed / Failed 任务(它们已经定型)。
 // AbortReason 来自 ctx.Cause(Go 1.20+ 的 context.WithCancelCause 派生)。
-func markRunningTasksInterrupted(plan *TaskPlan, reason string) {
+//
+// 同时从 Orchestrator.partialFiles tracker 读出每个被中断 task 写过的文件路径,
+// 填入 SubTask.PartialFiles,供 PlanOrchestrator.snapshotState 备份用。
+// Orchestrator nil 时退化为单纯标记(测试场景兼容)。
+func (o *Orchestrator) markRunningTasksInterrupted(plan *TaskPlan, reason string) {
 	if plan == nil {
 		return
 	}
@@ -418,6 +435,26 @@ func markRunningTasksInterrupted(plan *TaskPlan, reason string) {
 			plan.SubTasks[i].Status = PlanTaskInterrupted
 			plan.SubTasks[i].AbortReason = reason
 			plan.SubTasks[i].CompletedAt = &now
+
+			// 从 PartialFilesTracker 提取已写文件路径
+			if o != nil && o.partialFiles != nil {
+				files := o.partialFiles.Get(plan.SubTasks[i].TaskID)
+				if len(files) > 0 {
+					// 合并已有 PartialFiles(防止覆盖之前累积值)
+					existing := plan.SubTasks[i].PartialFiles
+					seen := make(map[string]bool, len(existing))
+					for _, p := range existing {
+						seen[p] = true
+					}
+					for _, p := range files {
+						if !seen[p] {
+							existing = append(existing, p)
+							seen[p] = true
+						}
+					}
+					plan.SubTasks[i].PartialFiles = existing
+				}
+			}
 		}
 	}
 }

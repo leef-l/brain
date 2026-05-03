@@ -49,6 +49,48 @@ func orchEventBus(orch *kernel.Orchestrator) events.EventBus {
 	return orch.EventBus
 }
 
+// buildProjectStatusLine 构造 chat REPL 顶部固定的一行项目级进度展示。
+//
+// 显示场景(都满足才显示):
+//   - 已选项目模式(state.CurrentProject != nil)
+//   - PlanRunner 已构造且有正在跑的 plan(CurrentSnapshot.Empty == false)
+//
+// 输出格式: "📊 项目X v2 | 阶段:executing | ✓3 ⟳2 ○4 ✗0 (45%)"
+//
+// 性能:每次 RenderPromptFrame 都调一次,但读 CurrentSnapshot 用 RWMutex
+// 读锁 + 数据 copy,开销极小。
+func buildProjectStatusLine(state *State) string {
+	if state == nil || state.CurrentProject == nil || state.IsNoProject {
+		return ""
+	}
+	if state.PlanRunner == nil {
+		return ""
+	}
+	po := state.PlanRunner.PlanOrch()
+	if po == nil {
+		return ""
+	}
+	snap := po.CurrentSnapshot()
+	if snap.Empty {
+		return ""
+	}
+
+	versionPart := ""
+	if snap.Version > 1 {
+		// v1 是初始,v2+ 表示经历过 replan
+		versionPart = fmt.Sprintf(" v%d", snap.Version)
+	}
+	phase := string(snap.Phase)
+	if phase == "" {
+		phase = string(snap.Status)
+	}
+	return fmt.Sprintf("\033[2m📊 %s%s | %s | ✓%d ⟳%d ○%d ✗%d (%.0f%%)\033[0m",
+		state.CurrentProject.Name, versionPart, phase,
+		len(snap.CompletedTasks), len(snap.RunningTasks),
+		len(snap.PendingTasks), len(snap.FailedTasks),
+		snap.OverallPercent)
+}
+
 // dispatchResult 表示分诊后选择的动作,主要供 chat REPL 决定是否需要刷新 UI
 // 或提示用户。
 type dispatchResult struct {
@@ -117,7 +159,8 @@ func dispatchUserInput(state *State, input string, eventBus events.EventBus, lau
 	case kernel.RelevanceModification:
 		// 缓冲 + cooldown:连续 modification 合并成一次 replan
 		enqueueModificationToBuffer(state, input)
-		res.Hint = fmt.Sprintf("[modification] 已收到修改请求,%ds 内合并后重新规划",
+		res.Hint = fmt.Sprintf("[modification] 已收到修改请求,%ds 内合并后重新规划\n"+
+			"  (中断时未完成文件会备份到 .brain/partial/<task_id>/,可用 /restore 恢复)",
 			int(replanCooldown.Seconds()))
 		// 触发 cooldown 定时器(已存在则重置)
 		armReplanCooldown(state, eventBus)
@@ -140,20 +183,39 @@ func dispatchUserInput(state *State, input string, eventBus events.EventBus, lau
 	return res
 }
 
-// buildRelevanceContext 从 state 构造分类器需要的上下文(plan goal +
-// running task names + completed task names)。
+// buildRelevanceContext 从 state 构造分类器需要的上下文。
 //
-// 数据来源:
-//   - state.PlanRunner.PlanOrch().Plan(...) 当前是 nil,因为 PlanOrchestrator 把 plan
-//     存在 ExecuteProjectWithReplan 内部局部变量,无法外部读取。
-//   - 折衷:从 ProjectMemory 检索 "decision" 类型记忆作为 plan goal 近似
-//   - 后续 PR 改 PlanOrchestrator 暴露 currentPlan 引用
+// 数据来源(优先级从高到低):
+//   1. PlanOrchestrator.CurrentSnapshot — 真实 plan.SubTasks 状态分桶
+//   2. ActiveRuns — 兜底,只有 input 文本不知道任务名
+//
+// LLM 兜底分类时这些字段进 system prompt,信息越准分类越靠谱。
 func buildRelevanceContext(state *State) kernel.RelevanceContext {
 	rctx := kernel.RelevanceContext{}
 	if state.CurrentProject != nil {
 		rctx.PlanGoal = state.CurrentProject.Name
 	}
-	// 从 ActiveRuns 读 input 作为 RunningTaskNames(轮廓信息)
+
+	// 优先从 PlanOrchestrator 拿真实 plan 状态
+	if state.PlanRunner != nil {
+		if po := state.PlanRunner.PlanOrch(); po != nil {
+			snap := po.CurrentSnapshot()
+			if !snap.Empty {
+				if snap.Goal != "" {
+					rctx.PlanGoal = snap.Goal
+				}
+				for _, t := range snap.RunningTasks {
+					rctx.RunningTaskNames = append(rctx.RunningTaskNames, t.Name+" ("+t.Kind+")")
+				}
+				for _, t := range snap.CompletedTasks {
+					rctx.CompletedTaskNames = append(rctx.CompletedTaskNames, t.Name)
+				}
+				return rctx
+			}
+		}
+	}
+
+	// 兜底:从 ActiveRuns 读 input 作为 RunningTaskNames(轮廓)
 	state.RunsMu.Lock()
 	for _, h := range state.ActiveRuns {
 		if h != nil && h.Input != "" {
@@ -251,17 +313,25 @@ func publishRefineHint(eventBus events.EventBus, projectID, hint string) {
 
 // renderProjectStatusSummary 即时打印项目级进度摘要(StatusQuery 触发)。
 //
-// 数据来源:
-//   - state.ActiveRuns(当前正在跑的 run 列表)
-//   - state.PlanRunner 不暴露 ProjectProgress(PlanOrchestrator 内部),
-//     第一版只渲染 ActiveRuns + ProjectMemory 摘要
-//   - 后续 PR:PlanOrchestrator 暴露 currentProgress 接口
+// 优先用 PlanOrchestrator.CurrentSnapshot 获得真实 plan 状态分桶;
+// 没有正在跑的 plan(snapshot.Empty)则退化到 ActiveRuns 视图。
 func renderProjectStatusSummary(state *State) string {
 	var b strings.Builder
 	if state.CurrentProject != nil {
 		b.WriteString(fmt.Sprintf("📊 项目: %s\n", state.CurrentProject.Name))
 	}
 
+	// 尝试从 PlanOrchestrator 拿真实快照
+	if state.PlanRunner != nil {
+		if po := state.PlanRunner.PlanOrch(); po != nil {
+			snap := po.CurrentSnapshot()
+			if !snap.Empty {
+				return renderPlanSnapshot(state, snap)
+			}
+		}
+	}
+
+	// 兜底:渲染 ActiveRuns
 	state.RunsMu.Lock()
 	if len(state.ActiveRuns) == 0 {
 		b.WriteString("  当前无任务运行\n")
@@ -285,5 +355,37 @@ func renderProjectStatusSummary(state *State) string {
 		b.WriteString("  (输入 \"继续\" 恢复未完成任务)\n")
 	}
 
+	return b.String()
+}
+
+// renderPlanSnapshot 把 PlanSnapshot 渲染为可读 chat 输出。
+func renderPlanSnapshot(state *State, snap kernel.PlanSnapshot) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("📊 项目: %s\n", state.CurrentProject.Name))
+	b.WriteString(fmt.Sprintf("   计划 v%d  状态 %s  阶段 %s  完成度 %.0f%%\n",
+		snap.Version, snap.Status, snap.Phase, snap.OverallPercent))
+	b.WriteString(fmt.Sprintf("   ✓ 完成 %d  ⟳ 进行 %d  ○ 待执行 %d  ✗ 失败 %d\n",
+		len(snap.CompletedTasks), len(snap.RunningTasks), len(snap.PendingTasks), len(snap.FailedTasks)))
+
+	if len(snap.CompletedTasks) > 0 {
+		b.WriteString("   已完成:\n")
+		for _, t := range snap.CompletedTasks {
+			b.WriteString(fmt.Sprintf("     ✓ %s (%s)\n", t.Name, t.Kind))
+		}
+	}
+	if len(snap.RunningTasks) > 0 {
+		b.WriteString("   正在做:\n")
+		for _, t := range snap.RunningTasks {
+			b.WriteString(fmt.Sprintf("     ⟳ %s (%s)\n", t.Name, t.Kind))
+		}
+	}
+	if len(snap.PendingTasks) > 0 && len(snap.PendingTasks) <= 5 {
+		b.WriteString("   等待执行:\n")
+		for _, t := range snap.PendingTasks {
+			b.WriteString(fmt.Sprintf("     ○ %s (%s)\n", t.Name, t.Kind))
+		}
+	} else if len(snap.PendingTasks) > 5 {
+		b.WriteString(fmt.Sprintf("   等待执行: %d 个任务\n", len(snap.PendingTasks)))
+	}
 	return b.String()
 }

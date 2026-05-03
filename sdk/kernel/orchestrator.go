@@ -187,6 +187,11 @@ type Orchestrator struct {
 	// 之后不再变更,无并发写需求,放在 mu 之外读裸字段。
 	defaultExecution *executionpolicy.ExecutionSpec
 
+	// partialFiles 通过订阅 brain/progress 事件流累积每个 sub agent 写过的文件路径,
+	// 供 PlanOrchestrator.snapshotState 在 Replan 时填充 SubTask.PartialFiles。
+	// 自动启用(无需注入),不可为 nil — 在 NewOrchestratorWithConfig 初始化。
+	partialFiles *PartialFilesTracker
+
 	mu sync.Mutex
 
 	// engineMu 保护 contextEngine 和 reviewLoop 的并发读写。
@@ -272,6 +277,7 @@ func NewOrchestratorWithConfig(runner BrainRunner, llmProxy *LLMProxy, binResolv
 		available:                 make(map[agent.Kind]bool),
 		registrations:             make(map[agent.Kind]*BrainRegistration),
 		reverseHandlersRegistered: make(map[protocol.BidirRPC]struct{}),
+		partialFiles:              NewPartialFilesTracker(),
 	}
 
 	if len(cfg.Brains) > 0 {
@@ -1157,9 +1163,13 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, s
 	}
 
 	// Build brain/execute payload.
+	// execution_id 用 task_id 作为关联 ID,sidecar 通过 brain/progress 反向 RPC
+	// 把工具调用 / LLM 流式事件 / fs_write 路径回传时携带此 ID,host 据此把事件
+	// 路由到对应 SubTask(填 PartialFiles / 实时进度等)。
 	payload := map[string]interface{}{
-		"task_id":     req.TaskID,
-		"instruction": req.Instruction,
+		"task_id":      req.TaskID,
+		"execution_id": req.TaskID,
+		"instruction":  req.Instruction,
 	}
 	if assembledContext != nil {
 		payload["context"] = assembledContext
@@ -1474,6 +1484,23 @@ func (o *Orchestrator) registerReverseHandlers(rpc protocol.BidirRPC, callerKind
 		if h != nil {
 			h(ctx, string(callerKind), params)
 		}
+		// Replan 路径:tool_start 事件命中 fs_write 类工具时,把文件路径累积到
+		// PartialFilesTracker。abort 触发后 snapshotState 据此填 SubTask.PartialFiles。
+		// task_id == execution_id == DelegateRequest.TaskID(orchestrator.go Delegate
+		// payload 同时传 task_id 和 execution_id)。
+		if o.partialFiles != nil {
+			var ptr struct {
+				Kind        string          `json:"kind"`
+				ExecutionID string          `json:"execution_id,omitempty"`
+				ToolName    string          `json:"tool_name,omitempty"`
+				Args        json.RawMessage `json:"args,omitempty"`
+			}
+			if err := json.Unmarshal(params, &ptr); err == nil &&
+				ptr.Kind == "tool_start" && ptr.ExecutionID != "" && ptr.ToolName != "" {
+				o.partialFiles.Record(ptr.ExecutionID, ptr.ToolName, ptr.Args)
+			}
+		}
+
 		if o.EventBus != nil {
 			var ev struct {
 				Kind        string `json:"kind"`

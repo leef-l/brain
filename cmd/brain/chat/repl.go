@@ -394,7 +394,13 @@ func RunChat(args []string) int {
 		for _, a := range activities {
 			acts = append(acts, a)
 		}
-		return BuildPromptHeaderLines(acts, state.QueueDisplayLines(), state.AnyRunning(), completions)
+		base := BuildPromptHeaderLines(acts, state.QueueDisplayLines(), state.AnyRunning(), completions)
+		// Replan 路径:项目模式 + 有正在跑的 plan 时,头部加一行项目级进度。
+		// 数据从 PlanOrchestrator.CurrentSnapshot 拿(线程安全 + 实时反映 plan 状态)。
+		if statusLine := buildProjectStatusLine(state); statusLine != "" {
+			base = append([]string{statusLine}, base...)
+		}
+		return base
 	}
 	RenderPromptFrame(session, state.Mode, providerSession.Name, providerSession.Model, e.Workdir, promptHeaderLines(), state.AnyRunning())
 

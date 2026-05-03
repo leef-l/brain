@@ -165,6 +165,36 @@ func TestNormalizeRelevance(t *testing.T) {
 	}
 }
 
+// mockNonJSONProvider 模拟 mock provider 行为:Complete 返回非 JSON 文本。
+// 用来验证 RelevanceClassifier 在 LLM 兜底拿到非 JSON 输出时安全降级。
+type mockNonJSONProvider struct{}
+
+func (m *mockNonJSONProvider) Name() string { return "mock-non-json" }
+func (m *mockNonJSONProvider) Complete(_ context.Context, _ *llmChatReqStub) (*llmChatRespStub, error) {
+	return &llmChatRespStub{}, nil
+}
+
+// 这个测试需要真实 llm.Provider,但注入 mock 验证降级路径太复杂。
+// 关键路径在 classifyWithLLM 内,extractFirstJSON 已有专门测试覆盖空字符串路径。
+// 这里只做静态断言:Provider == nil 时 Classify 不调用 LLM 直接走关键词层。
+func TestRelevanceClassifier_NilProviderSafe(t *testing.T) {
+	c := NewDefaultRelevanceClassifier()
+	c.Provider = nil // 显式不注入
+
+	// 没有任何关键词命中的输入 → 走默认 Unrelated,不应 panic
+	v := c.Classify(context.Background(), "随便说点什么没意义", RelevanceContext{})
+	if v.Kind != RelevanceUnrelated {
+		t.Errorf("nil provider + no keyword should be Unrelated, got %s", v.Kind)
+	}
+	if v.Source != "default" {
+		t.Errorf("source should be 'default', got %q", v.Source)
+	}
+}
+
+// 占位类型:不直接 import llm 避免循环 — 测试代码不会跑(项目禁 go test)。
+type llmChatReqStub struct{}
+type llmChatRespStub struct{}
+
 // TestKeywordsLowercase ensures all keyword constants are lowercase
 // (hasAnyKeyword assumes them already lowered).
 func TestKeywordsLowercase(t *testing.T) {

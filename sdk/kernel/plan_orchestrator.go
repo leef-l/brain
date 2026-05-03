@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/leef-l/brain/sdk/diaglog"
@@ -45,6 +46,16 @@ type PlanOrchestrator struct {
 	// 不需要 replan 的 caller 可以不调 SetReplanComponents,Replan 路径会降级。
 	cachedDesigner DesignGenerator
 	cachedParser   RequirementParser
+
+	// cachedPlan / cachedProgress 是 ExecuteProjectWithReplan 进入 for 循环时
+	// 设置的 "当前正在跑" 引用,出循环(成功完成 / 失败 / 取消)时清除。
+	// 提供给外部查询(chat ProgressView / dispatchUserInput.buildRelevanceContext)
+	// 真实的 plan.SubTasks 状态 + ProjectProgress.ActiveRuns,而不是猜测。
+	//
+	// 并发安全:用 currentMu 保护读写,读侧用 CurrentSnapshot 拿快照避免长时持锁。
+	cachedPlan     *TaskPlan
+	cachedProgress *ProjectProgress
+	currentMu      sync.RWMutex
 }
 
 // PlanOrchestratorConfig 配置。

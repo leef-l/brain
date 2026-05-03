@@ -95,8 +95,15 @@ func (po *PlanOrchestrator) ExecuteProjectWithReplan(ctx context.Context, plan *
 		consecutiveReplanErrors int
 	)
 
+	// 标记当前正在跑的 plan/progress,供 chat REPL 通过 CurrentSnapshot 查询。
+	// 出 for 循环(成功完成 / 失败 / 取消)时清除。
+	po.setCurrent(plan, progress)
+	defer po.clearCurrent()
+
 	// for 循环跑 ExecuteTaskPlan,允许 replan 多次
 	for {
+		// 每轮把 cachedPlan 更新为最新引用(replan 后 plan 已被替换)
+		po.setCurrent(plan, progress)
 		// 派生可被 replan 取消的 runCtx
 		runCtx, cancel := context.WithCancelCause(ctx)
 
@@ -645,6 +652,112 @@ func isExistingTask(taskID string, snap *ReplanSnapshot) bool {
 		}
 	}
 	return false
+}
+
+// PlanSnapshot 是 PlanOrchestrator.CurrentSnapshot() 返回的轻量只读视图。
+//
+// 给 chat REPL ProgressView / dispatchUserInput.buildRelevanceContext 用,
+// 让它们不必持有 plan / progress 的引用,避免修改时数据竞争。
+//
+// 字段集与 ReplanSnapshot 类似但更简化(不带 MemoryHints / OutputSummary 等)。
+type PlanSnapshot struct {
+	PlanID         string            `json:"plan_id"`
+	ProjectID      string            `json:"project_id"`
+	Goal           string            `json:"goal"`
+	Version        int               `json:"version"`
+	Status         PlanStatus        `json:"status"`
+	Phase          ProjectPhase      `json:"phase"`
+	OverallPercent float64           `json:"overall_percent"`
+	CompletedTasks []SubTaskBrief    `json:"completed_tasks"`
+	RunningTasks   []SubTaskBrief    `json:"running_tasks"`
+	PendingTasks   []SubTaskBrief    `json:"pending_tasks"`
+	FailedTasks    []SubTaskBrief    `json:"failed_tasks"`
+	Empty          bool              `json:"empty"` // true 表示 PlanOrchestrator 当前没在跑 plan
+}
+
+// SubTaskBrief 是 PlanSnapshot 中的轻量 SubTask 视图。
+type SubTaskBrief struct {
+	TaskID string         `json:"task_id"`
+	Name   string         `json:"name"`
+	Kind   string         `json:"kind"`
+	Status PlanTaskStatus `json:"status"`
+}
+
+// CurrentSnapshot 返回当前正在执行的 plan + progress 的只读快照。
+// 没有正在执行的 plan 时返回 PlanSnapshot{Empty: true}。
+//
+// 并发安全:用 currentMu 读锁,数据全部 copy,调用方可任意持有/序列化。
+func (po *PlanOrchestrator) CurrentSnapshot() PlanSnapshot {
+	if po == nil {
+		return PlanSnapshot{Empty: true}
+	}
+	po.currentMu.RLock()
+	plan := po.cachedPlan
+	progress := po.cachedProgress
+	po.currentMu.RUnlock()
+
+	if plan == nil {
+		return PlanSnapshot{Empty: true}
+	}
+
+	snap := PlanSnapshot{
+		PlanID:    plan.PlanID,
+		ProjectID: plan.ProjectID,
+		Goal:      plan.Goal,
+		Version:   plan.Version,
+		Status:    plan.Status,
+	}
+
+	for _, st := range plan.SubTasks {
+		brief := SubTaskBrief{
+			TaskID: st.TaskID,
+			Name:   st.Name,
+			Kind:   string(st.Kind),
+			Status: st.Status,
+		}
+		switch st.Status {
+		case PlanTaskCompleted:
+			snap.CompletedTasks = append(snap.CompletedTasks, brief)
+		case PlanTaskRunning:
+			snap.RunningTasks = append(snap.RunningTasks, brief)
+		case PlanTaskFailed:
+			snap.FailedTasks = append(snap.FailedTasks, brief)
+		default:
+			// pending / blocked / interrupted / cancelled 都归类为 "未完成可继续"
+			snap.PendingTasks = append(snap.PendingTasks, brief)
+		}
+	}
+
+	if progress != nil {
+		ps := progress.Snapshot()
+		snap.Phase = ps.Phase
+		snap.OverallPercent = ps.OverallPercent
+	}
+
+	return snap
+}
+
+// setCurrent 标记当前正在跑的 plan + progress(进入 for 循环时调)。
+// ExecuteProjectWithReplan 内部使用。
+func (po *PlanOrchestrator) setCurrent(plan *TaskPlan, progress *ProjectProgress) {
+	if po == nil {
+		return
+	}
+	po.currentMu.Lock()
+	po.cachedPlan = plan
+	po.cachedProgress = progress
+	po.currentMu.Unlock()
+}
+
+// clearCurrent 清除"当前正在跑"标记(出 for 循环时调)。
+func (po *PlanOrchestrator) clearCurrent() {
+	if po == nil {
+		return
+	}
+	po.currentMu.Lock()
+	po.cachedPlan = nil
+	po.cachedProgress = nil
+	po.currentMu.Unlock()
 }
 
 func replanReasonText(req *ReplanRequest) string {
