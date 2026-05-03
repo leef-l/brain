@@ -139,7 +139,16 @@ func RunChat(args []string) int {
 			}
 
 			leaseManager := kernel.NewMemLeaseManager()
-			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver()}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
+			// Workdir 关键:让 sidecar 进程 cwd = 用户的工作目录,
+			// LLM 写相对路径(a.js)能落到用户目录而不是父进程 cwd。
+			// 优先用 -workdir flag,空时 fallback 当前进程 cwd。
+			sidecarWorkdir := *workDir
+			if sidecarWorkdir == "" {
+				if cwd, err := os.Getwd(); err == nil {
+					sidecarWorkdir = cwd
+				}
+			}
+			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver(), Workdir: sidecarWorkdir}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 				kernel.WithLearningEngine(learner),
 				kernel.WithContextEngine(ctxEngine),

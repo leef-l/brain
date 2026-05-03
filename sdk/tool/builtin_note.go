@@ -71,8 +71,8 @@ func (t *NoteTool) Schema() Schema {
 		Name: t.Name(),
 		Description: "Private scratchpad for tracking your own TODOs across turns. " +
 			"DOES NOT create files, run commands, or do any real work. User cannot see note contents. " +
-			"If user asks you to 'do/build/make X', calling note alone leaves nothing done — " +
-			"you must also call delegate or submit_workflow. " +
+			"Do not stop a task with only note calls — pair note with the actual action tools you have " +
+			"(e.g. write_file/edit_file/shell_exec for code brain; delegate/submit_workflow for central). " +
 			"Actions: add, update, done, list, clear. In-memory, lost on sidecar restart.",
 		InputSchema: json.RawMessage(`{
   "type": "object",

@@ -186,7 +186,8 @@ func RunRun(args []string, deps RunDeps) int {
 			}
 
 			leaseManager := kernel.NewMemLeaseManager()
-			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver()}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
+			// Workdir:见 chat/repl.go 同样位置注释。让 sidecar 写相对路径落到用户目录。
+			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver(), Workdir: e.Workdir}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 				kernel.WithLearningEngine(learner),
 				kernel.WithContextEngine(ctxEngine),

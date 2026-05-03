@@ -45,6 +45,12 @@ type ProcessRunner struct {
 	// Args are optional extra argv entries passed to the sidecar process.
 	Args []string
 
+	// Workdir 是 sidecar 进程的工作目录。
+	// sidecar 内部 write_file 等工具用 filepath.Abs 解析相对路径,会基于本字段。
+	// 空字符串 = 继承父进程 cwd(默认行为,可能不是用户期望的 workdir)。
+	// chat / run 应明确设此字段为用户传的 -workdir 或 sandbox.Primary()。
+	Workdir string
+
 	// InitTimeout is the deadline for the initialize handshake.
 	// Defaults to 30s per 20-协议规格.md §6.4.
 	InitTimeout time.Duration
@@ -191,7 +197,12 @@ func (r *ProcessRunner) Start(ctx context.Context, kind agent.Kind, desc agent.D
 	// timeout). The handshake still uses the caller ctx via initCtx below.
 	cmd := exec.Command(binPath, r.Args...)
 	cmd.Env = mergeEnvLists(os.Environ(), r.Env)
-	diaglog.Info("process", "starting sidecar", "kind", kind, "argv", binPath, "extra_args", r.Args)
+	// 设 sidecar cwd 为用户的 workdir。空字符串时退回父进程 cwd(向后兼容)。
+	// 不设的话 LLM 写相对路径(a.js)会落到父进程 cwd 下,通常不是用户期望的位置。
+	if r.Workdir != "" {
+		cmd.Dir = r.Workdir
+	}
+	diaglog.Info("process", "starting sidecar", "kind", kind, "argv", binPath, "workdir", cmd.Dir, "extra_args", r.Args)
 
 	// Auto-inject sidecar config paths from ~/.brain/<kind>-brain.yaml
 	// if the corresponding env var is not already set.
