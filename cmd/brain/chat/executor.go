@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/cliruntime"
@@ -262,11 +263,19 @@ func ProjectIDFromContext(ctx context.Context) string {
 // persistChatTurnToProject 把本 turn 的 user + assistant 消息写入 project_conversations
 // 并更新 projects.last_active_at。MACCS Wave 7+ 多项目持久化的核心写入点。
 // 任意失败 silent(stderr 打印),不阻塞主流程。
+//
+// 价值过滤(避免垃圾对话污染项目记忆):
+//   - 用户输入是取消/算了/byebye 等终止意图 → 跳过
+//   - run 既无文件产出又无工具调用 + 用户输入极短(< 8 chars 且无中文实词)→ 跳过
+//   - 用户已经做了 /project save 等显式保存动作不在这里管(那走另一条路径)
 func persistChatTurnToProject(ctx context.Context, state *State, input string, result *loop.RunResult, runErr error) {
 	if state == nil || state.IsNoProject || state.CurrentProject == nil {
 		return
 	}
 	if state.ProjectStore == nil || state.ProjectsStore == nil {
+		return
+	}
+	if !shouldPersistTurn(input, result, runErr) {
 		return
 	}
 	pid := state.CurrentProject.ID
@@ -296,4 +305,47 @@ func persistChatTurnToProject(ctx context.Context, state *State, input string, r
 	if err := state.ProjectsStore.UpdateLastActive(ctx, pid, time.Now()); err != nil {
 		fmt.Fprintf(os.Stderr, "brain chat: update project last_active: %v\n", err)
 	}
+}
+
+// cancelMarkers 是用户输入中表示"取消/算了/退出"的终止意图标记。
+// 命中之一就视为本 turn 不值得持久化(用户已经放弃)。
+var cancelMarkers = []string{
+	"算了", "取消", "撤回", "不要了", "byebye", "bye bye", "退出",
+	"nevermind", "never mind", "cancel", "forget it", "skip it", "abort",
+}
+
+// shouldPersistTurn 判断本 turn 是否值得写到项目记忆。
+// 三个过滤层:
+//  1. 用户取消意图 → 不写
+//  2. 既无 tool_use 又无 assistant 文本(运行直接失败,留下垃圾)→ 不写
+//  3. 单字符 / 短噪音输入(s / n / yes 等)+ 0 工具 → 不写
+func shouldPersistTurn(input string, result *loop.RunResult, runErr error) bool {
+	trimmed := strings.TrimSpace(input)
+	low := strings.ToLower(trimmed)
+
+	// 1. 用户明确取消
+	for _, m := range cancelMarkers {
+		if strings.Contains(low, m) {
+			return false
+		}
+	}
+
+	// 2. run 失败 + 0 工具调用 + 0 assistant 输出 = 完全垃圾
+	if runErr != nil && (result == nil || len(result.FinalMessages) <= 1) {
+		return false
+	}
+
+	// 3. 短噪音输入(单字 s/n/y 等 picker 选项)+ 0 工具 → 不持久化
+	// 8 chars 阈值兼顾英文短语和中文(中文一般 1 字 3 字节)
+	if len(trimmed) < 8 {
+		toolCalls := 0
+		if result != nil {
+			toolCalls = result.Run.Budget.UsedToolCalls
+		}
+		if toolCalls == 0 {
+			return false
+		}
+	}
+
+	return true
 }

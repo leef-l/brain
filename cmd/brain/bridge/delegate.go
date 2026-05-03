@@ -208,22 +208,30 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 	}
 
 	if err != nil {
+		// 明确告诉 LLM next-step:重试 / 换 brain / 报告用户。
+		// 避免 LLM 自己说"我直接写"然后又 announce-without-act。
 		return &tool.Result{
-			Output:  json.RawMessage(fmt.Sprintf(`"delegation error: %s"`, err.Error())),
+			Output: json.RawMessage(fmt.Sprintf(
+				`{"error":"delegation error: %s","retry_hint":"call delegate again with a different brain_id or simpler instruction; if persistent, summarize the failure to the user and ask how to proceed (do NOT silently announce a workaround)"}`,
+				escapeForJSON(err.Error()))),
 			IsError: true,
 		}, nil
 	}
 
 	if result.Status == "rejected" {
 		return &tool.Result{
-			Output:  json.RawMessage(fmt.Sprintf(`"delegation rejected: %s — handle the task yourself"`, result.Error)),
+			Output: json.RawMessage(fmt.Sprintf(
+				`{"error":"delegation rejected: %s","retry_hint":"the target brain refused; try a different brain_id or rephrase the instruction"}`,
+				escapeForJSON(result.Error))),
 			IsError: true,
 		}, nil
 	}
 
 	if result.Status == "failed" {
 		return &tool.Result{
-			Output:  json.RawMessage(fmt.Sprintf(`"subtask failed: %s"`, result.Error)),
+			Output: json.RawMessage(fmt.Sprintf(
+				`{"error":"subtask failed: %s","retry_hint":"call delegate again with a clearer instruction or different brain; if you choose not to retry, explicitly tell the user why instead of announcing a workaround"}`,
+				escapeForJSON(result.Error))),
 			IsError: true,
 		}, nil
 	}
@@ -370,4 +378,15 @@ func estimateDelegateTurnsForRetry(targetKind, instruction string, prevBudget in
 		candidate = prevBudget + 20
 	}
 	return candidate
+}
+
+// escapeForJSON 把字符串转义成可嵌入 JSON 字符串值的形式(去掉反斜杠/引号/换行)。
+// 用于构造 IsError result 的 JSON output,避免 LLM 错误信息中的特殊字符破坏 JSON。
+func escapeForJSON(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil || len(b) < 2 {
+		return s
+	}
+	// json.Marshal 字符串返回带引号的形式 "xxx",去掉两端引号。
+	return string(b[1 : len(b)-1])
 }
