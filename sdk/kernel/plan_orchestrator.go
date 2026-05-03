@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/diaglog"
+	"github.com/leef-l/brain/sdk/persistence"
 )
 
 // PlanOrchestrator 是 Orchestrator 的智能化编排层扩展。
@@ -56,6 +57,21 @@ type PlanOrchestrator struct {
 	cachedPlan     *TaskPlan
 	cachedProgress *ProjectProgress
 	currentMu      sync.RWMutex
+
+	// AuditLogger 可选,SetAuditLogger 注入。Replan 事件(replan.requested/started/
+	// completed/aborted)同时写到 EventBus 和 AuditLogger,确保进程崩溃后能从
+	// brain.db audit_events 表读出 replan 历史(供 Reflection / PatternExtraction
+	// 跨 session 分析"用户最常改什么"等)。
+	auditLogger persistence.AuditLogger
+}
+
+// SetAuditLogger 注入 AuditLogger 启用 Replan 事件持久化。
+// 不调用时 publishReplanEvent 仅写 EventBus(in-memory ring buffer)。
+func (po *PlanOrchestrator) SetAuditLogger(a persistence.AuditLogger) {
+	if po == nil {
+		return
+	}
+	po.auditLogger = a
 }
 
 // PlanOrchestratorConfig 配置。

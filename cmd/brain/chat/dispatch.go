@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,33 @@ import (
 // 期间到达的所有 Modification 文本会被合并成单条,避免用户连发"改 X / 还要改 Y"
 // 触发 replan 风暴(每次 replan 都要 LLM 生成新 plan,代价高)。
 const replanCooldown = 3 * time.Second
+
+// joinModifications 把多条 user modification 文本合并成 LLM 易读的编号列表。
+//
+// 旧实现用 "; " 拼接,LLM 容易把多个独立修改混淆为单个。改成:
+//
+//	"1. xxx\n2. yyy\n3. zzz"
+//
+// design_replan.go buildReplanUserPrompt 模板里【触发原因】段会说明这是
+// "用户连续提出的多条独立修改诉求"。
+func joinModifications(buffer []string) string {
+	if len(buffer) == 0 {
+		return ""
+	}
+	if len(buffer) == 1 {
+		return buffer[0]
+	}
+	var b strings.Builder
+	for i, s := range buffer {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(strconv.Itoa(i + 1))
+		b.WriteString(". ")
+		b.WriteString(strings.TrimSpace(s))
+	}
+	return b.String()
+}
 
 // orchEventBus 安全提取 Orchestrator 的 EventBus,nil orch 返回 nil。
 // chat REPL 把 orch 当成 *kernel.Orchestrator 传进来,nil 时(mock provider 路径)
@@ -243,35 +271,80 @@ func enqueueModificationToBuffer(state *State, text string) {
 //
 // 重置逻辑:每次新 modification 到达都重置定时器,让连续输入"延后"统一处理。
 // 例如 user 在 1s 内连发 3 条修改,只触发 1 次 replan(在最后一条后 3s)。
+//
+// 并发安全(B2 修复):
+// time.AfterFunc 已 fire 进入 flushModificationBuffer 等锁的 timer,Stop() 不能取消。
+// 如果此时 reset 路径创建了新 timer,旧 fire 拿锁后清 nil 会把新 timer 引用清空,
+// 后续 reset 看 nil 又创新 timer = 同一时间窗 2 个 fire = 双 publish。
+//
+// 修法:每个 fire 闭包捕获 selfTimer 引用,fire 内只在 ReplanCooldownTimer == selfTimer
+// 时才清 nil(reset 路径已用新 timer 覆盖时,旧 fire 不会再清新 timer)。
 func armReplanCooldown(state *State, eventBus events.EventBus) {
 	state.ReplanCooldownMu.Lock()
 	defer state.ReplanCooldownMu.Unlock()
 
-	// 已有定时器 → 停止重置
+	// 已有定时器 → 停止重置(Stop 不保证 fire 没在跑,fire 闭包自己判 self 比对)
 	if state.ReplanCooldownTimer != nil {
 		state.ReplanCooldownTimer.Stop()
 	}
 
 	state.ReplanCooldownAt = time.Now()
-	state.ReplanCooldownTimer = time.AfterFunc(replanCooldown, func() {
-		flushModificationBuffer(state, eventBus)
+	var selfTimer *time.Timer
+	selfTimer = time.AfterFunc(replanCooldown, func() {
+		flushModificationBuffer(state, eventBus, selfTimer)
 	})
+	state.ReplanCooldownTimer = selfTimer
 }
 
 // flushModificationBuffer 在 cooldown 末尾被调,合并 buffer 文本发布 replan 事件。
-func flushModificationBuffer(state *State, eventBus events.EventBus) {
+//
+// 副作用(B8):同步把 user 修改写到 ProjectMemory(MemoryDecision),
+// 让用户决策永久落库,跨 session 可被 MemoryRetriever 检索到。
+//
+// caller 是触发 fire 的 timer 引用。仅当 state.ReplanCooldownTimer 仍指向 caller 时
+// 才清 nil(防止 reset 路径已用新 timer 覆盖时把新 timer 引用清空)。
+// caller 为 nil 时(state.Close 等显式 flush 路径)总是清 nil。
+func flushModificationBuffer(state *State, eventBus events.EventBus, caller *time.Timer) {
 	state.ReplanCooldownMu.Lock()
-	if len(state.ModificationBuffer) == 0 {
+	// 自己已被 reset 路径覆盖 → 静默退出,不读 buffer 不发事件
+	// (新 timer 会在 cooldown 后 fire 时处理 buffer,无需重复)
+	if caller != nil && state.ReplanCooldownTimer != caller {
 		state.ReplanCooldownMu.Unlock()
 		return
 	}
-	merged := strings.Join(state.ModificationBuffer, "; ")
+	if len(state.ModificationBuffer) == 0 {
+		// 仅当我是当前 timer 时才清 nil
+		if caller == nil || state.ReplanCooldownTimer == caller {
+			state.ReplanCooldownTimer = nil
+		}
+		state.ReplanCooldownMu.Unlock()
+		return
+	}
+	merged := joinModifications(state.ModificationBuffer)
 	state.ModificationBuffer = nil
-	state.ReplanCooldownTimer = nil
+	if caller == nil || state.ReplanCooldownTimer == caller {
+		state.ReplanCooldownTimer = nil
+	}
 	state.ReplanCooldownMu.Unlock()
 
 	if state.CurrentProject == nil || eventBus == nil {
 		return
+	}
+
+	// B8: 把 user 修改写入 ProjectMemory(MemoryDecision)。这是关键决策记忆,
+	// 跨 session 可被 MemoryRetriever 检索 + ReplanLLM prompt 复用,
+	// 让 LLM 知道项目历史经历过哪些用户中途修改。
+	// 失败 silent 不阻塞 replan 主流程。
+	if state.ProjectMemoryStore != nil {
+		mem := kernel.NewPersistentProjectMemory(state.ProjectMemoryStore)
+		_ = mem.Store(context.Background(), kernel.MemoryEntry{
+			ProjectID:  state.CurrentProject.ID,
+			Type:       kernel.MemoryDecision,
+			Content:    merged,
+			Summary:    "用户中途修改: " + truncateForSummary(merged, 100),
+			Tags:       []string{"user_modification", "replan_trigger"},
+			Importance: 0.8,
+		})
 	}
 
 	req := &kernel.ReplanRequest{
@@ -285,6 +358,16 @@ func flushModificationBuffer(state *State, eventBus events.EventBus) {
 		Type:        kernel.EventReplanRequested,
 		Data:        kernel.MarshalReplanRequest(req),
 	})
+}
+
+// truncateForSummary 给 MemoryEntry.Summary 字段生成短摘要(单行)。
+func truncateForSummary(s string, maxLen int) string {
+	s = strings.ReplaceAll(s, "\n", " | ")
+	s = strings.TrimSpace(s)
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // publishRefineHint 把 Refine 类输入作为 brain.feedback.requested 事件发布,

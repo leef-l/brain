@@ -23,6 +23,7 @@ import (
 
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/loop"
+	"github.com/leef-l/brain/sdk/persistence"
 )
 
 // ErrPlanFallback 是 ExecuteWithInput 在 Parser/Designer 失败时返回的 sentinel,
@@ -49,6 +50,10 @@ type PlanRunner struct {
 	ContextEngine   *kernel.ContextEngineWithMemory
 	ExperienceStore kernel.ExperienceStore
 	PatternExtract  kernel.PatternExtractor
+
+	// AuditLogger 可选,Replan 事件持久化用。chat / serve 启动时从
+	// runtime.Stores.AuditLogger 注入。
+	AuditLogger persistence.AuditLogger
 
 	// 实际编排器(懒构造)
 	planOrch     *kernel.PlanOrchestrator
@@ -245,6 +250,14 @@ func (p *PlanRunner) ensurePlanOrch() error {
 		// 不强制要求 Designer 实现 — DefaultDesignGenerator 已经实现,
 		// 第三方实现没实现时会降级到旧 ExecuteProject 单次执行路径。
 		p.planOrch.SetReplanComponents(p.Designer, p.Parser)
+
+		// 注入 AuditLogger 启用 Replan 事件持久化(写 audit_events 表),
+		// 进程崩溃后能查 replan 历史 + Reflection / PatternExtraction 跨 session 用。
+		// AuditLogger 为 nil 时 publishReplanEvent 仅写 EventBus(in-memory),
+		// 不影响主流程。
+		if p.AuditLogger != nil {
+			p.planOrch.SetAuditLogger(p.AuditLogger)
+		}
 	})
 	return nil
 }

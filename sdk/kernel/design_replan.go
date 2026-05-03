@@ -336,7 +336,15 @@ func buildReplanUserPrompt(in ReplanInput) string {
 	b.WriteString("【触发原因】\n")
 	switch in.Trigger {
 	case TriggerUserModification:
-		b.WriteString(fmt.Sprintf("用户中途要求: \"%s\"\n", in.UserModification))
+		// UserModification 可能是单条或多条编号列表(joinModifications 输出)。
+		// 单条:"改成 SQLite";多条:"1. 改成 SQLite\n2. 前端改用 Vue"。
+		if strings.Contains(in.UserModification, "\n") {
+			b.WriteString("用户连续提出多条独立的修改诉求(请逐条理解并综合调整方案,不是单一指令):\n")
+			b.WriteString(in.UserModification)
+			b.WriteString("\n")
+		} else {
+			b.WriteString(fmt.Sprintf("用户中途要求: \"%s\"\n", in.UserModification))
+		}
 	case TriggerSubFailure:
 		b.WriteString(fmt.Sprintf("子任务出错: %s\n", in.SubError))
 	case TriggerSubFeedback:
@@ -444,15 +452,26 @@ func (g *DefaultDesignGenerator) ToReplanTaskPlan(proposal *DesignProposal, orig
 			RetryPolicy:    RetryPolicy{MaxRetries: 2},
 		}
 
-		if isCompleted {
+		// B9: 设置 ReplanOrigin 标记任务来源,publishReplanCompleted 据此精确计数。
+		// 优先级:
+		//   isCompleted -> kept(已完成保留)
+		//   原 plan 中存在同 task_id -> modified(改了 instruction / kind)
+		//   不在原 plan -> added(新加任务)
+		_, existsInOrig := originalIndex[dt.TaskID]
+		switch {
+		case isCompleted:
+			st.ReplanOrigin = "kept"
 			st.Status = PlanTaskCompleted
-			// 从原 plan 复用 Result
 			if orig, ok := originalIndex[dt.TaskID]; ok && orig.Result != nil {
 				st.Result = orig.Result
 				st.StartedAt = orig.StartedAt
 				now := time.Now()
 				st.CompletedAt = &now
 			}
+		case existsInOrig:
+			st.ReplanOrigin = "modified"
+		default:
+			st.ReplanOrigin = "added"
 		}
 
 		plan.AddSubTask(st)

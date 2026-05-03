@@ -215,7 +215,11 @@ func handlePlanCreate(state *State, prompt string) {
 	execCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
-	result, runErr := reg.planOrch.ExecuteProject(execCtx, plan)
+	// Replan 路线统一入口:用 ExecuteProjectWithReplan 替代旧 ExecuteProject,
+	// 让 /plan 触发的项目级执行也响应 EventReplanRequested 事件
+	// (chat REPL dispatchUserInput 的 Modification 路径会发布)。
+	// designer 不实现 ReplanCapableDesigner 时降级为单次执行,语义不变。
+	result, runErr := reg.planOrch.ExecuteProjectWithReplan(execCtx, plan)
 
 	// 打印执行结果
 	fmt.Printf("\n  \033[1m执行结果\033[0m  project=%s\n", plan.ProjectID)

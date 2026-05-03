@@ -166,6 +166,28 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 				continue
 			}
 
+			// Replan 路径:已完成 task 跳过,不再次派发执行。
+			// ToReplanTaskPlan 把上一轮已完成的 SubTask 复用 Result 并设
+			// Status=PlanTaskCompleted,ExecuteTaskPlan 必须尊重这个状态,
+			// 否则 task 会被重做 + Result 被覆盖,Replan "保留已完成" 语义破产。
+			if subTask.Status == PlanTaskCompleted {
+				diaglog.Info("execute_task_plan", "skip already-completed task (replan)",
+					"plan_id", plan.PlanID,
+					"task_id", taskID,
+				)
+				totalCompleted++
+				resultsMu.Lock()
+				if subTask.Result != nil {
+					allResults[taskID] = &DelegateResult{
+						TaskID: taskID,
+						Status: "completed",
+						Output: []byte(subTask.Result.Output),
+					}
+				}
+				resultsMu.Unlock()
+				continue
+			}
+
 			// 标记任务为 running
 			plan.UpdateTaskStatus(taskID, PlanTaskRunning)
 
@@ -436,7 +458,12 @@ func (o *Orchestrator) markRunningTasksInterrupted(plan *TaskPlan, reason string
 			plan.SubTasks[i].AbortReason = reason
 			plan.SubTasks[i].CompletedAt = &now
 
-			// 从 PartialFilesTracker 提取已写文件路径
+			// 从 PartialFilesTracker 提取已写文件路径,并 Clear 防止跨 replan 累积。
+			//
+			// 跨 replan 场景:newPlan 复用原 taskID(ToReplanTaskPlan),sub 启动后
+			// 又 Record 新文件路径。如果不 Clear,下次 replan 拿到的是
+			// "v1 partial 路径 + v2 partial 路径"混合,RAII 备份会覆盖 v1 已删的文件
+			// (但备份目录用 task_id 同名导致覆盖)→ 修法:Get 完立即 Clear。
 			if o != nil && o.partialFiles != nil {
 				files := o.partialFiles.Get(plan.SubTasks[i].TaskID)
 				if len(files) > 0 {
@@ -454,6 +481,9 @@ func (o *Orchestrator) markRunningTasksInterrupted(plan *TaskPlan, reason string
 					}
 					plan.SubTasks[i].PartialFiles = existing
 				}
+				// 无论 Get 是否返回数据,都 Clear 一次,确保下一轮 plan 同 task 重启时
+				// tracker 从干净状态开始累积。
+				o.partialFiles.Clear(plan.SubTasks[i].TaskID)
 			}
 		}
 	}

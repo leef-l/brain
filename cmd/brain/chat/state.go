@@ -109,6 +109,10 @@ type State struct {
 	CurrentProject     *persistence.ProjectMeta
 	CurrentWorkdir     string  // 通常 = CurrentProject.Workdir,无项目模式时 = os.Getwd()
 	IsNoProject        bool    // true: 无项目模式,本次对话不持久化
+
+	// AuditLogger 注入 PlanRunner 启用 Replan 事件持久化(写 audit_events 表)。
+	// chat 启动时从 chatRuntime.Stores.AuditLogger 注入,nil 时降级仅 EventBus。
+	AuditLogger persistence.AuditLogger
 }
 
 // RunHandle 代表一个正在执行的 run。
@@ -340,10 +344,20 @@ func (s *State) ApproveSandboxEscapeForSession(dir string) {
 // Close 释放 State 持有的会话级资源，应在 chat REPL 退出时 defer 调用。
 //
 // 关闭顺序:
+//   - ReplanCooldownTimer.Stop() 停掉 pending 的 cooldown 定时器,避免 chat
+//     退出后 timer 还 fire 调 flushModificationBuffer 试图发事件到已 GC 的 EventBus。
 //   - PlanRunner.Close() 取消 bgCtx → consumeFeedbackRequests goroutine 退出,
 //     避免 chat 退出后该 goroutine 持续订阅 EventBus 造成永久泄漏。
 //   - RemovePlanRegistry 清 chat /plan slash 命令的注册表。
 func (s *State) Close() {
+	s.ReplanCooldownMu.Lock()
+	if s.ReplanCooldownTimer != nil {
+		s.ReplanCooldownTimer.Stop()
+		s.ReplanCooldownTimer = nil
+	}
+	s.ModificationBuffer = nil
+	s.ReplanCooldownMu.Unlock()
+
 	if s.PlanRunner != nil {
 		s.PlanRunner.Close()
 	}

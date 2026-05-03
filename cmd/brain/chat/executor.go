@@ -216,6 +216,10 @@ func runChatPlanFlow(ctx context.Context, state *State, input, runID string, eve
 	// 用 sync.Once 防止并发 turn 同时构造 PlanRunner 造成 race / 实例覆盖。
 	state.PlanRunnerOnce.Do(func() {
 		state.PlanRunner = agentpipe.NewPlanRunner(state.Orchestrator)
+		// 把 AuditLogger 注入,启用 Replan 事件持久化(写 audit_events 表)。
+		// 必须在 PlanRunner.ensurePlanOrch 调 SetAuditLogger 之前赋值,
+		// 而 ensurePlanOrch 是 lazy 在 ExecuteWithInput 时调,这里赋值时机正确。
+		state.PlanRunner.AuditLogger = state.AuditLogger
 	})
 	projectID := ""
 	if state.CurrentProject != nil && !state.IsNoProject {

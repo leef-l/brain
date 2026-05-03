@@ -290,6 +290,7 @@ func RunChat(args []string) int {
 		state.ProjectsStore = chatRuntime.Stores.ProjectsStore
 		state.ProjectStore = chatRuntime.Stores.ProjectStore
 		state.ProjectMemoryStore = chatRuntime.Stores.ProjectMemoryStore
+		state.AuditLogger = chatRuntime.Stores.AuditLogger
 	}
 	state.CurrentWorkdir = e.Workdir
 

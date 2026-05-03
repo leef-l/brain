@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
@@ -37,6 +38,17 @@ const (
 
 // TaskPlan 是中央大脑制定的结构化执行计划。
 // 包含子任务列表、依赖关系、并行分层、预算和检查点。
+//
+// 并发安全(B3 修复):
+// SubTasks 切片在 ExecuteTaskPlan 期间被多 goroutine 并发读写
+// (UpdateTaskStatus / 失败标记 Result / markRunningTasksInterrupted),
+// 同时 chat REPL 的 PlanOrchestrator.CurrentSnapshot 在另一 goroutine 读 SubTasks。
+// 用 mu sync.RWMutex 保护:写路径(UpdateTaskStatus / SetSubTaskResult / SetSubTaskInterrupted)
+// 持写锁,读路径(SnapshotSubTasks)持读锁 + 深拷贝返回。
+//
+// 历史代码直接 plan.SubTasks[i].X 的写入路径仍在,但都在 ExecuteTaskPlan 单一
+// goroutine 内,与 CurrentSnapshot 唯一的并发读冲突。RWMutex 通过 SnapshotSubTasks
+// 方法把跨 goroutine 读写整流到锁下。
 type TaskPlan struct {
 	PlanID         string              `json:"plan_id"`
 	Version        int                 `json:"version"`
@@ -56,6 +68,10 @@ type TaskPlan struct {
 	// 让所有 sidecar 用同一个 workdir 解析相对路径。
 	Workdir string `json:"workdir,omitempty"`
 	// Interrupt 字段预留：等 interrupt.go (InterruptSignal) 创建后再接入。
+
+	// mu 保护 SubTasks 切片元素的并发读写(Replan 路径 chat 顶部 ProgressView
+	// 拉 CurrentSnapshot 与 ExecuteTaskPlan 改 Status 并发)。零值可用。
+	mu sync.RWMutex `json:"-"`
 }
 
 // PlanSubTask 是 TaskPlan 中的单个子任务。
@@ -78,6 +94,17 @@ type PlanSubTask struct {
 	Result               *PlanTaskResult `json:"result,omitempty"`
 	RetryPolicy          RetryPolicy     `json:"retry_policy"`
 	RetryCount           int             `json:"retry_count"`
+
+	// ReplanOrigin 记录该 SubTask 在 Replan 中的来源(B9 修复 publishReplanCompleted
+	// 误计数)。取值:
+	//   "" / "original" — v1 plan 的原始任务,从未经历 replan
+	//   "kept"          — replan 保留的已完成任务(Status=Completed 复用 Result)
+	//   "modified"      — replan 改了 Instruction / Kind 的已有任务(同 task_id)
+	//   "added"         — replan 新加的任务(LLM 决定的 dt-replan-N)
+	//
+	// publishReplanCompleted 据此精确统计 sub_tasks_added / modified / kept,
+	// 而不是用 task_id 反查(LLM 可能复用 task_id 表示 modify,导致误判)。
+	ReplanOrigin string `json:"replan_origin,omitempty"`
 
 	// PartialFiles 中断时记录已写入但未完成的文件路径。
 	//
@@ -188,8 +215,10 @@ func (p *TaskPlan) AddSubTask(task PlanSubTask) {
 	p.UpdatedAt = time.Now()
 }
 
-// UpdateTaskStatus 更新指定子任务的状态。
+// UpdateTaskStatus 更新指定子任务的状态(加写锁,与 SnapshotSubTasks 互斥)。
 func (p *TaskPlan) UpdateTaskStatus(taskID string, status PlanTaskStatus) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	for i := range p.SubTasks {
 		if p.SubTasks[i].TaskID == taskID {
 			p.SubTasks[i].Status = status
@@ -204,6 +233,29 @@ func (p *TaskPlan) UpdateTaskStatus(taskID string, status PlanTaskStatus) {
 			return
 		}
 	}
+}
+
+// SnapshotSubTasks 返回 SubTasks 切片的深拷贝,供 chat REPL CurrentSnapshot 等
+// 跨 goroutine 读用,与 UpdateTaskStatus / 直接写 SubTasks[i].X 的 ExecuteTaskPlan
+// 路径互斥(RLock)。
+//
+// 调用方持有的副本可任意访问字段,不再受 plan 内部并发影响。
+// PartialFiles / Result 是值拷贝;Result 是 *PlanTaskResult 指针仍指向原对象,
+// 但 ExecuteTaskPlan 完成 task 后不会改 Result(Result 设值 + 不再改),OK。
+func (p *TaskPlan) SnapshotSubTasks() []PlanSubTask {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]PlanSubTask, len(p.SubTasks))
+	for i := range p.SubTasks {
+		out[i] = p.SubTasks[i]
+		// PartialFiles 是 slice,深拷贝避免读端修改影响原始
+		if len(p.SubTasks[i].PartialFiles) > 0 {
+			pf := make([]string, len(p.SubTasks[i].PartialFiles))
+			copy(pf, p.SubTasks[i].PartialFiles)
+			out[i].PartialFiles = pf
+		}
+	}
+	return out
 }
 
 // ComputeParallelLayers 基于 Dependencies 使用 Kahn 算法计算拓扑分层。

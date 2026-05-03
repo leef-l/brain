@@ -31,6 +31,7 @@ import (
 
 	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/events"
+	"github.com/leef-l/brain/sdk/persistence"
 )
 
 const (
@@ -362,15 +363,28 @@ func (po *PlanOrchestrator) snapshotState(
 	}
 
 	// 备份所有中断 SubTask 的 PartialFiles 到 .brain/partial/<task_id>/
-	// 失败 silent(不阻塞 replan,partial 文件仍在原位次优而非阻塞)
+	// 失败处理:从 PartialFiles 列表剔除失败的文件,避免 ReplanLLM 误以为
+	// "这些文件已备份+清理你可以放心改方案" 而生成与残留文件矛盾的指令。
+	// 失败的文件留在工作目录,LLM prompt 看到的 PartialFiles 只列实际已备份的。
 	if plan.Workdir != "" {
 		for i := range snap.InterruptedTasks {
-			if len(snap.InterruptedTasks[i].PartialFiles) == 0 {
+			files := snap.InterruptedTasks[i].PartialFiles
+			if len(files) == 0 {
 				continue
 			}
-			_, _ = BackupPartialFiles(plan.Workdir,
-				snap.InterruptedTasks[i].TaskID,
-				snap.InterruptedTasks[i].PartialFiles)
+			_, errs := BackupPartialFiles(plan.Workdir,
+				snap.InterruptedTasks[i].TaskID, files)
+			if len(errs) > 0 {
+				// 剔除失败的路径,只保留已成功备份(=工作目录已删)的
+				kept := files[:0]
+				for _, p := range files {
+					if _, failed := errs[p]; !failed {
+						// errs key 是 raw 路径,与 files 元素直接比较
+						kept = append(kept, p)
+					}
+				}
+				snap.InterruptedTasks[i].PartialFiles = kept
+			}
 		}
 	}
 
@@ -504,17 +518,29 @@ func (po *PlanOrchestrator) publishReplanStarted(plan *TaskPlan, req *ReplanRequ
 }
 
 // publishReplanCompleted 发布 replan.completed 事件。
+//
+// B9 修复:用 SubTask.ReplanOrigin 字段精确计数,而非 task_id 反查。
+// LLM 路径下 LLM 可能复用原 task_id 表示"修改",也可能给同名任务新生成 ID;
+// 而 ReplanOrigin 由 ToReplanTaskPlan 在转换时确定性设置("kept"/"modified"/"added"),
+// 计数稳定。
 func (po *PlanOrchestrator) publishReplanCompleted(newPlan *TaskPlan, snap *ReplanSnapshot) {
 	added := 0
 	modified := 0
 	kept := 0
 	for _, st := range newPlan.SubTasks {
-		switch st.Status {
-		case PlanTaskCompleted:
+		switch st.ReplanOrigin {
+		case "kept":
 			kept++
+		case "modified":
+			modified++
+		case "added":
+			added++
 		default:
-			// 简化:与 snapshot 中已存在的 task_id 比对决定 modified vs added
-			if isExistingTask(st.TaskID, snap) {
+			// 兼容旧 path / 启发式 generateHeuristic 路径(目前没设 origin):
+			// fallback 到旧逻辑,以 status + task_id 反查推断
+			if st.Status == PlanTaskCompleted {
+				kept++
+			} else if isExistingTask(st.TaskID, snap) {
 				modified++
 			} else {
 				added++
@@ -538,17 +564,36 @@ func (po *PlanOrchestrator) publishReplanAborted(plan *TaskPlan, err error) {
 	})
 }
 
-// publishReplanEvent 是 EventBus.Publish 的 helper,自动序列化 payload。
+// publishReplanEvent 是 EventBus.Publish + AuditLogger.Log 的 helper,
+// 自动序列化 payload。
+//
+// 双写设计(B7 修复):
+//   - EventBus(in-memory ring 10K):chat / SSE 客户端实时订阅,进程级
+//   - AuditLogger(SQLite audit_events 表):跨 session 持久化,Reflection /
+//     PatternExtraction 可读"项目历史经历过几次 replan,各因为什么"
+//
+// 任一未配置时仅写另一个,无错误。
 func (po *PlanOrchestrator) publishReplanEvent(eventType, projectID string, payload map[string]interface{}) {
-	if po.Orchestrator == nil || po.Orchestrator.EventBus == nil {
-		return
-	}
 	data, _ := json.Marshal(payload)
-	po.Orchestrator.EventBus.Publish(context.Background(), events.Event{
-		ExecutionID: projectID,
-		Type:        eventType,
-		Data:        data,
-	})
+	if po.Orchestrator != nil && po.Orchestrator.EventBus != nil {
+		po.Orchestrator.EventBus.Publish(context.Background(), events.Event{
+			ExecutionID: projectID,
+			Type:        eventType,
+			Data:        data,
+		})
+	}
+	if po.auditLogger != nil {
+		// silent 失败:audit 写不进不阻塞 Replan 主流程,只是历史丢失
+		_ = po.auditLogger.Log(context.Background(), &persistence.AuditEvent{
+			EventID:     fmt.Sprintf("%s-%d", eventType, time.Now().UnixNano()),
+			ExecutionID: projectID,
+			EventType:   eventType,
+			Actor:       "plan_orchestrator",
+			Timestamp:   time.Now(),
+			Data:        data,
+			StatusCode:  "ok",
+		})
+	}
 }
 
 // unmarkInterruptedAsRunning 把 Interrupted 状态恢复成 Pending,让下一轮 for
@@ -686,7 +731,10 @@ type SubTaskBrief struct {
 // CurrentSnapshot 返回当前正在执行的 plan + progress 的只读快照。
 // 没有正在执行的 plan 时返回 PlanSnapshot{Empty: true}。
 //
-// 并发安全:用 currentMu 读锁,数据全部 copy,调用方可任意持有/序列化。
+// 并发安全:
+//   - po.currentMu 读锁保护 cachedPlan 指针读取
+//   - plan.SnapshotSubTasks 内部 RLock + 深拷贝,与 ExecuteTaskPlan 写路径
+//     (UpdateTaskStatus / 直接 SubTasks[i].X 写)互斥
 func (po *PlanOrchestrator) CurrentSnapshot() PlanSnapshot {
 	if po == nil {
 		return PlanSnapshot{Empty: true}
@@ -708,7 +756,8 @@ func (po *PlanOrchestrator) CurrentSnapshot() PlanSnapshot {
 		Status:    plan.Status,
 	}
 
-	for _, st := range plan.SubTasks {
+	// 用 SnapshotSubTasks 拿深拷贝,避免与 ExecuteTaskPlan 写路径 race
+	for _, st := range plan.SnapshotSubTasks() {
 		brief := SubTaskBrief{
 			TaskID: st.TaskID,
 			Name:   st.Name,
