@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/llm"
 )
 
 // MACCS Wave 3 — EasyMVP 方案设计接口
@@ -148,7 +149,14 @@ func (p *DesignProposal) ComputeScore() float64 {
 // ---------------------------------------------------------------------------
 
 // DefaultDesignGenerator 是 DesignGenerator 的启发式默认实现。
-type DefaultDesignGenerator struct{}
+//
+// 同时实现 ReplanCapableDesigner(见 design_replan.go),Provider 注入后自动启用 LLM 重规划路径。
+type DefaultDesignGenerator struct {
+	// llmProvider 可选,SetLLMProvider 注入后 GenerateWithModification 走 LLM 路径。
+	// 不在 NewDefaultDesignGenerator 强制要求,保持向后兼容。
+	llmProvider llm.Provider
+	llmModel    string
+}
 
 // NewDefaultDesignGenerator 创建默认方案生成器。
 func NewDefaultDesignGenerator() *DefaultDesignGenerator { return &DefaultDesignGenerator{} }

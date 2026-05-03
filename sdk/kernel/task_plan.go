@@ -78,6 +78,21 @@ type PlanSubTask struct {
 	Result               *PlanTaskResult `json:"result,omitempty"`
 	RetryPolicy          RetryPolicy     `json:"retry_policy"`
 	RetryCount           int             `json:"retry_count"`
+
+	// PartialFiles 中断时记录已写入但未完成的文件路径。
+	//
+	// 触发条件:Replan 期间 ExecuteTaskPlan 收到 ctx cancel,把当前 running
+	// SubTask 的 RunStore.Events 倒序扫一遍,提取最近若干个 fs_write / shell.cd
+	// 相关工具调用涉及的文件路径写入此字段。
+	//
+	// 用途:DesignGenerator.GenerateWithModification 据此决定保留 / 丢弃 partial
+	// 文件;chat REPL 在 Replan 完成后可选择把这些文件备份到 .brain/partial/<runID>/
+	// 然后从工作目录删除,确保新 SubTask 从干净状态开始。
+	PartialFiles []string `json:"partial_files,omitempty"`
+
+	// AbortReason 中断原因。供 ReplanLLM prompt 使用。
+	// 取值:"user_modification" / "sub_failure_retried" / "loop_detected" / "user_cancel" / ""
+	AbortReason string `json:"abort_reason,omitempty"`
 }
 
 // PlanTaskResult 是子任务执行完成后的结果。

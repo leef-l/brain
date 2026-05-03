@@ -762,7 +762,31 @@ func (o *Orchestrator) DelegateBatch(ctx context.Context, batch *DelegateBatchRe
 		}(i, req)
 	}
 
-	wg.Wait()
+	// ctx-aware 等待:正常情况等所有 sub goroutine 完成;ctx cancel 后立即从
+	// select 返回让上层(ExecuteTaskPlan / ReplanLoop)感知 cancel,但底层
+	// goroutine 会继续 join(避免泄漏)— 因为子 goroutine 内的 o.Delegate
+	// 也接受同一个 ctx,会快速失败退出。
+	//
+	// 设计依据:Replan 路径要求 ctx cancel 后 ExecuteTaskPlan 100ms 内能感知,
+	// 用旧的 wg.Wait() 阻塞模式会等本层最慢的 SubTask 走完才返回,违反 Replan
+	// "Stop-the-World"语义。
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// 正常完成
+	case <-ctx.Done():
+		// ctx cancel:子 goroutine 内 Delegate 会自然失败退出
+		// 仍要等 done(让 wg.Done 全部触发,避免 goroutine 泄漏)
+		<-done
+		diaglog.Info("delegate_batch", "batch cancelled by ctx",
+			"count", len(batch.Requests),
+			"duration", time.Since(start),
+		)
+	}
 
 	completed := 0
 	failed := 0
