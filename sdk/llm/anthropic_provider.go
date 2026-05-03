@@ -699,19 +699,27 @@ func (r *sseReader) Close() error {
 }
 
 // newDefaultHTTPClient returns an http.Client with fine-grained timeouts.
-// The total timeout is 180s; connection, TLS handshake, and response-header
-// timeouts are much shorter so that hung API calls fail fast instead of
-// blocking for minutes.
+//
+// Total timeout 0 (disabled):用 ctx 超时控制整体上限,避免 reasoning 模型
+// (mimo / deepseek-reasoner / qwen-reasoner)在思考阶段 server 端不输出
+// 任何字节时被 http.Client.Timeout 切断。
+//
+// ResponseHeaderTimeout 提到 5min:reasoning 模型常见思考 1-3 分钟才开始
+// 流式返回第一个 token,60s 太紧。streaming 启动后真实进度由 SSE 行间隔
+// 控制(readTimeout 30s 见 openai_provider.go:517)。
+//
+// 对话式 / 短回答场景体验:headers 通常 < 5s 返回,长 ResponseHeaderTimeout
+// 不影响快路径。
 func newDefaultHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: 180 * time.Second,
+		Timeout: 0,
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout:   10 * time.Second,
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 60 * time.Second,
+			ResponseHeaderTimeout: 5 * time.Minute,
 			IdleConnTimeout:       180 * time.Second,
 		},
 	}

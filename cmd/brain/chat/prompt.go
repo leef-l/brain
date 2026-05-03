@@ -30,10 +30,10 @@ func BuildSystemPrompt(mode env.PermissionMode, sb *tool.Sandbox) string {
 		b.WriteString("\nAll tool ops require user confirmation. Briefly state intent before each tool call.\n")
 	case env.ModeAcceptEdits:
 		b.WriteString("\nFile edits auto-approved; shell needs confirmation.\n")
-		b.WriteString("If you say 'I will do X', call the tool in the SAME response — text without a tool_use block leaves nothing done.\n")
+		b.WriteString("Self-check: if your text describes an action you'll take, emit the tool_use in this same turn. Text alone does nothing.\n")
 	case env.ModeAuto:
 		b.WriteString("\nSafe ops auto-approved.\n")
-		b.WriteString("If you say 'I will do X', call the tool in the SAME response. When fully done, call task_complete or just reply with text — do not keep checking.\n")
+		b.WriteString("Self-check: if your text describes an action, emit tool_use in this same turn. When fully done, call task_complete or reply with text — don't keep checking.\n")
 	case env.ModeRestricted:
 		b.WriteString("\nRESTRICTED mode. Operate only within explicitly allowed files/operations.\n")
 	case env.ModeBypassPermissions:
@@ -85,7 +85,7 @@ func BuildOrchestratorPrompt(orch *kernel.Orchestrator, reg tool.Registry) strin
 	b.WriteString("- Read for your own understanding → read_file / list_files / search.\n")
 	b.WriteString("- Done → task_complete with summary, then stop.\n\n")
 
-	b.WriteString("ACT NOW: If you say 'I will submit the workflow' / 'now I'll delegate' / '现在提交' / '立刻调用', call the tool IN THE SAME TURN. Saying it without the tool_use block leaves nothing done — the user sees text and thinks you're stuck. Never end a turn with only an announcement.\n")
+	b.WriteString("Self-check before ending a turn: if your text describes an action you intend to take (in any wording), the tool_use block must be in this same response. Text alone changes nothing.\n")
 
 	b.WriteString("Hard rules: never substitute shell_exec curl/wget for browser delegation; pass user-supplied values verbatim (no $placeholders); set render_mode=headed when the user wants to see the browser.\n")
 

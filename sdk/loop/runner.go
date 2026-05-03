@@ -201,9 +201,8 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		}
 	}
 
-	// nudgedAnnouncement:本 Run 内"announce-without-act"兜底 reminder 是否已注入过。
-	// 只触发 1 次,避免对正常聊天回复(如"我建议..." / "你可以试试..." 等无 action 文本)
-	// 反复打扰 LLM。
+	// nudgedAnnouncement:本 Run 是否已注入过 announce-without-act 兜底 reminder。
+	// 单次触发 — nudge 只是安全网,LLM 应该自己学会"说就调"而不是依赖系统反复提醒。
 	var nudgedAnnouncement bool
 
 	for {
@@ -829,27 +828,19 @@ func countTextChars(blocks []llm.ContentBlock) int {
 	return total
 }
 
-// announcePhrases 是 LLM "宣布要做事但其实没调工具"的关键短语。
-// 命中任一即认为本 turn 是"announce-without-act"故障,触发 nudge。
-// 词表保守:只命中明确表达"立即行动"意图的短语,避免误伤"我建议你..."这类正常回复。
+// 注:nudge 只是最低限度的安全网,真正的"说就调"判断应该让 LLM 自己学会
+// (通过 tool description 和 prompt 契约)。这里不维护关键词白名单 — 那是无止境的,
+// 而且会让 LLM 永远依赖兜底而不长进。
+// 触发条件极保守:只对最显式的"我立刻提交工作流"类短语兜底一次,其余靠 LLM 自觉。
 var announcePhrases = []string{
-	// 中文
-	"立刻提交", "立即提交", "现在提交", "马上提交",
-	"立刻调用", "立即调用", "现在调用", "马上调用",
-	"立刻派发", "立即派发", "现在派发",
-	"立刻 delegate", "立即 delegate",
-	"提交工作流", "提交 workflow", "提交workflow",
-	"现在开始派活", "立刻派活",
-	// 英文
+	// 仅保留最明确、最常见的"动手"宣告。其他场景靠 LLM 自己判断。
+	"立刻提交", "立即提交", "现在提交",
+	"提交工作流", "提交 workflow",
 	"i'll submit", "i will submit",
-	"i'll call", "i will call",
-	"i'll delegate", "i will delegate",
-	"now submitting", "now calling", "now delegating",
-	"submitting the workflow", "calling the tool",
-	"let me submit", "let me call", "let me delegate",
+	"submitting the workflow",
+	"now submitting",
 }
 
-// shouldNudgeAnnouncement 检测 LLM 文本是否含"宣告要做事"短语。
 func shouldNudgeAnnouncement(blocks []llm.ContentBlock) bool {
 	var sb strings.Builder
 	for _, b := range blocks {
