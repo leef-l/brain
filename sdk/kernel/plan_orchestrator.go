@@ -127,11 +127,15 @@ func NewPlanOrchestrator(orch *Orchestrator, cfg PlanOrchestratorConfig) *PlanOr
 		po.ReviewLoop = NewReviewLoopController(orch, cfg.ReviewConfig)
 		// MACCS 1.10：把 ReviewLoop 注入回 Orchestrator，让 ExecuteTaskPlan
 		// 在每个子任务成功后调 SubmitReview 拿审核报告写入 subTask.Result.Review。
-		orch.reviewLoop = po.ReviewLoop
+		//
+		// 用 setReviewLoop 走 engineMu 写锁,与 ExecuteTaskPlan 高频读侧并发安全。
+		orch.setReviewLoop(po.ReviewLoop)
 
 		// 接入 ContextEngine：替换底层 Orchestrator 的 contextEngine，使 Delegate
 		// 阶段下游 brain prompt 自动带上项目记忆摘要（ContextEngineWithMemory.Assemble
 		// 会前置 system 消息）。
+		//
+		// SetContextEngine 已加 engineMu 写锁,与 Delegate 读端并发安全。
 		if cfg.ContextEngine != nil {
 			orch.SetContextEngine(cfg.ContextEngine)
 		}
@@ -139,6 +143,8 @@ func NewPlanOrchestrator(orch *Orchestrator, cfg PlanOrchestratorConfig) *PlanOr
 		// 接入 ModelRouter：把所有显式配置同步到 LLMProxy.ModelForKind，
 		// 使后续 Delegate 自动选用正确模型。Resolve 在 ExecuteProject 中按
 		// SubTask.Kind 调用，把决策写入 diaglog 便于审计。
+		//
+		// SyncToLLMProxy 已改用 SetModelForKind 走 LLMProxy.modelMu 写锁。
 		if cfg.ModelRouter != nil {
 			cfg.ModelRouter.SyncToLLMProxy(orch.LLMProxy())
 		}

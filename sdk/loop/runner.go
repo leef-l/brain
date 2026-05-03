@@ -180,6 +180,13 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			}
 		}
 	}()
+	// 跨 turn 共享 LoopDetector(chat 模式)在 Run 结束时必须释放本 run 的 state,
+	// 否则 detector.state map 用 runID 做 key 单调增长 → 长 chat session 内存泄漏。
+	defer func() {
+		if r.LoopDetector != nil && run != nil {
+			r.LoopDetector.Forget(run.ID)
+		}
+	}()
 	now := r.now()
 
 	// Transition pending → running.

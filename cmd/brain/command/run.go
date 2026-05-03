@@ -65,6 +65,11 @@ type ManagedRunExecution struct {
 	SystemPrompt  string
 	EventBus      interface{} // *events.MemEventBus
 	BatchPlanner  interface{} // loop.ToolBatchPlanner
+
+	// Orchestrator 让 run 模式能根据用户输入意图自动分流到 PlanOrchestrator。
+	// 项目级需求(IntentProject)走七阶段闭环;简单单步任务直接 Runner.Execute。
+	// nil 时退化为永远 simple 路径(向后兼容 mock / solo 场景)。
+	Orchestrator *kernel.Orchestrator
 }
 
 type ManagedRunOutcome struct {
@@ -190,11 +195,14 @@ func RunRun(args []string, deps RunDeps) int {
 
 			leaseManager := kernel.NewMemLeaseManager()
 			// Workdir:见 chat/repl.go 同样位置注释。让 sidecar 写相对路径落到用户目录。
+			// WithDefaultExecution 把 host 的 file_policy 注入,确保 PlanOrchestrator
+			// 等派发路径下子 sidecar 继承同一份执行边界(文档 27 §6.2 MUST)。
 			orch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: deps.DefaultBinResolver(), Workdir: e.Workdir}, llmProxy, deps.DefaultBinResolver(), kernel.OrchestratorConfig{},
 				kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 				kernel.WithLearningEngine(learner),
 				kernel.WithContextEngine(ctxEngine),
 				kernel.WithLeaseManager(leaseManager),
+				kernel.WithDefaultExecution(e.ExecutionSpec()),
 			)
 		}
 	}
@@ -309,6 +317,7 @@ func RunRun(args []string, deps RunDeps) int {
 		Stream:        *stream,
 		SystemPrompt:  systemPrompt,
 		BatchPlanner:  batchPlanner,
+		Orchestrator:  orch, // 用于 IntentClassifier → PlanRunner 分流
 	})
 
 	if err != nil {
@@ -373,12 +382,33 @@ func persistRunToProject(ctx context.Context, stores *persistence.ClosableStores
 	_ = stores.ProjectsStore.UpdateLastActive(ctx, p.ID, time.Now())
 }
 
-func failRun(err error, context string) int {
+// budgetExhaustedCodes 是所有 budget 类错误码的集合。
+// 命中任一 → CLI 返回 ExitBudgetExhausted(3),与 27-CLI命令契约 §6.6 + §18 对齐。
+var budgetExhaustedCodes = map[string]struct{}{
+	brainerrors.CodeBudgetTurnsExhausted:     {},
+	brainerrors.CodeBudgetCostExhausted:      {},
+	brainerrors.CodeBudgetToolCallsExhausted: {},
+	brainerrors.CodeBudgetLLMCallsExhausted:  {},
+	brainerrors.CodeBudgetTimeoutExhausted:   {},
+}
+
+func failRun(err error, ctxLabel string) int {
+	// 优先按错误类型决定退出码,与 27 §18 v1 冻结契约对齐:
+	//   2 = canceled       (用户中断 / context.Canceled)
+	//   3 = budget exhausted(任一 budget_* 错误码命中)
+	//   1 = ExitFailed     (其他失败)
+	if errors.Is(err, context.Canceled) {
+		fmt.Fprintf(os.Stderr, "brain run: %s: canceled\n", ctxLabel)
+		return cli.ExitCanceled
+	}
 	var be *brainerrors.BrainError
 	if errors.As(err, &be) {
-		fmt.Fprintf(os.Stderr, "brain run: %s: [%s] %s\n", context, be.ErrorCode, be.Message)
+		fmt.Fprintf(os.Stderr, "brain run: %s: [%s] %s\n", ctxLabel, be.ErrorCode, be.Message)
+		if _, isBudget := budgetExhaustedCodes[be.ErrorCode]; isBudget {
+			return cli.ExitBudgetExhausted
+		}
 	} else {
-		fmt.Fprintf(os.Stderr, "brain run: %s: %v\n", context, err)
+		fmt.Fprintf(os.Stderr, "brain run: %s: %v\n", ctxLabel, err)
 	}
 	return cli.ExitFailed
 }

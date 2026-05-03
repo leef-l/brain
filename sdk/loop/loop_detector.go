@@ -15,6 +15,13 @@ type LoopDetector interface {
 	// multiple Runs, but a single Run's events SHOULD arrive in order.
 	// See 22-Agent-Loop规格.md §9.2.
 	Observe(ctx context.Context, run *Run, event LoopEvent) (LoopVerdict, error)
+
+	// Forget releases all per-Run bookkeeping for runID. Runner MUST call
+	// this when a Run reaches a terminal state, otherwise long-lived
+	// detectors (e.g. chat session 共享 detector 跨 turn 复用)会让 state
+	// map 单调增长 — 每 turn 用新 runID 永远不释放,内存泄漏。
+	// 实现应为多次调用、未知 runID 安全。
+	Forget(runID string)
 }
 
 // LoopEvent is a single observation fed into LoopDetector.Observe. Type

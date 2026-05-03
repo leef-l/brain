@@ -54,9 +54,18 @@ type PackageInstaller struct {
 	// PublicKey 可选的 Ed25519 公钥（32 字节）。
 	// 如果设置，Verify 时会自动检查 .brainpkg.sig 签名。
 	PublicKey []byte
+
+	// AllowUnsigned 控制 PublicKey 配置后是否允许"无 .sig 文件"的包通过校验。
+	//   false (默认安全模式 / 文档 34 §8 MUST):.sig 不存在 → Verify 拒绝
+	//   true  (向后兼容 / 仅过渡期):.sig 不存在 → 跳过签名校验,只查 checksum
+	//
+	// 默认 false 是必须的:历史"软门"逻辑下攻击者只需在打包时省略 .sig 即可
+	// 完全绕过签名校验,违反供应链信任承诺。生产 / Marketplace 路径必须保持 false。
+	AllowUnsigned bool
 }
 
 // NewPackageInstaller 创建一个 PackageInstaller 实例。
+// 默认 AllowUnsigned=false(签名硬门,与 34-Package 规范 §8 MUST 对齐)。
 func NewPackageInstaller() *PackageInstaller {
 	return &PackageInstaller{}
 }
@@ -355,16 +364,27 @@ func (pi *PackageInstaller) Verify(pkgPath string) (*BrainPackage, error) {
 		}
 	}
 
-	// 签名校验：如果配置了公钥且签名文件存在，自动验证签名
+	// 签名校验:配置了公钥后默认 enforce(签名硬门,文档 34 §8 MUST)。
+	// 仅当显式 AllowUnsigned=true 才允许无 .sig 通过 — 历史软门逻辑下攻击者
+	// 只需省略 .sig 即可绕过校验,违反供应链信任承诺,故默认拒绝。
 	if len(pi.PublicKey) > 0 {
 		sigPath := pkgPath + ".sig"
-		if _, sigErr := os.Stat(sigPath); sigErr == nil {
-			// 签名文件存在，执行验证
+		_, sigErr := os.Stat(sigPath)
+		switch {
+		case sigErr == nil:
+			// .sig 存在 → 必须验证通过
 			if verifyErr := VerifyPackageSignature(pkgPath, pi.PublicKey); verifyErr != nil {
 				return nil, fmt.Errorf("package verify: %w", verifyErr)
 			}
+		case os.IsNotExist(sigErr):
+			// .sig 不存在 → 默认拒绝,除非 AllowUnsigned 显式打开
+			if !pi.AllowUnsigned {
+				return nil, fmt.Errorf("package verify: missing signature file %q (set AllowUnsigned=true to bypass; not recommended for production)", sigPath)
+			}
+		default:
+			// 其他 stat 错误(权限 / IO),保守拒绝
+			return nil, fmt.Errorf("package verify: stat signature file: %w", sigErr)
 		}
-		// 签名文件不存在时跳过（向后兼容）
 	}
 
 	return &BrainPackage{

@@ -100,18 +100,18 @@ func (r *ModelRouter) ResolveConfig(kind agent.Kind) *ModelConfig {
 }
 
 // SyncToLLMProxy 将当前路由配置同步到 LLMProxy。
+//
+// 必须经 SetModelForKind 走 LLMProxy 的内部锁;PlanOrchestrator 每次构造都会
+// 调,与 handleComplete/handleStream 的读端并发,直接写裸 map 会 fatal。
 func (r *ModelRouter) SyncToLLMProxy(proxy *LLMProxy) {
 	if proxy == nil {
 		return
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if proxy.ModelForKind == nil {
-		proxy.ModelForKind = make(map[agent.Kind]string)
-	}
 	for kind, cfg := range r.configs {
 		if cfg.PrimaryModel != "" {
-			proxy.ModelForKind[kind] = cfg.PrimaryModel
+			proxy.SetModelForKind(kind, cfg.PrimaryModel)
 		}
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/events"
+	"github.com/leef-l/brain/sdk/executionpolicy"
 	"github.com/leef-l/brain/sdk/flow"
 	"github.com/leef-l/brain/sdk/kernel/mcpadapter"
 	"github.com/leef-l/brain/sdk/llm"
@@ -174,7 +175,26 @@ type Orchestrator struct {
 	// 不进入"fix-and-redo"闭环（那是 PlanOrchestrator 重新生成 plan 的事）。
 	reviewLoop *ReviewLoopController
 
+	// defaultExecution 是 host 注入的"默认执行边界"(workdir + file_policy +
+	// allow_commands + allow_delegate)。Delegate 入口在 req.Execution == nil
+	// 时自动填入,确保 host 的权限策略端到端贯穿到所有 sidecar 派发。
+	//
+	// 文档 27-CLI命令契约 §6.2 MUST:"delegated sidecar 必须继承同一份 workdir
+	// + file_policy 执行边界,不能成为绕过手段"。chat/run 启动时构造 orch 时
+	// 通过 WithDefaultExecution(env.ExecutionSpec()) 注入。
+	//
+	// 注:与 contextEngine / reviewLoop 不同,本字段在 host 启动期一次性设置,
+	// 之后不再变更,无并发写需求,放在 mu 之外读裸字段。
+	defaultExecution *executionpolicy.ExecutionSpec
+
 	mu sync.Mutex
+
+	// engineMu 保护 contextEngine 和 reviewLoop 的并发读写。
+	// PlanOrchestrator 在每次 NewPlanOrchestrator 都会回写这两个字段
+	//(SetContextEngine + reviewLoop = ...),与 Delegate 高频读 contextEngine、
+	// ExecuteTaskPlan 读 reviewLoop 并发,无锁会触发 race / 数据撕裂。
+	// 用独立 RWMutex 避免与 mu(sync.Mutex)的高频短锁竞争。
+	engineMu sync.RWMutex
 }
 
 // Learner returns the attached LearningEngine, or nil if none was configured.
@@ -190,14 +210,35 @@ func (o *Orchestrator) LLMProxy() *LLMProxy {
 
 // ContextEngine 返回当前生效的上下文装配引擎。可能为 nil。
 func (o *Orchestrator) ContextEngine() ContextEngine {
+	o.engineMu.RLock()
+	defer o.engineMu.RUnlock()
 	return o.contextEngine
 }
 
 // SetContextEngine 在运行时替换上下文装配引擎。
 // PlanOrchestrator 在构造时会用 ContextEngineWithMemory 包装现有 engine
 // 后回写，实现"项目记忆自动注入下游 brain prompt"的接入。
+//
+// 并发安全:加 engineMu 写锁,避免与 Delegate 路径上的 contextEngine 读并发
+// 造成 race / 装配错乱。
 func (o *Orchestrator) SetContextEngine(ce ContextEngine) {
+	o.engineMu.Lock()
+	defer o.engineMu.Unlock()
 	o.contextEngine = ce
+}
+
+// getReviewLoop 并发安全读取 reviewLoop。
+func (o *Orchestrator) getReviewLoop() *ReviewLoopController {
+	o.engineMu.RLock()
+	defer o.engineMu.RUnlock()
+	return o.reviewLoop
+}
+
+// setReviewLoop 并发安全写入 reviewLoop。供 WithReviewLoop / PlanOrchestrator 使用。
+func (o *Orchestrator) setReviewLoop(r *ReviewLoopController) {
+	o.engineMu.Lock()
+	defer o.engineMu.Unlock()
+	o.reviewLoop = r
 }
 
 // RegisterMCPTools discovers and registers all MCP brain tools into the given
@@ -267,6 +308,7 @@ type OrchestratorOption func(*Orchestrator)
 // 当设置后，Delegate 在发送消息给下游 brain 之前会调用 Assemble() 装配上下文。
 func WithContextEngine(ce ContextEngine) OrchestratorOption {
 	return func(o *Orchestrator) {
+		// 构造期单 goroutine,无并发,但走统一 setter 保持入口一致。
 		o.contextEngine = ce
 	}
 }
@@ -352,8 +394,34 @@ func WithObservability(h *ObservabilityHub) OrchestratorOption {
 // 写入 subTask.Result.Review。失败 / 异常不阻塞主流程。
 func WithReviewLoop(r *ReviewLoopController) OrchestratorOption {
 	return func(o *Orchestrator) {
+		// 构造期单 goroutine,无并发。
 		o.reviewLoop = r
 	}
+}
+
+// WithDefaultExecution 设置 host 的默认执行边界(workdir + file_policy +
+// allow_commands + allow_delegate)。Delegate 入口在 req.Execution == nil 时
+// 自动填入此默认,使 host 的权限策略端到端贯穿到所有 sidecar 派发,堵住
+// "PlanOrchestrator / ReviewLoop / 直接 Delegate 调用方忘传 Execution → 子
+// sidecar 越过 file_policy 写文件"的安全漏洞。
+//
+// 典型注入点:chat/run/serve 构造 Orchestrator 时调
+//   kernel.WithDefaultExecution(env.ExecutionSpec())
+// 文档 27-CLI命令契约 §6.2 MUST 要求 delegated sidecar 继承同一份执行边界。
+func WithDefaultExecution(spec *executionpolicy.ExecutionSpec) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.defaultExecution = spec
+	}
+}
+
+// SetDefaultExecution 是 WithDefaultExecution 的 setter 形式,允许 host 在
+// Orchestrator 构造之后再注入执行边界(如 chat 模式 Environment 在 orch 之后
+// 创建的场景)。Delegate 调用前必须完成注入,否则失去 file_policy 端到端贯穿。
+func (o *Orchestrator) SetDefaultExecution(spec *executionpolicy.ExecutionSpec) {
+	if o == nil {
+		return
+	}
+	o.defaultExecution = spec
 }
 
 // Chaos 返回当前挂载的混沌引擎，若未设置则返回 nil。
@@ -448,16 +516,16 @@ func (o *Orchestrator) probeBinResolver(kind agent.Kind, binResolver func(agent.
 
 // syncLLMModels propagates Model fields from all registrations into
 // LLMProxy.ModelForKind. Called after initial setup and after Register.
+//
+// 必须经 SetModelForKind 走锁,直接写裸 map 在 PlanOrchestrator/handleStream
+// 并发场景会 fatal "concurrent map read and map write"。
 func (o *Orchestrator) syncLLMModels() {
 	if o.llmProxy == nil {
 		return
 	}
-	if o.llmProxy.ModelForKind == nil {
-		o.llmProxy.ModelForKind = make(map[agent.Kind]string)
-	}
 	for kind, reg := range o.registrations {
 		if reg.Model != "" {
-			o.llmProxy.ModelForKind[kind] = reg.Model
+			o.llmProxy.SetModelForKind(kind, reg.Model)
 		}
 	}
 }
@@ -754,6 +822,21 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*Del
 		"instruction_len", len(req.Instruction),
 	)
 
+	// 安全闸门:host 注入了 defaultExecution(workdir + file_policy)时,
+	// 没传 Execution 的请求自动继承默认值,使 PlanOrchestrator / ReviewLoop /
+	// chat plan 路径派发的子 sidecar 都遵守同一份执行边界,堵 "delegate 越过
+	// file_policy" 漏洞(文档 27 §6.2 MUST)。
+	// req 自带 Execution 时优先用调用方显式值,默认不覆盖。
+	// 同步把 Workdir 从 spec 兜底,避免子 sidecar 落到错误 cwd。
+	if o.defaultExecution != nil {
+		if req.Execution == nil {
+			req.Execution = o.defaultExecution
+		}
+		if req.Workdir == "" && o.defaultExecution.Workdir != "" {
+			req.Workdir = o.defaultExecution.Workdir
+		}
+	}
+
 	// 如果 TargetKind 为空且有 capMatcher，自动选择最佳 brain。
 	if req.TargetKind == "" && o.capMatcher != nil {
 		resolved := o.resolveTargetKind(req)
@@ -1011,8 +1094,12 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, s
 
 	// 如果配置了 ContextEngine，在发送给下游 brain 之前装配上下文。
 	// 将 instruction 包装为 user 消息，通过 Assemble() 进行 token 预算控制和压缩。
+	//
+	// 并发安全:在函数顶部一次性 snapshot 当前 engine,避免 Delegate 期间被
+	// 并发 SetContextEngine 替换造成中途切换。
 	var assembledContext json.RawMessage
-	if o.contextEngine != nil {
+	currentEngine := o.ContextEngine()
+	if currentEngine != nil {
 		messages := []llm.Message{{
 			Role:    "user",
 			Content: []llm.ContentBlock{{Type: "text", Text: req.Instruction}},
@@ -1029,7 +1116,7 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, s
 			// 用 MaxTurns * 4000 作为粗略 token 预算估算
 			tokenBudget = req.Budget.MaxTurns * 4000
 		}
-		assembled, assembleErr := o.contextEngine.Assemble(ctx, AssembleRequest{
+		assembled, assembleErr := currentEngine.Assemble(ctx, AssembleRequest{
 			RunID:       req.TaskID,
 			BrainKind:   req.TargetKind,
 			TaskType:    "delegation",
@@ -1088,12 +1175,14 @@ func (o *Orchestrator) delegateOnce(ctx context.Context, req *DelegateRequest, s
 
 	// Send brain/execute and wait for result.
 	var execResult json.RawMessage
-	rpcErr := rpc.Call(ctx, "brain/execute", payload, &execResult)
+	rpcErr := rpc.Call(ctx, protocol.MethodBrainExecute, payload, &execResult)
 
 	// Task #18: subtask 完成(成功或失败)后清掉 (central→target) 的 shared 桶,
 	// 防止下一次 delegate 继承本次的跨脑消息。只对默认 engine 生效;第三方
 	// engine 自己负责边界切断。
-	if ce, ok := o.contextEngine.(*DefaultContextEngine); ok && ce != nil {
+	//
+	// 用顶部 snapshot 的 currentEngine,避免再次裸读 o.contextEngine race。
+	if ce, ok := currentEngine.(*DefaultContextEngine); ok && ce != nil {
 		ce.ClearShared(agent.Kind("central"), req.TargetKind)
 	}
 
@@ -1906,7 +1995,7 @@ func (o *Orchestrator) sendBrainLearn(ctx context.Context, req *DelegateRequest,
 		}()
 		learnCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		_ = rpc.Call(learnCtx, "brain/learn", payload, nil)
+		_ = rpc.Call(learnCtx, protocol.MethodBrainLearn, payload, nil)
 	}()
 }
 

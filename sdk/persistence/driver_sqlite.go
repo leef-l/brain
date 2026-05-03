@@ -445,6 +445,12 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 	artifactStore := NewFSArtifactStore(artifactDir, metaStore, nil)
 	resume := NewMemResumeCoordinator(checkpointStore)
 
+	// 后台 WAL checkpoint:文档 26 §4.1 要求定期 PRAGMA wal_checkpoint。
+	// PASSIVE 模式不阻塞写,把已 commit 的 WAL 页搬回主库,避免 .db-wal 单调增长。
+	// 关库时再做一次 TRUNCATE 把 WAL 文件清零,确保下次启动从干净状态开始。
+	checkpointDone := make(chan struct{})
+	go runWALCheckpointLoop(db, checkpointDone)
+
 	return &Stores{
 		PlanStore:          planStore,
 		ArtifactStore:      artifactStore,
@@ -460,8 +466,35 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 		ProjectsStore:      projectsStore,
 		ProjectMemoryStore: projectMemoryStore,
 		RawDB:              db,
-		CloseFunc:          db.Close,
+		CloseFunc: func() error {
+			close(checkpointDone) // 通知后台 goroutine 退出
+			// 关闭前 TRUNCATE WAL,防止重启后看到几 GB 残留 .db-wal
+			_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+			return db.Close()
+		},
 	}, nil
+}
+
+// runWALCheckpointLoop 是 SQLite WAL 模式下的后台 checkpoint 循环。
+//
+// 触发频率:每 60s 一次 PRAGMA wal_checkpoint(PASSIVE)。PASSIVE 不阻塞读写,
+// 只把不被 reader 引用的 WAL frames 搬回主库。如果一直有长事务,WAL 会暂时
+// 增长直到事务释放;典型场景下 60s 间隔已足够把 WAL 控制在几 MB。
+//
+// 退出条件:done channel 关闭(由 CloseFunc 触发)。退出时不做最终 TRUNCATE
+// — 让 CloseFunc 在 db.Close 之前同步做,避免和 db.Close 竞争。
+func runWALCheckpointLoop(db *sql.DB, done <-chan struct{}) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			// 错误 silent:checkpoint 失败不阻塞业务,下个 tick 再试。
+			_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+		}
+	}
 }
 
 func init() {

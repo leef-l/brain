@@ -50,6 +50,7 @@ func runRun(args []string) int {
 				MaxDuration:   req.MaxDuration,
 				Stream:        req.Stream,
 				SystemPrompt:  req.SystemPrompt,
+				Orchestrator:  req.Orchestrator,
 			}
 			if req.EventBus != nil {
 				if eb, ok := req.EventBus.(*events.MemEventBus); ok {

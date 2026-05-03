@@ -247,8 +247,10 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 				// MACCS 1.10：任务级审核闭环。reviewLoop 非 nil 时拿审核报告写入
 				// subTask.Result.Review，供 reflection / 下一轮 plan 利用。
 				// 失败 / 异常不阻塞主流程。
-				if o.reviewLoop != nil {
-					if review, rerr := o.reviewLoop.SubmitReview(ctx, *subTask, result.Output); rerr == nil && review != nil {
+				//
+				// 走 getReviewLoop 避免与 PlanOrchestrator 并发回写 race。
+				if rl := o.getReviewLoop(); rl != nil {
+					if review, rerr := rl.SubmitReview(ctx, *subTask, result.Output); rerr == nil && review != nil {
 						subTask.Result.Review = review
 						if !review.Passed {
 							for _, iss := range review.Issues {

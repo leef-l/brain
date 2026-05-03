@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"sync"
+
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/diaglog"
 	brainerrors "github.com/leef-l/brain/sdk/errors"
@@ -42,7 +44,16 @@ type LLMProxy struct {
 	// populated from BrainRegistration.Model by the Orchestrator. When
 	// set, it overrides the provider's default model but is itself
 	// overridden by an explicit model in the sidecar's request.
+	//
+	// 注意:并发读写必须经 SetModel/getModel,直接访问字段会触发 race。
+	// PlanOrchestrator 构造期会跨多 run 调 SyncToLLMProxy,handleComplete /
+	// handleStream 又是高频读端,无锁裸 map 会 fatal "concurrent map read and
+	// map write"。
 	ModelForKind map[agent.Kind]string
+
+	// modelMu 保护 ModelForKind 并发读写。所有内部访问都必须经过 setModel /
+	// getModel / setManyModels。外部代码用 SetModelForKind 公开方法。
+	modelMu sync.RWMutex
 
 	// EventBus 用于将 LLM 流式事件实时发布到统一事件总线。
 	// 非 nil 时，handleStream 会把每个 StreamEvent 转换为 events.Event 并 Publish。
@@ -58,6 +69,35 @@ type LLMProxy struct {
 	// 不破坏调用方传入的原 System 列表（视为 L2 跟在后面）。
 	// 类型为 AdaptivePromptManager 接口（adaptive_prompt.go 中定义）。
 	PromptManager AdaptivePromptManager
+}
+
+// getModel 并发安全读取 ModelForKind[kind]。
+func (p *LLMProxy) getModel(kind agent.Kind) (string, bool) {
+	if p == nil {
+		return "", false
+	}
+	p.modelMu.RLock()
+	defer p.modelMu.RUnlock()
+	if p.ModelForKind == nil {
+		return "", false
+	}
+	m, ok := p.ModelForKind[kind]
+	return m, ok && m != ""
+}
+
+// SetModelForKind 并发安全写入 ModelForKind[kind]。
+// 外部组件(ModelRouter.SyncToLLMProxy / Orchestrator.syncLLMModels)
+// 必须用此方法,不能直接写 map。
+func (p *LLMProxy) SetModelForKind(kind agent.Kind, model string) {
+	if p == nil || model == "" {
+		return
+	}
+	p.modelMu.Lock()
+	defer p.modelMu.Unlock()
+	if p.ModelForKind == nil {
+		p.ModelForKind = make(map[agent.Kind]string)
+	}
+	p.ModelForKind[kind] = model
 }
 
 // adaptiveSystemPrefix 在 PromptManager 非空时，把所选变体作为 L1 system block
@@ -254,8 +294,8 @@ func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params j
 	// 2. ModelForKind from BrainRegistration config
 	// 3. Empty string → provider uses its default model
 	model := req.Model
-	if model == "" && p.ModelForKind != nil {
-		if m, ok := p.ModelForKind[kind]; ok && m != "" {
+	if model == "" {
+		if m, ok := p.getModel(kind); ok {
 			model = m
 		}
 	}
@@ -352,8 +392,8 @@ func (p *LLMProxy) handleStream(ctx context.Context, kind agent.Kind, params jso
 	}
 
 	model := req.Model
-	if model == "" && p.ModelForKind != nil {
-		if m, ok := p.ModelForKind[kind]; ok && m != "" {
+	if model == "" {
+		if m, ok := p.getModel(kind); ok {
 			model = m
 		}
 	}
@@ -522,8 +562,8 @@ func (p *LLMProxy) Complete(ctx context.Context, req *llm.ChatRequest) (*llm.Cha
 	// 2. ModelForKind lookup
 	// 3. Empty string -> provider uses its default
 	model := req.Model
-	if model == "" && p.ModelForKind != nil {
-		if m, ok := p.ModelForKind[kind]; ok && m != "" {
+	if model == "" {
+		if m, ok := p.getModel(kind); ok {
 			model = m
 		}
 	}

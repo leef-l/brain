@@ -26,6 +26,7 @@ import (
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/cli"
 	"github.com/leef-l/brain/sdk/events"
+	"github.com/leef-l/brain/sdk/executionpolicy"
 	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/kernel/mcpadapter"
 	"github.com/leef-l/brain/sdk/license"
@@ -633,6 +634,8 @@ func runServe(args []string) int {
 		startupOrch = kernel.NewOrchestratorWithPool(pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver(), Workdir: env.Workdir}, startupLLMProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithLeaseManager(leaseManager),
 			kernel.WithMCPBrainPool(mcpPool),
+			// host 的执行边界注入,Delegate 时自动透传到 sidecar(文档 27 §6.2 MUST)
+			kernel.WithDefaultExecution(env.ExecutionSpec()),
 		)
 		installHumanTakeoverBridge(startupOrch)
 	}
@@ -1676,6 +1679,8 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			kernel.WithChaosEngine(mgr.chaos),
 			kernel.WithPerfCollector(mgr.perf),
 			kernel.WithObservability(mgr.observ),
+			// host 的执行边界注入(文档 27 §6.2 MUST)
+			kernel.WithDefaultExecution(env.ExecutionSpec()),
 		)
 		installHumanTakeoverBridge(orch)
 	}
@@ -1732,7 +1737,8 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 			// Token-saving P2-B: chat 上下文 budget 32K 主动触发滑窗压缩
 			// 主流模型 context window 多为 32K-200K,32K 是历史层 + system 的合理配额
 			// 超出后 Compress 会保留 system 消息 + 最近若干条 + LLM 摘要旧消息
-			TokenBudget: 32000,
+			TokenBudget:  32000,
+			Orchestrator: orch, // 让 IntentClassifier 能触发 PlanRunner 七阶段闭环
 		})
 	}
 
@@ -2135,6 +2141,10 @@ func handleCreateWorkflow(w http.ResponseWriter, r *http.Request, mgr *runManage
 			},
 			PromptManager: mgr.promptMgr,
 		}
+		// workflow 模式下默认执行边界至少传 workdir,确保 sidecar cwd 一致;
+		// file_policy 暂以 nil(全开放)处理 — workflow 是 host 显式 DAG 编排,
+		// 比交互式 chat/run 信任级别高,且 wfMode 已经在 sidecar 端控制权限。
+		wfExec := &executionpolicy.ExecutionSpec{Workdir: workdir}
 		orch = kernel.NewOrchestratorWithPool(mgr.pool, &kernel.ProcessRunner{BinResolver: defaultBinResolver(), Workdir: workdir}, llmProxy, defaultBinResolver(), kernel.OrchestratorConfig{},
 			kernel.WithSemanticApprover(&kernel.DefaultSemanticApprover{}),
 			kernel.WithCapabilityMatcher(mgr.capMatcher),
@@ -2145,6 +2155,7 @@ func handleCreateWorkflow(w http.ResponseWriter, r *http.Request, mgr *runManage
 			kernel.WithChaosEngine(mgr.chaos),
 			kernel.WithPerfCollector(mgr.perf),
 			kernel.WithObservability(mgr.observ),
+			kernel.WithDefaultExecution(wfExec),
 		)
 	}
 

@@ -229,6 +229,14 @@ func RunChat(args []string) int {
 		return cli.ExitUsage
 	}
 
+	// 把 host 的执行边界(workdir + file_policy + allow_commands + allow_delegate)
+	// 注入 Orchestrator,Delegate 入口会自动填到没传 Execution 的 DelegateRequest,
+	// 让 PlanOrchestrator / ReviewLoop / chat plan 等所有派发路径都遵守同一份
+	// 权限边界,堵 file_policy 越过漏洞(文档 27 §6.2 MUST)。
+	if orch != nil {
+		orch.SetDefaultExecution(e.ExecutionSpec())
+	}
+
 	providerSession := deps.OpenMockProvider("hello from mock provider")
 	if !deps.WantsMockProvider(*providerFlag, modelInput) {
 		providerSession, err = deps.OpenConfiguredProvider(cfg, *brainID, modelInput, *providerFlag, *apiKey, *baseURL, *modelFlag)
@@ -255,6 +263,11 @@ func RunChat(args []string) int {
 		ApprovalCh:   make(chan env.ApprovalRequest),
 		RunTimeout:   timeout,
 		HumanCoord:   humanCoord,
+		// 跨 turn 共享检测器 — 必须 chat session 内复用,
+		// 否则每 turn 重建 → LoopDetector / CacheBuilder 永远空状态,功能失效。
+		Sanitizer:    loop.NewMemSanitizer(),
+		LoopDetector: loop.NewMemLoopDetector(),
+		CacheBuilder: loop.NewMemCacheBuilder(),
 	}
 	state.SwitchMode(mode)
 
@@ -931,7 +944,7 @@ func runChatLineMode(state *State, provider llm.Provider, brainID *string, maxTu
 
 		// 注意:input 是原文。预处理在 runChatTurn 内部做,只对"临时发给 LLM 的 messages"生效。
 		ctx, cancel := config.WithOptionalTimeout(context.Background(), state.RunTimeout)
-		result, err := runChatTurn(ctx, provider, state.Registry, state.Opts, *brainID, *maxTurns, state.TurnCount, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, "", nil)
+		result, err := runChatTurn(ctx, state, provider, state.Registry, state.Opts, *brainID, *maxTurns, state.TurnCount, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, "", nil)
 		canceled := ctx.Err() == context.Canceled
 		cancel()
 

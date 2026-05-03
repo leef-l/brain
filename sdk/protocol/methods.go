@@ -140,6 +140,17 @@ const (
 	MethodBrainStreamWrite = "brain/stream/write"
 )
 
+// Subtask execution — host→sidecar direction.
+// MethodBrainExecute 是 Orchestrator.Delegate 派发子任务时实际调用的方法。
+// sidecar 收到后跑自己的 Agent Loop / 工具循环,完成后返回 result。
+// 注:命名风格采用 path 风格 brain/execute 而非 dot 风格 brain.execute,
+// 与 brain/stream/write / brain/progress / brain/learn 一致(host 主导的
+// brain.* 命名空间用 path 风格,SDK 主导的 subtask.* / artifact.* 用 dot 风格)。
+const (
+	MethodBrainExecute = "brain/execute"
+	MethodBrainLearn   = "brain/learn"
+)
+
 // Observability methods — 20-协议规格.md §10.1 (sidecar→host
 // notifications).
 const (

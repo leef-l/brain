@@ -3,18 +3,18 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/leef-l/brain/cmd/brain/agentpipe"
 	"github.com/leef-l/brain/cmd/brain/cliruntime"
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/cmd/brain/env"
-	"github.com/leef-l/brain/sdk/kernel"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/loop"
-	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/runtimeaudit"
 	"github.com/leef-l/brain/sdk/tool"
 )
@@ -74,8 +74,41 @@ func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns 
 				_ = runtime.RunStore.AppendEvent(runRec.ID, ev.Type, ev.Message, append(json.RawMessage(nil), ev.Data...))
 			}))
 		}
-		result, err := runChatTurn(ctx, provider, registry, opts, brainID, maxTurns,
-			turnIndex, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, runID, eventCh)
+
+		// MACCS 三模式统一抽象:根据 IntentClassifier 判断走 simple 还是 plan 路径。
+		// - IntentProject: central + 项目级需求 → PlanRunner.Execute (七阶段闭环带 review/反思/反馈)
+		// - IntentSimple : 直接走 Runner (轻量单 turn,日常问答和小任务)
+		intent := agentpipe.NewDefaultIntentClassifier().Classify(input)
+		var result *loop.RunResult
+		var err error
+		// 降级日志:意图是 project 但前置条件不满足时给用户/调试可见的提示。
+		if intent == agentpipe.IntentProject {
+			if brainID != "central" {
+				fmt.Fprintf(os.Stderr, "chat: intent=project but brain=%s, downgrading to invocation (PlanRunner only runs on central)\n", brainID)
+			} else if state.Orchestrator == nil {
+				fmt.Fprintf(os.Stderr, "chat: intent=project but Orchestrator=nil, downgrading to invocation\n")
+			}
+		}
+		if intent == agentpipe.IntentProject && brainID == "central" && state.Orchestrator != nil {
+			// 项目级路径:用 PlanRunner 跑 PlanOrchestrator 全流程。
+			result, err = runChatPlanFlow(ctx, state, input, runID, eventCh)
+			// ErrPlanFallback:Parser/Designer 解析失败,自动降级到 simple 路径,
+			// 避免 fallbackPlan 单 task 仍跑七阶段闭环浪费 token。
+			//
+			// 但用户原意是"做项目"(IntentProject 命中),simple Invocation
+			// 单 turn 容易输出"建议方案"而非"开始做"。把 input 包装成
+			// "逐步实现 + 先列计划再做"的 prompt,保住"做"的语义。
+			if errors.Is(err, agentpipe.ErrPlanFallback) {
+				fmt.Fprintf(os.Stderr, "chat: plan parse failed, downgrading to simple invocation\n")
+				wrapped := wrapForFallback(input)
+				result, err = runChatTurn(ctx, state, provider, registry, opts, brainID, maxTurns,
+					turnIndex, baseMessages, wrapped, state.Sandbox.Primary(), state.RunTimeout, runID, eventCh)
+			}
+		} else {
+			// 简单路径:走原 Runner 链路(agentpipe.Invocation)
+			result, err = runChatTurn(ctx, state, provider, registry, opts, brainID, maxTurns,
+				turnIndex, baseMessages, input, state.Sandbox.Primary(), state.RunTimeout, runID, eventCh)
+		}
 		if runtime != nil && runRec != nil {
 			persistChatTurn(ctx, runtime, runRec, provider.Name(), input, state.Mode, state.Sandbox.Primary(), opts.System, result, err)
 		}
@@ -101,78 +134,160 @@ func StartChatRun(state *State, provider llm.Provider, brainID string, maxTurns 
 	return runID
 }
 
-func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Registry,
+// runChatTurn 是 chat 模式下单次 user turn 的入口,薄壳封装 agentpipe.Invocation。
+//
+// 三模式统一抽象后(2026-05-03 重构),所有 Runner 配置/Workdir/nudge/sanitize
+// 修复都集中在 agentpipe 一处,这里只做 chat 特定的:
+//   - DispatchHint(关键词强制 delegate hint,可选)
+//   - PreprocessUserInput(去填充音,只对当前 turn 临时 messages 生效)
+//   - LiveReporter(把 tool start/end 推到 chat UI 的 todo 框)
+//   - ChatCentralBrain flag(central 模式触发 nudge 重试)
+func runChatTurn(ctx context.Context, state *State, provider llm.Provider, registry tool.Registry,
 	opts loop.RunOptions, brainID string, maxTurns int, turnIndex int,
 	baseMessages []llm.Message, input, workdir string, maxDuration time.Duration,
 	runID string, eventCh chan<- ChatEvent) (*loop.RunResult, error) {
-	subtaskCtx := &protocol.SubtaskContext{
-		UserUtterance: input,
-		TurnIndex:     turnIndex,
-	}
-	// 透传 ProjectID 给 bridge/delegate(MACCS Wave 7+ 持久化记忆闭环关键)
-	// runChatTurn 看不到 state,但 ProjectID 可通过 ctx 透传。
-	// 实际从 ctx 读项目 ID,在 StartChatRun 写入 ctx 之后(见 StartChatRun)。
-	if pid := projectIDFromContext(ctx); pid != "" {
-		subtaskCtx.ProjectID = pid
-	}
-	ctx = kernel.WithSubtaskContext(ctx, subtaskCtx)
 
-	// MACCS 自动委派判断（仅 central 模式）：扫一遍用户输入的关键词，命中
-	// browser/code/verifier 等明确意图时，给 LLM 加一条 system hint 强制
-	// 走 delegate，不靠它"自觉" Tier 决策。
+	// 收集 SystemBlocks:base + DispatchHint(central 模式)
+	systemBlocks := append([]llm.SystemBlock(nil), opts.System...)
 	if brainID == "central" {
 		if hint := DispatchHint(input); hint != "" {
-			opts.System = append(append([]llm.SystemBlock(nil), opts.System...),
-				llm.SystemBlock{Text: hint, Cache: false})
+			systemBlocks = append(systemBlocks, llm.SystemBlock{Text: hint, Cache: false})
 		}
+	}
+	// agentpipe.Invocation 把 SystemPrompt 当首块,SystemBlocks 追加。
+	// 这里我们已经合并好 — 直接全部传 SystemBlocks,SystemPrompt 留空。
+	var systemPrompt string
+	if len(systemBlocks) > 0 {
+		systemPrompt = systemBlocks[0].Text
+		systemBlocks = systemBlocks[1:]
 	}
 
 	// Token-saving P2-C:对发给 LLM 的临时 messages 应用预处理。
 	// 注意:result.FinalMessages 会被累积进 state.Messages 和持久化,
-	// 所以 LLM 看到的 user 消息(llmInput)也会进历史。当前预处理只去
+	// 所以 LLM 看到的 user 消息也会进历史。当前预处理只去
 	// 无歧义纯填充音(嗯嗯嗯/啊啊/um um 等),与原文语义等价,污染可忽略。
-	// 长粘贴摘要默认关闭(DefaultPreprocessConfig.LongPasteThresholdChars=0),
-	// 启用前必须先实现 PasteStore + read_paste 工具,否则原文丢失会破坏
-	// 后续 turn 的引用(用户说"刚才那段第 10 行")和项目记忆。
 	llmInput, _ := PreprocessUserInput(input, DefaultPreprocessConfig)
 	messages := append(baseMessages, llm.Message{
 		Role:    "user",
 		Content: []llm.ContentBlock{{Type: "text", Text: llmInput}},
 	})
 
-	run := loop.NewRun(
-		fmt.Sprintf("chat-%d-%s", turnIndex, time.Now().UTC().Format("150405")),
-		brainID,
-		loop.Budget{
-			MaxTurns:     maxTurns,
-			MaxCostUSD:   5.0,
-			MaxLLMCalls:  maxTurns * 2,
-			MaxToolCalls: maxTurns * 4,
-			MaxDuration:  config.EffectiveRunMaxDuration(maxDuration, 5*time.Minute),
-		},
-	)
-
 	reporter := &LiveReporter{RunID: runID, Ch: eventCh, Workdir: workdir}
-	runner := &loop.Runner{
-		Provider:       provider,
-		ToolRegistry:   registry,
-		StreamConsumer: reporter,
-		ToolObserver:   reporter,
-		Sanitizer:      loop.NewMemSanitizer(),
-		LoopDetector:   loop.NewMemLoopDetector(),
-		CacheBuilder:   loop.NewMemCacheBuilder(),
+
+	inv := &agentpipe.Invocation{
+		Provider:         provider,
+		Registry:         registry,
+		BrainID:          brainID,
+		Messages:         messages,
+		SystemPrompt:     systemPrompt,
+		SystemBlocks:     systemBlocks,
+		MaxTurns:         maxTurns,
+		MaxDuration:      config.EffectiveRunMaxDuration(maxDuration, 5*time.Minute),
+		RunID:            fmt.Sprintf("chat-%d-%s", turnIndex, time.Now().UTC().Format("150405")),
+		UserUtterance:    input,
+		ProjectID:        projectIDFromContext(ctx),
+		TurnIndex:        turnIndex,
+		Stream:           true,
+		ChatCentralBrain: brainID == "central",
+		ToolObserver:     reporter,
+		StreamConsumer:   reporter,
+		// 跨 turn 共享检测器:LoopDetector 检测重复 tool call、CacheBuilder 维护
+		// prompt cache key、Sanitizer 清洗 tool 输出。每 turn 新建会清空状态,
+		// 检测器永远跨 turn 看不到上一 turn 的工具调用,功能性失效。
+		Sanitizer:    state.Sanitizer,
+		LoopDetector: state.LoopDetector,
+		CacheBuilder: state.CacheBuilder,
 	}
 
-	// 通过 ChatCentralBrain flag 让 runner 知道这是 chat 模式的 central brain,
-	// 触发更激进的 nudge 行为:第 1 turn 不调工具直接注入 reminder + 重试,不靠关键词。
-	// 详见 sdk/loop/runner.go nudge 逻辑。
-	if brainID == "central" {
-		opts.ChatCentralBrain = true
+	return inv.Execute(ctx)
+}
+
+// runChatPlanFlow 处理 chat 模式下的项目级需求(IntentProject)。
+// 走 PlanRunner.Execute → PlanOrchestrator 七阶段闭环。
+//
+// 返回值的 *loop.RunResult 是为了和 simple 路径 API 一致。
+// 项目执行结果(progress/reflection/lessons)透过 events / chat UI 单独呈现。
+//
+// 注意:PlanOrchestrator 内部会调多次 Delegate,每次 delegate 都是一个完整 Run,
+// 这里返回的 RunResult 是最后一次 delegate 的 Run 摘要,不代表整个 project 的执行细节。
+//
+// PlanRunner 挂在 state 上(非包级 var),保证多 chat session 不会串状态。
+func runChatPlanFlow(ctx context.Context, state *State, input, runID string, eventCh chan<- ChatEvent) (*loop.RunResult, error) {
+	// 用 sync.Once 防止并发 turn 同时构造 PlanRunner 造成 race / 实例覆盖。
+	state.PlanRunnerOnce.Do(func() {
+		state.PlanRunner = agentpipe.NewPlanRunner(state.Orchestrator)
+	})
+	projectID := ""
+	if state.CurrentProject != nil && !state.IsNoProject {
+		projectID = state.CurrentProject.ID
 	}
 
-	opts.Stream = true
+	// 通知 chat UI 正在执行项目级流程
+	if eventCh != nil {
+		select {
+		case eventCh <- ChatEvent{RunID: runID, Type: "plan.started"}:
+		default:
+		}
+	}
 
-	return runner.Execute(ctx, run, messages, opts)
+	// P0 权限击穿修复:把 chat 的权限上下文(PLAN/RESTRICTED/AcceptEdits + sandbox)
+	// 作为 ExtraInstruction 注入到每个 SubTask,下游 sidecar 在 brain/execute
+	// 层就看到约束,不会误用 fs_write/shell 等高权限工具。
+	extraInstr := ""
+	if len(state.Opts.System) > 0 {
+		var parts []string
+		for _, blk := range state.Opts.System {
+			if blk.Text != "" {
+				parts = append(parts, blk.Text)
+			}
+		}
+		extraInstr = strings.Join(parts, "\n\n")
+	}
+
+	projResult, err := state.PlanRunner.ExecuteWithInput(ctx, agentpipe.PlanInput{
+		ProjectID:        projectID,
+		Goal:             input,
+		ExtraInstruction: extraInstr,
+	})
+	// PlanRunner 当前不返回 RunResult — 这里构造一个 minimal RunResult 让上层 persist 流程能继续。
+	// 真正的项目结果细节通过 ProjectExecutionResult 渲染(后续 chat UI 增强可补)。
+	//
+	// Budget 必须从 ProjectExecutionResult 各 SubTask 的 Usage 累加,
+	// 否则持久化会写 turns=0/cost=0 的伪数据,污染 Dashboard / L2 学习。
+	rr := &loop.RunResult{
+		Run: &loop.Run{
+			ID:      runID,
+			BrainID: "central",
+			State:   loop.StateCompleted,
+			Budget:  agentpipe.AggregatePlanBudget(projResult),
+		},
+	}
+	if err != nil {
+		rr.Run.State = loop.StateFailed
+	}
+	if projResult != nil {
+		// 把 reflection summary 作为 assistant reply,让 chat UI 能渲染
+		summary := fmt.Sprintf("项目 %s 执行完成 (阶段: %s, 完成度: %.0f%%, 耗时: %s)",
+			projResult.Progress.ProjectID,
+			projResult.Progress.Phase,
+			projResult.Progress.OverallPercent,
+			projResult.Duration,
+		)
+		if projResult.Reflection != nil {
+			summary += fmt.Sprintf("\n\n反思要点:%d 条\n推荐改进:%d 条",
+				len(projResult.Reflection.Lessons),
+				len(projResult.Reflection.Recommendations),
+			)
+		}
+		rr.FinalMessages = []llm.Message{{
+			Role: "assistant",
+			Content: []llm.ContentBlock{{
+				Type: "text",
+				Text: summary,
+			}},
+		}}
+	}
+	return rr, err
 }
 
 func persistChatTurn(ctx context.Context, runtime *cliruntime.Runtime, runRec *cliruntime.RunRecord, providerName, input string, mode env.PermissionMode, workdir string, system []llm.SystemBlock, result *loop.RunResult, err error) {
@@ -266,6 +381,16 @@ func projectIDFromContext(ctx context.Context) string {
 // ProjectIDFromContext 暴露给 bridge 包的导出版本。
 func ProjectIDFromContext(ctx context.Context) string {
 	return projectIDFromContext(ctx)
+}
+
+// wrapForFallback 把项目级 prompt 包装成"逐步实现"指令。
+//
+// 用于 IntentProject → ErrPlanFallback 降级路径:用户原意是"做项目",
+// 但 PlanRunner 解析失败,只能走 simple Invocation。直接传原文的话
+// LLM 单 turn 容易只回"我建议..."而不真正开始做。包装成"逐步实现 +
+// 先列计划再做"的 prompt 保住用户原意,Invocation 内部可以多 turn 推进。
+func wrapForFallback(original string) string {
+	return "请逐步实现以下需求,先列出实现计划再开始动手做(可以分多步,可以调用工具创建文件 / 编辑代码 / 验证):\n\n" + original
 }
 
 // persistChatTurnToProject 把本 turn 的 user + assistant 消息写入 project_conversations

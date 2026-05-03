@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leef-l/brain/cmd/brain/agentpipe"
 	"github.com/leef-l/brain/cmd/brain/config"
 	"github.com/leef-l/brain/cmd/brain/env"
 	"github.com/leef-l/brain/cmd/brain/term"
@@ -17,6 +18,7 @@ import (
 	"github.com/leef-l/brain/sdk/tool"
 	"github.com/leef-l/brain/sdk/toolpolicy"
 )
+
 
 type State struct {
 	Mode         env.PermissionMode
@@ -31,6 +33,26 @@ type State struct {
 	Sandbox      *tool.Sandbox
 	SandboxCfg   *tool.SandboxConfig
 	Orchestrator *kernel.Orchestrator
+
+	// PlanRunner 是 IntentProject 触发的项目级执行器(七阶段闭环)。
+	// 跟 chat session 同生命周期,首次需要时懒构造,跨 turn 复用 Memory/Patterns/Lessons。
+	// 每个 chat session 独立,避免多 session 串状态。
+	//
+	// 并发安全:chat REPL 队列允许并发 launchRun(repl.go follow-up 路径),
+	// 多个 IntentProject goroutine 同时进入 runChatPlanFlow 时
+	// "if PlanRunner==nil { PlanRunner=... }" 是非原子读-改-写 → race。
+	// 用 PlanRunnerOnce 做单次构造,确保第一个 caller 才真正分配。
+	PlanRunner     *agentpipe.PlanRunner
+	PlanRunnerOnce sync.Once
+
+	// 跨 turn 共享的 loop 状态检测器。chat 模式所有 turn 复用同一组实例,
+	// 否则 LoopDetector 每 turn 重建 → 永远空状态 → 检测失效。
+	//
+	// 在 NewState 时一次性构造,runChatTurn 把它们透传给 agentpipe.Invocation。
+	// run/serve 单 prompt 模式不需要,Invocation hooks 留空走默认 Mem* 即可。
+	Sanitizer    loop.ToolResultSanitizer
+	LoopDetector loop.LoopDetector
+	CacheBuilder loop.CacheBuilder
 
 	// ActiveRuns 管理所有正在执行的 run。
 	// key 是 runID（如 "run-0", "run-1"）。
@@ -302,7 +324,15 @@ func (s *State) ApproveSandboxEscapeForSession(dir string) {
 }
 
 // Close 释放 State 持有的会话级资源，应在 chat REPL 退出时 defer 调用。
+//
+// 关闭顺序:
+//   - PlanRunner.Close() 取消 bgCtx → consumeFeedbackRequests goroutine 退出,
+//     避免 chat 退出后该 goroutine 持续订阅 EventBus 造成永久泄漏。
+//   - RemovePlanRegistry 清 chat /plan slash 命令的注册表。
 func (s *State) Close() {
+	if s.PlanRunner != nil {
+		s.PlanRunner.Close()
+	}
 	RemovePlanRegistry(s)
 }
 
