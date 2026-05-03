@@ -1431,6 +1431,10 @@ type createRunRequest struct {
 	Stream      bool              `json:"stream"`
 	Workdir     string            `json:"workdir,omitempty"`
 	Timeout     string            `json:"timeout,omitempty"`
+	Provider    string            `json:"provider,omitempty"`     // provider name override (mimo/deepseek/anthropic/...)
+	APIKey      string            `json:"api_key,omitempty"`      // 显式 api_key 覆盖 config(注意:不要写到日志)
+	BaseURL     string            `json:"base_url,omitempty"`     // 显式 base_url 覆盖 config
+	Model       string            `json:"model,omitempty"`        // 显式 model 覆盖 config
 	ModelConfig *modelConfigInput `json:"model_config,omitempty"`
 	FilePolicy  *filePolicyInput  `json:"file_policy,omitempty"`
 
@@ -1496,8 +1500,10 @@ func handleCreateRun(w http.ResponseWriter, r *http.Request, mgr *runManager, ru
 		return
 	}
 	providerSession := openMockProvider("hello from mock provider")
-	if !wantsMockProvider("", req.ModelConfig) {
-		providerSession, err = openConfiguredProvider(cfgFile, req.Brain, req.ModelConfig, "", "", "", "")
+	if !wantsMockProvider(req.Provider, req.ModelConfig) {
+		// 修复:之前 4-7 参数全是 "",req.Provider/APIKey/BaseURL/Model 被忽略,
+		// 永远 fallback 到 config.active_provider。导致客户端传 provider=mimo 实际跑 deepseek。
+		providerSession, err = openConfiguredProvider(cfgFile, req.Brain, req.ModelConfig, req.Provider, req.APIKey, req.BaseURL, req.Model)
 	}
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusInternalServerError)
@@ -1648,10 +1654,11 @@ func executeRun(ctx context.Context, entry *runEntry, mgr *runManager, runtime *
 
 	// 使用全局 BrainPool 创建轻量 Orchestrator（共享 sidecar 进程）。
 	var orch *kernel.Orchestrator
-	if req.Brain == "central" && !wantsMockProvider("", req.ModelConfig) && mgr.pool != nil {
+	if req.Brain == "central" && !wantsMockProvider(req.Provider, req.ModelConfig) && mgr.pool != nil {
 		llmProxy := &kernel.LLMProxy{
 			ProviderFactory: func(kind agent.Kind) llm.Provider {
-				session, err := openConfiguredProvider(cfg, string(kind), req.ModelConfig, "", "", "", "")
+				// 透传 req.Provider/APIKey/BaseURL/Model 让 LLMProxy 各 brain 调用也用客户端指定的 provider。
+				session, err := openConfiguredProvider(cfg, string(kind), req.ModelConfig, req.Provider, req.APIKey, req.BaseURL, req.Model)
 				if err != nil {
 					return nil
 				}
