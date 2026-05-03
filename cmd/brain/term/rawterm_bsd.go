@@ -45,6 +45,39 @@ func EnableRawInput() (restore func(), err error) {
 	}, nil
 }
 
+// WithCanonicalMode 暂时退出 raw mode 到 canonical(cooked) mode 执行 fn。
+// 见 rawterm_linux.go 同名函数注释。
+func WithCanonicalMode(fn func()) {
+	fd := int(os.Stdin.Fd())
+	var orig syscall.Termios
+	if _, _, errno := syscall.Syscall6(
+		syscall.SYS_IOCTL, uintptr(fd),
+		uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(&orig)),
+		0, 0, 0,
+	); errno != 0 {
+		fn()
+		return
+	}
+	cooked := orig
+	cooked.Lflag |= syscall.ICANON | syscall.ECHO | syscall.ISIG
+	if _, _, errno := syscall.Syscall6(
+		syscall.SYS_IOCTL, uintptr(fd),
+		uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(&cooked)),
+		0, 0, 0,
+	); errno != 0 {
+		fn()
+		return
+	}
+	defer func() {
+		syscall.Syscall6(
+			syscall.SYS_IOCTL, uintptr(fd),
+			uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(&orig)),
+			0, 0, 0,
+		)
+	}()
+	fn()
+}
+
 func WaitForStdinReady(timeout time.Duration) (bool, error) {
 	fd := int(os.Stdin.Fd())
 	var readfds syscall.FdSet

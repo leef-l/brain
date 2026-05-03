@@ -109,6 +109,22 @@ func EnableRawInput() (restore func(), err error) {
 	}, nil
 }
 
+// WithCanonicalMode 暂时切到行模式执行 fn,见 rawterm_linux.go 同名函数。
+func WithCanonicalMode(fn func()) {
+	state, err := captureWindowsConsoleState()
+	if err != nil {
+		fn()
+		return
+	}
+	cookedInput := state.inputMode | winEnableLineInput | winEnableEchoInput | winEnableProcessedInput
+	if err := setConsoleMode(state.inputHandle, cookedInput); err != nil {
+		fn()
+		return
+	}
+	defer setConsoleMode(state.inputHandle, state.inputMode)
+	fn()
+}
+
 func WaitForStdinReady(timeout time.Duration) (bool, error) {
 	handle := syscall.Handle(os.Stdin.Fd())
 

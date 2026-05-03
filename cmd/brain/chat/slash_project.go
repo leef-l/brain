@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leef-l/brain/cmd/brain/term"
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/persistence"
 )
@@ -254,8 +255,13 @@ func projectDeleteCmd(ctx context.Context, state *State, target string) {
 	}
 	fmt.Printf("  \033[33m将删除项目 %q (含 %d 条对话, %d 条记忆)。确认? [y/N]: \033[0m",
 		p.Name, msgCount, memCount)
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
+	// chat REPL 在 raw mode,bufio.ReadString 等不到回车。
+	// term.WithCanonicalMode 临时切回行模式让 bufio 正常工作,完事自动恢复 raw mode。
+	var answer string
+	term.WithCanonicalMode(func() {
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ = reader.ReadString('\n')
+	})
 	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
 		fmt.Println("  已取消")
 		fmt.Println()

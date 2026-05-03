@@ -45,6 +45,44 @@ func EnableRawInput() (restore func(), err error) {
 	}, nil
 }
 
+// WithCanonicalMode 暂时退出 raw mode 到 canonical(cooked) mode 执行 fn,
+// 期间 stdin 行缓冲 + 回显,可以用 bufio.Reader.ReadString 读完整一行。
+// 用于 slash command 二次确认等需要正常 line input 的场景,避免 raw mode 下回车被吃。
+//
+// 如果当前不在 raw mode(EnableRawInput 没调过),fn 会直接执行,无副作用。
+func WithCanonicalMode(fn func()) {
+	fd := int(os.Stdin.Fd())
+	var orig syscall.Termios
+	if _, _, errno := syscall.Syscall6(
+		syscall.SYS_IOCTL, uintptr(fd),
+		uintptr(syscall.TCGETS), uintptr(unsafe.Pointer(&orig)),
+		0, 0, 0,
+	); errno != 0 {
+		fn()
+		return
+	}
+
+	cooked := orig
+	cooked.Lflag |= syscall.ICANON | syscall.ECHO | syscall.ISIG
+	if _, _, errno := syscall.Syscall6(
+		syscall.SYS_IOCTL, uintptr(fd),
+		uintptr(syscall.TCSETS), uintptr(unsafe.Pointer(&cooked)),
+		0, 0, 0,
+	); errno != 0 {
+		fn()
+		return
+	}
+	defer func() {
+		syscall.Syscall6(
+			syscall.SYS_IOCTL, uintptr(fd),
+			uintptr(syscall.TCSETS), uintptr(unsafe.Pointer(&orig)),
+			0, 0, 0,
+		)
+	}()
+
+	fn()
+}
+
 func WaitForStdinReady(timeout time.Duration) (bool, error) {
 	fd := int(os.Stdin.Fd())
 	var readfds syscall.FdSet
