@@ -162,6 +162,14 @@ func runChatTurn(ctx context.Context, provider llm.Provider, registry tool.Regis
 		LoopDetector:   loop.NewMemLoopDetector(),
 		CacheBuilder:   loop.NewMemCacheBuilder(),
 	}
+
+	// 通过 ChatCentralBrain flag 让 runner 知道这是 chat 模式的 central brain,
+	// 触发更激进的 nudge 行为:第 1 turn 不调工具直接注入 reminder + 重试,不靠关键词。
+	// 详见 sdk/loop/runner.go nudge 逻辑。
+	if brainID == "central" {
+		opts.ChatCentralBrain = true
+	}
+
 	opts.Stream = true
 
 	return runner.Execute(ctx, run, messages, opts)

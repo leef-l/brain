@@ -133,6 +133,13 @@ type RunOptions struct {
 	// TaskBoundary is the message index where task context ends and
 	// rolling history begins, used by CacheBuilder.BuildL2Task.
 	TaskBoundary int
+
+	// ChatCentralBrain 标记本 Run 是 chat 模式下的 central 大脑。
+	// 启用后,nudge 触发条件更激进 — 任何"无 tool_use blocks 但有文本"的 turn
+	// 都被视为 announce-without-act,自动注入 reminder 让 LLM 必须调工具。
+	// 不靠关键词 — central 编排大脑本来就该调工具,纯文本响应是无意义的。
+	// 专精 brain / run / serve 模式不启用,允许它们纯文本回复。
+	ChatCentralBrain bool
 }
 
 // RunResult is the final output of Runner.Execute.
@@ -401,12 +408,23 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		//   - "max_tokens": 提示截断,但有 tool 就 dispatch
 		//   - "end_turn"/"stop": 配合 len==0 时退出
 		if len(toolUseBlocks) == 0 {
-			// 兜底检测:LLM 文本声明"立即调用/提交工作流/now I'll submit"等,
-			// 但 tool_use_count=0 → 是 mimo/deepseek 常见的"announce without act"故障。
-			// 此时 turn 内未消耗实际工作,在 run 没完成 / 预算未耗尽前注入一条
-			// system reminder 让 LLM 再来一轮强制做事或显式说明为什么不做。
-			// nudge 仅触发 1 次,避免对正常聊天回复的误伤。
-			if !nudgedAnnouncement && shouldNudgeAnnouncement(resp.Content) && run.Budget.UsedTurns < run.Budget.MaxTurns {
+			// 兜底检测:LLM 无 tool_use blocks 时是否触发 reminder 重试。
+			//
+			// 两个触发路径:
+			// 1. opts.ChatCentralBrain = true → 任何 0 工具的有文本响应都触发,不看关键词。
+			//    chat 中央大脑就该调工具,纯文本响应没意义,直接 nudge LLM 重试。
+			//    这是根治 mimo/deepseek "announce-without-act" 的协议层兜底
+			//    (mimo/deepseek 不可靠地支持 tool_choice=required,只能在 runner 层重试)。
+			// 2. 关键词命中 (shouldNudgeAnnouncement) → 兼容非 chat 场景下的明显故障短语。
+			//
+			// nudge 仅触发 1 次,避免对正常聊天回复反复打扰。
+			shouldTriggerNudge := false
+			if opts.ChatCentralBrain && hasTextContent(resp.Content) {
+				shouldTriggerNudge = true
+			} else if shouldNudgeAnnouncement(resp.Content) {
+				shouldTriggerNudge = true
+			}
+			if !nudgedAnnouncement && shouldTriggerNudge && run.Budget.UsedTurns < run.Budget.MaxTurns {
 				nudgedAnnouncement = true
 				messages = append(messages, announcementNudgeMessage())
 				if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
@@ -861,6 +879,17 @@ func shouldNudgeAnnouncement(blocks []llm.ContentBlock) bool {
 	return false
 }
 
+// hasTextContent 检测 content blocks 是否含非空文本(忽略 thinking、tool_use 等)。
+// 用于 ChatCentralBrain 模式下判断是否需要 nudge — LLM 输出了文本但无 tool_use。
+func hasTextContent(blocks []llm.ContentBlock) bool {
+	for _, b := range blocks {
+		if b.Type == "text" && strings.TrimSpace(b.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // announcementNudgeMessage 构造 user 角色的 reminder 消息(被 LLM 看作系统侧追问)。
 // 用 user role 而非 system,避免破坏前置 system block 的 cache;且多数 provider 对
 // "user 之后再来一条 user"是合法的(LLM 会把它当连续输入处理)。
@@ -869,10 +898,14 @@ func announcementNudgeMessage() llm.Message {
 		Role: "user",
 		Content: []llm.ContentBlock{{
 			Type: "text",
-			Text: "[system reminder] You said you would call a tool, but no tool_use block was emitted in your last response. " +
-				"Either call the tool you announced (submit_workflow / delegate / write_file / ...) NOW in this turn, " +
-				"OR explicitly explain to the user why you're not calling it (e.g. need more info, blocked by missing data). " +
-				"Empty announcements leave the user thinking you're stuck. Act or explain — do not silently skip.",
+			Text: "[system reminder] Your previous response had no tool_use block — only text. " +
+				"In this system, text alone changes nothing; the user sees text but no work happens. " +
+				"You MUST emit a tool_use block in this turn. Choose one:\n" +
+				"  • If the user wants you to do/build/make something: call submit_workflow (multi-step) or delegate (one-shot) NOW with concrete arguments.\n" +
+				"  • If you need to read context first: call read_file / list_files / search.\n" +
+				"  • If the request is unclear or impossible: call note to record your question, then briefly explain to the user.\n" +
+				"  • If genuinely done: call task_complete with a summary.\n" +
+				"Do not write another planning paragraph. Emit a tool_use block — that is the only way work gets done.",
 		}},
 	}
 }
