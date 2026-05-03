@@ -24,6 +24,11 @@ import (
 	"github.com/leef-l/brain/sdk/llm"
 )
 
+// modificationSentinel 与 chat dispatch.go ModificationSentinel 字面量保持一致。
+// 用于 buildReplanUserPrompt 判定 UserModification 是单条还是多条合并。
+// 不通过 import 共享(避免 sdk/kernel 依赖 cmd/brain),由调用方约定一致。
+const modificationSentinel = "[--MODSEP--]"
+
 // ReplanInput 是 GenerateWithModification 的输入上下文。
 type ReplanInput struct {
 	// OriginalSpec 用户最初提交的需求规格。可为 nil(纯 fallback plan 路径)。
@@ -336,11 +341,15 @@ func buildReplanUserPrompt(in ReplanInput) string {
 	b.WriteString("【触发原因】\n")
 	switch in.Trigger {
 	case TriggerUserModification:
-		// UserModification 可能是单条或多条编号列表(joinModifications 输出)。
-		// 单条:"改成 SQLite";多条:"1. 改成 SQLite\n2. 前端改用 Vue"。
-		if strings.Contains(in.UserModification, "\n") {
+		// UserModification 可能是单条或多条 sentinel 分隔列表(joinModifications 输出)。
+		// 单条:"改成 SQLite" 或 "改成 SQLite\n并加上索引"(用户单条多行输入)
+		// 多条:"1. 改成 SQLite\n[--MODSEP--]\n2. 前端用 Vue"
+		// C5 修复:用 ModificationSentinel 字面量判定,避免单条多行被误判为多条
+		if strings.Contains(in.UserModification, modificationSentinel) {
+			// 多条 — 把 sentinel 替换成空行让 LLM 看到清晰分段
+			cleaned := strings.ReplaceAll(in.UserModification, modificationSentinel, "")
 			b.WriteString("用户连续提出多条独立的修改诉求(请逐条理解并综合调整方案,不是单一指令):\n")
-			b.WriteString(in.UserModification)
+			b.WriteString(cleaned)
 			b.WriteString("\n")
 		} else {
 			b.WriteString(fmt.Sprintf("用户中途要求: \"%s\"\n", in.UserModification))
@@ -429,10 +438,15 @@ func (g *DefaultDesignGenerator) ToReplanTaskPlan(proposal *DesignProposal, orig
 		TotalTokens: proposal.EstimatedBudget.TotalTurns * 4000,
 	}
 
-	// 建索引:原 plan 的 task → 原 task
-	originalIndex := make(map[string]*PlanSubTask)
-	for i := range originalPlan.SubTasks {
-		originalIndex[originalPlan.SubTasks[i].TaskID] = &originalPlan.SubTasks[i]
+	// 建索引:原 plan 的 task → 原 task。
+	//
+	// C2 修复:用 SnapshotSubTasks 拿副本,避免与 chat REPL 的 SnapshotSubTasks
+	// 读路径或 ExecuteTaskPlan 内的写路径 race(originalPlan 此时已被 Replan
+	// 流程 cancel,但理论上 chat ProgressView 仍可能在拉)。
+	origSnap := originalPlan.SnapshotSubTasks()
+	originalIndex := make(map[string]*PlanSubTask, len(origSnap))
+	for i := range origSnap {
+		originalIndex[origSnap[i].TaskID] = &origSnap[i]
 	}
 
 	deps := make(map[string][]string)

@@ -43,20 +43,39 @@ var fsWriteTools = map[string]bool{
 
 // PartialFilesTracker 按 task_id(=ExecutionID)累积 sub agent 写过的文件路径。
 //
-// 线程安全:用 RWMutex 保护 map。Record 是高频写,RecordSnapshot/Clear 是 replan 时低频读。
+// 线程安全:用 RWMutex 保护 map。Record 是高频写,Get/Clear 是 replan 时低频读。
+//
+// C6 修复:加 blocked map 防止 ClearAndBlock 后 sub 仍 inflight 的
+// brain/progress 晚到 Record 累积新条目。Block 后该 taskID 的 Record 直接跳过,
+// 直到 Unblock 或 plan 结束 ClearAll。
 type PartialFilesTracker struct {
-	mu    sync.RWMutex
-	files map[string][]string // taskID → []paths(去重)
+	mu      sync.RWMutex
+	files   map[string][]string // taskID → []paths(去重)
+	blocked map[string]struct{} // taskID 在此集合时,Record 跳过
+
+	// maxPathsPerTask 单 task 最多累积路径数,防 sub 死循环 fs_write 爆 map。
+	// 0 = 不限,默认 50。
+	maxPathsPerTask int
 }
 
 // NewPartialFilesTracker 构造空 tracker。
 func NewPartialFilesTracker() *PartialFilesTracker {
-	return &PartialFilesTracker{files: make(map[string][]string)}
+	return &PartialFilesTracker{
+		files:           make(map[string][]string),
+		blocked:         make(map[string]struct{}),
+		maxPathsPerTask: 50,
+	}
 }
 
 // Record 记录 task 的一次工具调用涉及的文件路径。
 // toolName / argsJSON 来自 brain/progress tool_start 事件。
-// 路径不识别 / 工具不在白名单 / argsJSON 解析失败时 silent 跳过。
+//
+// 跳过条件(silent):
+//   - taskID/toolName 空 / argsJSON 空
+//   - 工具不在白名单
+//   - 路径解析失败
+//   - taskID 在 blocked 集合(ClearAndBlock 后晚到的 inflight 事件)
+//   - 单 task 已累积 maxPathsPerTask 条(防死循环)
 func (t *PartialFilesTracker) Record(taskID, toolName string, argsJSON []byte) {
 	if t == nil || taskID == "" || toolName == "" || len(argsJSON) == 0 {
 		return
@@ -70,7 +89,15 @@ func (t *PartialFilesTracker) Record(taskID, toolName string, argsJSON []byte) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	// C6: blocked taskID 的 Record 直接跳过(防 Clear 后晚到累积)
+	if _, blocked := t.blocked[taskID]; blocked {
+		return
+	}
 	existing := t.files[taskID]
+	// C9: 单 task 上限,防 sub 死循环 fs_write
+	if t.maxPathsPerTask > 0 && len(existing) >= t.maxPathsPerTask {
+		return
+	}
 	for _, p := range existing {
 		if p == path {
 			return // 去重
@@ -98,6 +125,8 @@ func (t *PartialFilesTracker) Get(taskID string) []string {
 
 // Clear 清除指定 task 的累积记录。
 // 在 SubTask 完成(无论 Completed / Failed)+ snapshotState 已读取后调用,避免内存累积。
+//
+// 注意:Clear 不阻止后续 Record 累积新条目;Replan 路径应该用 ClearAndBlock。
 func (t *PartialFilesTracker) Clear(taskID string) {
 	if t == nil {
 		return
@@ -107,7 +136,35 @@ func (t *PartialFilesTracker) Clear(taskID string) {
 	delete(t.files, taskID)
 }
 
-// ClearAll 清除所有累积记录。chat session 退出 / 项目切换时调。
+// ClearAndBlock 清除 task 累积 + 拉黑该 taskID 防晚到 Record 累积。
+//
+// 用于 Replan 路径 markRunningTasksInterrupted:abort 后 sub 仍 inflight 的
+// brain/progress 事件可能晚到,Record 会试图累积新路径混淆 newPlan 状态。
+// ClearAndBlock 后该 taskID 的 Record 直接跳过,直到 Unblock 或 ClearAll。
+//
+// newPlan 同 taskID 的新一轮 sub 启动前应调 Unblock,否则新写文件不会被记录。
+func (t *PartialFilesTracker) ClearAndBlock(taskID string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.files, taskID)
+	t.blocked[taskID] = struct{}{}
+}
+
+// Unblock 把 taskID 从黑名单移除,Record 重新累积。
+// Replan 完成后启动新一轮 sub 前调,让 newPlan 的 fs_write 路径正常记录。
+func (t *PartialFilesTracker) Unblock(taskID string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.blocked, taskID)
+}
+
+// ClearAll 清除所有累积记录 + 黑名单。chat session 退出 / 项目切换时调。
 func (t *PartialFilesTracker) ClearAll() {
 	if t == nil {
 		return
@@ -115,6 +172,7 @@ func (t *PartialFilesTracker) ClearAll() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.files = make(map[string][]string)
+	t.blocked = make(map[string]struct{})
 }
 
 // isFSWriteTool 判断工具名是否会产生写文件副作用。

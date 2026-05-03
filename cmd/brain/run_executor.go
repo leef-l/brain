@@ -131,6 +131,11 @@ func executeManagedRun(ctx context.Context, req managedRunExecution) (outcome *m
 		// 必须 Close 释放 PlanOrchestrator 的 consumeFeedbackRequests goroutine,
 		// 否则 run/serve 长跑期间每个项目级 run 都漏一个 EventBus 订阅 goroutine。
 		defer pr.Close()
+		// C4 修复:run/serve 模式也注入 AuditLogger 启用 Replan 事件持久化。
+		// chat 模式已在 executor.go 注入,这里补 run 路径(serve 经此路径同样覆盖)。
+		if req.Runtime != nil && req.Runtime.Stores != nil {
+			pr.AuditLogger = req.Runtime.Stores.AuditLogger
+		}
 		// P0 权限击穿修复:把 host 的 SystemPrompt(含 mode/sandbox 约束)注入
 		// 到每个 SubTask 的 Instruction 前缀,确保下游 sidecar 看到权限边界。
 		projResult, projErr := pr.ExecuteWithInput(ctx, agentpipe.PlanInput{

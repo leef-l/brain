@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -42,12 +43,14 @@ const replanCooldown = 3 * time.Second
 
 // joinModifications 把多条 user modification 文本合并成 LLM 易读的编号列表。
 //
-// 旧实现用 "; " 拼接,LLM 容易把多个独立修改混淆为单个。改成:
+// C5 修复:用 sentinel 分隔避免单条多行误判。
+//   - 单条:直接返回原文(不加任何标记,buildReplanUserPrompt 走单条分支)
+//   - 多条:用 "\n" + ModificationSentinel + "\n" 分隔,buildReplanUserPrompt
+//     检测此 sentinel 决定多条/单条,而不是用 strings.Contains "\n"(误判带换行的单条)
 //
-//	"1. xxx\n2. yyy\n3. zzz"
+// 输出格式:
 //
-// design_replan.go buildReplanUserPrompt 模板里【触发原因】段会说明这是
-// "用户连续提出的多条独立修改诉求"。
+//	"1. 改成 SQLite\n[--MODSEP--]\n2. 前端用 Vue\n[--MODSEP--]\n3. 加上日志"
 func joinModifications(buffer []string) string {
 	if len(buffer) == 0 {
 		return ""
@@ -59,6 +62,8 @@ func joinModifications(buffer []string) string {
 	for i, s := range buffer {
 		if i > 0 {
 			b.WriteString("\n")
+			b.WriteString(ModificationSentinel)
+			b.WriteString("\n")
 		}
 		b.WriteString(strconv.Itoa(i + 1))
 		b.WriteString(". ")
@@ -66,6 +71,10 @@ func joinModifications(buffer []string) string {
 	}
 	return b.String()
 }
+
+// ModificationSentinel 是多条 modification 之间的分隔标志,
+// 用户输入中极少出现的字面量,buildReplanUserPrompt 据此判定多条 vs 单条。
+const ModificationSentinel = "[--MODSEP--]"
 
 // orchEventBus 安全提取 Orchestrator 的 EventBus,nil orch 返回 nil。
 // chat REPL 把 orch 当成 *kernel.Orchestrator 传进来,nil 时(mock provider 路径)
@@ -332,19 +341,20 @@ func flushModificationBuffer(state *State, eventBus events.EventBus, caller *tim
 	}
 
 	// B8: 把 user 修改写入 ProjectMemory(MemoryDecision)。这是关键决策记忆,
-	// 跨 session 可被 MemoryRetriever 检索 + ReplanLLM prompt 复用,
-	// 让 LLM 知道项目历史经历过哪些用户中途修改。
-	// 失败 silent 不阻塞 replan 主流程。
+	// 跨 session 可被 MemoryRetriever 检索 + ReplanLLM prompt 复用。
+	// 失败不阻塞 replan 主流程,但 C11 修复:打 warn 让用户感知,而非完全 silent。
 	if state.ProjectMemoryStore != nil {
 		mem := kernel.NewPersistentProjectMemory(state.ProjectMemoryStore)
-		_ = mem.Store(context.Background(), kernel.MemoryEntry{
+		if err := mem.Store(context.Background(), kernel.MemoryEntry{
 			ProjectID:  state.CurrentProject.ID,
 			Type:       kernel.MemoryDecision,
 			Content:    merged,
 			Summary:    "用户中途修改: " + truncateForSummary(merged, 100),
 			Tags:       []string{"user_modification", "replan_trigger"},
 			Importance: 0.8,
-		})
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "chat: 写 ProjectMemory(MemoryDecision)失败: %v(replan 仍会触发,但跨 session 检索不到本次修改)\n", err)
+		}
 	}
 
 	req := &kernel.ReplanRequest{

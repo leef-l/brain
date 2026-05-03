@@ -27,12 +27,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/leef-l/brain/sdk/diaglog"
 	"github.com/leef-l/brain/sdk/events"
 	"github.com/leef-l/brain/sdk/persistence"
 )
+
+// auditEventCounter 给 audit_events 表的 event_id UNIQUE 列加单调递增后缀,
+// 防止 fmt.Sprintf("%s-%d", eventType, UnixNano) 在同纳秒重复调用时冲突。
+var auditEventCounter atomic.Uint64
 
 const (
 	// maxReplansPerProject 单次 ExecuteProject 内的硬上限。
@@ -101,10 +106,28 @@ func (po *PlanOrchestrator) ExecuteProjectWithReplan(ctx context.Context, plan *
 	po.setCurrent(plan, progress)
 	defer po.clearCurrent()
 
+	// C9 修复:plan 结束时清掉 PartialFilesTracker 该 plan 所有 task 的累积,
+	// 防止跨 chat session 单调增长。
+	defer func() {
+		if po.Orchestrator != nil && po.Orchestrator.partialFiles != nil {
+			for _, st := range plan.SnapshotSubTasks() {
+				po.Orchestrator.partialFiles.Clear(st.TaskID)
+				po.Orchestrator.partialFiles.Unblock(st.TaskID)
+			}
+		}
+	}()
+
 	// for 循环跑 ExecuteTaskPlan,允许 replan 多次
 	for {
 		// 每轮把 cachedPlan 更新为最新引用(replan 后 plan 已被替换)
 		po.setCurrent(plan, progress)
+		// C6: replan 后 newPlan 用同 taskID 重启时,先 Unblock 让新一轮 fs_write
+		// 正常被 Record。仅对替换后的 newPlan 生效(第一轮原 plan 的 task 不在 blocked)。
+		if po.Orchestrator != nil && po.Orchestrator.partialFiles != nil {
+			for _, st := range plan.SnapshotSubTasks() {
+				po.Orchestrator.partialFiles.Unblock(st.TaskID)
+			}
+		}
 		// 派生可被 replan 取消的 runCtx
 		runCtx, cancel := context.WithCancelCause(ctx)
 
@@ -323,8 +346,10 @@ func (po *PlanOrchestrator) snapshotState(
 		CapturedAt: time.Now(),
 	}
 
-	// 按 SubTask 状态分桶
-	for _, st := range plan.SubTasks {
+	// 按 SubTask 状态分桶。
+	// C3 修复:用 SnapshotSubTasks 拿副本,与并发写路径(markRunningTasksInterrupted /
+	// retry / chat ProgressView 拉读)互斥。
+	for _, st := range plan.SnapshotSubTasks() {
 		s := SubTaskSnapshot{
 			TaskID:      st.TaskID,
 			Name:        st.Name,
@@ -584,8 +609,9 @@ func (po *PlanOrchestrator) publishReplanEvent(eventType, projectID string, payl
 	}
 	if po.auditLogger != nil {
 		// silent 失败:audit 写不进不阻塞 Replan 主流程,只是历史丢失
+		// C10 修复:加 atomic counter 后缀彻底消除 UNIQUE 冲突可能
 		_ = po.auditLogger.Log(context.Background(), &persistence.AuditEvent{
-			EventID:     fmt.Sprintf("%s-%d", eventType, time.Now().UnixNano()),
+			EventID:     fmt.Sprintf("%s-%d-%d", eventType, time.Now().UnixNano(), auditEventCounter.Add(1)),
 			ExecutionID: projectID,
 			EventType:   eventType,
 			Actor:       "plan_orchestrator",
@@ -598,13 +624,18 @@ func (po *PlanOrchestrator) publishReplanEvent(eventType, projectID string, payl
 
 // unmarkInterruptedAsRunning 把 Interrupted 状态恢复成 Pending,让下一轮 for
 // 重新调度执行(replan 失败,用旧 plan 重试)。
+//
+// C1 修复:走 plan.WithAllSubTasks 加写锁,与 SnapshotSubTasks RLock 互斥。
 func (po *PlanOrchestrator) unmarkInterruptedAsRunning(plan *TaskPlan) {
-	for i := range plan.SubTasks {
-		if plan.SubTasks[i].Status == PlanTaskInterrupted {
-			plan.SubTasks[i].Status = PlanTaskPending
-			plan.SubTasks[i].AbortReason = ""
-		}
+	if plan == nil {
+		return
 	}
+	plan.WithAllSubTasks(func(st *PlanSubTask) {
+		if st.Status == PlanTaskInterrupted {
+			st.Status = PlanTaskPending
+			st.AbortReason = ""
+		}
+	})
 }
 
 // storeReflectionToMemory 把 reflection 的 lessons + recommendations 写入 ProjectMemory。

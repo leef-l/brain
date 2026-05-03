@@ -50,6 +50,14 @@ func BackupPartialFiles(workdir, runID string, files []string) (backedUp int, er
 		return 0, errs
 	}
 
+	// C8 修复:自动写 .brain/.gitignore,防止 partial 文件污染用户 git status。
+	// 已存在 / 写失败 silent(不阻塞备份主流程)。
+	gitignorePath := filepath.Join(workdir, ".brain", ".gitignore")
+	if _, err := os.Stat(gitignorePath); os.IsNotExist(err) {
+		// "*\n!.gitignore" 让 git 忽略 .brain 目录所有内容,但保留 .gitignore 本身
+		_ = os.WriteFile(gitignorePath, []byte("*\n!.gitignore\n"), 0o644)
+	}
+
 	for _, raw := range files {
 		// 安全:解析为绝对路径并校验在 workdir 内
 		absPath := raw

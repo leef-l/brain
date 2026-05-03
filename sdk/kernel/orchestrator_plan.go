@@ -185,6 +185,27 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 					}
 				}
 				resultsMu.Unlock()
+				// C7 修复:补一条 progress.CompletedTask,让 Reflection 看到真实完成度。
+				// kept task 的 Duration / TurnsUsed 来自上一轮 plan 的真实数据。
+				if progress != nil {
+					duration := time.Duration(0)
+					if subTask.StartedAt != nil && subTask.CompletedAt != nil {
+						duration = subTask.CompletedAt.Sub(*subTask.StartedAt)
+					}
+					progress.CompleteTask(taskID, TaskSummary{
+						TaskID:      taskID,
+						TaskName:    subTask.Name,
+						BrainKind:   subTask.Kind,
+						Duration:    duration,
+						TurnsUsed:   0, // kept task 无新 turn 消耗
+						Success:     true,
+						CompletedAt: time.Now(),
+					})
+				}
+				// 同时给 reporter 发 plan.task.completed 事件让 SSE 客户端感知
+				if reporter != nil {
+					reporter("plan.task.completed", taskID, "completed (kept from previous replan)", "")
+				}
 				continue
 			}
 
@@ -272,34 +293,39 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 					o.partialFiles.Clear(taskID)
 				}
 
-				// 设置子任务结果
-				subTask.Result = &PlanTaskResult{
-					Output: string(result.Output),
-				}
-
-				// MACCS 1.10：任务级审核闭环。reviewLoop 非 nil 时拿审核报告写入
-				// subTask.Result.Review，供 reflection / 下一轮 plan 利用。
-				// 失败 / 异常不阻塞主流程。
+				// MACCS 1.10：任务级审核闭环。先调 SubmitReview 拿审核结果,
+				// 然后通过 plan.WithSubTask 在写锁内一次性写入 Result + Review + Issues,
+				// 与 chat ProgressView 的 SnapshotSubTasks RLock 互斥。
 				//
-				// 走 getReviewLoop 避免与 PlanOrchestrator 并发回写 race。
+				// C1 修复:此前 subTask.Result = ... 直接写裸字段,与 RLock reader race。
+				var review *ReviewReport
 				if rl := o.getReviewLoop(); rl != nil {
-					if review, rerr := rl.SubmitReview(ctx, *subTask, result.Output); rerr == nil && review != nil {
-						subTask.Result.Review = review
-						if !review.Passed {
-							for _, iss := range review.Issues {
-								subTask.Result.Issues = append(subTask.Result.Issues, PlanIssue{
-									Severity:    iss.Severity,
-									Category:    iss.Category,
-									Description: iss.Description,
-									SuggestedFix: iss.SuggestedFix,
-								})
-							}
-						}
+					if r, rerr := rl.SubmitReview(ctx, *subTask, result.Output); rerr == nil && r != nil {
+						review = r
 					} else if rerr != nil {
 						diaglog.Warn("execute_task_plan", "review submit failed",
 							"task_id", taskID, "err", rerr)
 					}
 				}
+
+				plan.WithSubTask(taskID, func(st *PlanSubTask) {
+					st.Result = &PlanTaskResult{
+						Output: string(result.Output),
+					}
+					if review != nil {
+						st.Result.Review = review
+						if !review.Passed {
+							for _, iss := range review.Issues {
+								st.Result.Issues = append(st.Result.Issues, PlanIssue{
+									Severity:     iss.Severity,
+									Category:     iss.Category,
+									Description:  iss.Description,
+									SuggestedFix: iss.SuggestedFix,
+								})
+							}
+						}
+					}
+				})
 
 				if reporter != nil {
 					reporter("plan.task.completed", taskID, "completed", string(result.Output))
@@ -329,14 +355,16 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 				}
 
 				if subTask.RetryPolicy.MaxRetries > subTask.RetryCount {
-					// 需要重试。失败原因多半是 turns_exhausted —— 同 budget 重试必然再败。
-					// 这里没有直接的 Estimator 引用（Orchestrator 不持有，在 PlanOrchestrator 上）。
-					// 由 PlanOrchestrator 上层的 retry 包装做 budget 调整；本函数只标记重试。
+					// 需要重试。subTask.RetryCount++ 通过 WithSubTask 加写锁。
 					retryTasks = append(retryTasks, i)
-					subTask.RetryCount++
+					var newCount int
+					plan.WithSubTask(taskID, func(st *PlanSubTask) {
+						st.RetryCount++
+						newCount = st.RetryCount
+					})
 					if reporter != nil {
 						reporter("plan.task.retrying", taskID, "retrying",
-							fmt.Sprintf("retry %d/%d: %s", subTask.RetryCount, subTask.RetryPolicy.MaxRetries, errMsg))
+							fmt.Sprintf("retry %d/%d: %s", newCount, subTask.RetryPolicy.MaxRetries, errMsg))
 					}
 				} else {
 					// 不再重试，标记失败
@@ -349,14 +377,18 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 						o.partialFiles.Clear(taskID)
 					}
 
-					subTask.Result = &PlanTaskResult{
-						Output: errMsg,
-						Issues: []PlanIssue{{
-							Severity:    "critical",
-							Category:    "execution",
-							Description: errMsg,
-						}},
-					}
+					// C1 修复:Result 写入加锁
+					failureMsg := errMsg
+					plan.WithSubTask(taskID, func(st *PlanSubTask) {
+						st.Result = &PlanTaskResult{
+							Output: failureMsg,
+							Issues: []PlanIssue{{
+								Severity:    "critical",
+								Category:    "execution",
+								Description: failureMsg,
+							}},
+						}
+					})
 
 					if reporter != nil {
 						reporter("plan.task.failed", taskID, "failed", errMsg)
@@ -447,46 +479,45 @@ func (o *Orchestrator) ExecuteTaskPlan(ctx context.Context, plan *TaskPlan, prog
 // 同时从 Orchestrator.partialFiles tracker 读出每个被中断 task 写过的文件路径,
 // 填入 SubTask.PartialFiles,供 PlanOrchestrator.snapshotState 备份用。
 // Orchestrator nil 时退化为单纯标记(测试场景兼容)。
+//
+// C1 修复:整段写入走 plan.WithAllSubTasks 加写锁,与 SnapshotSubTasks RLock
+// 互斥,堵 chat ProgressView 并发读 race。
 func (o *Orchestrator) markRunningTasksInterrupted(plan *TaskPlan, reason string) {
 	if plan == nil {
 		return
 	}
 	now := time.Now()
-	for i := range plan.SubTasks {
-		if plan.SubTasks[i].Status == PlanTaskRunning {
-			plan.SubTasks[i].Status = PlanTaskInterrupted
-			plan.SubTasks[i].AbortReason = reason
-			plan.SubTasks[i].CompletedAt = &now
+	plan.WithAllSubTasks(func(st *PlanSubTask) {
+		if st.Status != PlanTaskRunning {
+			return
+		}
+		st.Status = PlanTaskInterrupted
+		st.AbortReason = reason
+		st.CompletedAt = &now
 
-			// 从 PartialFilesTracker 提取已写文件路径,并 Clear 防止跨 replan 累积。
-			//
-			// 跨 replan 场景:newPlan 复用原 taskID(ToReplanTaskPlan),sub 启动后
-			// 又 Record 新文件路径。如果不 Clear,下次 replan 拿到的是
-			// "v1 partial 路径 + v2 partial 路径"混合,RAII 备份会覆盖 v1 已删的文件
-			// (但备份目录用 task_id 同名导致覆盖)→ 修法:Get 完立即 Clear。
-			if o != nil && o.partialFiles != nil {
-				files := o.partialFiles.Get(plan.SubTasks[i].TaskID)
-				if len(files) > 0 {
-					// 合并已有 PartialFiles(防止覆盖之前累积值)
-					existing := plan.SubTasks[i].PartialFiles
-					seen := make(map[string]bool, len(existing))
-					for _, p := range existing {
+		// 从 PartialFilesTracker 提取已写文件路径,并 Clear + Block 防止
+		// Clear 后 sub 仍 inflight 的 brain/progress 晚到 Record 累积新条目。
+		// (B3 修不彻底的 race 在 C6 通过 Block 修)
+		if o != nil && o.partialFiles != nil {
+			files := o.partialFiles.Get(st.TaskID)
+			if len(files) > 0 {
+				existing := st.PartialFiles
+				seen := make(map[string]bool, len(existing))
+				for _, p := range existing {
+					seen[p] = true
+				}
+				for _, p := range files {
+					if !seen[p] {
+						existing = append(existing, p)
 						seen[p] = true
 					}
-					for _, p := range files {
-						if !seen[p] {
-							existing = append(existing, p)
-							seen[p] = true
-						}
-					}
-					plan.SubTasks[i].PartialFiles = existing
 				}
-				// 无论 Get 是否返回数据,都 Clear 一次,确保下一轮 plan 同 task 重启时
-				// tracker 从干净状态开始累积。
-				o.partialFiles.Clear(plan.SubTasks[i].TaskID)
+				st.PartialFiles = existing
 			}
+			// Clear + Block(C6):Block 后晚到的 Record 直接跳过,不再累积。
+			o.partialFiles.ClearAndBlock(st.TaskID)
 		}
-	}
+	})
 }
 
 // ctxAbortReason 从 ctx.Cause 提取 cancel 原因字符串。
@@ -585,9 +616,12 @@ func (o *Orchestrator) retryFailedTasks(
 			plan.UpdateTaskStatus(taskID, PlanTaskCompleted)
 			*totalCompleted++
 
-			subTask.Result = &PlanTaskResult{
-				Output: string(result.Output),
-			}
+			// C1 修复:Result 写入用 WithSubTask 加锁
+			plan.WithSubTask(taskID, func(st *PlanSubTask) {
+				st.Result = &PlanTaskResult{
+					Output: string(result.Output),
+				}
+			})
 
 			if reporter != nil {
 				reporter("plan.task.completed", taskID, "completed", string(result.Output))
@@ -617,14 +651,19 @@ func (o *Orchestrator) retryFailedTasks(
 				errMsg = result.Error
 			}
 
-			subTask.Result = &PlanTaskResult{
-				Output: errMsg,
-				Issues: []PlanIssue{{
-					Severity:    "critical",
-					Category:    "execution",
-					Description: fmt.Sprintf("failed after %d retries: %s", subTask.RetryCount, errMsg),
-				}},
-			}
+			// C1 修复:Result 写入加锁
+			retryCount := subTask.RetryCount
+			failureMsg := errMsg
+			plan.WithSubTask(taskID, func(st *PlanSubTask) {
+				st.Result = &PlanTaskResult{
+					Output: failureMsg,
+					Issues: []PlanIssue{{
+						Severity:    "critical",
+						Category:    "execution",
+						Description: fmt.Sprintf("failed after %d retries: %s", retryCount, failureMsg),
+					}},
+				}
+			})
 
 			if reporter != nil {
 				reporter("plan.task.failed", taskID, "failed",

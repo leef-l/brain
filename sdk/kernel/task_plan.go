@@ -236,26 +236,80 @@ func (p *TaskPlan) UpdateTaskStatus(taskID string, status PlanTaskStatus) {
 }
 
 // SnapshotSubTasks 返回 SubTasks 切片的深拷贝,供 chat REPL CurrentSnapshot 等
-// 跨 goroutine 读用,与 UpdateTaskStatus / 直接写 SubTasks[i].X 的 ExecuteTaskPlan
-// 路径互斥(RLock)。
+// 跨 goroutine 读用,与 UpdateTaskStatus / WithSubTask 的写路径互斥(RLock)。
 //
 // 调用方持有的副本可任意访问字段,不再受 plan 内部并发影响。
-// PartialFiles / Result 是值拷贝;Result 是 *PlanTaskResult 指针仍指向原对象,
-// 但 ExecuteTaskPlan 完成 task 后不会改 Result(Result 设值 + 不再改),OK。
+// PartialFiles / Result 都做深拷贝(C12 修复:Result 此前只复制指针,
+// 与 ExecuteTaskPlan 写 Result.Issues / Result.Review 路径仍 race)。
 func (p *TaskPlan) SnapshotSubTasks() []PlanSubTask {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	out := make([]PlanSubTask, len(p.SubTasks))
 	for i := range p.SubTasks {
 		out[i] = p.SubTasks[i]
-		// PartialFiles 是 slice,深拷贝避免读端修改影响原始
+		// PartialFiles slice 深拷贝
 		if len(p.SubTasks[i].PartialFiles) > 0 {
 			pf := make([]string, len(p.SubTasks[i].PartialFiles))
 			copy(pf, p.SubTasks[i].PartialFiles)
 			out[i].PartialFiles = pf
 		}
+		// Result 指针深拷贝(C12 修复 race)
+		if p.SubTasks[i].Result != nil {
+			rcopy := *p.SubTasks[i].Result
+			// Issues slice 深拷贝
+			if len(p.SubTasks[i].Result.Issues) > 0 {
+				is := make([]PlanIssue, len(p.SubTasks[i].Result.Issues))
+				copy(is, p.SubTasks[i].Result.Issues)
+				rcopy.Issues = is
+			}
+			// Artifacts slice 深拷贝
+			if len(p.SubTasks[i].Result.Artifacts) > 0 {
+				ar := make([]string, len(p.SubTasks[i].Result.Artifacts))
+				copy(ar, p.SubTasks[i].Result.Artifacts)
+				rcopy.Artifacts = ar
+			}
+			// Review 是 *ReviewReport,假设 ExecuteTaskPlan 不改 Review 内部字段(只赋一次)
+			// 不深拷贝 Review struct,只复制指针
+			out[i].Result = &rcopy
+		}
 	}
 	return out
+}
+
+// WithSubTask 是写锁辅助:在 plan.mu 写锁内对指定 taskID 的 SubTask 调用 mutator。
+// 所有 "在 plan 主流程外修改 SubTask 字段" 的写入(Replan markRunningTasksInterrupted /
+// retry / Review 写入)都应通过此方法,与 SnapshotSubTasks RLock 互斥避免 race。
+//
+// mutator 内可直接操作 *PlanSubTask 任意字段(Status / Result / PartialFiles 等)。
+// 找不到 taskID 时 mutator 不调用,返回 false。
+func (p *TaskPlan) WithSubTask(taskID string, mutator func(*PlanSubTask)) bool {
+	if mutator == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := range p.SubTasks {
+		if p.SubTasks[i].TaskID == taskID {
+			mutator(&p.SubTasks[i])
+			p.UpdatedAt = time.Now()
+			return true
+		}
+	}
+	return false
+}
+
+// WithAllSubTasks 在写锁内遍历所有 SubTask 调用 mutator。
+// 用于 markRunningTasksInterrupted 等需要扫全部 task 的场景。
+func (p *TaskPlan) WithAllSubTasks(mutator func(*PlanSubTask)) {
+	if mutator == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := range p.SubTasks {
+		mutator(&p.SubTasks[i])
+	}
+	p.UpdatedAt = time.Now()
 }
 
 // ComputeParallelLayers 基于 Dependencies 使用 Kahn 算法计算拓扑分层。
