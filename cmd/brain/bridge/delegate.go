@@ -2,10 +2,13 @@ package bridge
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/leef-l/brain/cmd/brain/env"
@@ -19,6 +22,12 @@ type DelegateTool struct {
 	Orchestrator *kernel.Orchestrator
 	Env          *env.Environment
 	Available    []string
+
+	// failsMu / failCount 跟踪同 (target_kind, instruction-hash) 失败次数。
+	// LLM 看到 fail_count + STOP retrying hint 才会换 args 或停手,否则会
+	// 反复调相同 args 触发 LoopDetector 整个 run 死掉(用户日志真实场景)。
+	failsMu   sync.Mutex
+	failCount map[string]int
 }
 
 func NewDelegateTool(orch *kernel.Orchestrator, e *env.Environment) *DelegateTool {
@@ -31,7 +40,21 @@ func NewDelegateTool(orch *kernel.Orchestrator, e *env.Environment) *DelegateToo
 		Orchestrator: orch,
 		Env:          e,
 		Available:    names,
+		failCount:    make(map[string]int),
 	}
+}
+
+func (t *DelegateTool) bumpFailCount(key string) int {
+	t.failsMu.Lock()
+	defer t.failsMu.Unlock()
+	t.failCount[key]++
+	return t.failCount[key]
+}
+
+func sha256Short(s string) string {
+	h := sha256.New()
+	h.Write([]byte(s))
+	return hex.EncodeToString(h.Sum(nil))[:8]
 }
 
 func (t *DelegateTool) Name() string { return "central.delegate" }
@@ -207,31 +230,47 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 		}
 	}
 
+	// 失败计数:同一 (target_kind, instruction) 短哈希连续失败 N 次后,
+	// retry_hint 强制告诉 LLM "STOP RETRYING SAME ARGS",避免 LoopDetector
+	// 触发整个 run 死掉。
+	failKey := fmt.Sprintf("%s|%x", input.TargetKind, sha256Short(input.Instruction))
+	prevFails := t.bumpFailCount(failKey)
+
 	if err != nil {
-		// 明确告诉 LLM next-step:重试 / 换 brain / 报告用户。
-		// 避免 LLM 自己说"我直接写"然后又 announce-without-act。
+		hint := "call delegate again with a DIFFERENT target_kind or DIFFERENT instruction. Do NOT retry the same args — same args = same failure."
+		if prevFails >= 2 {
+			hint = "STOP retrying delegate. Already failed " + fmt.Sprint(prevFails) + " times with these args. Tell the user the failure and ask how to proceed."
+		}
 		return &tool.Result{
 			Output: json.RawMessage(fmt.Sprintf(
-				`{"error":"delegation error: %s","retry_hint":"call delegate again with a different brain_id or simpler instruction; if persistent, summarize the failure to the user and ask how to proceed (do NOT silently announce a workaround)"}`,
-				escapeForJSON(err.Error()))),
+				`{"error":"delegation error: %s","retry_hint":%q,"fail_count":%d}`,
+				escapeForJSON(err.Error()), hint, prevFails)),
 			IsError: true,
 		}, nil
 	}
 
 	if result.Status == "rejected" {
+		hint := "the target brain refused. Try DIFFERENT target_kind or rephrase instruction. Do NOT retry same args."
+		if prevFails >= 2 {
+			hint = "STOP retrying. Brain refused " + fmt.Sprint(prevFails) + " times. Report to user."
+		}
 		return &tool.Result{
 			Output: json.RawMessage(fmt.Sprintf(
-				`{"error":"delegation rejected: %s","retry_hint":"the target brain refused; try a different brain_id or rephrase the instruction"}`,
-				escapeForJSON(result.Error))),
+				`{"error":"delegation rejected: %s","retry_hint":%q,"fail_count":%d}`,
+				escapeForJSON(result.Error), hint, prevFails)),
 			IsError: true,
 		}, nil
 	}
 
 	if result.Status == "failed" {
+		hint := "call delegate with a CLEARER instruction or DIFFERENT brain. Do NOT silently announce a workaround. Do NOT retry same args."
+		if prevFails >= 2 {
+			hint = "STOP retrying. Subtask failed " + fmt.Sprint(prevFails) + " times. Report to user and ask how to proceed."
+		}
 		return &tool.Result{
 			Output: json.RawMessage(fmt.Sprintf(
-				`{"error":"subtask failed: %s","retry_hint":"call delegate again with a clearer instruction or different brain; if you choose not to retry, explicitly tell the user why instead of announcing a workaround"}`,
-				escapeForJSON(result.Error))),
+				`{"error":"subtask failed: %s","retry_hint":%q,"fail_count":%d}`,
+				escapeForJSON(result.Error), hint, prevFails)),
 			IsError: true,
 		}, nil
 	}
