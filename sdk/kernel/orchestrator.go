@@ -981,6 +981,21 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*Del
 		return result, err
 	}
 
+	// 关键判断:错误是 RPC 链路 cancel 类(我方 attemptCtx 超时 / 用户取消触发的
+	// "brain/execute cancelled before response" / "BidirRPC closed with waiter pending"
+	// / "in-flight window acquire cancelled" / "frame writer: enqueue cancelled"),
+	// 还是 sidecar 真的 crash。前者 sidecar 进程还在,不能 remove pool + retry,否则
+	// 6 个并发 delegate 中一个 cancel 会触发其他 5 个共享 sidecar 一起死亡 + 重启
+	// 雪崩(用户日志中观察到的进程数爆炸根因)。
+	if isRPCCancelError(err) || (result != nil && isRPCCancelError(errStr(result.Error))) {
+		diaglog.Info("delegate", "delegate aborted (rpc cancel, not retrying)",
+			"task_id", req.TaskID,
+			"target_kind", req.TargetKind,
+			"err", err,
+		)
+		return result, err
+	}
+
 	// Remove crashed sidecar from pool and retry once with a fresh timeout.
 	fmt.Fprintf(os.Stderr, "orchestrator: %s sidecar failed, retrying: %s\n", req.TargetKind, result.Error)
 	diaglog.Warn("delegate", "delegate retrying",
@@ -1635,6 +1650,38 @@ func (o *Orchestrator) SetHumanTakeoverHandler(h HumanTakeoverHandler) {
 }
 
 // poolRemoveBrain removes a sidecar from the pool (if pool supports it).
+// rpcCancelMarkers 是 BidirRPC 在我方 ctx 取消时常见的错误片段。
+// 命中其中之一表示 RPC 链路被 host 端主动断开,sidecar 进程通常仍存活,
+// 不应该 remove pool + retry,否则并发场景下会引发雪崩。
+var rpcCancelMarkers = []string{
+	"brain/execute cancelled before response",
+	"BidirRPC closed with waiter pending",
+	"in-flight window acquire cancelled",
+	"frame writer: enqueue cancelled",
+	"context canceled",
+	"context deadline exceeded",
+}
+
+func errStr(s string) error {
+	if s == "" {
+		return nil
+	}
+	return fmt.Errorf("%s", s)
+}
+
+func isRPCCancelError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, m := range rpcCancelMarkers {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
+
 func (o *Orchestrator) poolRemoveBrain(kind agent.Kind) {
 	if o.pool == nil {
 		return
