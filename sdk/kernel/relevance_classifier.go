@@ -53,6 +53,11 @@ const (
 	// RelevanceRefine 补充指令 — "再快一点"/"代码风格用 X",不停任务。
 	// 走 brain.feedback.requested 事件,sub 内部决定是否吸收。
 	RelevanceRefine Relevance = "refine"
+
+	// RelevanceContinue 继续指令 — "确认"/"开工"/"继续"/"go ahead",不打断、不入队列。
+	// 这是用户对当前 plan 的 ack(同意继续推进),应该静默放行,不触发任何动作。
+	// 用户日志中"开工"被误判为 Unrelated 入队等待是真实场景的痛点。
+	RelevanceContinue Relevance = "continue"
 )
 
 // RelevanceContext 是分类器需要的上下文(由调用方组装)。
@@ -168,6 +173,21 @@ var refineKeywords = []string{
 	"add comments", "use chinese", "use english",
 }
 
+// 继续指令关键词 — 用户对当前 plan 的 ack。
+// 命中即返回 Continue,不打断不入队列。这些词的语义是"按现在这样继续推进",
+// 与 Modification("改成 X")的"换方向"明确不同。
+//
+// 重要:必须放在 Modification 前判定。"确认,开工" 这种短语在现行实现里走不到
+// Modification(无关键词命中)就被默认归 Unrelated 入队,体验灾难。
+var continueKeywords = []string{
+	// 中文 — 同意/继续/确认
+	"确认", "确定", "同意", "可以", "ok", "OK",
+	"开工", "开始", "开干", "开搞", "搞起", "干起来",
+	"继续", "接着干", "接着做", "继续干",
+	"go ahead", "proceed", "approved", "confirmed",
+	"yes do it", "let's go", "go for it",
+}
+
 // Classify 判断 input 的关联性。
 //
 // ctx 用于 LLM 兜底调用;如果只用关键词层,传 context.Background() 即可。
@@ -212,7 +232,19 @@ func (c *RelevanceClassifier) Classify(ctx context.Context, input string, rctx R
 		}
 	}
 
-	// 4. Modification 关键词
+	// 4. Continue 关键词("确认/开工/继续/go ahead/ok")— 用户 ack,不打断不入队列。
+	// 必须放在 Modification 前:这些词大多很短,LLM 兜底也未必能稳判。
+	// 短句优先短路命中。
+	if hasAnyKeyword(low, continueKeywords) {
+		return RelevanceVerdict{
+			Kind:       RelevanceContinue,
+			Confidence: 0.9,
+			Source:     "keyword",
+			Rationale:  "matched continue keyword (user ack)",
+		}
+	}
+
+	// 5. Modification 关键词
 	if hasAnyKeyword(low, modificationKeywords) {
 		return RelevanceVerdict{
 			Kind:       RelevanceModification,

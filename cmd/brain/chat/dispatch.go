@@ -215,6 +215,12 @@ func dispatchUserInput(state *State, input string, eventBus events.EventBus, lau
 		// 不打断当前 run
 		publishRefineHint(eventBus, state.CurrentProject.ID, input)
 		res.Hint = "[refine] 已发送补充指令"
+
+	case kernel.RelevanceContinue:
+		// 用户 ack ("确认/开工/继续") — 静默放行,不入队列不打断。
+		// 当前 run 已经在按计划推进,这条 input 只是同意信号。
+		// 不进对话历史(避免污染 LLM context),不做任何 side effect。
+		res.Hint = "[continue] 已收到,继续按当前方案推进"
 	}
 
 	return res
