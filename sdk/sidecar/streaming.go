@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/leef-l/brain/sdk/llm"
 )
@@ -54,15 +55,23 @@ func pushStreamEvent(id string, ev llm.StreamEvent) {
 
 // channelStreamReader implements llm.StreamReader backed by a Go channel.
 // Events are pushed in real time from the host via llm/stream/delta notifications.
+//
+// 心跳超时:90s 没收到任何 event 就报 stalled 错。
+// 之前 Next 只 select ch + ctx.Done — 如果 host LLMProxy 死(流断但没 close ch),
+// sub agent 永远 block 在 channel read 导致 "sub agent idle sleeping" 现象。
 type channelStreamReader struct {
 	ch     <-chan llm.StreamEvent
 	closed bool
 }
 
+const channelStreamIdleTimeout = 90 * time.Second
+
 func (r *channelStreamReader) Next(ctx context.Context) (llm.StreamEvent, error) {
 	if r.closed {
 		return llm.StreamEvent{}, fmt.Errorf("stream closed")
 	}
+	timer := time.NewTimer(channelStreamIdleTimeout)
+	defer timer.Stop()
 	select {
 	case ev, ok := <-r.ch:
 		if !ok {
@@ -71,6 +80,8 @@ func (r *channelStreamReader) Next(ctx context.Context) (llm.StreamEvent, error)
 		return ev, nil
 	case <-ctx.Done():
 		return llm.StreamEvent{}, ctx.Err()
+	case <-timer.C:
+		return llm.StreamEvent{}, fmt.Errorf("kernel stream idle %v — host LLMProxy may be stuck", channelStreamIdleTimeout)
 	}
 }
 

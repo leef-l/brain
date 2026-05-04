@@ -332,14 +332,39 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		// Build the ChatRequest.
 		req := r.buildChatRequest(run, messages, turnOpts)
 
-		// Call LLM.
+		// Call LLM with transparent retry on transient errors (network/stream stalled).
+		// 重试策略:同 turn 内最多 3 次,指数退避 1/3/9 秒,messages 完全相同(LLM 接 partial
+		// 没意义,直接重新跑全 turn)。3 次后真失败才把整个 run 标 failed。
+		// 不重试的错误:context cancel、ValidateToolUseResponse 失败(LLM 输出格式错)。
 		var resp *llm.ChatResponse
 		var llmErr error
-
-		if opts.Stream {
-			resp, llmErr = r.consumeStream(ctx, run, turn, req)
-		} else {
-			resp, llmErr = r.Provider.Complete(ctx, req)
+		const maxLLMRetries = 3
+		for attempt := 1; attempt <= maxLLMRetries; attempt++ {
+			if opts.Stream {
+				resp, llmErr = r.consumeStream(ctx, run, turn, req)
+			} else {
+				resp, llmErr = r.Provider.Complete(ctx, req)
+			}
+			if llmErr == nil {
+				break
+			}
+			// ctx canceled 不重试
+			if errors.Is(ctx.Err(), context.Canceled) || errors.Is(llmErr, context.Canceled) {
+				break
+			}
+			if attempt < maxLLMRetries {
+				backoff := time.Duration(1<<(attempt-1)) * time.Second
+				fmt.Fprintf(os.Stderr, "[runner] LLM call attempt %d/%d failed: %v — retry in %v\n",
+					attempt, maxLLMRetries, llmErr, backoff)
+				select {
+				case <-time.After(backoff):
+				case <-ctx.Done():
+					llmErr = ctx.Err()
+				}
+				if errors.Is(ctx.Err(), context.Canceled) {
+					break
+				}
+			}
 		}
 		turn.LLMCalls++
 		run.Budget.UsedLLMCalls++

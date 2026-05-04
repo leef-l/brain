@@ -718,15 +718,19 @@ func (r *sseReader) Close() error {
 // 不影响快路径。
 func newDefaultHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: 0,
+		Timeout: 0, // 无总超时 — 流式响应可能写很久,靠 SSE 行级 + 累计静默 timer 兜底
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout:   10 * time.Second,
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 5 * time.Minute,
-			IdleConnTimeout:       180 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second, // 60s 拿到 headers — 之前 5min 太宽松
+			IdleConnTimeout:       90 * time.Second,
+			ExpectContinueTimeout: 5 * time.Second,
+			DisableCompression:    true, // SSE 流不压缩,避免 gzip 缓冲让心跳/事件延迟到达
+			MaxIdleConns:          50,
+			MaxIdleConnsPerHost:   10,
 		},
 	}
 }

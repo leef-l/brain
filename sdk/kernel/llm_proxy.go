@@ -439,11 +439,16 @@ func (p *LLMProxy) handleStream(ctx context.Context, kind agent.Kind, params jso
 		// If sidecar requested real-time streaming, push every event as a
 		// fire-and-forget notification so tokens arrive without waiting for
 		// the full aggregation.
+		// 关键:Notify 必须带短超时,否则 frame writer 阻塞会让 handleStream 卡死,
+		// sub agent 端 channelStreamReader 永远拿不到 EOF。fire-and-forget 语义
+		// 允许丢这一帧 — 单帧丢失比整个流卡死好一万倍。
 		if req.StreamID != "" {
-			_ = rpc.Notify(ctx, protocol.MethodLLMStreamDelta, map[string]interface{}{
+			notifyCtx, notifyCancel := context.WithTimeout(ctx, 5*time.Second)
+			_ = rpc.Notify(notifyCtx, protocol.MethodLLMStreamDelta, map[string]interface{}{
 				"stream_id": req.StreamID,
 				"event":     event,
 			})
+			notifyCancel()
 		}
 
 		// Publish to unified event bus for HTTP SSE consumers.
