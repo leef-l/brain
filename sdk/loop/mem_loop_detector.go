@@ -74,9 +74,15 @@ type runLoopState struct {
 // NewMemLoopDetector builds a detector with the §11.1 defaults. Callers
 // that want different thresholds (e.g. the C-L-11 compliance test)
 // should construct the struct literal directly.
+//
+// 阈值调整(2026-05-04):RepeatedToolCallThreshold 3→5。
+// 实测 chat 模式 central LLM 在前几轮探索时确实会调相同 delegate 多次
+// (例如调 sub agent 失败重试,或 retry_hint 引导重试),阈值 3 太敏感
+// 导致整个 run 第一两轮就被干掉。提高到 5 让"真死循环"还能被识别,
+// 但给探索/重试留出空间。
 func NewMemLoopDetector() *MemLoopDetector {
 	return &MemLoopDetector{
-		RepeatedToolCallThreshold: 3,
+		RepeatedToolCallThreshold: 5,
 		NoProgressTurnThreshold:   5,
 		ThoughtOnlyTurnThreshold:  3,
 		state:                     make(map[string]*runLoopState),
