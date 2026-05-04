@@ -365,10 +365,15 @@ func RunBrainWithLearner(name string, learner kernel.BrainLearner) error {
 			"listing files, searching code, and executing shell commands. " +
 			"Complete the task described in the user message. " +
 			"Be precise and efficient. Write clean, working code.\n\n" +
+			"**CRITICAL**: You are a SUB AGENT called via delegate. The user's request is the WHOLE TASK — " +
+			"you must EXECUTE it, not analyze/plan/summarize. Your FIRST response MUST contain a tool_use block " +
+			"(write_file / edit_file / shell_exec / read_file / list_files / search). " +
+			"DO NOT respond with pure text saying what you'll do — DO IT. Pure text replies are treated as " +
+			"announce-without-act and will be rejected (you'll be re-prompted to call a tool).\n\n" +
 			"FOR COMPLEX TASKS (3+ steps): start by calling code.note with action=add to plan your steps, " +
 			"then mark each step done (action=done) as you complete them. This prevents getting lost mid-task. " +
-			"For simple tasks, skip planning and just execute.\n\n" +
-			"When done, summarize what you did."
+			"For simple tasks (single file write / single edit), SKIP PLANNING — call write_file/edit_file directly.\n\n" +
+			"When done with all work, call code.task_complete with a brief summary, then stop."
 		tb = NewThinBrain(agent.KindCode, reg, systemPrompt, 10).
 			WithRegistryBuilder(func(spec *executionpolicy.ExecutionSpec) (tool.Registry, error) {
 				bounds, err := toolguard.NewBoundaries(spec)

@@ -303,6 +303,10 @@ func RunAgentLoopFull(ctx context.Context, caller KernelCaller, registry tool.Re
 		ToolChoice: "auto",
 		MaxTokens:  4096,
 		Stream:     executionID != "",
+		// 标记本 Run 是被 delegate 召唤的专精 sub agent。
+		// 启用后第一轮 0 工具 + 有文本会触发 nudge 重试一次,避免 LLM
+		// "宣告而不动"(实测 code brain 第一轮 433 字纯文本然后 end_turn)。
+		SpecialistSubAgent: true,
 	}
 
 	if executionID != "" {

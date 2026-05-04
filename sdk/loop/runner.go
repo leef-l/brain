@@ -140,6 +140,15 @@ type RunOptions struct {
 	// 不靠关键词 — central 编排大脑本来就该调工具,纯文本响应是无意义的。
 	// 专精 brain / run / serve 模式不启用,允许它们纯文本回复。
 	ChatCentralBrain bool
+
+	// SpecialistSubAgent 标记本 Run 是被 delegate 召唤的专精 sub agent
+	// (code/browser/data 等被 central.delegate 调用执行单一任务的场景)。
+	// 启用后:第一轮就强制要求 tool_use(0 工具 + 有文本 = 立即 nudge),
+	// 因为专精 sub agent 是来"干活"的,不应该返回纯文本计划。
+	// 实测发现:code brain 被 delegate 后第一轮常输出 400+ 字纯文字
+	// (planning/分析)然后 stop_reason=end_turn 退出,实际什么都没写。
+	// 行为类似 ChatCentralBrain,但语义不同 — 这个标志专门给 sub agent 用。
+	SpecialistSubAgent bool
 }
 
 // RunResult is the final output of Runner.Execute.
@@ -427,6 +436,9 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			// nudge 仅触发 1 次,避免对正常聊天回复反复打扰。
 			shouldTriggerNudge := false
 			if opts.ChatCentralBrain && hasTextContent(resp.Content) {
+				shouldTriggerNudge = true
+			} else if opts.SpecialistSubAgent && hasTextContent(resp.Content) {
+				// Sub agent 应该立即调工具,纯文本响应没意义
 				shouldTriggerNudge = true
 			} else if shouldNudgeAnnouncement(resp.Content) {
 				shouldTriggerNudge = true
