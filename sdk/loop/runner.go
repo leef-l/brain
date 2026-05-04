@@ -497,6 +497,7 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 					Type:        "tool_call",
 					ToolName:    tb.ToolName,
 					ContentHash: hash,
+					TurnIndex:   turn.Index, // 同 turn 内多 block 不计入循环计数
 				})
 				if detectErr != nil {
 					// Detection error is non-fatal — log and continue.

@@ -45,6 +45,12 @@ type LoopEvent struct {
 	// TraceID is the W3C Trace Context trace ID of the current Turn.
 	// See 22-Agent-Loop规格.md §9.1.
 	TraceID string
+
+	// TurnIndex 当前 Turn 序号(0-based),用于区分跨 turn 重复 vs turn 内多 block。
+	// 同一 turn 内 LLM 输出多个相同 tool_use block 不算 loop(LLM 单次响应);
+	// 跨 turn 出现相同 sig 才计入 repeatCount。
+	// 实现方未填(0)时回退到原行为(每次 Observe 都 +1)。
+	TurnIndex int
 }
 
 // LoopVerdict is the decision returned by LoopDetector.Observe.

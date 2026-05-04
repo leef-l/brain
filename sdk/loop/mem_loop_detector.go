@@ -54,6 +54,12 @@ type runLoopState struct {
 	lastToolSignature string
 	repeatCount       int
 
+	// lastTurnIndex 上次更新 repeatCount 的 turn 序号。
+	// 用于"同一 turn 内多次相同 sig 只计 1"的去重判断 — LLM 单次响应
+	// 输出多个相同 tool_use block 不应被当作 loop(可能就是合理的同 turn
+	// 多次调用,或 chat 模式 prompt 引导反思查询)。
+	lastTurnIndex int
+
 	// lastContentHash is the most recent content hash observed
 	// (Thought + tool_call payload); noProgressCount counts the
 	// streak of identical Turn hashes.
@@ -104,12 +110,24 @@ func (d *MemLoopDetector) Observe(ctx context.Context, run *Run, event LoopEvent
 	switch event.Type {
 	case "tool_call":
 		// Pattern 1: repeated identical tool_call signature.
+		// 关键:同一 turn 内多次相同 sig 不累加 — LLM 单次响应输出多个
+		// 相同 tool_use block 不算 loop(实测 chat 模式 central LLM 会在
+		// 一个 turn 内调 2-3 次相同 metacognition,跨 turn 累积本就触发
+		// 阈值 3,导致整个 run 第一轮就被干掉)。只有跨 turn 重复才计数。
 		sig := event.ToolName + "|" + event.ContentHash
-		if sig == s.lastToolSignature && sig != "" {
+		sameSig := sig == s.lastToolSignature && sig != ""
+		sameTurn := event.TurnIndex > 0 && event.TurnIndex == s.lastTurnIndex
+		switch {
+		case sameSig && sameTurn:
+			// 同 turn 同 sig — 不动 repeatCount,LLM 在单次响应里多调几次
+			// 不视为循环(LoopDetector 的循环语义本是"模型陷入死循环")。
+		case sameSig:
 			s.repeatCount++
-		} else {
+			s.lastTurnIndex = event.TurnIndex
+		default:
 			s.lastToolSignature = sig
 			s.repeatCount = 1
+			s.lastTurnIndex = event.TurnIndex
 		}
 		// A tool_call breaks any thought-only streak.
 		s.thoughtOnlyCount = 0
