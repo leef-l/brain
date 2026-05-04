@@ -51,6 +51,12 @@ func (t *DelegateTool) bumpFailCount(key string) int {
 	return t.failCount[key]
 }
 
+func (t *DelegateTool) peekFailCount(key string) int {
+	t.failsMu.Lock()
+	defer t.failsMu.Unlock()
+	return t.failCount[key]
+}
+
 func sha256Short(s string) string {
 	h := sha256.New()
 	h.Write([]byte(s))
@@ -234,7 +240,17 @@ func (t *DelegateTool) Execute(ctx context.Context, args json.RawMessage) (*tool
 	// retry_hint 强制告诉 LLM "STOP RETRYING SAME ARGS",避免 LoopDetector
 	// 触发整个 run 死掉。
 	failKey := fmt.Sprintf("%s|%x", input.TargetKind, sha256Short(input.Instruction))
-	prevFails := t.bumpFailCount(failKey)
+	prevFails := t.peekFailCount(failKey)
+	// 硬上限:同 args 已失败 3 次,直接返回 IsError=false 的"已停止"信号,
+	// 避免 LLM 还在试触发 LoopDetector。这是"工具自我保护",不依赖 LLM 听话。
+	if prevFails >= 3 {
+		return &tool.Result{
+			Output: json.RawMessage(fmt.Sprintf(
+				`{"error":"delegate hard-stopped after %d identical-args failures","retry_hint":"DO NOT call delegate with these same args again. Either change target_kind / instruction substantially, or report failure to user. This tool will keep returning this stop message until you change args.","fail_count":%d,"hard_stopped":true}`,
+				prevFails, prevFails)),
+			IsError: true,
+		}, nil
+	}
 
 	if err != nil {
 		hint := "call delegate again with a DIFFERENT target_kind or DIFFERENT instruction. Do NOT retry the same args — same args = same failure."
