@@ -6,9 +6,9 @@
 > - §6 `mcp_bindings` → 代码实际 JSON tag 为 `mcp_servers`（内联配置对象，非文件路径引用）
 > - §6 `auth_ref` → 代码实际 JSON tag 为 `auth`（认证类型字符串，非 vault 引用）
 > - §6 runtime.type：代码额外支持 `wasm` 和 `docker` 两种类型
-> - §7 policy：代码 PolicySpec 额外有 `max_concurrency`/`timeout_seconds`/`approval_class` 等字段；`active_tools_profile` 字段规格定义但代码未实现
-> - §8 compatibility：代码 JSON tag 为 `min_kernel_version`/`max_kernel_version`（非 `min_kernel`/`max_kernel`）；`protocol`/`tested_kernel` 字段规格定义但 CompatSpec 未实现，brain.json 中的值会被静默忽略
-> - §9 license：Manifest struct 暂未实现 License 字段
+> - §7 policy：代码 PolicySpec 额外有 `max_concurrency`/`timeout_seconds`/`approval_class` 等字段；~~`active_tools_profile` 字段规格定义但代码未实现~~ **已实现（2026-05-04）**：枚举值 safe/default/none/full
+> - §8 compatibility：代码 JSON tag 为 `min_kernel_version`/`max_kernel_version`（非 `min_kernel`/`max_kernel`，保持向后兼容不改）；~~`protocol`/`tested_kernel` 字段规格定义但 CompatSpec 未实现~~ **已实现（2026-05-04）**：CompatSpec.Protocol / CompatSpec.TestedKernel
+> - §9 license：~~Manifest struct 暂未实现 License 字段~~ **已实现（2026-05-04）**：LicenseSpec{Required, Edition, Features}
 > - §10 health：代码额外有 `ping_interval_seconds`/`ping_timeout_seconds`/`max_missed_pings` 字段
 > - §13 验证：`expected_methods` 字段存在但 doctor/orchestrator 未使用该字段做运行期校验
 > **上位规格**：[32-v3-Brain架构.md](./32-v3-Brain架构.md)

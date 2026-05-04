@@ -90,5 +90,22 @@ func Validate(m *Manifest) []ValidationError {
 		}
 	}
 
+	// PolicySpec.ActiveToolsProfile 枚举校验(空表示未声明,合法)
+	if m.Policy.ActiveToolsProfile != "" && !validActiveToolsProfiles[m.Policy.ActiveToolsProfile] {
+		errs = append(errs, ValidationError{
+			Field:   "policy.active_tools_profile",
+			Message: fmt.Sprintf("无效的 profile: %q,有效值: safe/default/none/full", m.Policy.ActiveToolsProfile),
+		})
+	}
+
 	return errs
+}
+
+// validActiveToolsProfiles 是 active_tools_profile 字段的合法值集合。
+// 与 active_tools.<scope>.<profile> 的 profile 名约定对齐。
+var validActiveToolsProfiles = map[string]bool{
+	"safe":    true, // 只允许只读 / 低风险工具
+	"default": true, // kernel 默认配置
+	"none":    true, // 完全禁用工具
+	"full":    true, // 全部工具
 }

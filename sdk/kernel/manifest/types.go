@@ -35,8 +35,23 @@ type Manifest struct {
 	Policy        PolicySpec     `json:"policy"         yaml:"policy"`
 	Compatibility *CompatSpec    `json:"compatibility,omitempty" yaml:"compatibility,omitempty"`
 	Health        *HealthSpec    `json:"health,omitempty"        yaml:"health,omitempty"`
+	License       *LicenseSpec   `json:"license,omitempty"       yaml:"license,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"      yaml:"metadata,omitempty"`
 	SourcePath    string         `json:"-" yaml:"-"` // 解析时注入，不序列化
+}
+
+// LicenseSpec 运行授权声明(非开源许可证文本)。
+// 规格:33-Brain-Manifest规格.md §9 line 359-388。
+//
+// 这只是 brain 自己声明"我需要什么授权才能跑",真正的授权校验由 runtime
+// 读取 license.json 执行。Manifest 不做强制。
+type LicenseSpec struct {
+	// Required 是否需要运行授权。规格 §9.1。
+	Required bool `json:"required" yaml:"required"`
+	// Edition free / pro / enterprise 等。规格 §9.1。
+	Edition string `json:"edition,omitempty" yaml:"edition,omitempty"`
+	// Features 该 brain 可能用到的 feature gate 列表。规格 §9.1。
+	Features []string `json:"features,omitempty" yaml:"features,omitempty"`
 }
 
 // RuntimeSpec 运行时配置
@@ -73,10 +88,25 @@ type PolicySpec struct {
 	ApprovalMode         string `json:"approval_mode,omitempty"              yaml:"approval_mode,omitempty"`
 	SandboxProfile       string `json:"sandbox_profile,omitempty"            yaml:"sandbox_profile,omitempty"`
 	ToolScope            string `json:"tool_scope,omitempty"                 yaml:"tool_scope,omitempty"`
+	// ActiveToolsProfile 推荐的工具集 profile(如 "safe"/"default"/"none"),由 kernel
+	// 决定是否对接 active_tools.<scope>.<profile>。Manifest 只做声明,不做强制。
+	// 规格:33-Brain-Manifest规格.md §7.1 line 305-316。
+	ActiveToolsProfile string `json:"active_tools_profile,omitempty"       yaml:"active_tools_profile,omitempty"`
 }
 
-// CompatSpec 兼容性约束
+// CompatSpec 兼容性约束。
+// 规格:33-Brain-Manifest规格.md §8 line 329-356。
+//
+// JSON tag 说明:
+//   - 规格里 §8 用了 min_kernel/max_kernel,但代码历史上一直用 min_kernel_version/
+//     max_kernel_version,因为 Marketplace 已发布的 brain.json 都用后者。修改 tag
+//     会破坏向后兼容,因此保持代码现状,文档 §8 加勘误即可。
+//   - Protocol/TestedKernel 是规格 v1 至少要求的字段(§8.1),这里补全。
 type CompatSpec struct {
+	// Protocol BrainKernel 协议版本(SHOULD 为明确值,如 "1.0")。规格 §8.1。
+	Protocol string `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	// TestedKernel 该 brain 测试通过的 kernel 版本(可通配,如 "1.0.x")。规格 §8.1。
+	TestedKernel     string `json:"tested_kernel,omitempty" yaml:"tested_kernel,omitempty"`
 	MinKernelVersion string `json:"min_kernel_version,omitempty" yaml:"min_kernel_version,omitempty"`
 	MaxKernelVersion string `json:"max_kernel_version,omitempty" yaml:"max_kernel_version,omitempty"`
 }
