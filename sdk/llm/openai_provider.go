@@ -24,6 +24,7 @@ type OpenAIProvider struct {
 	authToken  string
 	model      string
 	httpClient *http.Client
+	caps       Capabilities
 }
 
 // OpenAIOption configures an OpenAIProvider.
@@ -34,6 +35,13 @@ func WithOpenAIHTTPClient(c *http.Client) OpenAIOption {
 	return func(p *OpenAIProvider) { p.httpClient = c }
 }
 
+// WithOpenAICapabilities overrides the auto-inferred Capabilities.
+// Useful when the assembling layer (cmd/brain/provider) knows the
+// deployment-specific behavior better than the model-name heuristic.
+func WithOpenAICapabilities(c Capabilities) OpenAIOption {
+	return func(p *OpenAIProvider) { p.caps = c }
+}
+
 // NewOpenAIProvider creates a provider that talks to an OpenAI-compatible
 // chat completions endpoint.
 //
@@ -42,10 +50,11 @@ func WithOpenAIHTTPClient(c *http.Client) OpenAIOption {
 //   - model: the model identifier (e.g. "deepseek-chat", "deepseek-reasoner")
 func NewOpenAIProvider(baseURL, authToken, model string, opts ...OpenAIOption) *OpenAIProvider {
 	p := &OpenAIProvider{
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		authToken: authToken,
-		model:     model,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		authToken:  authToken,
+		model:      model,
 		httpClient: newDefaultHTTPClient(),
+		caps:       InferCapabilities(baseURL, model),
 	}
 	for _, o := range opts {
 		o(p)
@@ -54,6 +63,9 @@ func NewOpenAIProvider(baseURL, authToken, model string, opts ...OpenAIOption) *
 }
 
 func (p *OpenAIProvider) Name() string { return "openai" }
+
+// Capabilities implements CapabilityAware.
+func (p *OpenAIProvider) Capabilities() Capabilities { return p.caps }
 
 // isDeepSeek detects whether the endpoint is DeepSeek by baseURL or model name.
 func (p *OpenAIProvider) isDeepSeek() bool {
@@ -122,7 +134,32 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *ChatRequest) (StreamRe
 
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
-		return nil, p.readAPIError(resp)
+		apiErr := p.readAPIError(resp)
+		if os.Getenv("BRAIN_LLM_SANITIZE_DEBUG") != "" && resp.StatusCode == 400 {
+			fmt.Fprintf(os.Stderr, "[sanitize] HTTP 400 — request had %d messages:\n", len(apiReq.Messages))
+			for i, m := range apiReq.Messages {
+				contentSummary := ""
+				switch v := m.Content.(type) {
+				case string:
+					if len(v) > 60 {
+						contentSummary = v[:60] + "..."
+					} else {
+						contentSummary = v
+					}
+				case nil:
+					contentSummary = "<nil>"
+				default:
+					contentSummary = fmt.Sprintf("<%T>", v)
+				}
+				rcLen := 0
+				if m.ReasoningContent != nil {
+					rcLen = len(*m.ReasoningContent)
+				}
+				fmt.Fprintf(os.Stderr, "  [%d] role=%s content=%q tool_calls=%d tool_call_id=%q rc_len=%d\n",
+					i, m.Role, contentSummary, len(m.ToolCalls), m.ToolCallID, rcLen)
+			}
+		}
+		return nil, apiErr
 	}
 
 	return newOpenAISSEReader(resp.Body), nil
@@ -340,7 +377,7 @@ func (p *OpenAIProvider) convertMessages(messages []Message) []openaiMessage {
 // 把它带上仍会触发 400,所以必须丢弃。
 func sanitizeEmptyAssistantMessages(msgs []openaiMessage) []openaiMessage {
 	out := make([]openaiMessage, 0, len(msgs))
-	for _, m := range msgs {
+	for i, m := range msgs {
 		if m.Role == "assistant" {
 			hasContent := false
 			switch v := m.Content.(type) {
@@ -355,6 +392,16 @@ func sanitizeEmptyAssistantMessages(msgs []openaiMessage) []openaiMessage {
 			hasToolCalls := len(m.ToolCalls) > 0
 			if !hasContent && !hasToolCalls {
 				// content 和 tool_calls 都没有 = API 必拒,无论是否有 reasoning_content
+				if os.Getenv("BRAIN_LLM_SANITIZE_DEBUG") != "" {
+					rc := ""
+					if m.ReasoningContent != nil {
+						rc = *m.ReasoningContent
+						if len(rc) > 50 {
+							rc = rc[:50] + "..."
+						}
+					}
+					fmt.Fprintf(os.Stderr, "[sanitize] DROP empty assistant msg[%d] reasoning=%q\n", i, rc)
+				}
 				continue
 			}
 		}

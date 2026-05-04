@@ -24,6 +24,7 @@ type AnthropicProvider struct {
 	authToken  string
 	model      string
 	httpClient *http.Client
+	caps       Capabilities
 }
 
 // AnthropicOption configures an AnthropicProvider.
@@ -32,6 +33,13 @@ type AnthropicOption func(*AnthropicProvider)
 // WithHTTPClient sets a custom http.Client (useful for testing).
 func WithHTTPClient(c *http.Client) AnthropicOption {
 	return func(p *AnthropicProvider) { p.httpClient = c }
+}
+
+// WithAnthropicCapabilities overrides the auto-inferred Capabilities.
+// Useful when the assembling layer (cmd/brain/provider) has more accurate
+// knowledge of the deployment than the model-name heuristic.
+func WithAnthropicCapabilities(c Capabilities) AnthropicOption {
+	return func(p *AnthropicProvider) { p.caps = c }
 }
 
 // NewAnthropicProvider creates a provider that talks to the Anthropic
@@ -43,10 +51,11 @@ func WithHTTPClient(c *http.Client) AnthropicOption {
 //   - model: the model identifier (e.g. "claude-sonnet-4-20250514", "glm5")
 func NewAnthropicProvider(baseURL, authToken, model string, opts ...AnthropicOption) *AnthropicProvider {
 	p := &AnthropicProvider{
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		authToken: authToken,
-		model:     model,
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		authToken:  authToken,
+		model:      model,
 		httpClient: newDefaultHTTPClient(),
+		caps:       InferCapabilities(baseURL, model),
 	}
 	for _, o := range opts {
 		o(p)
@@ -55,6 +64,9 @@ func NewAnthropicProvider(baseURL, authToken, model string, opts ...AnthropicOpt
 }
 
 func (p *AnthropicProvider) Name() string { return "anthropic" }
+
+// Capabilities implements CapabilityAware.
+func (p *AnthropicProvider) Capabilities() Capabilities { return p.caps }
 
 // ---------------------------------------------------------------------------
 // Complete — non-streaming

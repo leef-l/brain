@@ -42,6 +42,10 @@ type MockProvider struct {
 	// streamChunkSize controls how many runes are emitted per content.delta
 	// event in Stream. 0 means "one rune per delta" (finest granularity).
 	streamChunkSize int
+	// caps is the Capabilities profile this mock advertises. Tests can
+	// override it via WithMockCapabilities to drive runner branches that
+	// depend on Reasoner / ToolChoiceSupport.
+	caps Capabilities
 }
 
 // MockProviderOption configures a MockProvider at construction.
@@ -58,10 +62,18 @@ func WithMockStreamChunkSize(chunkSize int) MockProviderOption {
 	}
 }
 
+// WithMockCapabilities sets the Capabilities the mock advertises via
+// CapabilityAware. Defaults to DefaultCapabilities() — most tests don't
+// need this, but loop tests that exercise reasoner / tool-choice branches
+// rely on it.
+func WithMockCapabilities(c Capabilities) MockProviderOption {
+	return func(p *MockProvider) { p.caps = c }
+}
+
 // NewMockProvider constructs a MockProvider with the given provider name.
 // Name is returned verbatim from Name().
 func NewMockProvider(name string, opts ...MockProviderOption) *MockProvider {
-	p := &MockProvider{name: name}
+	p := &MockProvider{name: name, caps: DefaultCapabilities()}
 	for _, o := range opts {
 		o(p)
 	}
@@ -70,6 +82,9 @@ func NewMockProvider(name string, opts ...MockProviderOption) *MockProvider {
 
 // Name returns the provider identifier passed to NewMockProvider.
 func (p *MockProvider) Name() string { return p.name }
+
+// Capabilities implements CapabilityAware.
+func (p *MockProvider) Capabilities() Capabilities { return p.caps }
 
 // Queue appends a fully-formed ChatResponse to the FIFO queue. Tests that
 // need to control every field (StopReason, Usage, tool_use blocks, ...)

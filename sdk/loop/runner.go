@@ -226,6 +226,8 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 
 	// nudgedAnnouncement:本 Run 是否已注入过 announce-without-act 兜底 reminder。
 	// 单次触发 — nudge 只是安全网,LLM 应该自己学会"说就调"而不是依赖系统反复提醒。
+	// 多次 nudge 实测让坏循环更长(每次 nudge → LLM 又输出长文本 → 浪费 30-60s),
+	// 不如快速失败让上层 sub agent 重新 delegate。
 	var nudgedAnnouncement bool
 
 	for {
@@ -444,6 +446,17 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			}
 			fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d stop_reason=%q tool_use_count=%d tools=%v content_blocks=%d text_chars=%d\n",
 				turn.Index, resp.StopReason, len(toolUseBlocks), toolNames, len(resp.Content), countTextChars(resp.Content))
+			// 0 工具时打印每个 block 的类型 + 文本片段,排查 announce-without-act
+			if len(toolUseBlocks) == 0 {
+				for i, b := range resp.Content {
+					preview := b.Text
+					if len(preview) > 200 {
+						preview = preview[:200] + "..."
+					}
+					fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d block[%d] type=%q text=%q tool_use_id=%q tool_name=%q\n",
+						turn.Index, i, b.Type, preview, b.ToolUseID, b.ToolName)
+				}
+			}
 		}
 
 		// 退出条件:LLM 没有 tool_use blocks → run 完成。
