@@ -8,6 +8,7 @@ package kernel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
+	brainerrors "github.com/leef-l/brain/sdk/errors"
 )
 
 // BrainPool 定义了进程池的核心接口。
@@ -628,12 +630,29 @@ func (p *ProcessBrainPool) Shutdown(ctx context.Context) error {
 				entry.agent.Shutdown(ctx)
 			}
 		}
-		if err := p.runner.Stop(ctx, kind); err != nil {
+		// runner.Stop 在 entry.agent.Shutdown 已经停掉进程后,可能
+		// 找不到对应 kind(尤其 pool 多 fork 场景 runner.processes 只跟踪
+		// 最后一次 Start 的进程,前面的 entry 已经在 agent.Shutdown 内被关掉)。
+		// 这种 "no running sidecar" 是正常,不当作 Shutdown 失败。
+		if err := p.runner.Stop(ctx, kind); err != nil && !isNotFoundError(err) {
 			lastErr = err
 		}
 		p.notify(BrainEvent{Kind: kind, Action: "stop", Time: time.Now()})
 	}
 	return lastErr
+}
+
+// isNotFoundError 判断错误是否为"找不到该 kind 的活跃 sidecar"——
+// runner.Stop 返回 BrainError.Code = CodeRecordNotFound 时即此情况。
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var be *brainerrors.BrainError
+	if errors.As(err, &be) {
+		return be.ErrorCode == brainerrors.CodeRecordNotFound
+	}
+	return strings.Contains(err.Error(), "no running sidecar")
 }
 
 // Available 报告给定 kind 是否有可用的 sidecar 二进制文件。

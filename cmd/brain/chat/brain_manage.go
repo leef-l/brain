@@ -158,11 +158,15 @@ func (t *brainManageTool) startBrain(ctx context.Context, kind string) (*tool.Re
 
 func (t *brainManageTool) stopBrain(ctx context.Context, kind string) (*tool.Result, error) {
 	if strings.ToLower(kind) == "all" {
+		// Shutdown 内部已对 not-found 错误做幂等处理(pool.go isNotFoundError),
+		// 所以这里 err 只可能是真正的 sidecar 关闭失败。即便如此,大部分进程
+		// 也已经停了,标 IsError=false 让 LLM 知道继续往下走而不是 retry stop。
 		if err := t.orchestrator.Shutdown(ctx); err != nil {
-			return &tool.Result{
-				Output:  json.RawMessage(fmt.Sprintf(`"failed to stop all: %v"`, err)),
-				IsError: true,
-			}, nil
+			payload, _ := json.Marshal(map[string]string{
+				"status": "stopped with warnings",
+				"detail": err.Error(),
+			})
+			return &tool.Result{Output: payload, IsError: false}, nil
 		}
 		out, _ := json.Marshal(map[string]string{"status": "all stopped"})
 		return &tool.Result{Output: out}, nil
