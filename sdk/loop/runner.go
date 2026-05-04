@@ -437,8 +437,10 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			shouldTriggerNudge := false
 			if opts.ChatCentralBrain && hasTextContent(resp.Content) {
 				shouldTriggerNudge = true
-			} else if opts.SpecialistSubAgent && hasTextContent(resp.Content) {
-				// Sub agent 应该立即调工具,纯文本响应没意义
+			} else if opts.SpecialistSubAgent && hasAnyMeaningfulContent(resp.Content) {
+				// Sub agent 应该立即调工具,纯文本/纯 thinking 响应都没意义。
+				// hasAnyMeaningfulContent 包含 text + thinking 块 — LLM 在
+				// "思考但没决定调工具"时也算 announce-without-act,nudge 重试。
 				shouldTriggerNudge = true
 			} else if shouldNudgeAnnouncement(resp.Content) {
 				shouldTriggerNudge = true
@@ -910,6 +912,19 @@ func shouldNudgeAnnouncement(blocks []llm.ContentBlock) bool {
 func hasTextContent(blocks []llm.ContentBlock) bool {
 	for _, b := range blocks {
 		if b.Type == "text" && strings.TrimSpace(b.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasAnyMeaningfulContent 检测 content blocks 是否含**任何**有意义的内容
+// (text 或 thinking),用于 SpecialistSubAgent nudge 路径。
+// 之所以不只看 text:LLM 在"思考但没决定调工具"时只发 thinking 块,
+// 这种情况 sub agent 也该被 nudge 强制调工具,否则会直接 end_turn 退出。
+func hasAnyMeaningfulContent(blocks []llm.ContentBlock) bool {
+	for _, b := range blocks {
+		if (b.Type == "text" || b.Type == "thinking") && strings.TrimSpace(b.Text) != "" {
 			return true
 		}
 	}
