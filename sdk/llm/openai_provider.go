@@ -504,6 +504,10 @@ type openaiSSEReader struct {
 	toolUse     map[int]*openaiStreamToolUse
 	pending     []StreamEvent // queued events to emit on subsequent Next() calls
 	readTimeout time.Duration
+	// lastEventAt 记录上一次产出有效事件(非心跳)的时刻。
+	// 用于跨 Next() 调用累计"无事件持续时间",防止服务端只发心跳让单行
+	// scanLine 30s 超时永远不触发的死锁。
+	lastEventAt time.Time
 }
 
 type openaiStreamToolUse struct {
@@ -518,12 +522,19 @@ func newOpenAISSEReader(body io.ReadCloser) *openaiSSEReader {
 		scanner:     bufio.NewScanner(body),
 		toolUse:     make(map[int]*openaiStreamToolUse),
 		readTimeout: 30 * time.Second,
+		lastEventAt: time.Now(),
 	}
 }
 
 func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// 跨 Next() 累计的"上次有效事件至今"超时:90s。
+	// 单行 readTimeout 30s 是行级保护,但服务端如果一直发心跳/空行/注释行,
+	// 每行都成功 scan,Next 永远拿不到 event。lastEventAt 跨 Next 调用累计
+	// 静默时长,超过 90s 报错让上层换 provider 或重试。
+	const maxStallDuration = 90 * time.Second
 
 	if r.closed {
 		return StreamEvent{}, io.EOF
@@ -541,6 +552,12 @@ func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 		case <-ctx.Done():
 			return StreamEvent{}, ctx.Err()
 		default:
+		}
+
+		// 跨 Next 累计静默检查:服务端可能一直发心跳让 scanLine 不超时,
+		// 但 Next 永远拿不到真 event。lastEventAt 跨 Next 调用累计。
+		if time.Since(r.lastEventAt) > maxStallDuration {
+			return StreamEvent{}, fmt.Errorf("openai: stream stalled — no event produced in %v (server may be sending only heartbeats)", maxStallDuration)
 		}
 
 		line, err := r.scanLine()
@@ -561,6 +578,7 @@ func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 		if raw == "[DONE]" {
 			// Flush pending tool calls before ending
 			if ev, ok := r.flushToolCalls(); ok {
+				r.lastEventAt = time.Now()
 				return ev, nil
 			}
 			return StreamEvent{Type: EventMessageEnd}, nil
@@ -573,6 +591,7 @@ func (r *openaiSSEReader) Next(ctx context.Context) (StreamEvent, error) {
 
 		ev, ok := r.mapChunk(&chunk)
 		if ok {
+			r.lastEventAt = time.Now()
 			return ev, nil
 		}
 	}
