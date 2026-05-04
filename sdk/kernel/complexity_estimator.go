@@ -236,16 +236,24 @@ var heuristicKeywords = []struct {
 	delta    int
 }{
 	{[]string{"implement", "实现"}, 15},
+	{[]string{"create", "scaffold", "写", "新建", "搭建"}, 12},
 	{[]string{"design", "设计"}, 12},
 	{[]string{"refactor", "重构"}, 10},
+	{[]string{"build", "构建", "编译"}, 8},
 	{[]string{"test", "测试"}, 8},
 	{[]string{"review", "审核"}, 5},
 	{[]string{"fix", "修复"}, 5},
 }
 
 // estimateHeuristic 启发式预估。
+//
+// base 调整(2026-05-04): 10 → 15。
+// 用户日志反复出现 budget.turns_exhausted: used=10/18 max=10/18,LLM 反复
+// read_file/list_files/note 兜圈不产出。base 10 对常规任务"读 3-5 文件 + 写
+// 1-2 文件 + 验证"已经触底,稍微复杂就爆。提高基线让首次任务更宽松,后续靠
+// EWMA 学习收敛(estimateFromLearning 有数据后会覆盖此函数)。
 func (e *ComplexityEstimator) estimateHeuristic(task PlanSubTask) ComplexityEstimate {
-	baseTurns := 10
+	baseTurns := 15
 	instruction := strings.ToLower(task.Instruction)
 
 	for _, kw := range heuristicKeywords {
@@ -255,6 +263,15 @@ func (e *ComplexityEstimator) estimateHeuristic(task PlanSubTask) ComplexityEsti
 				break // 同组关键词只加一次
 			}
 		}
+	}
+
+	// 长指令暗示更复杂(用户日志中 instruction_len=2000+ 经常触发 turns_exhausted)。
+	// 每 1000 字符 +5 turns,封顶 +20。
+	if extra := len(task.Instruction) / 1000 * 5; extra > 0 {
+		if extra > 20 {
+			extra = 20
+		}
+		baseTurns += extra
 	}
 
 	// 验证标准每多一条 +3
