@@ -1,6 +1,6 @@
 # 35. Manifest 解析与版本化设计
 
-> **⚠️ 实现差异说明（2026-04-24）：** 实际只有 loader.go/validator.go/registry.go/types.go 4 个文件。watcher.go（文件变更监听）、converter.go（版本转换）、schema/v1.json 未实现。
+> **⚠️ 实现差异说明（2026-04-24，2026-05-04 更新）：** ~~watcher.go（文件变更监听）、converter.go（版本转换）、schema/v1.json 未实现。~~ **已补全（2026-05-04）**：watcher.go（mtime 轮询监听，避免引 fsnotify 依赖）+ converter.go（ConvertToLatest / MigrateInPlace，v1 直通，留好 v2+ 演进协议）+ schema/v1.json（go:embed 进 schema.go，由 SchemaV1() 返回原文）。
 
 > **状态**：v1 · 2026-04-16
 > **上位规格**：[33-Brain-Manifest规格.md](./33-Brain-Manifest规格.md)

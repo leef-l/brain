@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brain.dev/schemas/manifest/v1.json",
+  "title": "Brain Manifest v1",
+  "description": "JSON Schema for brain.json / brain.yaml v1. See sdk/docs/33-Brain-Manifest规格.md",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "name",
+    "brain_version",
+    "capabilities",
+    "runtime"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Manifest schema 版本号,v1 必须 >= 1"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Brain 类型标识,如 browser/code/data/quant"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "人类可读的 brain 名称"
+    },
+    "brain_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "brain 自身版本号 (SemVer 推荐)"
+    },
+    "description": {
+      "type": "string"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "能力声明列表,如 web.browse / code.write"
+    },
+    "task_patterns": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "任务关键词模式,供 router 匹配"
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["native", "mcp-backed", "hybrid", "wasm", "docker", "remote"]
+        },
+        "entrypoint": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "endpoint": { "type": "string", "description": "remote 类型的 HTTP 地址" },
+        "auth": { "type": "string", "description": "remote 认证类型,如 bearer" },
+        "mcp_servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "command", "tool_prefix"],
+            "properties": {
+              "name": { "type": "string" },
+              "command": { "type": "string" },
+              "args": { "type": "array", "items": { "type": "string" } },
+              "env": { "type": "object", "additionalProperties": { "type": "string" } },
+              "tool_prefix": { "type": "string" }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "native" } } },
+          "then": { "required": ["entrypoint"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "hybrid" } } },
+          "then": { "required": ["entrypoint"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "remote" } } },
+          "then": { "required": ["endpoint"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "mcp-backed" } } },
+          "then": {
+            "required": ["mcp_servers"],
+            "properties": { "mcp_servers": { "minItems": 1 } }
+          }
+        }
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "max_concurrency": { "type": "integer", "minimum": 0 },
+        "timeout_seconds": { "type": "integer", "minimum": 0 },
+        "min_approval_level": { "type": "string" },
+        "require_human_approval_above": { "type": "string" },
+        "approval_class": { "type": "string" },
+        "approval_mode": { "type": "string" },
+        "sandbox_profile": { "type": "string" },
+        "tool_scope": { "type": "string" },
+        "active_tools_profile": {
+          "type": "string",
+          "enum": ["safe", "default", "none", "full"],
+          "description": "推荐工具集 profile"
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "protocol": { "type": "string", "description": "BrainKernel 协议版本,如 1.0" },
+        "tested_kernel": { "type": "string", "description": "测试通过的 kernel 版本,如 1.0.x" },
+        "min_kernel_version": { "type": "string" },
+        "max_kernel_version": { "type": "string" }
+      }
+    },
+    "health": {
+      "type": "object",
+      "properties": {
+        "ping_interval_seconds": { "type": "integer", "minimum": 0 },
+        "ping_timeout_seconds": { "type": "integer", "minimum": 0 },
+        "max_missed_pings": { "type": "integer", "minimum": 0 },
+        "startup_timeout_ms": { "type": "integer", "minimum": 0 },
+        "heartbeat_timeout_ms": { "type": "integer", "minimum": 0 },
+        "expected_methods": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "license": {
+      "type": "object",
+      "required": ["required"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "edition": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
