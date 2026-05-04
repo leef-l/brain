@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/leef-l/brain/sdk/agent"
+	"github.com/leef-l/brain/sdk/diaglog"
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 )
 
@@ -244,7 +245,11 @@ func (p *ProcessBrainPool) AcquireBrain(ctx context.Context, kind agent.Kind) (a
 		}
 		// 启动失败 → 释放 reserve、回滚 entrySeq、走兜底
 		p.mu.Unlock()
-		// 启动失败，退化共享现有（不再尝试启新实例）
+		// **关键日志**:启动失败时把错误抛到 stderr,否则 Acquire 把错吞了
+		// 走 fallback 共享现有,但现有可能也是 0 个实例 → delegate 报错 LLM 重试
+		// → LoopDetector 干掉,用户看不到根因。
+		fmt.Fprintf(os.Stderr, "[pool] startWithRegistrationWithID kind=%s instance=%d FAILED: %v\n", kind, instanceID, err)
+		diaglog.Logf("pool", "kind=%s instance=%d start failed: %v", kind, instanceID, err)
 	} else {
 		p.mu.Unlock()
 	}
