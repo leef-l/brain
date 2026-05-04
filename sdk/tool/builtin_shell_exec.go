@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 )
 
 // ShellExecTool executes a shell command and returns its output.
@@ -31,15 +32,26 @@ func (t *ShellExecTool) SetCommandSandbox(cs CommandSandbox) {
 func (t *ShellExecTool) Name() string { return t.brainKind + ".shell_exec" }
 
 func (t *ShellExecTool) Schema() Schema {
+	// 动态注入当前运行平台信息,让 LLM 知道命令会传给哪个 shell。
+	// Windows 用 cmd.exe(/C),其他平台用 sh(-c)。这避免 LLM 在 Windows 上
+	// 用 wc/grep/&& 等 POSIX 语法导致 "The system cannot find the file
+	// specified" 之类误报。
+	platformHint := "POSIX shell (sh -c) on this Linux/macOS host. Use sh syntax: && || pipes redirects, wc grep awk sed find xargs etc. ARE available."
+	cmdExample := `bash example: cd /path && go build ./...`
+	if runtime.GOOS == "windows" {
+		platformHint = "Windows cmd.exe (/C). Use cmd.exe syntax: && for chaining, %VAR% for env vars. POSIX tools (wc grep awk sed) ARE NOT available unless Git Bash or WSL is installed; prefer find /c, findstr, type, dir."
+		cmdExample = `cmd.exe example: cd C:\path && go build ./...`
+	}
 	return Schema{
-		Name:        t.Name(),
-		Description: "Execute a shell command and return stdout, stderr, and exit code. Use for running tests, builds, git commands, etc.",
+		Name: t.Name(),
+		Description: "Execute a shell command and return stdout, stderr, and exit code. Use for running tests, builds, git commands, etc. " +
+			"Runtime: " + platformHint + " " + cmdExample,
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
     "command": {
       "type": "string",
-      "description": "The shell command to execute (passed to sh -c)"
+      "description": "The shell command to execute (passed to platform shell — sh -c on POSIX, cmd.exe /C on Windows)"
     },
     "working_dir": {
       "type": "string",
