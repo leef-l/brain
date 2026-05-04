@@ -253,12 +253,73 @@ func (p *OpenAIProvider) buildAPIRequest(req *ChatRequest, stream bool) *openaiR
 		})
 	}
 
-	// ToolChoice — many OpenAI-compatible APIs (DeepSeek, etc.) do not support
-	// this field and return HTTP 400. The default behavior without tool_choice
-	// is "auto", which is sufficient for the Brain agent loop.
-	_ = req.ToolChoice
+	// ToolChoice — gated by Capabilities.ToolChoiceSupport. Some
+	// OpenAI-compatible vendors (DeepSeek, Mimo, Qwen) ignore the field or
+	// reject it with HTTP 400, so we only emit it when the provider's
+	// capability profile says Required or Specific.
+	//
+	// Mapping:
+	//   - "" / "auto" / "none" → only sent when caps >= Auto
+	//   - "required"           → only sent when caps >= Required, mapped
+	//                            to {"type":"required"} per OpenAI 2024 spec
+	//   - <tool name>          → only sent when caps == Specific, mapped
+	//                            to {"type":"function","function":{"name":...}}
+	//
+	// When caps does not support a requested mode the field is silently
+	// dropped — the runner will already have IntentParser as the next
+	// line of defense.
+	if tc := buildOpenAIToolChoice(req.ToolChoice, p.caps.ToolChoiceSupport); tc != nil {
+		ar.ToolChoice = tc
+	}
 
 	return ar
+}
+
+// buildOpenAIToolChoice converts the brain-internal tool_choice string to
+// the OpenAI wire shape, gated by the provider's ToolChoiceSupport. Returns
+// nil when the field MUST be omitted (vendor doesn't support, or value
+// would be a no-op).
+func buildOpenAIToolChoice(value string, support ToolChoiceMode) interface{} {
+	if support == ToolChoiceNone {
+		return nil
+	}
+	v := strings.TrimSpace(value)
+	switch v {
+	case "":
+		return nil
+	case "auto":
+		// Only emit when explicitly supported. DeepSeek default is "auto"
+		// implicitly, so "auto" is mostly a no-op but harmless on Auto+.
+		if support >= ToolChoiceAuto {
+			return "auto"
+		}
+		return nil
+	case "none":
+		if support >= ToolChoiceAuto {
+			return "none"
+		}
+		return nil
+	case "required":
+		if support >= ToolChoiceRequired {
+			return "required"
+		}
+		return nil
+	default:
+		// Specific tool name.
+		if support >= ToolChoiceSpecific {
+			return map[string]interface{}{
+				"type": "function",
+				"function": map[string]string{
+					"name": sanitizeToolName(v),
+				},
+			}
+		}
+		// Caps doesn't support specific tool — degrade to "required" if possible.
+		if support >= ToolChoiceRequired {
+			return "required"
+		}
+		return nil
+	}
 }
 
 func (p *OpenAIProvider) buildAssistantMessage(m Message) openaiMessage {

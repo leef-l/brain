@@ -222,19 +222,11 @@ func (p *AnthropicProvider) buildAPIRequest(req *ChatRequest, stream bool) *anth
 		})
 	}
 
-	// ToolChoice
-	if req.ToolChoice != "" {
-		switch req.ToolChoice {
-		case "auto", "required", "none":
-			tc := map[string]string{"type": req.ToolChoice}
-			if req.ToolChoice == "required" {
-				tc["type"] = "any"
-			}
-			ar.ToolChoice, _ = json.Marshal(tc)
-		default:
-			tc := map[string]string{"type": "tool", "name": sanitizeToolName(req.ToolChoice)}
-			ar.ToolChoice, _ = json.Marshal(tc)
-		}
+	// ToolChoice — gated by Capabilities.ToolChoiceSupport so Anthropic-
+	// compatible third-party proxies (e.g. some Tencent / AWS Bedrock
+	// gateways) that don't honor the field don't trip on it.
+	if tc := buildAnthropicToolChoice(req.ToolChoice, p.caps.ToolChoiceSupport); tc != nil {
+		ar.ToolChoice = tc
 	}
 
 	return ar
@@ -745,6 +737,57 @@ func newDefaultHTTPClient() *http.Client {
 			MaxIdleConnsPerHost:   10,
 		},
 	}
+}
+
+// buildAnthropicToolChoice converts the brain-internal tool_choice string
+// to Anthropic's wire shape, gated by the provider's ToolChoiceSupport.
+// Returns nil when the field MUST be omitted.
+//
+// Wire mapping per Anthropic API:
+//
+//	"auto"     → {"type":"auto"}
+//	"required" → {"type":"any"}      ← Anthropic uses "any", not "required"
+//	"none"     → {"type":"none"}
+//	<name>     → {"type":"tool","name":"<name>"}
+func buildAnthropicToolChoice(value string, support ToolChoiceMode) json.RawMessage {
+	if support == ToolChoiceNone {
+		return nil
+	}
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return nil
+	}
+	switch v {
+	case "auto":
+		if support >= ToolChoiceAuto {
+			data, _ := json.Marshal(map[string]string{"type": "auto"})
+			return data
+		}
+	case "none":
+		if support >= ToolChoiceAuto {
+			data, _ := json.Marshal(map[string]string{"type": "none"})
+			return data
+		}
+	case "required":
+		if support >= ToolChoiceRequired {
+			data, _ := json.Marshal(map[string]string{"type": "any"})
+			return data
+		}
+	default:
+		if support >= ToolChoiceSpecific {
+			data, _ := json.Marshal(map[string]string{
+				"type": "tool",
+				"name": sanitizeToolName(v),
+			})
+			return data
+		}
+		// Degrade to "any" (= required) if specific not supported but required is.
+		if support >= ToolChoiceRequired {
+			data, _ := json.Marshal(map[string]string{"type": "any"})
+			return data
+		}
+	}
+	return nil
 }
 
 // sanitizeToolName replaces dots with double underscores for API proxies

@@ -623,6 +623,26 @@ func (r *Runner) buildChatRequest(run *Run, messages []llm.Message, opts RunOpti
 		}
 	}
 
+	// Provider Capability 感知的 tool_choice 升级:
+	//
+	// SpecialistSubAgent 第 1 turn:如果 provider 支持 Required 级别的
+	// tool_choice,强制升级到 "required",让 LLM 在第一轮必须输出 tool_use。
+	// 这是根治"announce-without-act"在 native-tool-call 模型上的根因 —
+	// Anthropic / GPT-4 此时一定会调工具,跳过原来的 nudge 兜底循环。
+	//
+	// 不支持 Required 的 provider(DeepSeek / Mimo / Qwen)保持原 opts.ToolChoice,
+	// 由 IntentParser + ClarificationLoop 在 runner 层兜底(Phase 3-5)。
+	//
+	// reasoner=true 的 provider 第一轮也允许纯 thinking,不强制 required
+	// (由 Phase 6 reasoner 策略处理)。
+	toolChoice := opts.ToolChoice
+	if opts.SpecialistSubAgent && run.CurrentTurn == 1 {
+		caps := llm.CapabilitiesOf(r.Provider)
+		if caps.ToolChoiceSupport >= llm.ToolChoiceRequired && !caps.Reasoner {
+			toolChoice = "required"
+		}
+	}
+
 	req := &llm.ChatRequest{
 		RunID:           run.ID,
 		TurnIndex:       run.CurrentTurn,
@@ -630,7 +650,7 @@ func (r *Runner) buildChatRequest(run *Run, messages []llm.Message, opts RunOpti
 		System:          opts.System,
 		Messages:        finalMessages,
 		Tools:           opts.Tools,
-		ToolChoice:      opts.ToolChoice,
+		ToolChoice:      toolChoice,
 		Model:           opts.Model,
 		MaxTokens:       opts.MaxTokens,
 		Stream:          opts.Stream,
