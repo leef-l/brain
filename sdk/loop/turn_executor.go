@@ -275,6 +275,17 @@ done:
 	if currentToolCall != nil {
 		toolCalls = append(toolCalls, *currentToolCall)
 	}
+	// 关键防御:把所有 tool_use ContentBlock 的 Input 字段做空切片归一化。
+	// 流式拼装过程中 Input 可能是 len==0 但非 nil 的 RawMessage(LLM 输出 input
+	// 字段为空对象但 stream 没有 partial 块,或反序列化为空切片),后续 marshal
+	// 给 OpenAI/Anthropic API 时会报 "MarshalJSON for type json.RawMessage:
+	// unexpected end of JSON input"。此处把空 Input 设为 nil 让下游 omitempty
+	// 或显式默认 "{}" 路径能正确处理。
+	for i := range toolCalls {
+		if len(toolCalls[i].Input) == 0 {
+			toolCalls[i].Input = nil
+		}
+	}
 	resp.Content = append(resp.Content, toolCalls...)
 
 	if resp.FinishedAt.IsZero() {

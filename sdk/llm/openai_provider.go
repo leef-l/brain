@@ -240,8 +240,10 @@ func (p *OpenAIProvider) buildAssistantMessage(m Message) openaiMessage {
 				thinkingParts = append(thinkingParts, b.Text)
 			}
 		case "tool_use":
+			// 关键:b.Input 长度 0(无论 nil 还是 []byte{})都填默认 "{}",
+			// 避免后续序列化空字符串给 OpenAI 兼容 API 报 400 / marshal 错。
 			args := "{}"
-			if b.Input != nil {
+			if len(b.Input) > 0 && json.Valid(b.Input) {
 				args = string(b.Input)
 			}
 			toolCalls = append(toolCalls, openaiToolCall{
@@ -298,8 +300,9 @@ func (p *OpenAIProvider) convertMessages(messages []Message) []openaiMessage {
 				case "text":
 					textParts = append(textParts, b.Text)
 				case "tool_result":
+					// 长度判断而非 nil 判断:空非 nil RawMessage 也视为无内容。
 					content := ""
-					if b.Output != nil {
+					if len(b.Output) > 0 {
 						content = string(b.Output)
 					}
 					out = append(out, openaiMessage{

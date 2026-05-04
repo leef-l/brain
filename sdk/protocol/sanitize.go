@@ -48,10 +48,24 @@ func sanitizeValue(rv reflect.Value) reflect.Value {
 		return rv
 	}
 
-	// json.RawMessage 是 []byte 的别名,要专门处理
+	// json.RawMessage 是 []byte 的别名,要专门处理。
+	//
+	// 关键陷阱:json.RawMessage.MarshalJSON 对 len==0 的非 nil RawMessage(即
+	// json.RawMessage{} 或 []byte{})会报 "unexpected end of JSON input",
+	// **只有 nil 才会安全 marshal 成 "null"**。所以:
+	//   - len==0 且非 nil → 替换为 RawMessage("null")(用户日志里的真凶)
+	//   - len>0 且 json.Valid → 原样返回
+	//   - len>0 且不合法 → 替换为占位
 	if rv.Type() == reflect.TypeOf(json.RawMessage{}) {
 		raw := rv.Bytes()
-		if len(raw) == 0 || json.Valid(raw) {
+		if len(raw) == 0 {
+			// 空但非 nil(rv.IsNil 仅对 nil 切片返回 true,对 []byte{} 返回 false)
+			if rv.IsNil() {
+				return rv
+			}
+			return reflect.ValueOf(json.RawMessage("null"))
+		}
+		if json.Valid(raw) {
 			return rv
 		}
 		// 不合法 → 替换为占位字符串(用 string 包成合法 JSON)

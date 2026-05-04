@@ -248,7 +248,11 @@ func (p *AnthropicProvider) buildContentBlocks(blocks []ContentBlock) []map[stri
 				"id":   b.ToolUseID,
 				"name": sanitizeToolName(b.ToolName),
 			}
-			if b.Input != nil {
+			// 关键:b.Input 为 nil 或长度 0(空非 nil) 都视作"无 input",
+			// 否则空 RawMessage 进入 map 后整体 marshal 会报
+			// "MarshalJSON for type json.RawMessage: unexpected end of JSON input"。
+			// 用户日志中观察到的 "result marshal failed" 真凶之一。
+			if len(b.Input) > 0 && json.Valid(b.Input) {
 				block["input"] = json.RawMessage(b.Input)
 			} else {
 				block["input"] = json.RawMessage("{}")
@@ -259,7 +263,9 @@ func (p *AnthropicProvider) buildContentBlocks(blocks []ContentBlock) []map[stri
 				"type":        "tool_result",
 				"tool_use_id": b.ToolUseID,
 			}
-			if b.Output != nil {
+			// 同上:空非 nil 也跳过(string([]byte{}) == "" 倒不会爆 marshal,
+			// 但写入空字符串 content 会让 Anthropic 后端拒绝;为干净起见也过滤)。
+			if len(b.Output) > 0 {
 				block["content"] = string(b.Output)
 			}
 			if b.IsError {

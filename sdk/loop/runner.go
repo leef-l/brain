@@ -802,10 +802,16 @@ func (r *Runner) executeSingleTool(ctx context.Context, run *Run, turn *Turn, re
 	}
 
 	// No sanitizer — pass through directly.
+	// 防御:工具返回 result.Output 若为长度 0 的非 nil RawMessage,后续序列化
+	// 给 LLM API 会触发 marshal 错。归一化为 nil 让 omitempty 正常工作。
+	output := result.Output
+	if len(output) == 0 {
+		output = nil
+	}
 	block := llm.ContentBlock{
 		Type:      "tool_result",
 		ToolUseID: tb.ToolUseID,
-		Output:    result.Output,
+		Output:    output,
 		IsError:   result.IsError,
 	}
 	if r.ToolObserver != nil {
