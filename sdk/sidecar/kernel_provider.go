@@ -63,6 +63,8 @@ func (p *kernelLLMProvider) Stream(ctx context.Context, req *llm.ChatRequest) (l
 	wire.StreamID = streamID
 	wire.ExecutionID = p.executionID
 
+	reader := &channelStreamReader{ch: ch}
+
 	var resp llmResponse
 	go func() {
 		defer func() {
@@ -72,10 +74,16 @@ func (p *kernelLLMProvider) Stream(ctx context.Context, req *llm.ChatRequest) (l
 			unregisterStreamChan(streamID)
 			close(ch)
 		}()
-		_ = p.caller.CallKernel(ctx, protocol.MethodLLMStream, wire, &resp)
+		// CallKernel 失败时把 error 暴露到 reader,避免 reader 只看到 ch close
+		// 当作正常 EOF 而错过真实错误(host LLMProxy 立即报错时,ch 立刻 close
+		// 但 reader 只看到 EOF,无法区分"流正常结束"和"流根本没建立")。
+		err := p.caller.CallKernel(ctx, protocol.MethodLLMStream, wire, &resp)
+		if err != nil {
+			reader.setStreamError(err)
+		}
 	}()
 
-	return &channelStreamReader{ch: ch}, nil
+	return reader, nil
 }
 
 // staticStreamReader 把聚合的 llmResponse 按流式事件协议拆分发包。

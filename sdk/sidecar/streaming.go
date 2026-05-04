@@ -59,12 +59,32 @@ func pushStreamEvent(id string, ev llm.StreamEvent) {
 // 心跳超时:90s 没收到任何 event 就报 stalled 错。
 // 之前 Next 只 select ch + ctx.Done — 如果 host LLMProxy 死(流断但没 close ch),
 // sub agent 永远 block 在 channel read 导致 "sub agent idle sleeping" 现象。
+//
+// streamErr 字段:由 setStreamError 设置(背景 goroutine 拿到 RPC 错误时调),
+// Next 在 ch close 时检查它,把"流根本没建立"和"流正常结束"区分开。
 type channelStreamReader struct {
 	ch     <-chan llm.StreamEvent
 	closed bool
+
+	errMu     sync.RWMutex
+	streamErr error
 }
 
 const channelStreamIdleTimeout = 90 * time.Second
+
+// setStreamError 由 kernelLLMProvider.Stream 的背景 goroutine 调用,
+// 把 CallKernel 错误暴露给 reader.Next,避免 reader 只看 ch close 当作 EOF。
+func (r *channelStreamReader) setStreamError(err error) {
+	r.errMu.Lock()
+	r.streamErr = err
+	r.errMu.Unlock()
+}
+
+func (r *channelStreamReader) getStreamError() error {
+	r.errMu.RLock()
+	defer r.errMu.RUnlock()
+	return r.streamErr
+}
 
 func (r *channelStreamReader) Next(ctx context.Context) (llm.StreamEvent, error) {
 	if r.closed {
@@ -75,6 +95,10 @@ func (r *channelStreamReader) Next(ctx context.Context) (llm.StreamEvent, error)
 	select {
 	case ev, ok := <-r.ch:
 		if !ok {
+			// ch closed — 优先返回 streamErr(如果有),否则正常 EOF
+			if err := r.getStreamError(); err != nil {
+				return llm.StreamEvent{}, fmt.Errorf("kernel stream failed: %w", err)
+			}
 			return llm.StreamEvent{}, io.EOF
 		}
 		return ev, nil

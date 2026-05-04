@@ -333,12 +333,17 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		req := r.buildChatRequest(run, messages, turnOpts)
 
 		// Call LLM with transparent retry on transient errors (network/stream stalled).
-		// 重试策略:同 turn 内最多 3 次,指数退避 1/3/9 秒,messages 完全相同(LLM 接 partial
-		// 没意义,直接重新跑全 turn)。3 次后真失败才把整个 run 标 failed。
+		// 重试策略:同 turn 内最多 3 次。messages 完全相同(LLM 接 partial 没意义,
+		// 直接重新跑全 turn)。3 次后真失败才把整个 run 标 failed。
 		// 不重试的错误:context cancel、ValidateToolUseResponse 失败(LLM 输出格式错)。
+		//
+		// Backoff 短:0ms / 500ms / 2s。常见失败模式是 sidecar 重启 + 反向 RPC
+		// 短暂 EOF,通常 100ms 内就恢复,长 backoff 浪费时间(用户实测 21min 慢的根因
+		// 之一就是 1+2=3s 退避 × 多次 nudge × 多次 sidecar 重启)。
 		var resp *llm.ChatResponse
 		var llmErr error
 		const maxLLMRetries = 3
+		retryBackoffs := [...]time.Duration{0, 500 * time.Millisecond, 2 * time.Second}
 		for attempt := 1; attempt <= maxLLMRetries; attempt++ {
 			if opts.Stream {
 				resp, llmErr = r.consumeStream(ctx, run, turn, req)
@@ -353,16 +358,18 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 				break
 			}
 			if attempt < maxLLMRetries {
-				backoff := time.Duration(1<<(attempt-1)) * time.Second
+				backoff := retryBackoffs[attempt-1]
 				fmt.Fprintf(os.Stderr, "[runner] LLM call attempt %d/%d failed: %v — retry in %v\n",
 					attempt, maxLLMRetries, llmErr, backoff)
-				select {
-				case <-time.After(backoff):
-				case <-ctx.Done():
-					llmErr = ctx.Err()
-				}
-				if errors.Is(ctx.Err(), context.Canceled) {
-					break
+				if backoff > 0 {
+					select {
+					case <-time.After(backoff):
+					case <-ctx.Done():
+						llmErr = ctx.Err()
+					}
+					if errors.Is(ctx.Err(), context.Canceled) {
+						break
+					}
 				}
 			}
 		}
@@ -472,7 +479,9 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			}
 			if !nudgedAnnouncement && shouldTriggerNudge && run.Budget.UsedTurns < run.Budget.MaxTurns {
 				nudgedAnnouncement = true
-				messages = append(messages, announcementNudgeMessage())
+				// 按角色给不同 nudge:central 提示 delegate/submit_workflow,
+				// sub agent 提示 write_file/edit_file/shell_exec
+				messages = append(messages, announcementNudgeMessageFor(opts.ChatCentralBrain))
 				if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
 					fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d nudge: detected announcement-without-action, injected reminder\n", turn.Index)
 				}
@@ -959,7 +968,27 @@ func hasAnyMeaningfulContent(blocks []llm.ContentBlock) bool {
 // announcementNudgeMessage 构造 user 角色的 reminder 消息(被 LLM 看作系统侧追问)。
 // 用 user role 而非 system,避免破坏前置 system block 的 cache;且多数 provider 对
 // "user 之后再来一条 user"是合法的(LLM 会把它当连续输入处理)。
+//
+// isCentral=true 时给 central 编排相关 tool 提示(delegate/submit_workflow);
+// false 时给 sub agent 通用提示(write_file/edit_file/shell_exec/task_complete)。
+// 让 nudge 与实际 registry 工具对齐,避免 LLM 看到"不存在的工具"困惑给空响应。
 func announcementNudgeMessage() llm.Message {
+	return announcementNudgeMessageFor(false)
+}
+
+func announcementNudgeMessageFor(isCentral bool) llm.Message {
+	var hint string
+	if isCentral {
+		hint = "  • If the user wants you to do/build/make something: call submit_workflow (multi-step) or delegate (one-shot) NOW with concrete arguments.\n" +
+			"  • If you need to read context first: call read_file / list_files / search.\n" +
+			"  • If the request is unclear or impossible: call note to record your question, then briefly explain to the user.\n" +
+			"  • If genuinely done: call task_complete with a summary."
+	} else {
+		hint = "  • If the user wants you to write/create code: call write_file / edit_file with the actual content.\n" +
+			"  • If you need to inspect first: call read_file / list_files / search.\n" +
+			"  • If you need to run a command: call shell_exec.\n" +
+			"  • If genuinely done: call task_complete with a summary."
+	}
 	return llm.Message{
 		Role: "user",
 		Content: []llm.ContentBlock{{
@@ -967,10 +996,7 @@ func announcementNudgeMessage() llm.Message {
 			Text: "[system reminder] Your previous response had no tool_use block — only text. " +
 				"In this system, text alone changes nothing; the user sees text but no work happens. " +
 				"You MUST emit a tool_use block in this turn. Choose one:\n" +
-				"  • If the user wants you to do/build/make something: call submit_workflow (multi-step) or delegate (one-shot) NOW with concrete arguments.\n" +
-				"  • If you need to read context first: call read_file / list_files / search.\n" +
-				"  • If the request is unclear or impossible: call note to record your question, then briefly explain to the user.\n" +
-				"  • If genuinely done: call task_complete with a summary.\n" +
+				hint + "\n" +
 				"Do not write another planning paragraph. Emit a tool_use block — that is the only way work gets done.",
 		}},
 	}
