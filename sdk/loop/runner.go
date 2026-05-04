@@ -108,6 +108,16 @@ type Runner struct {
 	// See sdk/loop/intent for the parser implementations and the
 	// confidence calibration bands.
 	IntentChain *intent.Chain
+
+	// Clarifier issues targeted reminders when the LLM emits 0 tool_use
+	// blocks AND the IntentChain could not synthesize one. Replaces the
+	// legacy single-shot announcementNudgeMessageFor with a diagnosis-
+	// driven, attempt-bounded loop (see sdk/loop/clarification.go).
+	//
+	// When nil, the runner falls back to the legacy single-nudge gate
+	// (nudgedAnnouncement bool) for backward compatibility with callers
+	// that have not opted in.
+	Clarifier *Clarifier
 }
 
 // PreTurnState 描述某一轮的动态工具视图。
@@ -243,7 +253,14 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 	// 单次触发 — nudge 只是安全网,LLM 应该自己学会"说就调"而不是依赖系统反复提醒。
 	// 多次 nudge 实测让坏循环更长(每次 nudge → LLM 又输出长文本 → 浪费 30-60s),
 	// 不如快速失败让上层 sub agent 重新 delegate。
+	//
+	// 仅 Clarifier == nil 的 legacy 路径使用此变量;Clarifier 路径用 clarifierState
+	// 跟踪 attempt 计数(MaxAttempts 默认 2,reasoner 还有一次免费 grace turn)。
 	var nudgedAnnouncement bool
+
+	// clarifierState 跟踪 Phase 5 ClarifierLoop 的尝试次数 / 软提示状态。
+	// 仅当 r.Clarifier != nil 时使用。零值即可使用。
+	var clarifierState ClarifierState
 
 	for {
 		now = r.now()
@@ -527,7 +544,7 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			//    (mimo/deepseek 不可靠地支持 tool_choice=required,只能在 runner 层重试)。
 			// 2. 关键词命中 (shouldNudgeAnnouncement) → 兼容非 chat 场景下的明显故障短语。
 			//
-			// nudge 仅触发 1 次,避免对正常聊天回复反复打扰。
+			// 触发上限:Clarifier != nil → 由 Clarifier.MaxAttempts 控制;否则 1 次。
 			shouldTriggerNudge := false
 			if opts.ChatCentralBrain && hasTextContent(resp.Content) {
 				shouldTriggerNudge = true
@@ -539,22 +556,51 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 			} else if shouldNudgeAnnouncement(resp.Content) {
 				shouldTriggerNudge = true
 			}
-			if !nudgedAnnouncement && shouldTriggerNudge && run.Budget.UsedTurns < run.Budget.MaxTurns {
-				nudgedAnnouncement = true
-				// 按角色给不同 nudge:central 提示 delegate/submit_workflow,
-				// sub agent 提示 write_file/edit_file/shell_exec
-				messages = append(messages, announcementNudgeMessageFor(opts.ChatCentralBrain))
-				if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
-					fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d nudge: detected announcement-without-action, injected reminder\n", turn.Index)
+			if shouldTriggerNudge && run.Budget.UsedTurns < run.Budget.MaxTurns {
+				// Phase 5 — Clarifier 路径:每次根据响应内容生成针对性 reminder,
+				// 由 Clarifier.MaxAttempts 决定何时放弃(默认 2 次,reasoner 还有
+				// 一次 thinking-only grace turn 不计入预算)。
+				if r.Clarifier != nil {
+					reminder, ok := r.Clarifier.NextMessage(&clarifierState, ClarifyContext{
+						Content:   resp.Content,
+						IsCentral: opts.ChatCentralBrain,
+						TurnIndex: turn.Index,
+					})
+					if ok {
+						messages = append(messages, reminder)
+						if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+							fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d clarifier: attempts=%d reasoner=%v injected targeted reminder\n",
+								turn.Index, clarifierState.Attempts, r.Clarifier.Reasoner)
+						}
+						turn.End(r.now())
+						turns = append(turns, &TurnResult{
+							Turn:      turn,
+							Response:  resp,
+							NextState: StateRunning,
+						})
+						CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
+						continue
+					}
+					// !ok → 已达 MaxAttempts;继续掉到下方 completion 分支。
+					if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+						fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d clarifier: MaxAttempts reached, completing run\n", turn.Index)
+					}
+				} else if !nudgedAnnouncement {
+					// Legacy 路径(未装配 Clarifier):一次性通用 nudge,然后直接完成。
+					nudgedAnnouncement = true
+					messages = append(messages, announcementNudgeMessageFor(opts.ChatCentralBrain))
+					if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+						fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d nudge: detected announcement-without-action, injected reminder\n", turn.Index)
+					}
+					turn.End(r.now())
+					turns = append(turns, &TurnResult{
+						Turn:      turn,
+						Response:  resp,
+						NextState: StateRunning,
+					})
+					CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
+					continue
 				}
-				turn.End(r.now())
-				turns = append(turns, &TurnResult{
-					Turn:      turn,
-					Response:  resp,
-					NextState: StateRunning,
-				})
-				CheckpointAfterTurn(r.CheckpointStore, run, messages, turns)
-				continue
 			}
 			turn.End(r.now())
 			turns = append(turns, &TurnResult{
