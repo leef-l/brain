@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -132,8 +133,12 @@ func (po *PlanOrchestrator) ExecuteProjectWithReplan(ctx context.Context, plan *
 		runCtx, cancel := context.WithCancelCause(ctx)
 
 		// 启动旁路 goroutine 订阅 EventReplanRequested
+		// ready 通道保证 Subscribe 已注册到 EventBus 后再启动 ExecuteTaskPlan,
+		// 否则 sub agent 在 ExecuteTaskPlan 启动后立即 publish 的 replan 事件会丢失。
 		replanCh := make(chan *ReplanRequest, 1)
-		go po.subscribeReplanRequests(runCtx, plan.ProjectID, replanCh)
+		ready := make(chan struct{})
+		go po.subscribeReplanRequests(runCtx, plan.ProjectID, replanCh, ready)
+		<-ready
 
 		// 启动 ExecuteTaskPlan
 		done := make(chan execTaskPlanDone, 1)
@@ -280,7 +285,12 @@ func (po *PlanOrchestrator) makeReporter(progress *ProjectProgress) TaskPlanRepo
 //
 // ch 缓冲为 1:本设计假设同时只处理一个 replan,后续到达的 modification 应该在
 // chat 层 cooldown 缓冲合并(Phase 3 实现)。
-func (po *PlanOrchestrator) subscribeReplanRequests(ctx context.Context, projectID string, ch chan<- *ReplanRequest) {
+func (po *PlanOrchestrator) subscribeReplanRequests(ctx context.Context, projectID string, ch chan<- *ReplanRequest, ready chan<- struct{}) {
+	// 即使早退也必须 close(ready),避免调用方永久阻塞在 <-ready。
+	readyOnce := sync.Once{}
+	signalReady := func() { readyOnce.Do(func() { close(ready) }) }
+	defer signalReady()
+
 	if po.Orchestrator == nil || po.Orchestrator.EventBus == nil {
 		return
 	}
@@ -292,6 +302,8 @@ func (po *PlanOrchestrator) subscribeReplanRequests(ctx context.Context, project
 
 	evCh, unsub := po.Orchestrator.EventBus.Subscribe(ctx, projectID)
 	defer unsub()
+	// 订阅注册完成,通知调用方可以安全启动 ExecuteTaskPlan
+	signalReady()
 
 	for {
 		select {
