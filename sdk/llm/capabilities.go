@@ -158,84 +158,72 @@ func CapabilitiesOf(p Provider) Capabilities {
 	return DefaultCapabilities()
 }
 
-// InferCapabilities infers a Capabilities profile from a (baseURL, model)
-// pair using vendor-specific heuristics. This is a best-effort helper for
-// the assembly layer (cmd/brain/provider) and may be overridden by the
-// caller via WithCapabilities().
+// InferCapabilities applies generic, vendor-agnostic heuristics to guess
+// a Capabilities profile when the builtin table (sdk/llm/builtin_capabilities.go)
+// has no entry for this (baseURL, model). It is the safety net BELOW the
+// builtin table in the resolution chain — the builtin table holds the
+// precise data for known model families, while this function only looks
+// for generic signals that work across any vendor:
 //
-// Inference rules (case-insensitive substring match):
+//   1. Reasoner keywords in the model name — "r1" / "reasoner" / "thinking"
+//      / "qwq" / "o1" / "o3" / "o4" → Reasoner=true. Any reasoner is
+//      worth the runner's grace turn.
+//   2. Local deployment baseURL — "localhost" / "127.0.0.1" / known local
+//      ports → ToolChoiceSupport=None. Local inference engines (ollama,
+//      llama.cpp, vLLM, lmstudio) almost never honor tool_choice.
 //
-//   Family + tool_choice:
-//     - claude-* / anthropic.*    → "anthropic-claude", Required
-//     - gpt-* / openai.*          → "openai-gpt",       Required
-//     - deepseek-reasoner         → "deepseek-reasoner", None,  Reasoner=true
-//     - deepseek-*                → "deepseek",          None
-//     - mimo-*                    → "mimo",              None,  Reasoner=true
-//     - qwen-*-reasoner / *qwq*   → "qwen-reasoner",     None,  Reasoner=true
-//     - qwen-*                    → "qwen",              None
-//     - glm-*                     → "glm",               Auto   (some endpoints accept tool_choice)
-//     - doubao-*                  → "doubao",            None
-//     - <unknown>                 → "",                  None   (DefaultCapabilities)
+// Anything not matching the above stays at DefaultCapabilities — the
+// safest profile (NativeToolCall=true, ToolChoiceNone, non-reasoner).
 //
-// EmitsReasoningContent is set true for *-reasoner / mimo-* (they round-trip
-// thinking via reasoning_content field).
+// IMPORTANT: This function MUST stay generic. Vendor-specific data lives
+// in builtinTable. Adding a model-name switch case here would defeat the
+// purpose of the table — the table is the authoritative, reviewable
+// source of "what we know about model X".
 func InferCapabilities(baseURL, model string) Capabilities {
 	caps := DefaultCapabilities()
 	caps.NativeToolCall = true
 
 	bl := strings.ToLower(baseURL)
 	ml := strings.ToLower(model)
-	hay := bl + " | " + ml
 
-	switch {
-	case strings.Contains(ml, "claude") || strings.Contains(bl, "anthropic"):
-		caps.Family = "anthropic-claude"
-		caps.ToolChoiceSupport = ToolChoiceRequired
-		caps.PrefersStructuredOutput = true
-		caps.MaxParallelTools = 8
+	// Generic reasoner detection — any model whose name contains a
+	// reasoner-class keyword is treated as one. Catches new reasoners
+	// from any vendor before we have time to add them to builtinTable.
+	reasonerKeywords := []string{
+		"reasoner", "thinking",
+		"-r1", "-r2", "-r3",
+		"qwq",
+		"o1-", "o3-", "o4-",
+	}
+	for _, kw := range reasonerKeywords {
+		if strings.Contains(ml, kw) {
+			caps.Reasoner = true
+			caps.ToolChoiceSupport = ToolChoiceNone
+			caps.MaxParallelTools = 1
+			caps.Family = "unknown-reasoner"
+			break
+		}
+	}
 
-	case strings.Contains(ml, "gpt-") || strings.Contains(bl, "openai.com"):
-		caps.Family = "openai-gpt"
-		caps.ToolChoiceSupport = ToolChoiceRequired
-		caps.PrefersStructuredOutput = true
-		caps.MaxParallelTools = 8
-
-	case strings.Contains(ml, "deepseek-reasoner") || strings.Contains(ml, "deepseek-r1"):
-		caps.Family = "deepseek-reasoner"
-		caps.ToolChoiceSupport = ToolChoiceNone
-		caps.Reasoner = true
-		caps.EmitsReasoningContent = true
-
-	case strings.Contains(hay, "deepseek"):
-		caps.Family = "deepseek"
-		caps.ToolChoiceSupport = ToolChoiceNone
-
-	case strings.Contains(ml, "mimo") || strings.Contains(bl, "xiaomimimo"):
-		caps.Family = "mimo"
-		caps.ToolChoiceSupport = ToolChoiceNone
-		caps.Reasoner = true
-		caps.EmitsReasoningContent = true
-
-	case strings.Contains(ml, "qwen") && (strings.Contains(ml, "reasoner") || strings.Contains(ml, "qwq")):
-		caps.Family = "qwen-reasoner"
-		caps.ToolChoiceSupport = ToolChoiceNone
-		caps.Reasoner = true
-		caps.EmitsReasoningContent = true
-
-	case strings.Contains(ml, "qwen"):
-		caps.Family = "qwen"
-		caps.ToolChoiceSupport = ToolChoiceNone
-
-	case strings.Contains(ml, "glm"):
-		caps.Family = "glm"
-		caps.ToolChoiceSupport = ToolChoiceAuto
-
-	case strings.Contains(ml, "doubao") || strings.Contains(bl, "volces"):
-		caps.Family = "doubao"
-		caps.ToolChoiceSupport = ToolChoiceNone
-
-	default:
-		// 未识别 — 保持 DefaultCapabilities 的保守值
+	// Generic local-deployment detection — any baseURL pointing at a
+	// local inference server gets tool_choice=None regardless of model.
+	// Local engines (ollama / llama.cpp server / lmstudio / vLLM) rarely
+	// honor tool_choice and may even 400 on it.
+	localKeywords := []string{
+		"localhost", "127.0.0.1", "0.0.0.0",
+		":11434", // ollama default
+		":8080",  // common llama.cpp / vLLM default
+		":1234",  // lmstudio default
+		"ollama",
+	}
+	for _, kw := range localKeywords {
+		if strings.Contains(bl, kw) {
+			caps.ToolChoiceSupport = ToolChoiceNone
+			if caps.Family == "" {
+				caps.Family = "local-inference"
+			}
+			break
+		}
 	}
 
 	return caps

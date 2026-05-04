@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,10 @@ type Session struct {
 	Provider llm.Provider
 	Name     string
 	Model    string
+	// Capabilities 是装配点解析后传给 Runner 的最终 capability 值。
+	// 每个 Provider 内部已通过 WithXxxCapabilities 注入了相同的值,
+	// 这里 expose 仅用于 dashboard / 日志 / 测试观察。
+	Capabilities llm.Capabilities
 }
 
 func OpenConfigured(cfg *config.Config, brainKind string, input *config.ModelConfigInput, flagProvider, flagKey, flagURL, flagModel string) (Session, error) {
@@ -24,18 +29,38 @@ func OpenConfigured(cfg *config.Config, brainKind string, input *config.ModelCon
 		return Session{}, fmt.Errorf("no API key configured")
 	}
 
+	// Phase 7 — Capability 优先级链。
+	//
+	//   default → InferCapabilities → builtin 表 → user override(config.json)
+	//
+	// 解析用户在 active_provider.capabilities 块的 raw JSON;parse 失败
+	// 不静默吞 —— 用户配错(typo)应该立刻报错让用户修,不应该悄悄
+	// 退化到默认值导致 mimo / deepseek 等模型表现异常用户找不到原因。
+	var userOverride *llm.CapabilitiesOverride
+	if len(resolved.Capabilities) > 0 {
+		var ov llm.CapabilitiesOverride
+		if err := json.Unmarshal(resolved.Capabilities, &ov); err != nil {
+			return Session{}, fmt.Errorf("active_provider.capabilities parse: %w", err)
+		}
+		userOverride = &ov
+	}
+	caps := llm.ResolveCapabilities(resolved.BaseURL, resolved.Model, userOverride)
+
 	var p llm.Provider
 	switch strings.ToLower(resolved.Protocol) {
 	case "openai":
-		p = llm.NewOpenAIProvider(resolved.BaseURL, resolved.APIKey, resolved.Model)
+		p = llm.NewOpenAIProvider(resolved.BaseURL, resolved.APIKey, resolved.Model,
+			llm.WithOpenAICapabilities(caps))
 	default:
-		p = llm.NewAnthropicProvider(resolved.BaseURL, resolved.APIKey, resolved.Model)
+		p = llm.NewAnthropicProvider(resolved.BaseURL, resolved.APIKey, resolved.Model,
+			llm.WithAnthropicCapabilities(caps))
 	}
 
 	return Session{
-		Provider: p,
-		Name:     resolved.Name,
-		Model:    resolved.Model,
+		Provider:     p,
+		Name:         resolved.Name,
+		Model:        resolved.Model,
+		Capabilities: caps,
 	}, nil
 }
 
@@ -87,6 +112,11 @@ func ResolveWithInput(cfg *config.Config, brainKind string, input *config.ModelC
 					if model, ok := p.Models[brainKind]; ok && strings.TrimSpace(model) != "" {
 						r.Model = model
 					}
+				}
+				// Phase 7 — 透传用户声明的 capability 覆盖 raw JSON,
+				// 装配点(OpenConfigured)反序列化为 *llm.CapabilitiesOverride。
+				if len(p.Capabilities) > 0 {
+					r.Capabilities = p.Capabilities
 				}
 			}
 		}

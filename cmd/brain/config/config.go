@@ -194,6 +194,36 @@ type ProviderConfig struct {
 	Model    string            `json:"model,omitempty"`
 	Models   map[string]string `json:"models,omitempty"`
 	Protocol string            `json:"protocol,omitempty"`
+
+	// Capabilities 声明此 provider 的能力覆盖(可选)。
+	//
+	// 已声明的字段覆盖 builtin 表 / 启发式的同名字段,未声明的字段沿用
+	// 内置数据。仅在用户明确知道 builtin 数据不准、或接入了 builtin 表
+	// 不认识的新 model 时才需要填。
+	//
+	// 之所以是 json.RawMessage 而非 *llm.CapabilitiesOverride:config
+	// 包不依赖 sdk/llm,避免循环 / 反向依赖。Provider 包(cmd/brain/provider)
+	// 拿到 ResolvedProvider 后用 llm.CapabilitiesOverride.UnmarshalJSON
+	// 反序列化此字段。
+	//
+	// 示例(deepseek 普通版,显式声明 tool_choice 和 max_parallel_tools):
+	//
+	//   "capabilities": {
+	//     "tool_choice":         "none",
+	//     "max_parallel_tools":  4
+	//   }
+	//
+	// 字段说明:
+	//   - family:                  自定义 family 名(影响日志/dashboard 显示)
+	//   - native_tool_call:        是否原生支持 tool_use 块(几乎全部 = true)
+	//   - tool_choice:             "none" / "auto" / "required" / "specific"
+	//   - reasoner:                是否思考类模型(影响 grace turn 与 nudge 短消息)
+	//   - emits_reasoning_content: 响应是否含 reasoning_content 字段(deepseek-r 等)
+	//   - prefers_structured_output: 是否倾向结构化输出(降低 IntentChain 触发率)
+	//   - max_parallel_tools:      单轮最大并行工具数(影响 BatchPlanner)
+	//
+	// 详细文档见 docs/配置参考-capability.md。
+	Capabilities json.RawMessage `json:"capabilities,omitempty"`
 }
 
 // RemoteBrainEntry 配置一个远程 brain 连接。
@@ -226,6 +256,11 @@ type ResolvedProvider struct {
 	APIKey   string
 	Model    string
 	Protocol string
+
+	// Capabilities 是用户在 config.json 里 active_provider.capabilities 块
+	// 填的原始 JSON,延迟到 provider 装配层反序列化为 *llm.CapabilitiesOverride。
+	// 空表示用户未声明,装配层应只用 builtin 表 + 启发式构造 capability。
+	Capabilities json.RawMessage
 }
 
 type FilePolicyInput = executionpolicy.FilePolicySpec

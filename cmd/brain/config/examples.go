@@ -233,6 +233,30 @@ const ConfigReferenceExample = `# ==============================================
 # providers:
 #   <名称>:
 #     base_url / api_key / model / models.<brain>
+#     capabilities (可选): 覆盖内置 / 启发式推断的 LLM 能力
+#       brain 内置了国内外主流 model 的 capability 数据(见 sdk/llm/builtin_capabilities.go),
+#       99% 场景零配置即用。仅以下情况需要手动声明:
+#         (a) 接入 brain 内置表不认识的新 model / 内部 fine-tune
+#         (b) 已知内置数据不准、provider 升级了行为、用了定制代理
+#       字段全部可选,声明的字段覆盖内置同名字段,未声明的字段沿用内置值。
+#       字段:
+#         family                    : 自定义 family 名(影响 dashboard / 日志,不改行为)
+#         native_tool_call          : 是否原生支持 tool_use 块(默认 true)
+#         tool_choice               : "none" / "auto" / "required" / "specific"
+#         reasoner                  : 是否思考类模型(deepseek-r / mimo / qwq / o1)
+#         emits_reasoning_content   : 响应是否含 reasoning_content 字段
+#         prefers_structured_output : 是否倾向结构化输出(启发式提示)
+#         max_parallel_tools        : 单轮可可靠输出的最大 tool_use 块数
+#       完整文档:docs/配置参考-capability.md
+#       示例:
+#         providers:
+#           deepseek:
+#             base_url: ...
+#             api_key:  ...
+#             model:    deepseek-v4-pro
+#             capabilities:
+#               tool_choice:        none      # 显式声明 deepseek 不支持 tool_choice
+#               max_parallel_tools: 4
 #
 # brains:          专精大脑注册列表
 #   - kind / binary / model / auto_start

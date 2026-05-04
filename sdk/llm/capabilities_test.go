@@ -88,7 +88,18 @@ func TestToolChoiceMode_String(t *testing.T) {
 	}
 }
 
-func TestInferCapabilities(t *testing.T) {
+// TestResolveCapabilities_VendorMatrix verifies the full resolver chain
+// returns the right family/capability for representative models from each
+// supported vendor. Originally lived in TestInferCapabilities — Phase 7
+// moved vendor-specific data from InferCapabilities into the builtin
+// table, so this test now exercises ResolveCapabilities (the composition
+// entry point) which is what production code uses.
+//
+// To extend: add a case to builtin_capabilities_test.go's TestLookupBuiltin_Family
+// for unit-level coverage; add a case here only if you want to verify the
+// resolver chain itself behaves correctly for that vendor (e.g. when the
+// vendor data comes from inference rather than the builtin table).
+func TestResolveCapabilities_VendorMatrix(t *testing.T) {
 	cases := []struct {
 		name        string
 		baseURL     string
@@ -98,13 +109,14 @@ func TestInferCapabilities(t *testing.T) {
 		wantRsnr    bool
 		wantEmitsRC bool
 	}{
-		// Anthropic family
-		{"claude-opus", "https://api.anthropic.com", "claude-opus-4-7", "anthropic-claude", ToolChoiceRequired, false, false},
-		{"claude-sonnet", "", "claude-sonnet-4-20250514", "anthropic-claude", ToolChoiceRequired, false, false},
+		// Anthropic family — builtin table claims Specific (more accurate
+		// than the previous Required claim of the inference path).
+		{"claude-opus", "https://api.anthropic.com", "claude-opus-4-7", "anthropic-claude", ToolChoiceSpecific, false, false},
+		{"claude-sonnet", "", "claude-sonnet-4-20250514", "anthropic-claude", ToolChoiceSpecific, false, false},
 
 		// OpenAI family
-		{"gpt-4o", "https://api.openai.com", "gpt-4o", "openai-gpt", ToolChoiceRequired, false, false},
-		{"gpt-4-turbo", "", "gpt-4-turbo", "openai-gpt", ToolChoiceRequired, false, false},
+		{"gpt-4o", "https://api.openai.com", "gpt-4o", "openai-gpt", ToolChoiceSpecific, false, false},
+		{"gpt-4-turbo", "", "gpt-4-turbo", "openai-gpt", ToolChoiceSpecific, false, false},
 
 		// DeepSeek non-reasoner
 		{"deepseek-v4-pro", "https://api.deepseek.com", "deepseek-v4-pro", "deepseek", ToolChoiceNone, false, false},
@@ -117,8 +129,8 @@ func TestInferCapabilities(t *testing.T) {
 		// Mimo
 		{"mimo-v25", "https://token-plan-cn.xiaomimimo.com", "mimo-v2.5-pro", "mimo", ToolChoiceNone, true, true},
 
-		// Qwen
-		{"qwen-plus", "", "qwen-plus", "qwen", ToolChoiceNone, false, false},
+		// Qwen — builtin table now claims Auto for the non-reasoner family
+		{"qwen-plus", "", "qwen-plus", "qwen", ToolChoiceAuto, false, false},
 		{"qwen-reasoner", "", "qwen3-reasoner-235b", "qwen-reasoner", ToolChoiceNone, true, true},
 		{"qwq", "", "qwen-qwq-32b", "qwen-reasoner", ToolChoiceNone, true, true},
 
@@ -128,12 +140,13 @@ func TestInferCapabilities(t *testing.T) {
 		// Doubao
 		{"doubao-pro", "https://ark.volces.com", "doubao-pro-32k", "doubao", ToolChoiceNone, false, false},
 
-		// Unknown
+		// Unknown — falls all the way through to default (heuristic gives
+		// no opinion on a totally unknown model, default is None+non-reasoner).
 		{"unknown", "", "weird-model-7b", "", ToolChoiceNone, false, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := InferCapabilities(c.baseURL, c.model)
+			got := ResolveCapabilities(c.baseURL, c.model, nil)
 			if got.Family != c.wantFamily {
 				t.Errorf("Family = %q, want %q", got.Family, c.wantFamily)
 			}
