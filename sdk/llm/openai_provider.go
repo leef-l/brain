@@ -333,7 +333,11 @@ func (p *OpenAIProvider) convertMessages(messages []Message) []openaiMessage {
 //
 // 真实场景:LLM 在 thinking-only / 空响应后产生一条 empty assistant 消息
 // 进入 messages 历史,下一轮请求带上它会被 API 拒绝整个请求。这条消息本身
-// 没有信息量,直接丢弃即可。
+// 对 LLM 无信息量,直接丢弃即可。
+//
+// 注意:reasoning_content 不算有效内容 — API 严格要求 content OR tool_calls,
+// reasoning_content 不能替代。如果一条消息只有 reasoning_content,后续请求
+// 把它带上仍会触发 400,所以必须丢弃。
 func sanitizeEmptyAssistantMessages(msgs []openaiMessage) []openaiMessage {
 	out := make([]openaiMessage, 0, len(msgs))
 	for _, m := range msgs {
@@ -348,10 +352,9 @@ func sanitizeEmptyAssistantMessages(msgs []openaiMessage) []openaiMessage {
 				// 其他类型 (slice/map) 视为有内容
 				hasContent = true
 			}
-			hasReasoning := m.ReasoningContent != nil && strings.TrimSpace(*m.ReasoningContent) != ""
 			hasToolCalls := len(m.ToolCalls) > 0
-			if !hasContent && !hasToolCalls && !hasReasoning {
-				// 完全空的 assistant 消息 — 丢弃
+			if !hasContent && !hasToolCalls {
+				// content 和 tool_calls 都没有 = API 必拒,无论是否有 reasoning_content
 				continue
 			}
 		}
