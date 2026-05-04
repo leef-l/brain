@@ -28,8 +28,9 @@ func (t *EditFileTool) Schema() Schema {
 		Name: t.Name(),
 		Description: "Edit a file by replacing exact text matches. " +
 			"old_string must match exactly (including whitespace) and must be unique in the file " +
-			"unless replace_all=true. Use this instead of write_file for small edits — it's safer " +
-			"and much cheaper in tokens.",
+			"unless replace_all=true. **old_string and new_string MUST be different** — passing " +
+			"identical strings is rejected (no-op). Use this instead of write_file for small edits — " +
+			"it's safer and much cheaper in tokens.",
 		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -77,7 +78,10 @@ func (t *EditFileTool) Execute(ctx context.Context, args json.RawMessage) (*Resu
 		return &Result{Output: jsonStr("old_string is required (cannot be empty)"), IsError: true}, nil
 	}
 	if input.OldString == input.NewString {
-		return &Result{Output: jsonStr("new_string must differ from old_string"), IsError: true}, nil
+		return &Result{
+			Output:  jsonStr("new_string must differ from old_string — this is a no-op edit. Either provide an actually different replacement, or skip this edit entirely if the file is already correct."),
+			IsError: true,
+		}, nil
 	}
 	if isSensitivePath(input.Path) {
 		return &Result{Output: jsonStr("access denied: sensitive path"), IsError: true}, nil
