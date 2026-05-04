@@ -103,6 +103,10 @@ func RunResume(args []string, loadRun RunLoader, loadCfg ConfigLoader) int {
 		LoopDetector: loop.NewMemLoopDetector(),
 		CacheBuilder: loop.NewMemCacheBuilder(),
 	}
+	// Phase 6 — 与 sidecar / agentpipe 一致:resume 恢复的 run 也装 IntentChain
+	// + Clarifier,免得断点续跑时行为跟原 run 不一致。原 run 用什么 provider
+	// 这里就拿到对应 Capability,reasoner / 非 native tool_choice 自动适配。
+	loop.AttachDefaultRecovery(runner)
 
 	// 从 CAS 恢复对话历史（如果有 MessagesRef）
 	casCtx := context.Background()

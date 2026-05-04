@@ -214,6 +214,12 @@ func RunAgentLoopFull(ctx context.Context, caller KernelCaller, registry tool.Re
 		TokenBudget:       defaultTokenBudget,
 		MessageCompressor: loop.DefaultMessageCompressor,
 	}
+	// Phase 6 — 装配 IntentChain + Clarifier:根据 provider Capability 自动选,
+	// reasoner 类(mimo / deepseek-r / qwen-r)自动拿到 Reasoner=true 的 Clarifier
+	// (turn 1 thinking-only grace + 短消息),非原生 tool_choice 的 vendor
+	// (deepseek-chat / mimo / qwen)自动拿到 MaxAttempts=2。Native(Claude/GPT-4)
+	// 的 Chain 等同 NoOp + 1 次精准 nudge,无负担。
+	loop.AttachDefaultRecovery(runner)
 
 	brainKindEarly := brainKindFromSystem(systemPrompt)
 	if brainKindEarly == "browser" {

@@ -153,6 +153,10 @@ func (inv *Invocation) Execute(ctx context.Context) (*loop.RunResult, error) {
 		InterruptChecker:  inv.InterruptChecker,
 		PreTurnStateHook:  inv.PreTurnStateHook,
 	}
+	// Phase 6 — 装配 IntentChain + Clarifier 兜底(详细动机见 sdk/loop/wiring.go)。
+	// chat 中央大脑可能跑在 deepseek/mimo 上,Native passthrough + JSONCodeBlock
+	// 等 parser 能从非原生输出救回意图;Clarifier 替代单次 nudge 给针对性诊断。
+	loop.AttachDefaultRecovery(runner)
 
 	// 构造 RunOptions
 	system := []llm.SystemBlock{}
