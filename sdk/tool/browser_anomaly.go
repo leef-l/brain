@@ -90,11 +90,33 @@ func checkMissingCriticalElements(ctx context.Context, sess *cdp.BrowserSession)
 	patterns := lib.List("")
 	checked := make(map[string]bool)
 	for _, p := range patterns {
+		// 防污染:必须显式声明 URLPattern 或 Has 选择器才参与全局缺失检测,
+		// 否则一个无适用域声明的 pattern(如 ecommerce_find_similar_product
+		// 只有 Has 没有 URLPattern)会对任何页面误报"missing critical element"。
+		// 用户日志中观察到 11 条 ecommerce/admin pattern 在 file:// 静态页面误报。
+		// 规则:
+		//   - 有 URLPattern → 必须 URL 命中才检查
+		//   - 无 URLPattern 但有 Has → 必须 Has 选择器命中才检查
+		//   - 都没有 → 视为缺失适用域声明,跳过(不当作"通用")
 		if p.AppliesWhen.URLPattern != "" {
 			matched, _ := urlMatchesPattern(pageURL, p.AppliesWhen.URLPattern)
 			if !matched {
 				continue
 			}
+		} else if len(p.AppliesWhen.Has) > 0 {
+			matched := false
+			for _, sel := range p.AppliesWhen.Has {
+				if exists, _ := domSelectorExists(ctx, sess, sel); exists {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		} else {
+			// 没有任何适用域条件 → 跳过,不参与缺失检测(避免污染)
+			continue
 		}
 		for _, pc := range p.PostConditions {
 			sels := extractSelectors(&pc)

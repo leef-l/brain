@@ -1648,13 +1648,22 @@ func (h *browserHandler) deleteLearnedPattern(ctx context.Context, patternID str
 // extractDomainPattern turns "https://www.baidu.com/foo" into a regex
 // matching that domain, so the learned pattern applies to all pages on
 // the same site.
+//
+// file:// 协议 / 无 host 的 URL 返回精确路径匹配(而非空字符串),避免学到
+// 一个无 URLPattern 的 pattern,后续被全局缺失检测器对所有页面误报。
 func extractDomainPattern(rawURL string) string {
 	if idx := strings.Index(rawURL, "://"); idx >= 0 {
+		scheme := rawURL[:idx]
 		rest := rawURL[idx+3:]
-		if slash := strings.Index(rest, "/"); slash >= 0 {
-			rest = rest[:slash]
+		// http(s) → 取 host 作域匹配
+		if scheme == "http" || scheme == "https" {
+			if slash := strings.Index(rest, "/"); slash >= 0 {
+				rest = rest[:slash]
+			}
+			return `(?i)^https?://` + regexp.QuoteMeta(rest)
 		}
-		return `(?i)^https?://` + regexp.QuoteMeta(rest)
+		// file:// 等其他协议 → 用整 URL 精确匹配,只在同一文件复用
+		return `(?i)^` + regexp.QuoteMeta(scheme+"://"+rest)
 	}
 	return ""
 }
