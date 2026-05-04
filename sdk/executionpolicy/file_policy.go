@@ -34,13 +34,21 @@ func NewFilePolicy(root string, spec *FilePolicySpec) (*FilePolicy, error) {
 	if spec == nil {
 		return nil, nil
 	}
+	// 默认值规则:用户配置 AllowEdit 但忘加 AllowDelete 时,delete 默认沿用
+	// AllowEdit 模式(能编辑就该能删除,符合直觉)。用户日志中观察到 33 次
+	// "file delete denied by policy" 全是这种"用户没配 allow_delete"的场景。
+	// 显式想禁止删除可以加 Deny 兜住。
+	allowDelete := normalizePatterns(spec.AllowDelete)
+	if len(allowDelete) == 0 && len(spec.AllowEdit) > 0 {
+		allowDelete = normalizePatterns(spec.AllowEdit)
+	}
 	policy := &FilePolicy{
 		root: filepath.Clean(root),
 		spec: FilePolicySpec{
 			AllowRead:     normalizePatterns(spec.AllowRead),
 			AllowCreate:   normalizePatterns(spec.AllowCreate),
 			AllowEdit:     normalizePatterns(spec.AllowEdit),
-			AllowDelete:   normalizePatterns(spec.AllowDelete),
+			AllowDelete:   allowDelete,
 			Deny:          normalizePatterns(spec.Deny),
 			AllowCommands: cloneOptionalBool(spec.AllowCommands),
 			AllowDelegate: cloneOptionalBool(spec.AllowDelegate),
@@ -166,10 +174,13 @@ func (p *FilePolicy) CheckDelete(target string) error {
 		return err
 	}
 	if matchesAny(rel, p.spec.Deny) {
-		return fmt.Errorf("file delete denied by policy: %s", rel)
+		return fmt.Errorf("file delete denied by policy: %s (matches Deny list, cannot be overridden)", rel)
 	}
-	if len(p.spec.AllowDelete) == 0 || !matchesAny(rel, p.spec.AllowDelete) {
-		return fmt.Errorf("file delete denied by policy: %s", rel)
+	if len(p.spec.AllowDelete) == 0 {
+		return fmt.Errorf("file delete denied by policy: %s — no allow_delete entries configured. To enable: add 'allow_delete' patterns to ~/.brain/config.json under file_policy. Stop retrying.", rel)
+	}
+	if !matchesAny(rel, p.spec.AllowDelete) {
+		return fmt.Errorf("file delete denied by policy: %s — path does not match any allow_delete pattern. Stop retrying this path.", rel)
 	}
 	return nil
 }
