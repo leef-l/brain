@@ -323,7 +323,41 @@ func (p *OpenAIProvider) convertMessages(messages []Message) []openaiMessage {
 		}
 	}
 
+	out = sanitizeEmptyAssistantMessages(out)
 	return sanitizeToolCallSequence(out)
+}
+
+// sanitizeEmptyAssistantMessages 过滤掉 content 和 tool_calls 都为空的 assistant
+// 消息。OpenAI/DeepSeek 等 API 对此报 HTTP 400
+// "Invalid assistant message: content or tool_calls must be set"。
+//
+// 真实场景:LLM 在 thinking-only / 空响应后产生一条 empty assistant 消息
+// 进入 messages 历史,下一轮请求带上它会被 API 拒绝整个请求。这条消息本身
+// 没有信息量,直接丢弃即可。
+func sanitizeEmptyAssistantMessages(msgs []openaiMessage) []openaiMessage {
+	out := make([]openaiMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			hasContent := false
+			switch v := m.Content.(type) {
+			case string:
+				hasContent = strings.TrimSpace(v) != ""
+			case nil:
+				// content 是 nil
+			default:
+				// 其他类型 (slice/map) 视为有内容
+				hasContent = true
+			}
+			hasReasoning := m.ReasoningContent != nil && strings.TrimSpace(*m.ReasoningContent) != ""
+			hasToolCalls := len(m.ToolCalls) > 0
+			if !hasContent && !hasToolCalls && !hasReasoning {
+				// 完全空的 assistant 消息 — 丢弃
+				continue
+			}
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // sanitizeToolCallSequence ensures every assistant message with tool_calls is
