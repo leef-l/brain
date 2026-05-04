@@ -2,6 +2,7 @@ package sidecar
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,9 +28,15 @@ var wsUpgrader = websocket.Upgrader{
 // 提供三个端点：
 //   - POST /rpc       — 单次 JSON-RPC 请求/响应（无反向调用）
 //   - GET  /ws        — WebSocket 双向 RPC（支持反向调用，如 llm.complete）
-//   - GET  /health    — 健康检查
+//   - GET  /health    — 健康检查（不要求认证）
 //
 // addr 格式如 ":8080" 或 "0.0.0.0:8080"。
+//
+// Bearer 认证(对应 sdk/docs/37-远程专精大脑调用说明.md):
+//   - 环境变量 BRAIN_SIDECAR_BEARER_TOKEN 配置 token
+//   - 空值/未设置 → 关闭认证(向后兼容,本地开发与无门禁场景)
+//   - 设置 → /rpc 与 /ws 必须带 "Authorization: Bearer <token>",失败返回 401
+//   - /health 始终不校验(供 k8s/容器探针)
 func ListenAndServe(addr string, handler BrainHandler) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -41,9 +48,15 @@ func ListenAndServe(addr string, handler BrainHandler) error {
 		cancel()
 	}()
 
+	bearerToken := os.Getenv("BRAIN_SIDECAR_BEARER_TOKEN")
+	if bearerToken != "" {
+		fmt.Fprintf(os.Stderr, "brain-%s sidecar: bearer authentication enabled\n", handler.Kind())
+		diaglog.Logf("rpc", "kind=%s bearer_auth enabled", handler.Kind())
+	}
+
 	mux := http.NewServeMux()
 
-	// GET /health
+	// GET /health (不要求认证)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -54,18 +67,18 @@ func ListenAndServe(addr string, handler BrainHandler) error {
 	})
 
 	// POST /rpc — 单次 JSON-RPC（HTTP 模式，无反向 RPC）
-	mux.HandleFunc("/rpc", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rpc", requireBearer(bearerToken, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		handleHTTPRPC(w, r, handler)
-	})
+	}))
 
 	// GET /ws — WebSocket 双向 RPC（完整模式，支持反向调用）
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ws", requireBearer(bearerToken, func(w http.ResponseWriter, r *http.Request) {
 		handleWSSession(ctx, w, r, handler)
-	})
+	}))
 
 	server := &http.Server{
 		Addr:    addr,
@@ -163,6 +176,32 @@ func handleHTTPRPC(w http.ResponseWriter, r *http.Request, handler BrainHandler)
 		"id":      req.ID,
 		"result":  result,
 	})
+}
+
+// requireBearer 是 Bearer Token 认证中间件。token 为空 → 直通(向后兼容)。
+// 校验失败返回 401 Unauthorized + 简短说明,不暴露期望 token。
+//
+// 使用 subtle.ConstantTimeCompare 避免计时旁路攻击(token 长度可能不同时
+// 直接比较会泄漏前缀信息;ConstantTimeCompare 处理等长串,长度不等先用 len 检查)。
+func requireBearer(token string, next http.HandlerFunc) http.HandlerFunc {
+	if token == "" {
+		return next // 未配置 token,关闭认证(本地/开发场景)
+	}
+	expected := []byte("Bearer " + token)
+	return func(w http.ResponseWriter, r *http.Request) {
+		got := r.Header.Get("Authorization")
+		if got == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="brain-sidecar"`)
+			http.Error(w, "missing Authorization header", http.StatusUnauthorized)
+			return
+		}
+		gotBytes := []byte(got)
+		if len(gotBytes) != len(expected) || subtle.ConstantTimeCompare(gotBytes, expected) != 1 {
+			http.Error(w, "invalid bearer token", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func writeRPCError(w http.ResponseWriter, id interface{}, code int, message string) {
