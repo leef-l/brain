@@ -194,7 +194,10 @@ func RunAgentLoopFull(ctx context.Context, caller KernelCaller, registry tool.Re
 		maxTurns = eb.MaxTurns
 	}
 
-	provider := NewKernelLLMProvider(caller, "kernel", executionID)
+	// Phase 7 follow-up — 用 *WithCaps 变体,启动时拉一次 host capability,
+	// 让下面 loop.AttachDefaultRecovery 能看到真实 reasoner / tool_choice
+	// 标志,而不是默认值。RPC 失败会自动退化到默认值,不阻塞启动。
+	provider := NewKernelLLMProviderWithCaps(ctx, caller, "kernel", executionID)
 
 	const defaultTokenBudget = 100_000
 

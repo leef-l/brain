@@ -71,12 +71,17 @@ func (m ToolChoiceMode) String() string {
 // Capabilities is the immutable behavioral profile a Provider exposes to
 // the runner. All fields are advisory — the runner uses them to pick
 // strategies but MUST still defend against any actual response shape.
+//
+// JSON tags exist so this struct can travel over the sidecar↔host RPC
+// channel (protocol.MethodLLMCapabilities). ToolChoiceSupport is
+// transmitted as the underlying int value of the iota; both ends use the
+// same Go type so the int is a stable wire shape.
 type Capabilities struct {
 	// Family identifies the model lineage for telemetry and routing
 	// decisions. Examples: "anthropic-claude", "openai-gpt", "deepseek",
 	// "deepseek-reasoner", "mimo", "qwen", "qwen-reasoner". Empty string
 	// means "unknown / default openai-compatible".
-	Family string
+	Family string `json:"family,omitempty"`
 
 	// NativeToolCall reports whether the provider can emit structured
 	// tool_use blocks (Anthropic style) or tool_calls (OpenAI style)
@@ -86,11 +91,11 @@ type Capabilities struct {
 	// All current production providers report true; this field exists
 	// to document the contract and to allow future "text-only" providers
 	// (e.g. raw completion endpoints) to plug in without changes upstream.
-	NativeToolCall bool
+	NativeToolCall bool `json:"native_tool_call"`
 
 	// ToolChoiceSupport declares how strongly the provider honors the
 	// tool_choice request field. See ToolChoiceMode for the levels.
-	ToolChoiceSupport ToolChoiceMode
+	ToolChoiceSupport ToolChoiceMode `json:"tool_choice_support"`
 
 	// Reasoner reports whether the model has a separate "thinking" phase
 	// that frequently produces text-only responses on the first turn
@@ -99,24 +104,24 @@ type Capabilities struct {
 	// turn to be pure thinking without immediate nudge).
 	//
 	// Examples: deepseek-reasoner, mimo-v2.5-pro, qwen-reasoner.
-	Reasoner bool
+	Reasoner bool `json:"reasoner,omitempty"`
 
 	// MaxParallelTools is the maximum number of tool_use blocks the
 	// provider reliably emits in a single response. 0 means "unknown,
 	// assume 1". This is a hint for BatchPlanner, not a hard contract.
-	MaxParallelTools int
+	MaxParallelTools int `json:"max_parallel_tools,omitempty"`
 
 	// EmitsReasoningContent reports whether the provider returns a
 	// separate reasoning_content / thinking field that must be preserved
 	// across turns (DeepSeek-Reasoner specific quirk). When true, the
 	// provider's request builder MUST round-trip thinking blocks.
-	EmitsReasoningContent bool
+	EmitsReasoningContent bool `json:"emits_reasoning_content,omitempty"`
 
 	// PrefersStructuredOutput is a hint that the model leans on tool_use
 	// rather than text. False means the model often answers with prose
 	// even when tools are available — runner should be more aggressive
 	// with IntentParser for these.
-	PrefersStructuredOutput bool
+	PrefersStructuredOutput bool `json:"prefers_structured_output,omitempty"`
 }
 
 // CapabilityAware is an optional interface a Provider can implement to

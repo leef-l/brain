@@ -46,6 +46,18 @@ const (
 	// asks for a temporary direct-access window in LLMAccessHybrid
 	// mode. See 20 §10.2 and 23-安全模型.md for the approval rules.
 	MethodLLMRequestDirect = "llm.requestDirectAccess"
+
+	// MethodLLMCapabilities is the sidecar→host query that returns the
+	// Capabilities profile of the host's active provider for the calling
+	// brain kind. The sidecar calls this once at startup so its in-process
+	// kernelLLMProvider can advertise CapabilityAware to the runner —
+	// otherwise Clarifier / IntentChain wiring fall back to default
+	// capabilities and reasoner-class providers (mimo / deepseek-r) lose
+	// the grace turn behavior.
+	//
+	// Response shape: JSON-encoded llm.Capabilities (lowercase field names
+	// per the JSON struct tags). See sdk/llm/capabilities.go.
+	MethodLLMCapabilities = "llm.capabilities"
 )
 
 // LLM streaming delta — host→sidecar direction, fire-and-forget (notification).

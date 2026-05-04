@@ -181,6 +181,19 @@ func (p *LLMProxy) RegisterHandlers(rpc protocol.BidirRPC, kind agent.Kind) {
 		fmt.Fprintf(os.Stderr, "LLMProxy: %s already registered\n", protocol.MethodLLMComplete)
 	}
 
+	// llm.capabilities — Phase 7 follow-up: lets the sidecar's in-process
+	// kernelLLMProvider expose CapabilityAware so loop.AttachDefaultRecovery
+	// builds Clarifier / IntentChain with the right Reasoner flag etc.
+	// Without this the sidecar always saw DefaultCapabilities — reasoner
+	// providers (mimo, deepseek-r) lost the grace turn behavior that
+	// Clarifier relies on.
+	if !rpc.HandlerExists(protocol.MethodLLMCapabilities) {
+		fmt.Fprintf(os.Stderr, "LLMProxy: registering %s\n", protocol.MethodLLMCapabilities)
+		rpc.Handle(protocol.MethodLLMCapabilities, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+			return p.handleCapabilities(ctx, kind, params)
+		})
+	}
+
 	// llm.stream — real streaming: read all events from provider.Stream and
 	// aggregate into a single llmCompleteResponse for the sidecar.
 	// When the sidecar provides a stream_id we also push incremental deltas
@@ -266,6 +279,27 @@ func extractJSONFromText(text string) string {
 	return text
 }
 
+
+// handleCapabilities processes an llm.capabilities reverse RPC request.
+// Returns the Capabilities profile of the host's provider for the calling
+// brain kind, so the sidecar's kernelLLMProvider can advertise it via
+// CapabilityAware. See protocol.MethodLLMCapabilities for the contract.
+//
+// Returns DefaultCapabilities() (zero-knowledge safe profile) when the
+// provider doesn't implement CapabilityAware. The sidecar always gets a
+// valid response — never fails for "no capability info available", because
+// the runner's wiring layer can work with default capabilities (just
+// without the reasoner / tool_choice optimizations).
+func (p *LLMProxy) handleCapabilities(_ context.Context, kind agent.Kind, _ json.RawMessage) (interface{}, error) {
+	if p == nil || p.ProviderFactory == nil {
+		return llm.DefaultCapabilities(), nil
+	}
+	provider := p.ProviderFactory(kind)
+	if provider == nil {
+		return llm.DefaultCapabilities(), nil
+	}
+	return llm.CapabilitiesOf(provider), nil
+}
 
 // handleComplete processes an llm.complete reverse RPC request.
 func (p *LLMProxy) handleComplete(ctx context.Context, kind agent.Kind, params json.RawMessage) (interface{}, error) {

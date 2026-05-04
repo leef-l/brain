@@ -25,18 +25,71 @@ type kernelLLMProvider struct {
 	caller      KernelCaller
 	name        string
 	executionID string
+
+	// caps holds the host's reported Capabilities for this brain kind,
+	// fetched once at construction via the llm.capabilities reverse RPC
+	// (see protocol.MethodLLMCapabilities). The runner reads it through
+	// the CapabilityAware interface — see Capabilities() below.
+	//
+	// 之所以 fetch-once 而非每次 Complete 时拉取:capability 在 sidecar
+	// 整个生命周期内不变(它来自 host 的 ProviderFactory,而 ProviderFactory
+	// 是 host 启动时一次性确定的)。每次 Complete 都拉一遍只增加 RPC 开销
+	// 没有任何收益。
+	caps llm.Capabilities
 }
 
 // NewKernelLLMProvider 构造一个调用 Kernel.llm.complete 的 Provider。
 // executionID 用于端到端流式事件关联；为空时不启用流式输出。
+//
+// 此构造函数 fire-and-forget 兼容性签名 — 不主动拉取 capabilities,
+// 用于不需要 capability-aware 行为的场景(测试 / mock)。生产代码应
+// 走 NewKernelLLMProviderWithCaps,启动时拉一次 host capability,
+// 让 loop.AttachDefaultRecovery 能装出正确的 Clarifier。
 func NewKernelLLMProvider(caller KernelCaller, name string, executionID string) llm.Provider {
 	if name == "" {
 		name = "kernel"
 	}
-	return &kernelLLMProvider{caller: caller, name: name, executionID: executionID}
+	return &kernelLLMProvider{
+		caller:      caller,
+		name:        name,
+		executionID: executionID,
+		caps:        llm.DefaultCapabilities(),
+	}
+}
+
+// NewKernelLLMProviderWithCaps 构造 Provider 并通过 llm.capabilities 反向
+// RPC 拉取 host 报告的 Capabilities。RPC 失败时不阻塞(只 stderr 警告),
+// 退化到 DefaultCapabilities — 这样即便 host 老版本没注册 handler,
+// sidecar 仍能跑(只是没法享受 reasoner grace turn 等优化)。
+//
+// 注意 ctx 来自 sidecar 启动流程,如果 ctx 已经被 cancel(例如启动期间
+// 收到 SIGTERM),会立刻退化到 default。这是预期行为 — sidecar 在被关停
+// 时也不会 hang 等 RPC。
+func NewKernelLLMProviderWithCaps(ctx context.Context, caller KernelCaller, name string, executionID string) llm.Provider {
+	p := NewKernelLLMProvider(caller, name, executionID).(*kernelLLMProvider)
+	if caller == nil {
+		return p
+	}
+	var caps llm.Capabilities
+	if err := caller.CallKernel(ctx, protocol.MethodLLMCapabilities, struct{}{}, &caps); err != nil {
+		fmt.Fprintf(os.Stderr, "kernelLLMProvider: failed to fetch host capabilities (%v) — falling back to defaults\n", err)
+		return p
+	}
+	p.caps = caps
+	if os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, "[sidecar-debug] fetched host capabilities: family=%q reasoner=%v tool_choice=%v emits_reasoning=%v max_parallel=%d\n",
+			caps.Family, caps.Reasoner, caps.ToolChoiceSupport, caps.EmitsReasoningContent, caps.MaxParallelTools)
+	}
+	return p
 }
 
 func (p *kernelLLMProvider) Name() string { return p.name }
+
+// Capabilities implements llm.CapabilityAware. Returns the host-reported
+// profile fetched at construction (NewKernelLLMProviderWithCaps), or
+// DefaultCapabilities() when the legacy NewKernelLLMProvider constructor
+// was used.
+func (p *kernelLLMProvider) Capabilities() llm.Capabilities { return p.caps }
 
 func (p *kernelLLMProvider) Complete(ctx context.Context, req *llm.ChatRequest) (*llm.ChatResponse, error) {
 	if p.caller == nil {
