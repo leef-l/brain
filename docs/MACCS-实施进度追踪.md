@@ -184,9 +184,14 @@
 ### P3 — 重复造轮收敛
 
 - 调度器：`scheduler.go::DefaultTaskScheduler` + `execution_scheduler.go::ExecutionScheduler` + `smart_scheduler.go::SmartScheduler` → 仍三套并存，可合并为「ExecutionScheduler 调度框架 + SmartScheduler 策略 + DefaultTaskScheduler 兼容入口」
-- 审核循环：`review_loop.go::ReviewLoop` + `design_review.go::DesignReviewLoop` 语义重叠，可把 design_review 收编为 review_loop 的一种 strategy
+- 审核循环：~~`review_loop.go::ReviewLoop` + `design_review.go::DesignReviewLoop` 收编~~ **决策：不收编**（2026-05-04 复审）
+  - 输入对象本质不同：`DelegateResult/Artifact`（运行时产物） vs `DesignProposal`（规格图）
+  - AutoFix 语义不同：生成"修复任务"重新执行 vs 修改 Proposal 本身
+  - 字段几乎不重叠：`File/Line/AutoFixable` vs `ProposalID/Round/Category=architecture`
+  - 真共享代码仅 4 行 for 控制流，强行抽 strategy 需泛型化 `Issue/Result` 类型，收益小于 churn
+  - `review_loop.go:1-14` 与 `design_review.go:1-15` 已显式文档化"刻意保持独立"
 
-> 上述两项不影响功能完整性，留给后续优化窗口。
+> 上述第一项不影响功能完整性，留给后续优化窗口；第二项已 close。
 
 ### LeaseManager 持锁等待模型（已不在关键路径）
 
