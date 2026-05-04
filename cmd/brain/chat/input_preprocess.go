@@ -5,11 +5,12 @@
 //   - 去**纯填充音**(嗯嗯嗯/呃呃/um um),不动有语义的短语
 //   - 折叠 3+ 重复标点(!!! → !)
 //   - 折叠 3+ 空白行
+//   - 长粘贴摘要(超过阈值时存进 PasteStore,送 LLM 的换成"[PASTE id=xxx]"摘要)
 //
 // 注意:
 // - Go regexp 是 RE2,不支持反向引用 \1,所以 3+ 重复标点用枚举的方式实现。
-// - 长粘贴摘要功能**已关闭**(LongPasteThresholdChars=0),因为还没实现 PasteStore +
-//   read_paste 工具,直接摘要会导致原文丢失 + LLM 调不存在的工具产生幻觉。
+// - 长粘贴摘要默认开启(阈值 4000 chars,paste_store.go + read_paste.go 配套)。
+//   原文存 PasteStore,LLM 看到 [PASTE id=xxx] 标记可调 central.read_paste(id) 取回。
 // - 调用方应只把 PreprocessUserInput 的结果用于"当前 turn 发给 LLM 的临时拷贝",
 //   持久化、Activity、PrintUserMessage、state.Messages 务必保留原文,以保证
 //   下一轮 LLM 仍能看到完整历史,以及 SQLite 项目记忆里存的是真用户输入。
@@ -17,7 +18,6 @@
 package chat
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -33,9 +33,10 @@ type PreprocessConfig struct {
 	TailLines int
 }
 
-// DefaultPreprocessConfig 默认只做无损去废话,关闭长粘贴摘要。
+// DefaultPreprocessConfig 默认值:无损去废话 + 长粘贴摘要(阈值 4000 chars)。
+// 4000 chars ≈ 1000 token,超过此阈值才走摘要路径,常规对话(< 1000 字符)直通。
 var DefaultPreprocessConfig = PreprocessConfig{
-	LongPasteThresholdChars: 0, // 关闭:PasteStore 未实现前不能丢原文
+	LongPasteThresholdChars: 4000,
 	HeadLines:               40,
 	TailLines:               20,
 }
@@ -120,10 +121,11 @@ func stripFillers(s string) string {
 	return s
 }
 
-// summarizeLongPaste 长粘贴摘要:首 head 行 + 中间省略 + 尾 tail 行。
-// **当前未启用**(DefaultPreprocessConfig.LongPasteThresholdChars=0)。
-// 启用前必须先实现 PasteStore + central.read_paste 工具,否则 LLM 看到的"id"
-// 无法对应任何真实存储,会产生工具未注册错误或幻觉。
+// summarizeLongPaste 长粘贴摘要:把原文存进 PasteStore,返回带 [PASTE id=xxx] 标记
+// + 首 head 行 + 中间省略 + 尾 tail 行的摘要。LLM 看到标记可调 central.read_paste(id)
+// 取回完整原文。
+//
+// 行数不足 head+tail 时不摘要、不存 PasteStore,直接返回原文(避免无意义存储)。
 func summarizeLongPaste(s string, head, tail int) string {
 	lines := strings.Split(s, "\n")
 	total := len(lines)
@@ -131,11 +133,8 @@ func summarizeLongPaste(s string, head, tail int) string {
 		return s
 	}
 
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("[Long paste: %d lines / %d chars total. Showing first %d + last %d.]\n\n",
-		total, len(s), head, tail))
-	b.WriteString(strings.Join(lines[:head], "\n"))
-	b.WriteString(fmt.Sprintf("\n\n[... %d middle lines omitted ...]\n\n", total-head-tail))
-	b.WriteString(strings.Join(lines[total-tail:], "\n"))
-	return b.String()
+	entry := SharedPasteStore().Put(s)
+	headText := strings.Join(lines[:head], "\n")
+	tailText := strings.Join(lines[total-tail:], "\n")
+	return FormatPasteSummary(entry, headText, tailText)
 }

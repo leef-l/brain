@@ -163,10 +163,11 @@ func runChatTurn(ctx context.Context, state *State, provider llm.Provider, regis
 	}
 
 	// Token-saving P2-C:对发给 LLM 的临时 messages 应用预处理。
-	// 注意:result.FinalMessages 会被累积进 state.Messages 和持久化,
-	// 所以 LLM 看到的 user 消息也会进历史。当前预处理只去
-	// 无歧义纯填充音(嗯嗯嗯/啊啊/um um 等),与原文语义等价,污染可忽略。
-	llmInput, _ := PreprocessUserInput(input, DefaultPreprocessConfig)
+	// 长粘贴摘要(LongPasteThresholdChars 命中)后,llmInput 含 [PASTE id=xxx] 标记,
+	// 与原文不再语义等价。result.FinalMessages 会累积进 state.Messages 和持久化,
+	// 因此执行后必须把摘要那条 user 消息替换回原文版,避免污染历史。
+	llmInput, summarized := PreprocessUserInput(input, DefaultPreprocessConfig)
+	userMsgIndex := len(baseMessages) // result.FinalMessages 中 user 消息的位置
 	messages := append(baseMessages, llm.Message{
 		Role:    "user",
 		Content: []llm.ContentBlock{{Type: "text", Text: llmInput}},
@@ -199,7 +200,18 @@ func runChatTurn(ctx context.Context, state *State, provider llm.Provider, regis
 		CacheBuilder: state.CacheBuilder,
 	}
 
-	return inv.Execute(ctx)
+	result, err := inv.Execute(ctx)
+	// 把 FinalMessages 中送进 LLM 的摘要 user 消息替换回原文版,避免污染 state.Messages 与持久化。
+	// 仅在确实做了长粘贴摘要时替换;只去填充音的情况(语义等价)不动,避免无谓开销。
+	if summarized && result != nil && userMsgIndex < len(result.FinalMessages) {
+		if result.FinalMessages[userMsgIndex].Role == "user" {
+			result.FinalMessages[userMsgIndex] = llm.Message{
+				Role:    "user",
+				Content: []llm.ContentBlock{{Type: "text", Text: input}},
+			}
+		}
+	}
+	return result, err
 }
 
 // runChatPlanFlow 处理 chat 模式下的项目级需求(IntentProject)。

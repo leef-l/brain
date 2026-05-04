@@ -382,6 +382,10 @@ func (s *State) SwitchMode(m env.PermissionMode) {
 		// brain_status / budget），让 LLM 自己决定如何拆分任务，而不是硬编码 prompt 规则。
 		s.Registry.Register(tool.WrapWithFailureLog(NewMetacognitionTool(s.Orchestrator)))
 	}
+	// central.read_paste 让 LLM 取回长粘贴原文(PreprocessUserInput 命中阈值时
+	// 把原文存 PasteStore,送 LLM 的换成 [PASTE id=xxx] 摘要)。即便没有
+	// Orchestrator(solo 模式)也注册,因为 PasteStore 是进程内单例,工具不依赖编排。
+	s.Registry.Register(tool.WrapWithFailureLog(NewReadPasteTool(nil)))
 
 	// brain.memory_recall 让 LLM 查询 ~/.brain/brain.db 里的 ui_patterns /
 	// human_demo_sequences / learning_profiles,用户问"读取上下文记忆 / 你
