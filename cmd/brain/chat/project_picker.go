@@ -183,6 +183,9 @@ func promptCreateProject(ctx context.Context, store persistence.ProjectsStore,
 }
 
 // createProject 创建项目并打印反馈。
+// 重名时:回退到 List 找现有项目并复用,而不是报错退出。
+// 这是用户体验改进:之前重名直接 chat 退出,但用户的意图明显是"用这个名字
+// 的项目继续"(无论新建还是续用)。
 func createProject(ctx context.Context, store persistence.ProjectsStore,
 	workdir, name string) (*ProjectPickerResult, error) {
 	p := &persistence.ProjectMeta{
@@ -190,6 +193,14 @@ func createProject(ctx context.Context, store persistence.ProjectsStore,
 		Name:    name,
 	}
 	if err := store.Create(ctx, p); err != nil {
+		// 检查是否是"已存在"错误,如果是,FindByName 复用现有项目。
+		// 这是用户体验改进:之前重名直接 chat 退出,但用户的意图明显是
+		// "用这个名字继续",不该让他重输。
+		if strings.Contains(err.Error(), "already exists") {
+			if existing, findErr := store.FindByName(ctx, workdir, name); findErr == nil && existing != nil {
+				return &ProjectPickerResult{Project: existing}, nil
+			}
+		}
 		return nil, fmt.Errorf("创建项目失败: %w", err)
 	}
 	return &ProjectPickerResult{Project: p}, nil
