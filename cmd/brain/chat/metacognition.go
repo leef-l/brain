@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/leef-l/brain/sdk/agent"
 	"github.com/leef-l/brain/sdk/kernel"
@@ -32,6 +33,14 @@ import (
 type metacognitionTool struct {
 	orch     *kernel.Orchestrator
 	planOrch *kernel.PlanOrchestrator // 可选：未注入时只支持 brain_status / budget 查询
+
+	// queryCache 防止 LLM 在同一会话内反复用相同 query+args 调本工具
+	// (用户日志观察到 turn=1 内 tool_use_count=2 tools=[metacognition metacognition]
+	// 同 query 重复调,跨 turn 累积命中 LoopDetector repeated_tool_call 阈值
+	// (默认 3)整个 run 失败)。
+	// key = query|goal|category|topK,value = 上次结果。同进程生命周期共享。
+	cacheMu sync.Mutex
+	cache   map[string]json.RawMessage
 }
 
 // SetPlanOrchestrator 注入 PlanOrchestrator 引用，让 metacognition 能访问全部 MACCS 组件。
@@ -53,7 +62,9 @@ func (t *metacognitionTool) Schema() tool.Schema {
 		Description: "中央大脑专属的元认知查询工具。在拆 DAG / 决定如何编排前调用，可获得：" +
 			"任务复杂度预估、历史相似经验、已沉淀的模式、当前 brain 可用性 + 负载、剩余预算、" +
 			"或让系统帮你反思一份 plan 草稿。**强烈建议**在做非 trivial 编排决策前调用一次，" +
-			"避免凭空设计 DAG 然后撞资源约束失败。",
+			"避免凭空设计 DAG 然后撞资源约束失败。" +
+			"**重要**: 每个 query 整个会话只应调一次。重复调相同 query+args 会被缓存(返回 _cached=true)" +
+			"并提示 LLM 停止查询直接干活,反复调会触发 LoopDetector 终止整个 run。",
 		Brain: "central",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
@@ -100,25 +111,64 @@ func (t *metacognitionTool) Execute(ctx context.Context, args json.RawMessage) (
 		params.TopK = 5
 	}
 
+	// 缓存命中:相同 query+args 直接返回上次结果,附 hint 提示 LLM 不要再重复调。
+	// 防止 LLM 在 turn 内或跨 turn 反复调相同 metacognition 触发 LoopDetector
+	// repeated_tool_call(默认阈值 3)导致整个 run 失败。
+	cacheKey := fmt.Sprintf("%s|%s|%s|%d", params.Query, params.Goal, params.Category, params.TopK)
+	if cached := t.getCache(cacheKey); cached != nil {
+		hint := json.RawMessage(fmt.Sprintf(
+			`{"_cached":true,"_hint":"You already called metacognition with the exact same args this session — same answer. Don't query again, proceed with the plan.","result":%s}`,
+			string(cached),
+		))
+		return &tool.Result{Output: hint}, nil
+	}
+
+	var (
+		result *tool.Result
+		err    error
+	)
 	switch params.Query {
 	case "brain_status":
-		return t.queryBrainStatus()
+		result, err = t.queryBrainStatus()
 	case "budget":
-		return t.queryBudget()
+		result, err = t.queryBudget()
 	case "complexity":
-		return t.queryComplexity(params.Goal)
+		result, err = t.queryComplexity(params.Goal)
 	case "memory":
-		return t.queryMemory(ctx, params.Goal, params.TopK)
+		result, err = t.queryMemory(ctx, params.Goal, params.TopK)
 	case "pattern":
-		return t.queryPattern(params.Category, params.TopK)
+		result, err = t.queryPattern(params.Category, params.TopK)
 	case "reflect":
-		return t.queryReflect(ctx, params.Goal)
+		result, err = t.queryReflect(ctx, params.Goal)
 	default:
 		return &tool.Result{
 			Output:  json.RawMessage(fmt.Sprintf(`"unknown query type %q"`, params.Query)),
 			IsError: true,
 		}, nil
 	}
+	// 成功结果写缓存(IsError 不缓存,失败查询应允许 LLM 重试)
+	if err == nil && result != nil && !result.IsError {
+		t.putCache(cacheKey, result.Output)
+	}
+	return result, err
+}
+
+func (t *metacognitionTool) getCache(key string) json.RawMessage {
+	t.cacheMu.Lock()
+	defer t.cacheMu.Unlock()
+	if t.cache == nil {
+		return nil
+	}
+	return t.cache[key]
+}
+
+func (t *metacognitionTool) putCache(key string, val json.RawMessage) {
+	t.cacheMu.Lock()
+	defer t.cacheMu.Unlock()
+	if t.cache == nil {
+		t.cache = make(map[string]json.RawMessage, 6)
+	}
+	t.cache[key] = val
 }
 
 // queryBrainStatus 返回所有可用 brain kind + 是否在线。
