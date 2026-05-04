@@ -183,7 +183,14 @@
 
 ### P3 — 重复造轮收敛
 
-- 调度器：`scheduler.go::DefaultTaskScheduler` + `execution_scheduler.go::ExecutionScheduler` + `smart_scheduler.go::SmartScheduler` → 仍三套并存，可合并为「ExecutionScheduler 调度框架 + SmartScheduler 策略 + DefaultTaskScheduler 兼容入口」
+- 调度器：~~三套并存可合并~~ **决策：已自然收敛，不需重构**（2026-05-04 复审）
+  - `DefaultTaskScheduler` (scheduler.go) — 任务级 Plan + L1 SelectBrain（学习+优先级），是任务级入口
+  - `ExecutionScheduler` (execution_scheduler.go) — 项目级 plan 落地框架，已是「框架」：
+    - 持有 `smartScheduler *SmartScheduler` 作为可选注入（line 117）
+    - `AttachConflictControl(detector, smart, ...)` 把 SmartScheduler 作为策略注入（line 165）
+    - `AttachDeadlockControl(detector, arbiter, ...)` 是 Wave 7 死锁检测钩子（line 183）
+  - `SmartScheduler` (smart_scheduler.go) — 拓扑层之上的冲突感知重排策略，文件头已显式自述「可选辅助/增强组件，不是第三套调度器」
+  - 三者职责正交（任务级路由 / 项目级落地 / 冲突重排），不是重复造。强行合并会破坏 Wave 7 死锁检测的接入路径
 - 审核循环：~~`review_loop.go::ReviewLoop` + `design_review.go::DesignReviewLoop` 收编~~ **决策：不收编**（2026-05-04 复审）
   - 输入对象本质不同：`DelegateResult/Artifact`（运行时产物） vs `DesignProposal`（规格图）
   - AutoFix 语义不同：生成"修复任务"重新执行 vs 修改 Proposal 本身
@@ -191,7 +198,7 @@
   - 真共享代码仅 4 行 for 控制流，强行抽 strategy 需泛型化 `Issue/Result` 类型，收益小于 churn
   - `review_loop.go:1-14` 与 `design_review.go:1-15` 已显式文档化"刻意保持独立"
 
-> 上述第一项不影响功能完整性，留给后续优化窗口；第二项已 close。
+> 两项均已 close — 复审后确认当前结构合理，不需重构。
 
 ### LeaseManager 持锁等待模型（已不在关键路径）
 
