@@ -14,6 +14,7 @@ import (
 
 	brainerrors "github.com/leef-l/brain/sdk/errors"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/loop/intent"
 	"github.com/leef-l/brain/sdk/tool"
 )
 
@@ -93,6 +94,20 @@ type Runner struct {
 	// InterruptChecker 检查 run 是否收到中断信号。
 	// 当非 nil 时，每 turn 开始前检查，收到中断则暂停/停止/重启。
 	InterruptChecker RunInterruptChecker
+
+	// IntentChain extracts tool intents from non-native LLM output formats
+	// (tagged code fences / JSON envelopes / XML / function syntax /
+	// Markdown heuristics). Triggered when the response contains zero
+	// native tool_use blocks but does carry text that looks like an intent.
+	//
+	// When nil, the runner falls back to the legacy nudge mechanism. When
+	// set (typical sidecar / chat configuration), the chain is consulted
+	// before nudge — a successful parse synthesizes tool_use blocks and
+	// dispatches them in the same turn, sparing one wasted LLM round trip.
+	//
+	// See sdk/loop/intent for the parser implementations and the
+	// confidence calibration bands.
+	IntentChain *intent.Chain
 }
 
 // PreTurnState 描述某一轮的动态工具视图。
@@ -468,6 +483,40 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		// 是否存在,不看 stop_reason。stop_reason 只用于:
 		//   - "max_tokens": 提示截断,但有 tool 就 dispatch
 		//   - "end_turn"/"stop": 配合 len==0 时退出
+		if len(toolUseBlocks) == 0 {
+			// Phase 4 — IntentChain 抢救:在 nudge 之前先尝试从非原生格式
+			// (tagged code fence / JSON envelope / XML / function syntax /
+			// Markdown 启发式)合成 tool_use 块。命中即 inline 注入到
+			// toolUseBlocks,跳过 nudge 直接走下方 dispatch 路径,省掉一整轮
+			// LLM 往返。这是 deepseek/mimo/qwen 等非 native-tool-call 模型
+			// 的根治路径 — Phase 1 的 Capability 已识别其 ToolChoice=None,
+			// LLM 出格式不规范是常态,IntentChain 就是把这种常态吸收掉。
+			//
+			// 当 r.IntentChain 为 nil(未装配)或所有 parser 都给不出
+			// Confidence ≥ Threshold 的 Intent 时,逻辑无侵入退化到原 nudge 路径。
+			if r.IntentChain != nil {
+				intents := r.IntentChain.Parse(intent.ParseContext{
+					Content:        resp.Content,
+					AvailableTools: turnOpts.Tools,
+					Capability:     llm.CapabilitiesOf(r.Provider),
+				})
+				if len(intents) > 0 {
+					synthesized := make([]llm.ContentBlock, 0, len(intents))
+					synthSources := make([]string, 0, len(intents))
+					for i := range intents {
+						synthesized = append(synthesized, intents[i].ToContentBlock())
+						synthSources = append(synthSources, fmt.Sprintf("%s:%s", intents[i].Source, intents[i].ToolName))
+					}
+					toolUseBlocks = append(toolUseBlocks, synthesized...)
+					if DebugRunner || os.Getenv("BRAIN_RUNNER_DEBUG") == "1" {
+						fmt.Fprintf(os.Stderr, "[runner-debug] turn=%d intent_chain: synthesized %d tool_use block(s) from non-native LLM output: %v\n",
+							turn.Index, len(synthesized), synthSources)
+					}
+				}
+			}
+		}
+
+		// nudge / completion 决策 — IntentChain 抢救后若仍是 0 工具,继续走原逻辑。
 		if len(toolUseBlocks) == 0 {
 			// 兜底检测:LLM 无 tool_use blocks 时是否触发 reminder 重试。
 			//
