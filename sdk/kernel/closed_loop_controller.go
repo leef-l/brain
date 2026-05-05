@@ -392,6 +392,9 @@ func (c *ClosedLoopController) Execute(ctx context.Context, projectName, goal st
 }
 
 // runPhase 通用阶段执行包装器（超时 + 重试 + 取消检查）。
+//
+// 重试间使用指数退避(500ms / 1s / 2s / 4s,上限 8s),避免外部依赖瞬时
+// 抖动时整个 ClosedLoop 紧密重试打死下游(如 reviewer/scheduler RPC)。
 func (c *ClosedLoopController) runPhase(ctx context.Context, phase string, fn func(context.Context) error) error {
 	var lastErr error
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
@@ -411,6 +414,15 @@ func (c *ClosedLoopController) runPhase(ctx context.Context, phase string, fn fu
 			break
 		}
 		c.notify(phase, fmt.Sprintf("retry_%d", attempt+1))
+		backoff := time.Duration(500*(1<<attempt)) * time.Millisecond
+		if backoff > 8*time.Second {
+			backoff = 8 * time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
 	}
 	return fmt.Errorf("阶段 %s 在 %d 次尝试后失败: %w", phase, c.config.MaxRetries+1, lastErr)
 }

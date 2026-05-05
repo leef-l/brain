@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // wsConn is a minimal WebSocket client built on the standard library.
@@ -50,7 +51,8 @@ func wsDial(rawURL string) (*wsConn, error) {
 		}
 	}
 
-	conn, err := net.Dial("tcp", host)
+	dialer := net.Dialer{Timeout: 10 * time.Second}
+	conn, err := dialer.Dial("tcp", host)
 	if err != nil {
 		return nil, fmt.Errorf("cdp: dial %s: %w", host, err)
 	}

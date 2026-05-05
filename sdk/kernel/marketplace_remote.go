@@ -156,7 +156,11 @@ func (m *RemoteMarketplace) ensureIndex(ctx context.Context, force bool) (*Marke
 	m.mu.Lock()
 	m.cache = idx
 	m.mu.Unlock()
-	m.saveCache(idx)
+	if err := m.saveCache(idx); err != nil {
+		// 缓存写入失败不阻塞返回(内存缓存仍可用),但要让上层有迹可查,
+		// 否则下次启动会重新走远程 fetch,加重 marketplace 服务负担。
+		fmt.Fprintf(os.Stderr, "marketplace: save file cache failed: %v\n", err)
+	}
 	return idx, nil
 }
 

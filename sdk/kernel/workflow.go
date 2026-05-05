@@ -255,7 +255,7 @@ func (e *WorkflowEngine) Execute(ctx context.Context, wf *Workflow) (*WorkflowRe
 				if alreadyStarted {
 					// 等待已启动的 streaming consumer 完成
 					wg.Add(1)
-					go func() {
+					go func(nid string) {
 						defer wg.Done()
 						mu.Lock()
 						ch := streamingDone[nid]
@@ -266,7 +266,7 @@ func (e *WorkflowEngine) Execute(ctx context.Context, wf *Workflow) (*WorkflowRe
 							errCh <- err
 						}
 						mu.Unlock()
-					}()
+					}(nid)
 					continue
 				}
 			}

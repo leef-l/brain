@@ -194,9 +194,16 @@ func (tb *ThinBrain) handleExecute(ctx context.Context, params json.RawMessage) 
 	}
 
 	var registry tool.Registry = tb.registry
-	if req.Execution != nil && tb.registryBuilder != nil {
+	if tb.registryBuilder != nil {
+		// 即便 req.Execution=nil(直连 sidecar 跳过 Orchestrator.Delegate
+		// 默认值注入)也走 RegistryBuilder,确保 sandbox/policy wrap 始终生效,
+		// 否则 LLM 拿到的是裸 registry(NewWriteFileTool 等无 sandbox 校验)。
+		spec := req.Execution
+		if spec == nil {
+			spec = &executionpolicy.ExecutionSpec{}
+		}
 		var err error
-		registry, err = tb.registryBuilder(req.Execution)
+		registry, err = tb.registryBuilder(spec)
 		if err != nil {
 			return &sidecar.ExecuteResult{
 				Status: "failed",

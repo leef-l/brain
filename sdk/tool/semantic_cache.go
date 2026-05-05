@@ -170,7 +170,11 @@ WHERE url_pattern = ? AND dom_hash = ? AND element_key IN (%s)
 			bumpArgs = append(bumpArgs, k)
 		}
 		bump := fmt.Sprintf(`UPDATE semantic_entries SET hit_count = hit_count + 1, last_used_at = ? WHERE url_pattern = ? AND dom_hash = ? AND element_key IN (%s)`, ph)
-		_, _ = c.db.ExecContext(ctx, bump, bumpArgs...)
+		if _, err := c.db.ExecContext(ctx, bump, bumpArgs...); err != nil {
+			// Lookup 不能因为 hit_count 更新失败而失败,但要让运维有迹可查,
+			// 否则 LRU 淘汰会因统计漂移而失准。
+			fmt.Fprintf(os.Stderr, "semantic_cache: bump hit_count failed: %v\n", err)
+		}
 	}
 	return out, nil
 }

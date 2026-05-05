@@ -72,17 +72,35 @@ func (h *WSHub) broadcast(msg WSMessage) {
 		return
 	}
 
+	// 持锁拍连接快照,然后释放锁再做实际网络写,
+	// 避免慢客户端 (deadline 5s) 阻塞 register/unregister。
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	snapshot := make([]*websocket.Conn, 0, len(h.conns))
+	for c := range h.conns {
+		snapshot = append(snapshot, c)
+	}
+	h.mu.Unlock()
 
-	for conn, cancel := range h.conns {
+	var dead []*websocket.Conn
+	for _, conn := range snapshot {
 		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-			conn.Close()
+			dead = append(dead, conn)
+		}
+	}
+
+	if len(dead) == 0 {
+		return
+	}
+	h.mu.Lock()
+	for _, conn := range dead {
+		if cancel, ok := h.conns[conn]; ok {
 			cancel()
 			delete(h.conns, conn)
 		}
+		conn.Close()
 	}
+	h.mu.Unlock()
 }
 
 func (h *WSHub) register(conn *websocket.Conn, cancel context.CancelFunc) {

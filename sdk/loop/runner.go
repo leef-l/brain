@@ -364,7 +364,7 @@ func (r *Runner) Execute(ctx context.Context, run *Run, initialMessages []llm.Me
 		}
 
 		// Build the ChatRequest.
-		req := r.buildChatRequest(run, messages, turnOpts)
+		req := r.buildChatRequest(ctx, run, messages, turnOpts)
 
 		// Call LLM with transparent retry on transient errors (network/stream stalled).
 		// 重试策略:同 turn 内最多 3 次。messages 完全相同(LLM 接 partial 没意义,
@@ -708,11 +708,13 @@ done:
 
 // buildChatRequest constructs a ChatRequest from the current Run state,
 // message history, and RunOptions.
-func (r *Runner) buildChatRequest(run *Run, messages []llm.Message, opts RunOptions) *llm.ChatRequest {
-	// 消息压缩：当超过 token 预算时自动 Compress
+func (r *Runner) buildChatRequest(ctx context.Context, run *Run, messages []llm.Message, opts RunOptions) *llm.ChatRequest {
+	// 消息压缩：当超过 token 预算时自动 Compress。
+	// 用入参 ctx 而非 Background,让父 cancel 能传播到压缩 LLM 调用,
+	// 避免 chat turn 已 cancel 但压缩仍在网络阻塞的情况。
 	finalMessages := messages
 	if r.MessageCompressor != nil && r.TokenBudget > 0 {
-		compressed, err := r.MessageCompressor(context.Background(), messages, r.TokenBudget)
+		compressed, err := r.MessageCompressor(ctx, messages, r.TokenBudget)
 		if err == nil && len(compressed) > 0 {
 			finalMessages = compressed
 		}

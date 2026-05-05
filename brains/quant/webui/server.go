@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/leef-l/brain/brains/quant"
@@ -35,7 +36,9 @@ type Server struct {
 // NewServer creates a WebUI server with the given config.
 func NewServer(cfg ServerConfig) *Server {
 	if cfg.Addr == "" {
-		cfg.Addr = ":8380"
+		// 默认仅绑定 127.0.0.1,避免无 token 的交易控制 API 暴露到公网。
+		// 需要远程访问时显式配置 Addr (并自行加反代/认证)。
+		cfg.Addr = "127.0.0.1:8380"
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -463,17 +466,37 @@ func (s *Server) collectPortfolioTick(ctx context.Context) portfolioTick {
 }
 
 // corsMiddleware adds CORS headers for local development.
+//
+// 安全策略:仅允许 localhost / 127.0.0.1 / [::1] origin 跨域(本地浏览器开发),
+// 拒绝任意外部站点(防止 CSRF 攻击访问 /api/v1/trading/pause 等敏感端点)。
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		origin := r.Header.Get("Origin")
+		if isLocalOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		}
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isLocalOrigin 判断 Origin 是否来自本机 (localhost / 127.0.0.1 / [::1]).
+func isLocalOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 // Data types for WebSocket push

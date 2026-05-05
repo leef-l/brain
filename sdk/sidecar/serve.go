@@ -300,8 +300,10 @@ func registerBuiltinMethods(rpc protocol.BidirRPC, handler BrainHandler) {
 		rpc.Handle(m, func(ctx context.Context, params json.RawMessage) (result interface{}, err error) {
 			defer func() {
 				if r := recover(); r != nil {
+					// 详细 panic 写本地 stderr(含敏感数据风险),
+					// RPC 响应只回通用 "internal error" 防止凭证 / token 泄漏。
 					fmt.Fprintf(os.Stderr, "sidecar: handler panic on %s: %v\n", m, r)
-					err = fmt.Errorf("handler panic: %v", r)
+					err = fmt.Errorf("handler internal error on %s", m)
 				}
 			}()
 			return handler.HandleMethod(ctx, m, params)
