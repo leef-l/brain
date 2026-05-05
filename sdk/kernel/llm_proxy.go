@@ -569,21 +569,23 @@ func (p *LLMProxy) handleStream(ctx context.Context, kind agent.Kind, params jso
 		"thinking_chars", thinkingBuilder.Len(),
 	)
 
+	// 协议顺序:thinking → text(Anthropic 规范),保持与 history 一致,
+	// 否则 LLM 下一轮看到自己上轮的 history 顺序倒错,可能影响推理连贯性。
 	var content []llm.ContentBlock
 	var msgParts []string
-	if contentBuilder.Len() > 0 {
-		content = append(content, llm.ContentBlock{
-			Type: "text",
-			Text: contentBuilder.String(),
-		})
-		msgParts = append(msgParts, contentBuilder.String())
-	}
 	if thinkingBuilder.Len() > 0 {
 		content = append(content, llm.ContentBlock{
 			Type: "thinking",
 			Text: thinkingBuilder.String(),
 		})
 		msgParts = append(msgParts, thinkingBuilder.String())
+	}
+	if contentBuilder.Len() > 0 {
+		content = append(content, llm.ContentBlock{
+			Type: "text",
+			Text: contentBuilder.String(),
+		})
+		msgParts = append(msgParts, contentBuilder.String())
 	}
 
 	return &llmCompleteResponse{

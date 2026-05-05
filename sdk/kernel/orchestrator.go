@@ -1929,7 +1929,11 @@ func brainCausalScore(c CausalLearner, kind agent.Kind) float64 {
 		}
 	}
 	if !hit {
-		return 0
+		// 无因果证据返回中性 0.5(而非 0):路由公式
+		// combined = capScore*0.4 + learnScore*0.25 + causalScore*0.35
+		// 中,返 0 会让无历史的 brain 被人为削弱 0.35 权重,反而打压
+		// 应该被探索的新候选;返 0.5 与 (raw+1)/2 在 raw=0 时同值,语义统一。
+		return 0.5
 	}
 	if raw > 1 {
 		raw = 1

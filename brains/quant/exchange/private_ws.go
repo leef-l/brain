@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -374,10 +375,14 @@ func (c *PrivateWSConn) reconnect(ctx context.Context) {
 	}
 
 	for i, d := range backoffs {
+		// ±30% jitter,避免多个 account 的 ws 同时断开后同时重连
+		// 压垮 OKX 端点(交易所限流后会再次踢连接,形成正反馈雪崩)。
+		j := time.Duration((rand.Float64()*0.6 - 0.3) * float64(d))
+		wait := d + j
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(d):
+		case <-time.After(wait):
 		}
 
 		c.logger.Info("reconnecting", "attempt", i+1)

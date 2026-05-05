@@ -930,7 +930,9 @@ func (r *openaiSSEReader) flushToolCalls() (StreamEvent, bool) {
 			Data: marshalRaw(map[string]interface{}{
 				"tool_use_id": tc.toolCallID,
 				"tool_name":   tc.toolName,
-				"input":       json.RawMessage(args),
+				// 流式拼接 args 可能含半截 JSON / 控制字符,
+				// 走与 mapChunk 同一条 sanitize 路径生成有效 RawMessage。
+				"input": sanitizeToolArguments(args),
 			}),
 		})
 	}

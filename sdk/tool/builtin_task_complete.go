@@ -37,7 +37,14 @@ func (t *TaskCompleteTool) Schema() Schema {
 			},
 			"required": ["summary"]
 		}`),
-		OutputSchema: json.RawMessage(`true`),
+		OutputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"status": {"type": "string"},
+				"summary": {"type": "string"},
+				"error": {"type": "string"}
+			}
+		}`),
 	}
 }
 
@@ -46,8 +53,10 @@ func (t *TaskCompleteTool) Execute(ctx context.Context, args json.RawMessage) (*
 		Summary string `json:"summary"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
+		// 错误也返回 object 形态,与 OutputSchema 对齐,
+		// 旧实现返裸 string 让 LLM 解析失败。
 		return &Result{
-			Output:  json.RawMessage(fmt.Sprintf(`"invalid arguments: %s"`, err.Error())),
+			Output:  json.RawMessage(fmt.Sprintf(`{"status":"error","error":%q}`, err.Error())),
 			IsError: true,
 		}, nil
 	}

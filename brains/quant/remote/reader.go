@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -70,11 +71,15 @@ func (m *BufferManager) Start(ctx context.Context, interval time.Duration) {
 		if m.fetch(ctx) {
 			break
 		}
-		m.logger.Info("waiting for kernel RPC handlers", "attempt", attempt+1, "backoff", backoff)
+		// 加 ±25% jitter,避免多个 quant sidecar 同时启动时
+		// kernel 还没 ready,大家固定退避后同时重试压垮 kernel RPC。
+		j := time.Duration((rand.Float64()*0.5 - 0.25) * float64(backoff))
+		wait := backoff + j
+		m.logger.Info("waiting for kernel RPC handlers", "attempt", attempt+1, "backoff", wait)
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(backoff):
+		case <-time.After(wait):
 		}
 		if backoff < 5*time.Second {
 			backoff = backoff * 2

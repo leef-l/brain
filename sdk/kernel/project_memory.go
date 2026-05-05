@@ -179,8 +179,10 @@ func (m *MemProjectMemory) Delete(_ context.Context, id string) error {
 }
 
 // Summarize 获取项目的记忆摘要（用于注入 prompt）。
-// 取 importance >= 0.5 的 entries，按重要度降序排列，
-// 拼接 Summary 字段，粗略按 1 token ≈ 4 chars 估算，不超过 maxTokens。
+// 取 importance >= 0.7 的 entries（高重要度记忆,常驻注入"提醒类"内容;
+// 中低重要度走 metacognition memory 工具按需召回,避免 prompt 污染）,
+// 按重要度降序排列,拼接 Summary 字段,粗略按 1 token ≈ 4 chars 估算,
+// 不超过 maxTokens。
 func (m *MemProjectMemory) Summarize(_ context.Context, projectID string, maxTokens int) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

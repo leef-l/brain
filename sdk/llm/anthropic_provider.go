@@ -470,7 +470,9 @@ func (r *sseReader) Next(ctx context.Context) (StreamEvent, error) {
 			}
 			var data json.RawMessage
 			if strings.HasPrefix(dataLine, "data: ") {
-				data = json.RawMessage(strings.TrimPrefix(dataLine, "data: "))
+				// 兼容服务端发 "data:  <json>"(多空格)或 "data: \t..."
+				// 等非标准格式:统一 TrimSpace 后再当 RawMessage。
+				data = json.RawMessage(strings.TrimSpace(strings.TrimPrefix(dataLine, "data: ")))
 			}
 
 			ev, ok := r.mapSSEEvent(eventType, data)
@@ -482,7 +484,7 @@ func (r *sseReader) Next(ctx context.Context) (StreamEvent, error) {
 
 		// Some providers send "data: " lines directly
 		if strings.HasPrefix(line, "data: ") {
-			raw := strings.TrimPrefix(line, "data: ")
+			raw := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
 			if raw == "[DONE]" {
 				return StreamEvent{Type: EventMessageEnd}, nil
 			}
@@ -638,7 +640,9 @@ func (r *sseReader) mapSSEEvent(eventType string, data json.RawMessage) (StreamE
 			Data: marshalRaw(map[string]interface{}{
 				"tool_use_id": block.toolUseID,
 				"tool_name":   block.toolName,
-				"input":       json.RawMessage(input),
+				// 走 sanitize 路径,把可能含控制字符 / 半截 JSON 的累积
+				// input_json_delta 标准化为有效 RawMessage,与 mapChunk 一致。
+				"input": sanitizeToolArguments(input),
 			}),
 		}, true
 	case "message_delta":

@@ -30,7 +30,14 @@ type EWMAScore struct {
 }
 
 // Update 更新 EWMA 值: V_new = α * newVal + (1-α) * V_old
+//
+// NaN/Inf 输入会永久污染 EWMA 历史(任何后续 Update 都返回 NaN),
+// 直接拒绝坏样本,保留旧 Value 不变。常见来源:
+// 上游统计 0/0 计算成功率、float64 cast 溢出、未初始化字段。
 func (e *EWMAScore) Update(newVal float64) {
+	if math.IsNaN(newVal) || math.IsInf(newVal, 0) {
+		return
+	}
 	if e.Alpha <= 0 || e.Alpha > 1 {
 		e.Alpha = 0.2 // 默认衰减系数
 	}
