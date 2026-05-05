@@ -137,19 +137,13 @@ func handleHTTPRPC(w http.ResponseWriter, r *http.Request, handler BrainHandler)
 	case "health.ping":
 		result = map[string]string{"status": "ok"}
 	case "initialize":
+		// 与 protocol.InitializeResponse 字段命名对齐(snake_case),
+		// kernel 端 process_runner.go 用该结构体解码,PascalCase 会全部失配。
 		result = map[string]interface{}{
-			"protocolVersion": "1.0",
-			"capabilities":    map[string]interface{}{"tools": true},
-			"serverInfo": map[string]interface{}{
-				"name":    fmt.Sprintf("brain-%s", handler.Kind()),
-				"version": handler.Version(),
-			},
-			"brainDescriptor": map[string]interface{}{
-				"kind":            string(handler.Kind()),
-				"version":         handler.Version(),
-				"llm_access":      "proxied",
-				"supported_tools": handler.Tools(),
-			},
+			"protocol_version":   "1.0",
+			"brain_version":      handler.Version(),
+			"brain_capabilities": map[string]bool{"tools": true},
+			"supported_tools":    handler.Tools(),
 		}
 	case "tools/list":
 		specs := toolSpecsForHandler(handler)
@@ -266,19 +260,12 @@ func handleWSSession(ctx context.Context, w http.ResponseWriter, r *http.Request
 // registerBuiltinMethods 注册 sidecar 的标准 RPC 方法。
 func registerBuiltinMethods(rpc protocol.BidirRPC, handler BrainHandler) {
 	rpc.Handle("initialize", func(_ context.Context, _ json.RawMessage) (interface{}, error) {
+		// snake_case 与 protocol.InitializeResponse 对齐,kernel 解码端依赖此命名。
 		return map[string]interface{}{
-			"protocolVersion": "1.0",
-			"capabilities":    map[string]interface{}{"tools": true},
-			"serverInfo": map[string]interface{}{
-				"name":    fmt.Sprintf("brain-%s", handler.Kind()),
-				"version": handler.Version(),
-			},
-			"brainDescriptor": map[string]interface{}{
-				"kind":            string(handler.Kind()),
-				"version":         handler.Version(),
-				"llm_access":      "proxied",
-				"supported_tools": handler.Tools(),
-			},
+			"protocol_version":   "1.0",
+			"brain_version":      handler.Version(),
+			"brain_capabilities": map[string]bool{"tools": true},
+			"supported_tools":    handler.Tools(),
 		}, nil
 	})
 

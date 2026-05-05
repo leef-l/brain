@@ -54,7 +54,9 @@ func (s *MemoryProgressStore) LoadProgress(_ context.Context, projectID string) 
 	if !ok {
 		return nil, fmt.Errorf("progress not found for project %s", projectID)
 	}
-	snap := *p
+	// Snapshot 深拷贝所有 slice 字段(ActiveRuns/CompletedTasks/BlockedTasks/QualityGates),
+	// 避免调用方修改返回值时污染 store 内部状态。
+	snap := p.Snapshot()
 	return &snap, nil
 }
 

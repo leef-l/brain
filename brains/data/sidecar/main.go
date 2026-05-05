@@ -47,7 +47,15 @@ func Load(logger *slog.Logger) (data.Config, store.Store) {
 
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
-		logger.Warn("failed to read config file, using defaults", "path", configPath, "err", err)
+		// 显式指定的配置路径读不到,要区分:
+		//   - 文件不存在 → 用户预期没配,降级用 defaults。
+		//   - 权限/IO 错 → 这是配置真的损坏,继续静默降级会让运维误以为配置生效,
+		//     反而隐藏问题。这种场景必须 fatal,让运维上来就看到。
+		if !os.IsNotExist(err) {
+			logger.Error("failed to read config file (not a missing-file error)", "path", configPath, "err", err)
+			os.Exit(1)
+		}
+		logger.Warn("config file not found, using defaults", "path", configPath, "err", err)
 		return defaults, connectPG(os.Getenv("PG_URL"), logger)
 	}
 

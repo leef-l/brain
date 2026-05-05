@@ -299,12 +299,11 @@ func (s *planService) handleCreatePlan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Plan 已构建成功(buildPlan 失败已在前面返 400),即使 ExecuteProject 出错
+	// 也带着 plan_id + 部分 result 返 200,让客户端能从 body.error 读到失败原因。
+	// 非 200 的话 body 经常被网关吞,partial-success 信息丢失。
 	w.Header().Set("Content-Type", "application/json")
-	if resp.Error != "" {
-		w.WriteHeader(http.StatusInternalServerError)
-	} else {
-		w.WriteHeader(http.StatusOK)
-	}
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
 }
 

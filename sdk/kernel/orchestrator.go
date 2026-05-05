@@ -11,6 +11,7 @@ package kernel
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -828,12 +829,17 @@ func genTraceID() string {
 }
 
 // randRead 是 crypto/rand.Read 的抽象，便于测试注入。
+//
+// 历史:旧实现用 time.Now().UnixNano() 截低 8 字节做伪随机,在并发批量
+// 派发(BatchPlanner)场景下纳秒精度内会重复,trace ID 碰撞导致跨任务
+// 追踪混叠。改为 crypto/rand.Read,失败时再回退到 nano 兜底。
 var randRead = func(b []byte) (int, error) {
-	// 使用 time.Now().UnixNano() 的低 8 字节做伪随机，避免 import crypto/rand
-	// 在简单场景下的开销。生产环境可替换为 crypto/rand.Read。
-	n := time.Now().UnixNano()
+	if n, err := cryptorand.Read(b); err == nil {
+		return n, nil
+	}
+	now := time.Now().UnixNano()
 	for i := 0; i < len(b) && i < 8; i++ {
-		b[i] = byte(n >> (i * 8))
+		b[i] = byte(now >> (i * 8))
 	}
 	return len(b), nil
 }

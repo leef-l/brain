@@ -422,7 +422,12 @@ func loadConfig() central.Config {
 }
 
 func main() {
-	if _, err := license.CheckSidecar("brain-central", license.VerifyOptions{}); err != nil {
+	verifyOpts, err := license.VerifyOptionsFromEnv(license.VerifyOptions{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "brain-central: license config: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := license.CheckSidecar("brain-central", verifyOpts); err != nil {
 		fmt.Fprintf(os.Stderr, "brain-central: license: %v\n", err)
 		os.Exit(1)
 	}

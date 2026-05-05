@@ -131,7 +131,8 @@ func Build(cfg quant.FullConfig, logger *slog.Logger) (sidecar.BrainHandler, fun
 	}
 
 	stop := func() {
-		cancel()
+		// shutdown 顺序:先停业务子系统(qb / wsManager / paperSaver 都还要访问
+		// 共享状态),最后再 cancel 释放 ctx,避免 goroutine 在共享对象上 race。
 		qb.Stop(context.Background())
 		if wsManager != nil {
 			wsManager.StopAll()
@@ -140,6 +141,7 @@ func Build(cfg quant.FullConfig, logger *slog.Logger) (sidecar.BrainHandler, fun
 			logger.Info("saving paper state before exit...")
 			paperSaver.SaveAll()
 		}
+		cancel()
 	}
 
 	return handler, stop

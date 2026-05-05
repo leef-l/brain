@@ -110,21 +110,12 @@ func Run(handler BrainHandler) error {
 
 	// Register initialize handler.
 	rpc.Handle("initialize", func(_ context.Context, params json.RawMessage) (interface{}, error) {
+		// snake_case 与 protocol.InitializeResponse 对齐,kernel 解码端依赖此命名。
 		return map[string]interface{}{
-			"protocolVersion": "1.0",
-			"capabilities": map[string]interface{}{
-				"tools": true,
-			},
-			"serverInfo": map[string]interface{}{
-				"name":    fmt.Sprintf("brain-%s", handler.Kind()),
-				"version": handler.Version(),
-			},
-			"brainDescriptor": map[string]interface{}{
-				"kind":            string(handler.Kind()),
-				"version":         handler.Version(),
-				"llm_access":      "proxied",
-				"supported_tools": handler.Tools(),
-			},
+			"protocol_version":   "1.0",
+			"brain_version":      handler.Version(),
+			"brain_capabilities": map[string]bool{"tools": true},
+			"supported_tools":    handler.Tools(),
 		}, nil
 	})
 

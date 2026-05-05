@@ -358,6 +358,8 @@ func (le *LearningEngine) Profiles() map[agent.Kind]*BrainCapabilityProfile {
 				Speed:       tv.Speed,
 				Cost:        tv.Cost,
 				Stability:   tv.Stability,
+				LatencyMs:   tv.LatencyMs,
+				Turns:       tv.Turns,
 			}
 		}
 		out[k] = cp
@@ -529,6 +531,7 @@ func (le *LearningEngine) RecordDelegateResult(
 			Cost:      EWMAScore{Alpha: 0.2},
 			Stability: EWMAScore{Alpha: 0.2},
 			LatencyMs: EWMAScore{Alpha: 0.2},
+			Turns:     EWMAScore{Alpha: 0.2},
 		}
 		profile.TaskScores[taskType] = ts
 	}

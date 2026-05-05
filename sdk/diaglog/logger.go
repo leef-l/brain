@@ -171,11 +171,11 @@ func ensureWriterLocked(c config) io.Writer {
 	}
 	if path != "" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-			if err == nil {
-				closer = f
-				writers = append(writers, f)
-			}
+			// 自带 size cap + rotate 的 writer:文件超过 maxLogBytes 时
+			// 改名为 .1 后重新打开,避免长跑 sidecar 把磁盘写满。
+			rw := newRotatingFile(path, maxLogBytes)
+			closer = rw
+			writers = append(writers, rw)
 		}
 	}
 
