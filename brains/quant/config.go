@@ -227,8 +227,14 @@ func (fc FullConfig) SaveConfig() error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(fc.ConfigPath, data, 0644); err != nil {
+	// 原子写:tmp + rename 防止 SIGKILL/断电留下半截配置导致下次启动崩溃。
+	tmp := fc.ConfigPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
 		return fmt.Errorf("write config %s: %w", fc.ConfigPath, err)
+	}
+	if err := os.Rename(tmp, fc.ConfigPath); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename config %s: %w", fc.ConfigPath, err)
 	}
 	return nil
 }

@@ -146,6 +146,12 @@ func drainStream(ctx context.Context, reader llm.StreamReader, run *Run, turn *T
 	for {
 		ev, err := reader.Next(ctx)
 		if err != nil {
+			// ctx 取消(Ctrl-C / timeout)永远不能当成 success 返回,
+			// 否则上层把 partial 数据当完整响应,Run 状态 Completed 而非 Canceled,
+			// 后续 Replan / messages 历史污染。其他错误才走"已有数据则容错"分支。
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			// End of stream or error.
 			// If we have no accumulated data at all, propagate the error.
 			if len(resp.Content) == 0 && textAccum == "" && reasoningAccum == "" && len(toolCalls) == 0 {

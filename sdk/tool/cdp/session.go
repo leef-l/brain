@@ -147,7 +147,10 @@ func NewBrowserSession(ctx context.Context) (*BrowserSession, error) {
 	if headless {
 		// headless=new:Chrome 109+ 的新版 headless,支持扩展/文件上传等特性,
 		// 比旧 --headless 更接近有头行为。
-		args = append([]string{"--headless=new", "--disable-gpu"}, args...)
+		// --disable-dev-shm-usage:Docker / 容器内 /dev/shm 默认仅 64MB,
+		// 大页面会用完触发 SIGSEGV。改用 /tmp 替代共享内存,牺牲少量
+		// 性能换稳定性。仅 headless 需要(有头模式默认 desktop /dev/shm 充足)。
+		args = append([]string{"--headless=new", "--disable-gpu", "--disable-dev-shm-usage"}, args...)
 	}
 
 	cmd := exec.CommandContext(ctx, browserPath, args...)

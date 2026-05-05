@@ -355,7 +355,17 @@ func Save(cfg *Config) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0600)
+	// 原子写:tmp + rename 防止中途 SIGKILL/断电留下半截 JSON,
+	// 否则下次 Load 解析失败导致 brain 启动崩溃。
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // LoadOrEmpty loads config, returns empty config if file doesn't exist.
