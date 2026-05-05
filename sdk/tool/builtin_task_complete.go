@@ -45,6 +45,12 @@ func (t *TaskCompleteTool) Schema() Schema {
 				"error": {"type": "string"}
 			}
 		}`),
+		// task_complete 仅是任务结束信号,不接触文件/网络/外部状态,
+		// 标 readonly 让 SemanticApprover 跳过启发式(否则会落到默认
+		// workspace-write,对一个只读信号要求审批,LLM 体验差)。
+		Concurrency: &ToolConcurrencySpec{
+			ApprovalClass: "readonly",
+		},
 	}
 }
 
