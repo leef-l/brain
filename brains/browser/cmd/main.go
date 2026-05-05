@@ -25,8 +25,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-
 	"time"
+	"unicode/utf8"
 
 	brain "github.com/leef-l/brain"
 	"github.com/leef-l/brain/sdk/agent"
@@ -514,8 +514,19 @@ func (h *browserHandler) handleExecute(ctx context.Context, params json.RawMessa
 
 // executeWithPerception implements the two-tier execution strategy.
 func (h *browserHandler) executeWithPerception(ctx context.Context, req *sidecar.ExecuteRequest, registry tool.Registry) *sidecar.ExecuteResult {
-	diaglog.Logf("browser", "executeWithPerception: instruction=%s caller=%v sensitive=%v slider=%v",
-		req.Instruction, h.caller != nil,
+	// instruction 可能含密码/token(尤其登录类任务),截断到首 80 字节
+	// 让诊断日志保留意图但不全文落盘。BRAIN_DIAG=1 自启用,运维自愿启用
+	// 才会写,但仍尽量收敛敏感数据。退到 utf8.RuneStart 边界防中文乱码。
+	instrSummary := req.Instruction
+	if len(instrSummary) > 80 {
+		cut := 80
+		for cut > 0 && !utf8.RuneStart(instrSummary[cut]) {
+			cut--
+		}
+		instrSummary = instrSummary[:cut] + "..."
+	}
+	diaglog.Logf("browser", "executeWithPerception: instruction=%q caller=%v sensitive=%v slider=%v",
+		instrSummary, h.caller != nil,
 		isSensitiveFormTask(req.Instruction), hasSliderKeyword(req.Instruction))
 
 	h.anchorToInstructionURL(ctx, registry, req.Instruction)

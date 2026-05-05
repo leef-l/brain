@@ -296,11 +296,12 @@ func ResolveProvider(cfg *Config, flagKey, flagURL, flagModel, brainKind string)
 	}
 
 	if r.APIKey == "" {
-		r.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+		// trim 空白:env var 复制粘贴常带前后空格,导致 401 但用户难以发现。
+		r.APIKey = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
 	}
 
 	if flagKey != "" {
-		r.APIKey = flagKey
+		r.APIKey = strings.TrimSpace(flagKey)
 	}
 	if flagURL != "" {
 		r.BaseURL = flagURL

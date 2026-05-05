@@ -46,11 +46,18 @@ func (e *poolEntry) Acquire() {
 	e.lastUsed.Store(time.Now())
 }
 
-// Release 减少负载计数。
+// Release 减少负载计数。用 CompareAndSwap 避免 Add(-1) 后到 Store(0) 之间的
+// 瞬时窗口让 LatencyAwareStrategy 看到负数评分。
 func (e *poolEntry) Release() {
-	v := e.load.Add(-1)
-	if v < 0 {
-		e.load.Store(0)
+	for {
+		cur := e.load.Load()
+		if cur <= 0 {
+			// 已经到底,平衡丢失但不 panic;留个返回避免下界继续减。
+			return
+		}
+		if e.load.CompareAndSwap(cur, cur-1) {
+			return
+		}
 	}
 }
 
