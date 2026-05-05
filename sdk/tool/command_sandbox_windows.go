@@ -43,9 +43,14 @@ func (w *windowsSandbox) Run(ctx context.Context, command string, workDir string
 	stdout, stderr io.Writer) (int, error) {
 
 	// Create a Job Object for this command group.
+	// 非 admin / 受限用户 / GitHub Actions 等环境下 syscall 可能失败。
+	// 失败时降级到无 Job Object 的普通 exec:沙箱仍由路径层 (SandboxTool)
+	// 拦截,只是丢失"进程组 KILL_ON_JOB_CLOSE / 进程数上限"两层保护。
+	// 不丢命令是用户体验底线;losing job 比 losing functionality 好。
 	job, err := createRestrictedJob(100)
 	if err != nil {
-		return -1, fmt.Errorf("cannot create Job Object: %w", err)
+		fmt.Fprintf(os.Stderr, "windows sandbox: Job Object unavailable, falling back to plain exec: %v\n", err)
+		return w.runWithoutJob(ctx, command, workDir, stdout, stderr)
 	}
 	defer closeHandle(job)
 
@@ -94,6 +99,29 @@ func (w *windowsSandbox) Run(ctx context.Context, command string, workDir string
 
 	// Wait for completion.
 	err = cmd.Wait()
+	return exitCodeFromErr(err), nil
+}
+
+// runWithoutJob 是 Job Object 不可用时的降级路径。
+// 路径层 SandboxTool 仍生效,只是丢失 Job 级别的进程组管理。
+func (w *windowsSandbox) runWithoutJob(ctx context.Context, command string, workDir string,
+	stdout, stderr io.Writer) (int, error) {
+	cmd := exec.CommandContext(ctx, shellName(), shellFlag(), command)
+	if workDir != "" {
+		cmd.Dir = workDir
+	} else if w.sb != nil {
+		cmd.Dir = w.sb.Primary()
+	}
+	cmd.Env = w.restrictedEnv()
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+	}
+	if err := cmd.Start(); err != nil {
+		return -1, err
+	}
+	err := cmd.Wait()
 	return exitCodeFromErr(err), nil
 }
 
