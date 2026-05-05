@@ -151,23 +151,37 @@ func ResolveCapabilities(baseURL, model string, userOverride *CapabilitiesOverri
 // survives. Used internally by ResolveCapabilities to compose the
 // builtin / inferred / default layers.
 //
-// "Opinion" is defined as:
+// "Opinion" is the heuristic definition of "this layer has something to say":
 //
-//   - Non-empty string for Family
-//   - True for any bool (we never want to demote a true to false via a
-//     lower-priority layer; only the explicit user override can do that
-//     via CapabilitiesOverride pointer semantics)
-//   - Non-zero ToolChoiceSupport (ToolChoiceNone is the zero value, so
-//     a layer claiming None means "default safe" not "actively None" —
-//     a layer that knows "None" should set it via builtin table where
-//     the row exists explicitly, and the merge keeps it via the
-//     non-zero shortcut. The combination of ordering (layer order) +
-//     non-zero check works because we only call MergeCapabilities top-
-//     down: builtin (which knows None means None) overlays inferred
-//     (which may or may not have a value); the True precedence rule
-//     here protects against a less-specific layer demoting a more-
-//     specific layer's positive claim.
-//   - Positive MaxParallelTools
+//   - Non-empty string for Family — "" means "no opinion".
+//   - True for any bool — we never demote true→false here. Only the
+//     explicit user override (CapabilitiesOverride 指针字段) can demote.
+//   - **Non-zero** ToolChoiceSupport — see caveat below.
+//   - Positive MaxParallelTools — 0 means "unknown".
+//
+// **Important caveat for ToolChoiceSupport**:
+//
+// `ToolChoiceNone` IS the zero value, so a higher-priority layer that
+// claims None CANNOT demote a lower layer's already-set Required/Auto.
+// In the current resolver chain this is benign because:
+//
+//   - InferCapabilities only sets ToolChoice positively (Auto / Required)
+//     for very specific signals (none today — only sets None for reasoner
+//     and local-deploy heuristics, both of which match the safe default).
+//   - The builtin table is composed AFTER InferCapabilities, so any builtin
+//     row claiming None just preserves the inference layer's value (also
+//     None for unknown models).
+//
+// If a future change adds positive ToolChoice inference (e.g. heuristic
+// "openrouter baseURL → Required") and a builtin row needs to override
+// down to None for a specific model on that proxy, this merge would
+// silently keep the Required claim. In that case we'd need either:
+//   (a) Switch ToolChoiceSupport to a *ToolChoiceMode pointer here too,
+//   (b) Reverse the layer order (builtin overlays inference instead),
+//   (c) Add an explicit "None means really None" flag.
+//
+// For now we keep the simpler shortcut. The user override path (Apply,
+// pointer-based) handles the few cases where users need to demote.
 func MergeCapabilities(base, src Capabilities) Capabilities {
 	out := base
 	if src.Family != "" {

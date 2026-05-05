@@ -73,7 +73,19 @@ type BuiltinMatch struct {
 // matches tests whether this BuiltinMatch matches the given (baseURL, model).
 // Both inputs are lowercased for substring comparison; callers don't need
 // to normalize.
+//
+// 重要约定 — 一条 BuiltinMatch 必须至少声明一个正向匹配字段
+// (BaseURLContains 或 ModelContains 非空),否则会被视为"误声明"立即
+// reject。这是 P1 修复:之前的实现允许 `{ModelExcludes: ["foo"]}` 这种
+// 只有排除而无正向匹配的 entry 命中**任何**输入(因为 urlOK/modelOK 在
+// 切片为空时默认 true,导致无差别匹配),误标整张 builtin 表。
 func (m BuiltinMatch) matches(baseURL, model string) bool {
+	// 安全网:必须至少有一个正向匹配字段。前置检查避免后面的"空切片 = OK"
+	// 默认行为退化成 wildcard。
+	if len(m.BaseURLContains) == 0 && len(m.ModelContains) == 0 {
+		return false
+	}
+
 	bl := strings.ToLower(baseURL)
 	ml := strings.ToLower(model)
 
@@ -98,11 +110,6 @@ func (m BuiltinMatch) matches(baseURL, model string) bool {
 			modelOK = true
 			break
 		}
-	}
-
-	// Reject the "match-everything" entry to surface mistakes early.
-	if len(m.BaseURLContains) == 0 && len(m.ModelContains) == 0 {
-		return false
 	}
 
 	return urlOK && modelOK

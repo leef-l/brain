@@ -187,9 +187,22 @@ func (p *LLMProxy) RegisterHandlers(rpc protocol.BidirRPC, kind agent.Kind) {
 	// Without this the sidecar always saw DefaultCapabilities — reasoner
 	// providers (mimo, deepseek-r) lost the grace turn behavior that
 	// Clarifier relies on.
+	//
+	// Per-handler panic isolation: even if a Provider's Capabilities()
+	// implementation panics (e.g. unexpected nil deref in a custom provider),
+	// the RPC framework receives a clean error rather than crashing the
+	// entire host. The sidecar will fall back to DefaultCapabilities when
+	// the RPC errors — see NewKernelLLMProviderWithCaps.
 	if !rpc.HandlerExists(protocol.MethodLLMCapabilities) {
 		fmt.Fprintf(os.Stderr, "LLMProxy: registering %s\n", protocol.MethodLLMCapabilities)
-		rpc.Handle(protocol.MethodLLMCapabilities, func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		rpc.Handle(protocol.MethodLLMCapabilities, func(ctx context.Context, params json.RawMessage) (result interface{}, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "LLMProxy: handleCapabilities recovered from panic: %v (returning DefaultCapabilities)\n", r)
+					result = llm.DefaultCapabilities()
+					err = nil
+				}
+			}()
 			return p.handleCapabilities(ctx, kind, params)
 		})
 	}

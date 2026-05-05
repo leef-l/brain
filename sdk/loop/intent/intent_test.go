@@ -2,6 +2,7 @@ package intent
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/leef-l/brain/sdk/llm"
@@ -342,6 +343,35 @@ func TestIntent_ToContentBlock(t *testing.T) {
 	}
 	if cb.ToolUseID == "" {
 		t.Error("ToolUseID empty")
+	}
+}
+
+// TestExtractCodeFences_BacktickInArgsBody is the regression for the P2
+// fix where extractCodeFences treated any "```" in the body as a closer,
+// truncating fences whose JSON args contain a backtick string literal.
+// After the fix, the closer must be at the start of a line.
+func TestExtractCodeFences_BacktickInArgsBody(t *testing.T) {
+	// Realistic LLM output: args has a string value containing the fence
+	// marker as text. Old behavior: body truncated at the inline ```,
+	// JSON parse fails, intent dropped. New behavior: fence closer must
+	// be at line start, so the inline ``` is ignored and the body is
+	// captured intact through the real closer.
+	text := "Here you go:\n\n" +
+		"```json\n" +
+		`{"tool":"code.write_file","args":{"path":"x.md","content":"Wrap with ` + "```" + ` for code in markdown"}}` + "\n" +
+		"```\n"
+	fences := extractCodeFences(text)
+	if len(fences) != 1 {
+		t.Fatalf("expected 1 fence, got %d", len(fences))
+	}
+	body := fences[0].Body
+	// Body must contain the closing brace of args — proves we didn't
+	// truncate at the inline ```.
+	if !strings.Contains(body, `"path":"x.md"`) {
+		t.Errorf("body lost path field: %q", body)
+	}
+	if !strings.Contains(body, "code in markdown") {
+		t.Errorf("body truncated before end of content value: %q", body)
 	}
 }
 

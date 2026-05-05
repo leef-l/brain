@@ -56,12 +56,34 @@ func (FunctionSyntaxParser) Parse(pc ParseContext) ([]Intent, error) {
 // every parenthesised English word ("This works (sort of)") would become
 // a candidate.
 func scanFunctionSyntax(text string, tools []llm.ToolSchema) []Intent {
+	// Build name resolution map. Fully-qualified names always win;
+	// short names (suffix after last '.') only resolve if they are
+	// unambiguous — i.e. exactly one tool with that suffix exists.
+	// Otherwise we drop the short-name entry entirely so we don't
+	// silently pick the wrong brain (e.g. code.write_file vs
+	// browser.write_file). This matches Chain.resolveToolName behavior
+	// (chain.go:163) so the two parsers are consistent.
+	//
+	// P2 修复:之前的实现 `knownNames[short] = full`,后写覆盖前写,
+	// 导致 LLM 用短名 `write_file({...})` 时 silently 解析成最后一个
+	// 注册的 *.write_file,行为不可预测且与 Chain 中的 resolveToolName
+	// 不一致。
 	knownNames := map[string]string{}
+	shortHits := map[string]int{} // short name → count of full names with that suffix
 	for _, t := range tools {
 		knownNames[t.Name] = t.Name
-		// Also accept the short name (after the last dot) for resolution.
 		if idx := strings.LastIndexByte(t.Name, '.'); idx >= 0 {
-			knownNames[t.Name[idx+1:]] = t.Name
+			short := t.Name[idx+1:]
+			shortHits[short]++
+		}
+	}
+	// Now add only unambiguous short names (count == 1).
+	for _, t := range tools {
+		if idx := strings.LastIndexByte(t.Name, '.'); idx >= 0 {
+			short := t.Name[idx+1:]
+			if shortHits[short] == 1 {
+				knownNames[short] = t.Name
+			}
 		}
 	}
 

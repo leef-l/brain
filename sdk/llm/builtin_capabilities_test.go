@@ -316,6 +316,33 @@ func TestInferCapabilities_LocalDeploy(t *testing.T) {
 	}
 }
 
+// TestBuiltinMatch_RejectsExcludesOnly is the regression test for the P1
+// bug fix where `BuiltinMatch{ModelExcludes: ["foo"]}` (no positive
+// matchers) accidentally matched any input. After the fix, such an entry
+// must reject everything to surface the misconfiguration loudly.
+func TestBuiltinMatch_RejectsExcludesOnly(t *testing.T) {
+	m := BuiltinMatch{ModelExcludes: []string{"reasoner"}}
+	cases := []struct {
+		baseURL, model string
+	}{
+		{"", ""},
+		{"https://example.com/v1", "some-model"},
+		{"https://api.deepseek.com", "deepseek-chat"},
+		{"http://localhost:11434", "llama-3.1"},
+	}
+	for _, tc := range cases {
+		if m.matches(tc.baseURL, tc.model) {
+			t.Errorf("excludes-only entry must reject (%q, %q) but matched",
+				tc.baseURL, tc.model)
+		}
+	}
+
+	// Also confirm: model containing the excluded keyword is still rejected.
+	if m.matches("", "deepseek-reasoner") {
+		t.Errorf("excludes-only entry matched 'deepseek-reasoner' — should always reject")
+	}
+}
+
 // TestBuiltinTable_NoPanicOnMatch_All ensures every entry's match
 // function works without panicking on representative input. Cheap
 // fuzz-style guard.

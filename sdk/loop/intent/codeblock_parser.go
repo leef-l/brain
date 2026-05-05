@@ -27,6 +27,14 @@ type codeFence struct {
 // extractCodeFences scans `text` for ` ``` ... ``` ` and ` ~~~ ... ~~~ ` blocks
 // and returns them in source order. Unbalanced fences (missing closer)
 // are dropped so a half-emitted stream doesn't produce phantom intents.
+//
+// Closer 必须出现在**行首**(前面是 \n 或位于 text 开头),这是 P2 修复:
+// 之前的实现只 strings.Index 找 marker 出现位置,如果 LLM 在 args 里写了
+// 三连反引号字面量(例如 `"content":"... ``` ..."`),会误判 body 提前
+// 截断,导致 JSON 解析失败 + 整段 fence 丢失。
+//
+// CommonMark 标准也要求 fence closer 在行首(可前置最多 3 个空格),
+// 我们用更严格的"行首"以最大限度避免误命中。
 func extractCodeFences(text string) []codeFence {
 	if text == "" {
 		return nil
@@ -55,12 +63,31 @@ func extractCodeFences(text string) []codeFence {
 		}
 		lang := strings.TrimSpace(text[openOff+len(marker) : openOff+len(marker)+lineEnd])
 		bodyStart := openOff + len(marker) + lineEnd + 1
-		// Find the matching closer (same marker on its own line OR end).
-		closeRel := strings.Index(text[bodyStart:], marker)
-		if closeRel == -1 {
+		// Find the matching closer at the start of a line. We loop
+		// strings.Index from bodyStart and only accept positions where the
+		// preceding byte is '\n' (or position is bodyStart itself). This
+		// rejects markers that appear inline within the body (e.g. inside
+		// a JSON string value), which would otherwise truncate body
+		// prematurely and break parsing.
+		closeOff := -1
+		searchFrom := bodyStart
+		for searchFrom < len(text) {
+			rel := strings.Index(text[searchFrom:], marker)
+			if rel == -1 {
+				break
+			}
+			candidate := searchFrom + rel
+			// Accept if at start of text region OR previous byte is newline.
+			if candidate == bodyStart || (candidate > 0 && text[candidate-1] == '\n') {
+				closeOff = candidate
+				break
+			}
+			// Skip past this false hit and keep searching.
+			searchFrom = candidate + len(marker)
+		}
+		if closeOff == -1 {
 			return fences
 		}
-		closeOff := bodyStart + closeRel
 		body := text[bodyStart:closeOff]
 		fences = append(fences, codeFence{
 			Language:  lang,

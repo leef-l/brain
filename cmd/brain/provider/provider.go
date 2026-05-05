@@ -40,7 +40,17 @@ func OpenConfigured(cfg *config.Config, brainKind string, input *config.ModelCon
 	if len(resolved.Capabilities) > 0 {
 		var ov llm.CapabilitiesOverride
 		if err := json.Unmarshal(resolved.Capabilities, &ov); err != nil {
-			return Session{}, fmt.Errorf("active_provider.capabilities parse: %w", err)
+			// Friendly error: surface common typos and link to the docs.
+			// JSON Unmarshal error messages tend to be cryptic ("json:
+			// cannot unmarshal string into Go struct field..."), which
+			// users find hard to map to the actual config typo.
+			return Session{}, fmt.Errorf(
+				"active_provider.capabilities parse: %w\n"+
+					"  • check field names (allowed: family / native_tool_call / tool_choice / "+
+					"reasoner / emits_reasoning_content / prefers_structured_output / max_parallel_tools)\n"+
+					"  • tool_choice value must be one of: \"none\" / \"auto\" / \"required\" / \"specific\" (lowercase)\n"+
+					"  • see docs/配置参考-capability.md for examples",
+				err)
 		}
 		userOverride = &ov
 	}

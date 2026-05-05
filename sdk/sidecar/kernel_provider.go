@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/leef-l/brain/sdk/llm"
 	"github.com/leef-l/brain/sdk/protocol"
@@ -57,22 +58,47 @@ func NewKernelLLMProvider(caller KernelCaller, name string, executionID string) 
 	}
 }
 
+// capsFetchTimeout 是 NewKernelLLMProviderWithCaps 等 host 返回 capability
+// 的最长等待时长。超时后退化到 DefaultCapabilities,sidecar 启动继续 —
+// 这是 P0 修复:之前不设超时,host LLMProxy 死锁 / 网络分区会让 sidecar
+// 启动永远 hang。5 秒对本地 stdio RPC 足够宽裕(实测 < 10ms),也能避免
+// 重启风暴。
+const capsFetchTimeout = 5 * time.Second
+
 // NewKernelLLMProviderWithCaps 构造 Provider 并通过 llm.capabilities 反向
-// RPC 拉取 host 报告的 Capabilities。RPC 失败时不阻塞(只 stderr 警告),
-// 退化到 DefaultCapabilities — 这样即便 host 老版本没注册 handler,
-// sidecar 仍能跑(只是没法享受 reasoner grace turn 等优化)。
+// RPC 拉取 host 报告的 Capabilities。
+//
+// RPC 失败 / 超时时:
+//   - stderr 打印警告(明确说明已退化到默认值)
+//   - 退化到 DefaultCapabilities,sidecar 启动继续(host 老版本没注册
+//     handler 时,沿用此前行为不影响功能,只是失去 reasoner grace turn 等
+//     优化)
+//   - 返回的 Provider 仍然可用,Capabilities() 返回默认值
 //
 // 注意 ctx 来自 sidecar 启动流程,如果 ctx 已经被 cancel(例如启动期间
 // 收到 SIGTERM),会立刻退化到 default。这是预期行为 — sidecar 在被关停
 // 时也不会 hang 等 RPC。
+//
+// 此函数永远不返回 nil Provider,符合"配置失效不阻塞启动"原则。如果
+// 调用方需要知道 caps 是否真的从 host 拉到,检查 Provider 的
+// Capabilities().Family — 默认值是空字符串,host 给的会是 "anthropic-claude"
+// 等具体值。
 func NewKernelLLMProviderWithCaps(ctx context.Context, caller KernelCaller, name string, executionID string) llm.Provider {
 	p := NewKernelLLMProvider(caller, name, executionID).(*kernelLLMProvider)
 	if caller == nil {
 		return p
 	}
+	// 用 5 秒子 ctx 替代裸传入 ctx — 防止 host 卡死把 sidecar 启动也卡死。
+	// 即便父 ctx 没 deadline(典型 root context.Background()),这里也强制
+	// 5 秒上限。
+	fetchCtx, cancel := context.WithTimeout(ctx, capsFetchTimeout)
+	defer cancel()
+
 	var caps llm.Capabilities
-	if err := caller.CallKernel(ctx, protocol.MethodLLMCapabilities, struct{}{}, &caps); err != nil {
-		fmt.Fprintf(os.Stderr, "kernelLLMProvider: failed to fetch host capabilities (%v) — falling back to defaults\n", err)
+	if err := caller.CallKernel(fetchCtx, protocol.MethodLLMCapabilities, struct{}{}, &caps); err != nil {
+		fmt.Fprintf(os.Stderr, "kernelLLMProvider: failed to fetch host capabilities (%v) — falling back to DefaultCapabilities; "+
+			"reasoner grace turn / tool_choice optimizations will be DISABLED for this run. "+
+			"Check that the host registers protocol.MethodLLMCapabilities (Phase 7 follow-up)\n", err)
 		return p
 	}
 	p.caps = caps
