@@ -951,6 +951,18 @@ func (r *openaiSSEReader) scanLine() (string, error) {
 	}
 	done := make(chan result, 1)
 	go func() {
+		// 加固:scanner.Scan() 在罕见情况下(底层 reader 实现错 / buffer
+		// 越界)可能 panic,goroutine 无 recover 会让整个 brain 进程崩。
+		// 用 defer recover 把 panic 转成 EOF 信号,上层切到错误返回路径。
+		defer func() {
+			if rec := recover(); rec != nil {
+				fmt.Fprintf(os.Stderr, "openai_provider: scanLine goroutine panic recovered: %v\n", rec)
+				select {
+				case done <- result{ok: false}:
+				default:
+				}
+			}
+		}()
 		if r.scanner.Scan() {
 			done <- result{line: r.scanner.Text(), ok: true}
 		} else {

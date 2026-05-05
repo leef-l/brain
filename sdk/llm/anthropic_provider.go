@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -678,6 +679,17 @@ func (r *sseReader) scanLine() (string, error) {
 	}
 	done := make(chan result, 1)
 	go func() {
+		// 同 openai_provider scanLine 的加固:scanner.Scan() 罕见 panic
+		// 不能让整个 brain 进程崩,转成 EOF 让上层走正常错误路径。
+		defer func() {
+			if rec := recover(); rec != nil {
+				fmt.Fprintf(os.Stderr, "anthropic_provider: scanLine goroutine panic recovered: %v\n", rec)
+				select {
+				case done <- result{ok: false}:
+				default:
+				}
+			}
+		}()
 		if r.scanner.Scan() {
 			done <- result{line: r.scanner.Text(), ok: true}
 		} else {

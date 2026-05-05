@@ -749,23 +749,37 @@ func (p *ProcessBrainPool) waitForSidecar(ctx context.Context, kind agent.Kind) 
 }
 
 // notify sends a lifecycle event to the optional notifyCh (non-blocking).
+//
+// 并发安全:notifyCh 字段读写在 SetNotifyCh / notify 之间存在 race。
+// 用 p.mu 保护读取(写入由 SetNotifyCh 加锁)。channel send 本身是
+// 线程安全的,只需保护 nil-check 和 ch 引用读取。
 func (p *ProcessBrainPool) notify(ev BrainEvent) {
-	if p.notifyCh == nil {
+	p.mu.Lock()
+	ch := p.notifyCh
+	p.mu.Unlock()
+	if ch == nil {
 		return
 	}
 	select {
-	case p.notifyCh <- ev:
+	case ch <- ev:
 	default:
 	}
 }
 
 // SetNotifyCh sets the channel that receives BrainEvent lifecycle notifications.
+// 并发安全:加锁写入,与 notify 的读取互斥。
 func (p *ProcessBrainPool) SetNotifyCh(ch chan<- BrainEvent) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.notifyCh = ch
 }
 
 // WarmPool starts background warming of the specified brain kinds.
 // It pre-starts sidecars so the first real delegation is faster.
+//
+// 加固:goroutine 内的 GetBrain 任何 panic(provider 实现错 / handle 泄漏)
+// 都会被 recover,防止异步预热把整个 host 进程炸掉。预热是 best-effort,
+// 失败只 stderr 记一下,不影响主流程。
 func (p *ProcessBrainPool) WarmPool(ctx context.Context, kinds ...agent.Kind) {
 	p.warmKinds = kinds
 	for _, kind := range kinds {
@@ -773,6 +787,11 @@ func (p *ProcessBrainPool) WarmPool(ctx context.Context, kinds ...agent.Kind) {
 			continue
 		}
 		go func(k agent.Kind) {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "pool: warm %s panic recovered: %v\n", k, r)
+				}
+			}()
 			if _, err := p.GetBrain(ctx, k); err != nil {
 				fmt.Fprintf(os.Stderr, "pool: warm %s failed: %v\n", k, err)
 			} else {

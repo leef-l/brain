@@ -142,11 +142,27 @@ func ReadFileCore(_ context.Context, path string, offset, limit int) (*Result, e
 	totalLines := len(allLines)
 
 	// Apply offset and limit.
+	//
+	// 防御性边界:offset/limit 来自 LLM JSON args,可能传超大值。
+	// 必须按顺序处理:
+	//   1. 负数 → 钳为 0(offset)/合理默认(limit)。
+	//   2. offset 超 len → 钳为 len(返回空切片,不 panic)。
+	//   3. offset+limit 整数溢出 → 钳为 len。Go int 在 64-bit 上是
+	//      math.MaxInt64,但 LLM 可能传 9000000000 + 9000000000 让 int
+	//      溢出回环成负数,导致 end < offset 触发 slice bounds 越界。
 	if offset < 0 {
 		offset = 0
 	}
+	if limit < 0 {
+		limit = 0
+	}
 	if offset > len(allLines) {
 		offset = len(allLines)
+	}
+	// 整数溢出保护:用 (len-offset) 作为 limit 的物理上限,避免 add 溢出。
+	maxAllowed := len(allLines) - offset
+	if limit > maxAllowed {
+		limit = maxAllowed
 	}
 	end := offset + limit
 	if end > len(allLines) {

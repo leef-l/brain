@@ -31,6 +31,16 @@ type quantHandler struct {
 	caller   sidecar.KernelCaller
 	learner  *quant.QuantBrainLearner // L0 标准学习接口适配器
 	logger   *slog.Logger
+
+	// bgCtx / bgCancel 控制 SetKernelCaller 中启动的两个后台 goroutine
+	// (remoteBuf.Start 和 metricsReportLoop)的生命周期。
+	//
+	// P2 修:之前用 context.Background() 启动这两个 goroutine,sidecar
+	// 进程关闭时它们不感知,继续占用资源直到进程被强杀。改为派生自
+	// SetKernelCaller 当时的环境,Stop() 时主动 cancel,goroutine 配合
+	// ctx.Done() 优雅退出。
+	bgCtx    context.Context
+	bgCancel context.CancelFunc
 }
 
 // NewHandler creates a quant sidecar handler.
@@ -126,13 +136,26 @@ func (h *quantHandler) SetKernelCaller(caller sidecar.KernelCaller) {
 	// from the Data sidecar via specialist.call_tool → data.get_all_snapshots.
 	remoteBuf := remote.New(caller, h.logger.With("source", "remote-data"))
 	h.qb.SetSnapshotSource(remoteBuf)
-	go remoteBuf.Start(context.Background(), 2*time.Second)
+
+	// 派生本 sidecar 的后台 ctx,Stop() 会 cancel 让所有后台 goroutine 退出。
+	// 之前用 context.Background() 导致 goroutine 永不退出。
+	h.bgCtx, h.bgCancel = context.WithCancel(context.Background())
+
+	go remoteBuf.Start(h.bgCtx, 2*time.Second)
 
 	// L0 BrainLearner: 定期将聚合指标上报给 kernel LearningEngine。
 	// 每 5 分钟通过 brain/metrics RPC 上报一次。
-	go h.metricsReportLoop(context.Background(), caller)
+	go h.metricsReportLoop(h.bgCtx, caller)
 
 	h.logger.Info("kernel caller injected, LLM reviewer wired, remote data source started, L0 metrics reporter started")
+}
+
+// Stop 关闭 SetKernelCaller 启动的所有后台 goroutine。sidecar 关停时调用。
+// 幂等:bgCancel 为 nil(SetKernelCaller 未调用)或重复调用都安全。
+func (h *quantHandler) Stop() {
+	if h.bgCancel != nil {
+		h.bgCancel()
+	}
 }
 
 // metricsReportLoop 定期将 QuantBrainLearner 的聚合指标上报到 kernel。

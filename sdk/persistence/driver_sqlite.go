@@ -448,8 +448,18 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 	// 后台 WAL checkpoint:文档 26 §4.1 要求定期 PRAGMA wal_checkpoint。
 	// PASSIVE 模式不阻塞写,把已 commit 的 WAL 页搬回主库,避免 .db-wal 单调增长。
 	// 关库时再做一次 TRUNCATE 把 WAL 文件清零,确保下次启动从干净状态开始。
+	//
+	// 关闭顺序保证:用 WaitGroup 等 checkpoint goroutine 真正退出,再关库。
+	// 否则 close(done) 触发 goroutine 准备退出,但若它正在执行 db.Exec,
+	// 主线程立刻 db.Close() 会触发 "use of closed connection" 错误。
+	// WaitGroup 让我们在 db.Close() 前确保 db.Exec 已完成。
 	checkpointDone := make(chan struct{})
-	go runWALCheckpointLoop(db, checkpointDone)
+	var checkpointWg sync.WaitGroup
+	checkpointWg.Add(1)
+	go func() {
+		defer checkpointWg.Done()
+		runWALCheckpointLoop(db, checkpointDone)
+	}()
 
 	return &Stores{
 		PlanStore:          planStore,
@@ -468,6 +478,7 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 		RawDB:              db,
 		CloseFunc: func() error {
 			close(checkpointDone) // 通知后台 goroutine 退出
+			checkpointWg.Wait()   // 等 goroutine 完成最后一次 db.Exec
 			// 关闭前 TRUNCATE WAL,防止重启后看到几 GB 残留 .db-wal
 			_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 			return db.Close()

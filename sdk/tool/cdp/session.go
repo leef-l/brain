@@ -334,8 +334,13 @@ func (s *BrowserSession) waitForCDP(ctx context.Context) error {
 }
 
 // getWebSocketURL fetches the browser's WebSocket debugger URL.
+//
+// 用带 timeout 的 client 而非 http.DefaultClient(无 timeout):chromium
+// 在某些情况下(extension 阻塞 / debug 接口卡死)会让连接 hang,默认
+// client 会让 sub agent 调用永久阻塞。5 秒对本地 127.0.0.1 接口足够。
 func (s *BrowserSession) getWebSocketURL() (string, error) {
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", s.port))
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", s.port))
 	if err != nil {
 		return "", err
 	}

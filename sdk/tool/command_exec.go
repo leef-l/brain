@@ -78,6 +78,20 @@ func ExecuteCommandRequestWithStreams(ctx context.Context, req CommandRequest, s
 	if workDir == "" && sb != nil {
 		workDir = sb.Primary()
 	}
+	// Sandbox 校验:用户传 working_dir 时(LLM 可能传 "/etc" 试图探测系统),
+	// 必须经过 Sandbox.Check 验证它是否在授权列表里。空 sb 视为"无沙箱模式"
+	// (测试 / mock),保持开放;非空 sb 必须通过校验。
+	//
+	// P2 修:之前的代码任何 LLM 提供的 workingDir 都被原样赋给 cmd.Dir,
+	// 导致 LLM 可以无差别地把 cwd 改到系统目录(如 /etc / /var)再用相对
+	// 命令探测,绕过 Sandbox 对路径的限制。
+	if workDir != "" && sb != nil {
+		resolved, err := sb.Check(workDir)
+		if err != nil {
+			return CommandOutcome{}, fmt.Errorf("working_dir denied by sandbox: %w", err)
+		}
+		workDir = resolved
+	}
 
 	stdoutW := &limitWriter{buf: &stdout, max: maxCommandOutputBytes}
 	stderrW := &limitWriter{buf: &stderr, max: maxCommandOutputBytes}
