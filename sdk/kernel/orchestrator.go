@@ -29,6 +29,7 @@ import (
 	"github.com/leef-l/brain/sdk/flow"
 	"github.com/leef-l/brain/sdk/kernel/mcpadapter"
 	"github.com/leef-l/brain/sdk/llm"
+	"github.com/leef-l/brain/sdk/persistence"
 	"github.com/leef-l/brain/sdk/protocol"
 	"github.com/leef-l/brain/sdk/tool"
 )
@@ -193,6 +194,10 @@ type Orchestrator struct {
 	// 自动启用(无需注入),不可为 nil — 在 NewOrchestratorWithConfig 初始化。
 	partialFiles *PartialFilesTracker
 
+	// auditLogger 可选注入,Delegate 成功/失败后写一条 audit_events,
+	// 让审计链覆盖核心 mutating 操作(此前只有 Replan 路径写 audit)。
+	auditLogger persistence.AuditLogger
+
 	mu sync.Mutex
 
 	// engineMu 保护 contextEngine 和 reviewLoop 的并发读写。
@@ -231,6 +236,57 @@ func (o *Orchestrator) SetContextEngine(ce ContextEngine) {
 	o.engineMu.Lock()
 	defer o.engineMu.Unlock()
 	o.contextEngine = ce
+}
+
+// SetAuditLogger 注入审计日志后端。Delegate 成功/失败时会写一条
+// audit_events,让审计链覆盖 Replan 之外的核心 mutating 操作。
+// 不调用此 Setter 时 Delegate 不写 audit(向后兼容,host 自选启用)。
+func (o *Orchestrator) SetAuditLogger(al persistence.AuditLogger) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.auditLogger = al
+}
+
+// logDelegateAudit 把 Delegate 结果写到 audit_events,silent 失败。
+func (o *Orchestrator) logDelegateAudit(ctx context.Context, req *DelegateRequest, result *DelegateResult, runErr error) {
+	o.mu.Lock()
+	al := o.auditLogger
+	o.mu.Unlock()
+	if al == nil {
+		return
+	}
+	status := "ok"
+	var errStr string
+	if runErr != nil {
+		status = "error"
+		errStr = runErr.Error()
+	} else if result != nil && result.Status != "completed" {
+		status = result.Status
+		errStr = result.Error
+	}
+	payload := map[string]interface{}{
+		"target_kind": string(req.TargetKind),
+		"task_type":   req.TaskType,
+		"task_id":     req.TaskID,
+		"status":      status,
+	}
+	if errStr != "" {
+		payload["error"] = errStr
+	}
+	if result != nil {
+		payload["duration_ms"] = result.Usage.Duration.Milliseconds()
+	}
+	data, _ := json.Marshal(payload)
+	now := time.Now()
+	_ = al.Log(ctx, &persistence.AuditEvent{
+		EventID:     fmt.Sprintf("delegate-%d-%s", now.UnixNano(), req.TaskID),
+		ExecutionID: req.TaskID,
+		EventType:   "delegate",
+		Actor:       "orchestrator",
+		Timestamp:   now,
+		Data:        data,
+		StatusCode:  status,
+	})
 }
 
 // getReviewLoop 并发安全读取 reviewLoop。
@@ -850,13 +906,18 @@ var randRead = func(b []byte) (int, error) {
 //
 // If the sidecar crashes during execution, Delegate automatically removes it
 // from the pool, restarts it, and retries once.
-func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*DelegateResult, error) {
+func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (result *DelegateResult, err error) {
 	start := time.Now()
 	diaglog.Info("delegate", "delegate start",
 		"task_id", req.TaskID,
 		"target_kind", req.TargetKind,
 		"instruction_len", len(req.Instruction),
 	)
+	// 出口写 audit_events(若注入了 AuditLogger),覆盖所有 early return /
+	// 正常返回 / panic recover 路径。silent 失败,不阻塞主流程。
+	defer func() {
+		o.logDelegateAudit(ctx, req, result, err)
+	}()
 
 	// 安全闸门:host 注入了 defaultExecution(workdir + file_policy)时,
 	// 没传 Execution 的请求自动继承默认值,使 PlanOrchestrator / ReviewLoop /
@@ -964,7 +1025,7 @@ func (o *Orchestrator) Delegate(ctx context.Context, req *DelegateRequest) (*Del
 	}
 
 	// Try with automatic retry on crash.
-	result, err := o.delegateOnce(attemptCtx, req, start)
+	result, err = o.delegateOnce(attemptCtx, req, start)
 	attemptCancel()
 	if err == nil {
 		logMsg := "delegate ok"

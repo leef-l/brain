@@ -145,6 +145,10 @@ func (m *RemoteMarketplace) ensureIndex(ctx context.Context, force bool) (*Marke
 	if err != nil {
 		// 远程失败时回退到过期缓存
 		if cached, cacheErr := m.loadCache(); cacheErr == nil {
+			// 让运维知道当前在用陈旧缓存(可能 7 天前的包版本),
+			// 避免静默用 stale 索引安装出现版本错配后无从溯源。
+			fmt.Fprintf(os.Stderr, "marketplace: remote fetch failed, using stale cache (age=%v): %v\n",
+				time.Since(cached.UpdatedAt).Round(time.Second), err)
 			m.mu.Lock()
 			m.cache = cached
 			m.mu.Unlock()

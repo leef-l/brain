@@ -594,8 +594,15 @@ func (le *LearningEngine) RecordDelegateResult(
 				}
 			}()
 			ctx := context.Background()
-			le.store.SaveProfile(ctx, &profileSnap)
-			le.store.SaveTaskScore(ctx, &scoreSnap)
+			// 异步 persist 失败必须留痕:旧实现 silent 吞掉错误,
+			// 重启后 Load 拿回旧数据,内存中的新能力画像永久丢失,
+			// EstimateTimeout 用陈旧 EWMA 估算不准。stderr 至少让运维能发现。
+			if err := le.store.SaveProfile(ctx, &profileSnap); err != nil {
+				fmt.Fprintf(os.Stderr, "learning: save profile failed (kind=%s): %v\n", profileSnap.BrainKind, err)
+			}
+			if err := le.store.SaveTaskScore(ctx, &scoreSnap); err != nil {
+				fmt.Fprintf(os.Stderr, "learning: save task score failed (kind=%s task=%s): %v\n", scoreSnap.BrainKind, scoreSnap.TaskType, err)
+			}
 		}()
 	}
 }

@@ -76,6 +76,11 @@ func NewMemProjectMemory() *MemProjectMemory {
 	}
 }
 
+// memProjectMemoryMaxPerProject 限制单项目记忆条数,避免长跑系统(>30天)
+// 累积低重要度 entry 让 Summarize 遍历越来越慢 + 内存膨胀。1500 条覆盖
+// 30 天 × 50 条/天的中等使用强度,超过后按"低重要度优先 + 最旧优先"驱逐。
+const memProjectMemoryMaxPerProject = 1500
+
 // Store 存储一条记忆。如果 ID 为空则自动生成。
 func (m *MemProjectMemory) Store(_ context.Context, entry MemoryEntry) error {
 	if entry.ProjectID == "" {
@@ -90,7 +95,20 @@ func (m *MemProjectMemory) Store(_ context.Context, entry MemoryEntry) error {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.entries[entry.ProjectID] = append(m.entries[entry.ProjectID], entry)
+	list := append(m.entries[entry.ProjectID], entry)
+	if len(list) > memProjectMemoryMaxPerProject {
+		// 驱逐策略:先按 importance 升序、再按 CreatedAt 升序排,
+		// 砍掉前 N 个低重要度 + 最旧的条目,保留高重要度 / 最新条目。
+		sort.SliceStable(list, func(i, j int) bool {
+			if list[i].Importance != list[j].Importance {
+				return list[i].Importance < list[j].Importance
+			}
+			return list[i].CreatedAt.Before(list[j].CreatedAt)
+		})
+		drop := len(list) - memProjectMemoryMaxPerProject
+		list = list[drop:]
+	}
+	m.entries[entry.ProjectID] = list
 	return nil
 }
 

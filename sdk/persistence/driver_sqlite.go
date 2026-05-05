@@ -461,6 +461,16 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 		runWALCheckpointLoop(db, checkpointDone)
 	}()
 
+	// Audit auto-purge:每 24h 删除 30 天前的 audit_events,
+	// 否则长跑(>30 天)后 audit_events 表无界增长,索引扫描下降读性能。
+	purgeDone := make(chan struct{})
+	var purgeWg sync.WaitGroup
+	purgeWg.Add(1)
+	go func() {
+		defer purgeWg.Done()
+		runAuditPurgeLoop(auditLogger, purgeDone)
+	}()
+
 	return &Stores{
 		PlanStore:          planStore,
 		ArtifactStore:      artifactStore,
@@ -478,7 +488,9 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 		RawDB:              db,
 		CloseFunc: func() error {
 			close(checkpointDone) // 通知后台 goroutine 退出
+			close(purgeDone)
 			checkpointWg.Wait()   // 等 goroutine 完成最后一次 db.Exec
+			purgeWg.Wait()
 			// 关闭前 TRUNCATE WAL,防止重启后看到几 GB 残留 .db-wal
 			_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 			return db.Close()
@@ -504,6 +516,30 @@ func runWALCheckpointLoop(db *sql.DB, done <-chan struct{}) {
 		case <-ticker.C:
 			// 错误 silent:checkpoint 失败不阻塞业务,下个 tick 再试。
 			_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+		}
+	}
+}
+
+// auditRetentionDays 是 audit_events 自动保留期。30 天足够覆盖
+// 监管复盘 / 故障溯源典型窗口,长于此的事件性价比低反而拖慢读。
+const auditRetentionDays = 30
+
+// runAuditPurgeLoop 每 24h 调用 AuditLogger.Purge 删除 auditRetentionDays
+// 之前的事件,避免 audit_events 无界增长。
+func runAuditPurgeLoop(al AuditLogger, done <-chan struct{}) {
+	if al == nil {
+		return
+	}
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			_, _ = al.Purge(ctx, auditRetentionDays)
+			cancel()
 		}
 	}
 }
