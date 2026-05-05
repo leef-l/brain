@@ -1698,10 +1698,15 @@ func (o *Orchestrator) poolRemoveBrain(kind agent.Kind) {
 	if rm, ok := o.pool.(brainRemover); ok {
 		rm.RemoveBrain(kind)
 	}
-	// 清理旧 RPC session 的反向 handler 注册记录，
+	// 清理旧 RPC session 的反向 handler 注册记录,
 	// 避免已移除的 sidecar 的 RPC 对象泄漏。
 	// 重新启动的 sidecar 会在 registerReverseHandlers 中重新注册。
+	//
+	// 必须持 mu:registerReverseHandlers 同样持 mu 写该 map,
+	// 这里裸赋值会与并发的 register 形成 race(可能丢失新注册项)。
+	o.mu.Lock()
 	o.reverseHandlersRegistered = make(map[protocol.BidirRPC]struct{})
+	o.mu.Unlock()
 }
 
 // CollectMetrics 主动从所有运行中的 sidecar 拉取 brain/metrics 指标。

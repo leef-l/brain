@@ -504,7 +504,11 @@ func (e *DefaultContextEngine) Share(ctx context.Context, from, to agent.Kind, m
 }
 
 // SharedFor 返回 (from, to) 桶中的消息拷贝。无桶返回 nil。
-// 线程安全;调用方不应共享返回 slice(不锁保护)。
+// 线程安全;调用方可自由修改返回 slice / Content / Input,不影响内部桶。
+//
+// 必须深拷贝:llm.Message.Content 是 slice、ContentBlock.Input/Output 是
+// json.RawMessage([]byte),浅拷贝时多个 brain 持有指向同一底层数组,
+// 后续 LLM 流水修改 Input(如 tool_call 重写)会污染共享桶。
 func (e *DefaultContextEngine) SharedFor(from, to agent.Kind) []llm.Message {
 	e.sharedMu.Lock()
 	defer e.sharedMu.Unlock()
@@ -512,8 +516,29 @@ func (e *DefaultContextEngine) SharedFor(from, to agent.Kind) []llm.Message {
 	if !ok {
 		return nil
 	}
+	return cloneMessages(msgs)
+}
+
+// cloneMessages 对 llm.Message 切片做深拷贝(包含 Content / Input / Output)。
+func cloneMessages(msgs []llm.Message) []llm.Message {
 	out := make([]llm.Message, len(msgs))
-	copy(out, msgs)
+	for i, m := range msgs {
+		clone := llm.Message{Role: m.Role}
+		if len(m.Content) > 0 {
+			clone.Content = make([]llm.ContentBlock, len(m.Content))
+			for j, b := range m.Content {
+				cb := b
+				if len(b.Input) > 0 {
+					cb.Input = append(json.RawMessage(nil), b.Input...)
+				}
+				if len(b.Output) > 0 {
+					cb.Output = append(json.RawMessage(nil), b.Output...)
+				}
+				clone.Content[j] = cb
+			}
+		}
+		out[i] = clone
+	}
 	return out
 }
 
@@ -529,6 +554,10 @@ func (e *DefaultContextEngine) ClearShared(from, to agent.Kind) {
 		return
 	}
 	delete(e.sharedBuckets, sharedKey{from, to})
+	// SharedMessages 是 deprecated 但仍被 legacy 路径读取的字段;
+	// Share() 在写入桶时会同时覆盖 SharedMessages(L480 写法),
+	// 部分清空时也必须清掉,否则 legacy 读路径仍能拿到陈旧消息。
+	e.SharedMessages = nil
 }
 
 // containsCredential 检查消息是否包含敏感凭证信息。

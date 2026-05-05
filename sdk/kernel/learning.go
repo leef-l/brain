@@ -147,6 +147,11 @@ type TaskStep struct {
 }
 
 // SequenceLearner 学习任务序列的最优排列
+// sequenceLearnerMaxRecords 限制 records slice 长度,避免长 chat 中
+// L2 学习历史无界增长 OOM。1000 条覆盖 ~ 200 个不同 (kind,task) 组合
+// 各 5 条样本,RecommendOrder 的 EWMA 排序质量已收敛。
+const sequenceLearnerMaxRecords = 1000
+
 type SequenceLearner struct {
 	records []TaskSequenceRecord
 	mu      sync.RWMutex
@@ -160,6 +165,11 @@ func (sl *SequenceLearner) RecordSequence(record TaskSequenceRecord) {
 		record.RecordedAt = time.Now()
 	}
 	sl.records = append(sl.records, record)
+	if len(sl.records) > sequenceLearnerMaxRecords {
+		// 滑动窗口:留最新 sequenceLearnerMaxRecords 条,丢掉最早的部分。
+		drop := len(sl.records) - sequenceLearnerMaxRecords
+		sl.records = append(sl.records[:0], sl.records[drop:]...)
+	}
 }
 
 // RecommendOrder 给定一组步骤，返回推荐的执行顺序。

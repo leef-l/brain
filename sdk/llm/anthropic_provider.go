@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // AnthropicProvider implements Provider for the Anthropic Messages API.
@@ -360,11 +361,18 @@ func (p *AnthropicProvider) toResponse(ar *anthropicResponse, rawBody []byte) (*
 }
 
 // truncateBody returns b as string, truncated to at most n bytes.
+//
+// 截断点退到 UTF-8 字符边界,避免日志/错误中出现 0xEF 0xBF 0xBD 的
+// 替换字符或半角乱码(中文/emoji 错误响应里很常见)。
 func truncateBody(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)
 	}
-	return string(b[:n]) + "...[truncated]"
+	cut := n
+	for cut > 0 && !utf8.RuneStart(b[cut]) {
+		cut--
+	}
+	return string(b[:cut]) + "...[truncated]"
 }
 
 // ---------------------------------------------------------------------------

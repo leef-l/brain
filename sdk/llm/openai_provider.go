@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // OpenAIProvider implements Provider for OpenAI-compatible APIs, including
@@ -142,7 +143,12 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req *ChatRequest) (StreamRe
 				switch v := m.Content.(type) {
 				case string:
 					if len(v) > 60 {
-						contentSummary = v[:60] + "..."
+						// 退到 UTF-8 字符边界,防止日志中半截多字节字符乱码。
+						cut := 60
+						for cut > 0 && !utf8.RuneStart(v[cut]) {
+							cut--
+						}
+						contentSummary = v[:cut] + "..."
 					} else {
 						contentSummary = v
 					}

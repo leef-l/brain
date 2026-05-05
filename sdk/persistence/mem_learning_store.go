@@ -47,12 +47,23 @@ func (s *memLearningStore) SaveProfile(_ context.Context, profile *LearningProfi
 	return nil
 }
 
+// memTaskScoreMaxPerBrain 限制单 brain 的评分历史长度,避免内存中
+// 任务评分无界增长。200 条覆盖 ~ 50 种任务类型各 4 个评分点,
+// L1 EWMA 估算已稳定,更老的记录信号弱意义不大。
+const memTaskScoreMaxPerBrain = 200
+
 func (s *memLearningStore) SaveTaskScore(_ context.Context, score *LearningTaskScore) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	stored := *score
-	s.taskScores[score.BrainKind] = append(s.taskScores[score.BrainKind], &stored)
+	list := append(s.taskScores[score.BrainKind], &stored)
+	if len(list) > memTaskScoreMaxPerBrain {
+		// 滑动窗口保留最新 memTaskScoreMaxPerBrain 条。
+		drop := len(list) - memTaskScoreMaxPerBrain
+		list = append(list[:0], list[drop:]...)
+	}
+	s.taskScores[score.BrainKind] = list
 	return nil
 }
 
