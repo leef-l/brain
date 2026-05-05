@@ -21,12 +21,19 @@ func LoadFromFile(path string) (*Manifest, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".yaml", ".yml":
+		// yaml.v3 TypeError.Errors 已含 "line N:" 前缀,直接 wrap;
+		// SyntaxError 等其他 yaml 错也带 Line() 信息。
 		if err := yaml.Unmarshal(data, m); err != nil {
-			return nil, fmt.Errorf("manifest: YAML 解析失败: %w", err)
+			return nil, fmt.Errorf("manifest: YAML 解析失败 %s: %w", path, err)
 		}
 	default:
+		// json.Unmarshal 错误自带 Offset 字节偏移,推算行号让用户能定位。
 		if err := json.Unmarshal(data, m); err != nil {
-			return nil, fmt.Errorf("manifest: JSON 解析失败: %w", err)
+			line := jsonErrorLine(err, data)
+			if line > 0 {
+				return nil, fmt.Errorf("manifest: JSON 解析失败 %s 第 %d 行: %w", path, line, err)
+			}
+			return nil, fmt.Errorf("manifest: JSON 解析失败 %s: %w", path, err)
 		}
 	}
 
@@ -38,6 +45,36 @@ func LoadFromFile(path string) (*Manifest, error) {
 	}
 
 	return m, nil
+}
+
+// jsonErrorLine 从 json.Unmarshal 返回的错误中抽取行号。
+// json.SyntaxError / json.UnmarshalTypeError 都带 Offset 字段(byte index),
+// 数原文中前 N 字节里的 \n 个数 + 1 即行号。失败返 0。
+func jsonErrorLine(err error, data []byte) int {
+	type withOffset interface{ Error() string }
+	if err == nil {
+		return 0
+	}
+	var off int64
+	switch e := err.(type) {
+	case *json.SyntaxError:
+		off = e.Offset
+	case *json.UnmarshalTypeError:
+		off = e.Offset
+	default:
+		_ = e.(withOffset)
+		return 0
+	}
+	if off < 0 || int(off) > len(data) {
+		return 0
+	}
+	line := 1
+	for i := int64(0); i < off; i++ {
+		if data[i] == '\n' {
+			line++
+		}
+	}
+	return line
 }
 
 // LoadFromDir 在目录中查找 brain.json 或 brain.yaml，按优先级加载第一个找到的

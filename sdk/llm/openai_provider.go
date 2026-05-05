@@ -538,6 +538,12 @@ type openaiResponse struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
+		// DeepSeek / Doubao / Mimo 等 OpenAI 兼容 API 在 usage 里
+		// 返 prompt_cache_hit_tokens / prompt_cache_miss_tokens,
+		// 旧实现没读,导致 cache 收益无法在 metrics 中反映,
+		// 长期看不到 cost 优化效果。
+		CacheHitTokens  int `json:"prompt_cache_hit_tokens,omitempty"`
+		CacheMissTokens int `json:"prompt_cache_miss_tokens,omitempty"`
 	} `json:"usage"`
 }
 
@@ -549,12 +555,25 @@ type openaiChoice struct {
 }
 
 func (p *OpenAIProvider) toResponse(ar *openaiResponse) (*ChatResponse, error) {
+	// DeepSeek 语义:prompt_cache_hit_tokens 是被缓存命中的输入 token 数,
+	// 等价于 Anthropic 的 cache_read_input_tokens;_miss 是新计算的部分,
+	// 等价于 cache_creation_input_tokens。InputTokens 在 OpenAI 兼容 API
+	// 中=PromptTokens(已含 hit + miss),为了不重复计费,扣掉 hit 部分。
+	inputTokens := ar.Usage.PromptTokens
+	if ar.Usage.CacheHitTokens > 0 {
+		inputTokens -= ar.Usage.CacheHitTokens
+		if inputTokens < 0 {
+			inputTokens = 0
+		}
+	}
 	resp := &ChatResponse{
 		ID:    ar.ID,
 		Model: ar.Model,
 		Usage: Usage{
-			InputTokens:  ar.Usage.PromptTokens,
-			OutputTokens: ar.Usage.CompletionTokens,
+			InputTokens:         inputTokens,
+			OutputTokens:        ar.Usage.CompletionTokens,
+			CacheReadTokens:     ar.Usage.CacheHitTokens,
+			CacheCreationTokens: ar.Usage.CacheMissTokens,
 		},
 		FinishedAt: time.Now(),
 	}
@@ -765,6 +784,9 @@ type openaiStreamChunk struct {
 	Usage *struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
+		// 与非流式响应字段对齐,捕获 cache 收益。
+		CacheHitTokens  int `json:"prompt_cache_hit_tokens,omitempty"`
+		CacheMissTokens int `json:"prompt_cache_miss_tokens,omitempty"`
 	} `json:"usage,omitempty"`
 }
 
@@ -782,14 +804,23 @@ func (r *openaiSSEReader) mapChunk(chunk *openaiStreamChunk) (StreamEvent, bool)
 	if len(chunk.Choices) == 0 {
 		// Usage-only chunk at the end
 		if chunk.Usage != nil {
+			inputTokens := chunk.Usage.PromptTokens
+			if chunk.Usage.CacheHitTokens > 0 {
+				inputTokens -= chunk.Usage.CacheHitTokens
+				if inputTokens < 0 {
+					inputTokens = 0
+				}
+			}
 			return StreamEvent{
 				Type: EventMessageDelta,
 				Data: marshalRaw(struct {
 					Usage Usage `json:"usage"`
 				}{
 					Usage: Usage{
-						InputTokens:  chunk.Usage.PromptTokens,
-						OutputTokens: chunk.Usage.CompletionTokens,
+						InputTokens:         inputTokens,
+						OutputTokens:        chunk.Usage.CompletionTokens,
+						CacheReadTokens:     chunk.Usage.CacheHitTokens,
+						CacheCreationTokens: chunk.Usage.CacheMissTokens,
 					},
 				}),
 			}, true

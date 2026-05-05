@@ -506,6 +506,11 @@ func (sqliteDriver) Open(dsn string) (*Stores, error) {
 //
 // 退出条件:done channel 关闭(由 CloseFunc 触发)。退出时不做最终 TRUNCATE
 // — 让 CloseFunc 在 db.Close 之前同步做,避免和 db.Close 竞争。
+// walSizeWarnPages 是触发 RESTART 升级的 WAL frame 数阈值。
+// 一帧 ≈ 1 page (默认 4096B);10000 页 ≈ 40 MB,超过这个值 PASSIVE 大概率
+// 已经追不上,改用 RESTART(等所有 reader 退出后强制 checkpoint)。
+const walSizeWarnPages = 10000
+
 func runWALCheckpointLoop(db *sql.DB, done <-chan struct{}) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -514,8 +519,19 @@ func runWALCheckpointLoop(db *sql.DB, done <-chan struct{}) {
 		case <-done:
 			return
 		case <-ticker.C:
-			// 错误 silent:checkpoint 失败不阻塞业务,下个 tick 再试。
-			_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+			// PASSIVE 不阻塞,但被 reader 锁住的 frames 搬不回主库;
+			// 若长 reader 持续存在(SELECT/事务未释放),WAL 会无限增长。
+			// 检查返回的 walFrames(busy/log/checkpointed),日志大就升级 RESTART。
+			var busy, logFrames, checkpointed int
+			row := db.QueryRow("PRAGMA wal_checkpoint(PASSIVE)")
+			if err := row.Scan(&busy, &logFrames, &checkpointed); err != nil {
+				// 部分 driver/版本不返回多列,降级为单纯 Exec
+				_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+				continue
+			}
+			if logFrames > walSizeWarnPages {
+				_, _ = db.Exec("PRAGMA wal_checkpoint(RESTART)")
+			}
 		}
 	}
 }

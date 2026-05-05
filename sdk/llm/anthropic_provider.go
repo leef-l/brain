@@ -204,8 +204,24 @@ func (p *AnthropicProvider) buildAPIRequest(req *ChatRequest, stream bool) *anth
 	}
 
 	// Messages
-	for _, m := range req.Messages {
+	// req.CacheControl 标记 L2_task / L3_history 层的 cache 边界,
+	// Anthropic 要求把 cache_control:{type:ephemeral} 加到目标 message
+	// 的最后一个 content block 上。聚合每个 message index 是否需要打标。
+	cacheMsgIdx := make(map[int]bool, len(req.CacheControl))
+	for _, cp := range req.CacheControl {
+		if cp.Layer == "L2_task" || cp.Layer == "L3_history" {
+			if cp.Index >= 0 && cp.Index < len(req.Messages) {
+				cacheMsgIdx[cp.Index] = true
+			}
+		}
+	}
+
+	for i, m := range req.Messages {
 		content := p.buildContentBlocks(m.Content)
+		if cacheMsgIdx[i] && len(content) > 0 {
+			// 最后一个 block 加 cache_control。
+			content[len(content)-1]["cache_control"] = map[string]string{"type": "ephemeral"}
+		}
 		raw, _ := json.Marshal(content)
 		ar.Messages = append(ar.Messages, anthropicMessage{
 			Role:    m.Role,
